@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '[MISSING_PAGE_FAIL:1]\n' +
+      '\n' +
+      '새 데이터에 대해 미리 훈련된 언어 모델을 계속 학습하도록 속도를 조정합니다. 이를 _다시 데우기_ 모델이라고 합니다. 모델을 다시 데우는 것은 학습률이 사라지는 것을 방지하여 학습 효율을 향상시켜야 한다. 다양한 양의 데이터, 최대 학습률 및 다양한 사전 훈련된 체크포인트를 사용하여 피티아 410M 모델에 대한 준비 전략을 연구한다. 이것은 대규모 데이터세트에서 초기에 트레이닝된 모델이 처음부터 다시 트레이닝할 필요 없이 새로운 대규모 데이터세트에서 트레이닝을 재개하는 것의 이점을 얻을 수 있게 한다. 이 설정을 시뮬레이션하기 위해 초기 사전 학습 데이터 세트를 Pile로 고정하고 최신 데이터 세트를 SlimPajama로 고정한다. 우리는 이것이 미래의 새로운 데이터 세트에 대한 기존 LLM의 적응을 안내할 수 있기를 바란다.\n' +
+      '\n' +
+      '본 연구의 결과는 다음과 같다.\n' +
+      '\n' +
+      '1. 점진적으로 학습률을 워밍업까지 증가시키는 것은 필요하지 않지만, 최대 학습률로부터 직접 시작하는 것은 손실(혼돈 단계 a.k.a 안정성 갭)에 초기 큰 스파이크를 발생시키고 나중에 아무런 결과도 초래하지 않는다.\n' +
+      '2. 최대 학습 속도를 조정하는 것은 업스트림 및 다운스트림 성능 간의 절충을 도울 수 있다; 최대 학습 속도를 증가시키는 것은 다운스트림 데이터세트(SlimPajama)에 대한 더 강한 적응으로 이어지는 반면, 더 작은 학습 속도는 업스트림 데이터세트(Pile)에서 더 많은 성능을 보존한다.\n' +
+      '3. 최신 사전 트레이닝된 체크포인트를 사용한 지속적인 사전 트레이닝은 성능을 향상시킨다.\n' +
+      '\n' +
+      '## 2 Setup\n' +
+      '\n' +
+      '우리의 설정에서, 업스트림(또는 사전 트레이닝) 데이터세트는 Pile(Gao 등, 2020)이다. 다운스트림(또는 미세 조정) 데이터세트는 SlimPajama(Soboleva et al., 2023)이다. SlimPajama는 LLama 데이터셋(Touvron et al., 2023)을 기반으로 구축된 RedPajama(Together.xyz, 2023)의 광범위하게 중복 제거된 버전이다. 이 작업에서 우리는 "미세 조정"과 다운스트림 연속 사전 훈련을 상호 교환적으로 사용한다. 그러나, 우리의 지속적인 사전 훈련 설정에서, 우리는 다운스트림 데이터셋이 이전의 사전 훈련 데이터셋의 규모(즉, 많은 미세 조정 데이터셋과 달리 매우 큼)에 주목한다.\n' +
+      '\n' +
+      '슬림파자마 데이터 세트는 파일과 유사한 출처에서 구축되지만 더 많은 양의 데이터를 가지고 있다. 따라서, 일부 업스트림 데이터는 다운스트림 사전 트레이닝 동안 반복될 수 있다. 우리의 실험 설정은 데이터 세트의 샘플 중 절반에 대해 분류기를 먼저 훈련하고 나중에 모든 샘플에서 미세 조정하는 (Ash 및 Adams, 2020)의 설정과 비슷하다. 그들은 이미지 분류를 위한 따뜻한 시작이 어렵다는 것을 보여준다. 파일에서 사전 훈련된 모델을 사용하고 슬림파자마에서 사전 훈련을 계속하면 인과 언어 모델링을 위한 유사한 설정을 따른다.\n' +
+      '\n' +
+      '**데이터 세트 -** 유효성 검사를 위해 Black 등 (2022)과 동일한 가중치를 사용 하는 Pile을 사용 합니다. SlimPajama 데이터셋(Soboleva et al., 2023)을 무작위로 shuffle하여 샘플링하여 \\(\\sim\\)297B 토큰 학습 데이터셋과 \\(\\sim\\)316M 유효성 검증 토큰 데이터셋을 형성한다. 우리는 재생을 사용하지 않습니다. 우리는 특히 Pile에 대해 훈련된 (Black 등, 2022)과 동일한 토큰나이저를 사용한다.\n' +
+      '\n' +
+      '**모델 -** Pile에서 미리 훈련 된 410M Pythia (Biderman et al., 2023), 즉 GPT-NeoX (Black et al., 2022) 모델을 사용 합니다. 우리는 플래시 어텐션을 사용하지 않는다(Dao et al., 2022).\n' +
+      '\n' +
+      '**하이퍼 매개 변수 -** \\(\\beta_{1}=0.9,\\beta_{2}=0.95\\), \\(\\epsilon=10^{-8}\\) 및 \\(0.1\\)의 중량 감쇄를 사용 하는 AdamW 최적화기를 사용 합니다. 최대 학습률은 실험 \\(\\{1.5\\cdot 10^{-4},3\\cdot 10^{-4},6\\cdot 10^{-4}\\}\\)에서 다양하게 나타났다. 코사인 학습률 감쇠를 최소 \\(0.1\\cdot MaxLr\\)까지 사용한다. 모든 준비 길이는 전체 다운스트림 데이터 세트 크기(297B 토큰)를 기반으로 계산됩니다. 우리는 코사인 붕괴 스케줄이 \\(240\\)B 토큰에서 최소 학습률에 도달하고 그 이후에는 일정하다는 점에 주목한다. 우리는 기울기 클리핑을 \\(1.0\\)으로 설정했다. 훈련은 중퇴 없이 하프 정밀도(FP16)에서 수행된다.\n' +
+      '\n' +
+      '## 3 관련 작업\n' +
+      '\n' +
+      '**대형 언어 모델:** LLM은 일반적으로 Adam(예를 들어, GPT3(Brown et al., 2020), BLOOM(Scao et al., 2022), Gopher(Rae et al., 2021), Pythia(Biderman et al., 2023)) 또는 AdamW(예를 들어, Chinchilla(Hoffmann et al., 2022), LLaMA(Touvron et al., 2023))로 트레이닝된다. 앞서 언급한 모든 모델에서 학습률 일정은 최대 학습률의 10%까지 코사인 감쇠가 뒤따르는 예열로 구성된다.\n' +
+      '\n' +
+      '**지도 되지 않은 연속 학습:** 이 문서에서는 LLM의 지속적인 사전 교육을 위한 다양한 준비 전략을 조사 합니다. 지속적인 사전 훈련은 지속적인 자체 감독 훈련과 유사한 유형의 훈련 목표를 사용한다. 자체 감독 사전 트레이닝은 또한 이미지 생성을 위한 비전 데이터세트(Seff et al., 2017; Lesort et al., 2019; Zhai et al., 2019; Nguyen et al., 2018; Davari et al., 2022) 또는 표현 학습(Fini et al., 2022; Madaan et al., 2021; Rao et al., 2019)에서 연구되었다. 언어에서는 도메인 적응이라는 이름으로 지속적인 사전 훈련을 연구하였다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r r} \\hline \\hline Dataset & Sampling \\% & Train & Val \\\\ \\hline StackExchange & 2.0 & 9.95B & 13.08M \\\\ Arxiv & 2.5 & 13.77B & 22.73M \\\\ Wikipedia & 4.5 & 11.78B & 15.79M \\\\ Book & 4.5 & 14.22B & 22.04M \\\\ Github & 4.5 & 15.41B & 22.42M \\\\ C4 & 15.0 & 78.49B & 72.49M \\\\ Commoncrawl & 67.0 & 153.25B & 147.28M \\\\ \\hline Totals & 100 & 296.86B & 315.83M \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: SlimPajama의 서브샘플링된 버전에 대한 토큰 카운트 및 트레이닝 데이터 가중치.\n' +
+      '\n' +
+      'pre-training (Ke et al., 2023; Scialom et al., 2022; Gururangan et al., 2021; Qin et al., 2022) 여기서 새로운 데이터세트는 새로운 도메인으로부터 나온다. 다른 설정은 상이한 시점에서 상이한 데이터 세트가 생성되는 곳이다(Han et al., 2021; Jin et al., 2022; Jang et al., 2021, 2022; Loureiro et al., 2022). 우리의 설정에서 시나리오는 데이터의 시간성을 고려하지 않기 때문에 도메인 적응 사전 훈련에 더 가깝다.\n' +
+      '\n' +
+      '**언어 모델의 연속 학습을 위한 학습 속도 모니터링:** 연속 학습 (CL)에서 모델은 데이터 세트의 시퀀스에 대해 학습 됩니다. 따라서 데이터가 독립적이지 않고 동일하게 분산되어 모델이 가소성을 잃거나 잊어버릴 수 있습니다. 이러한 상황에서, 학습 속도 스케줄의 특정 모니터링은 유익할 수 있다. 언어 모델의 CL(Caccia et al., 2021; Ke et al., 2023a; Loureiro et al., 2022; Han et al., 2021; Loshchilov and Hutter, 2018; Scialom et al., 2022; Winata et al., 2023)에서 서로 다른 접근법이 평가되었다: 일정한 학습률(Ke et al., 2023a; Scialom et al., 2022), 점진적 감소(Winata et al., 2023) 또는 워밍업 이후 감소(Caccia et al., 2021).\n' +
+      '\n' +
+      '그러나 우리가 아는 한, 대규모 언어 모델에 대한 지속적인 사전 훈련의 맥락에서 준비 단계의 영향을 구체적으로 연구하는 기존 작업은 없다.\n' +
+      '\n' +
+      '## 4 Continual Warm-up\n' +
+      '\n' +
+      '### 웜업하는 데 얼마나 걸리나요?\n' +
+      '\n' +
+      '문헌에서 워밍업은 보통 데이터의 최대 1%에 대해 수행된다(Zhao et al., 2023). 이 실험에서 우리는 결과가 이 하이퍼 매개변수에 민감한지 조사한다.\n' +
+      '\n' +
+      '**설정:** 데이터의 0%, 0.5%, 1% 및 2%와 같은 297B 토큰의 일정에 대해 다양한 준비 길이를 실험하고 처음 50B 토큰 이후의 성능을 측정합니다. 다른 관점에서, 우리는 이 실험이 다른 양의 데이터에 대해 1% 예열을 실행하는 것으로 볼 수 있었다. 우리는 더 많은 반복을 위해 워밍업을 하면 후속 성능 개선과 함께 더 원활한 전환으로 이어질 수 있다고 가정한다.\n' +
+      '\n' +
+      '**결과:** 이 실험의 결과는 그림 1에 제공 됩니다. 학습 속도를 준비 하는 데 사용 되는 데이터 양이 다운스트림 작업 (학습) 또는 업스트림 작업 (잊기)에 대 한 복잡성에 큰 영향을 주지 않는다는 것을 보여 줍니다. 이러한 결과는 워밍업에 더 많은 토큰을 사용하는 것이 전환을 원활하게 할 수 있다는 우리의 가설을 무효화하고 선형 워밍업이 이 설정에서 무용하다는 것을 보여준다. 그럼에도 불구하고, 어떠한 점진적인 워밍업 없이 트레이닝된 모델은 트레이닝의 처음 몇 번의 반복에서 손실의 스파이크를 야기하는 초기 "혼돈 단계"를 경험하며, 이러한 현상은 또한 안정성 갭(Lange et al., 2023; Caccia et al., 2022)으로 지칭된다.\n' +
+      '\n' +
+      '**Takeaway 1:**\n' +
+      '\n' +
+      '* 준비 단계의 길이는 Pile 및 SlimPajama 유효성 검사 손실에 큰 영향을 주지 않는 것으로 보입니다.\n' +
+      '\n' +
+      '### 워밍업 높이는 얼마입니까?\n' +
+      '\n' +
+      '학습 속도를 다시 데우는 한 가지 목적은 컴퓨팅 효율적인 연속 사전 학습을 가능하게 하는 것이다. 너무 작은 학습률은 다운스트림 데이터세트에서 비효율적인 학습으로 이어질 수 있는 반면, 너무 큰 학습률은 업스트림 데이터세트의 치명적인 망각으로 이어질 수 있다. 학습률을 다시 데우는 중요한 한 가지 측면은 학습률을 얼마나 높일지 결정하는 것이다. 따라서 본 실험에서는 학습률이 성능에 미치는 영향을 평가하기 위해 최대 학습률을 변화시킨다.\n' +
+      '\n' +
+      '**설정:** 준비 단계의 길이를 학습 데이터의 기본 양 \\(1\\%\\)으로 고정 하 고 최대 학습 속도를 변경 합니다. Pythia 410M(Biderman et al., 2023), \\(1.5\\cdot 10^{-4}\\), \\(6\\cdot 10^{-4}\\)의 사전 훈련에 사용된 기본값 \\(3\\cdot 10^{-4}\\)을 실험한다. 사후 웜업 코사인 감쇠 단계의 경우 최종 학습률을 \\(10\\%\\)으로 설정한다.\n' +
+      '\n' +
+      '도 1: (_top_) 워밍업을 위해 다양한 양의 토큰으로 미세 조정하면서 슬림파자마에 대한 당혹감의 진화. (_bottom_) Pile 유효성 검사 세트(업스트림)에 대한 동일한 실험에 대한 복잡성입니다. \\ (MaxLr=3\\cdot 10^{-4}\\), \\(MinLr=0.1\\cdot MaxLr\\). 이 그림은 그 규모에서 웜업 단계의 길이가 결과에 큰 영향을 미치지 않는다는 것을 보여준다.\n' +
+      '\n' +
+      '최대 학습률입니다. 학습률 스케줄은 \\(240\\)B 토큰에서 최소 학습률로 감소하며 그 이후에는 일정하다. 실행은 \\(240\\)B 토큰의 끝(디케이 기간의 끝)에 보고 됩니다.\n' +
+      '\n' +
+      '**결과:** 이 실험의 결과는 그림 2, 3 및 4에 나와 있습니다. 교육 종료 시 최대 학습률이 높을수록 다운스트림 데이터의 성능이 향상되지만 업스트림 데이터의 성능은 손상된다는 것을 관찰합니다. 반대로, 더 작은 최대 학습률은 업스트림 데이터에 대한 성능을 향상시키는 반면 다운스트림 데이터에 대한 적응을 제한하여 성능 감소를 유발한다. 이러한 결과는 최대 학습률을 변경하는 것이 다운스트림과 업스트림 성능 간의 절충을 위한 효과적인 방법이 될 수 있음을 보여준다. 또한, SlimPajama에 대한 미세 조정은 모델이 파일에서 학습한 내용을 잊어버리게 하여 파일 검증 복잡성이 증가하는 일반적인 경향을 관찰한다. 마지막으로, 일정한 학습률(전통적인 미세 조정과 유사한)로 학습된 모델에 조기 정지를 사용하는 것이 상류 데이터 세트에 대한 강력한 성능을 유지하면서 새로운 데이터 분포에 적응하는 경제적인 방법이라는 점에 주목한다.\n' +
+      '\n' +
+      '**Takeaway 2:**\n' +
+      '\n' +
+      '* 다운스트림 작업에서 잘 학습 하는 데 학습 속도가 감소 하는 것이 필요 합니다. 더욱이, 지속적인 학습을 유지하는 것이 처음에는 파일에서 유리하지만, 이러한 장점은 슬림파자마에서 충분히 오래 훈련할 때 사라진다.\n' +
+      '* SlimPajama에서만 학습하는 모델은 다운스트림 작업에만 최적화되었음에도 불구하고 Pile에서 미리 학습된 모델보다 SlimPajama에서 더 나쁜 성능을 보여 두 데이터 세트 간의 긍정적인 전달을 강조합니다.\n' +
+      '\n' +
+      '### 스크래치 훈련과 비교\n' +
+      '\n' +
+      '이 실험에서는 피니튜닝된 모델과 처음부터 훈련된 모델을 비교하고자 한다.\n' +
+      '\n' +
+      '**설정:** 섹션 4.2의 _MaxLr_\\(=3\\cdot 10^{-4}\\) 모델과 동일한 코사인 감쇠 일정을 사용하여 무작위 초기화에서 모델을 학습합니다.\n' +
+      '\n' +
+      '**결과:** 그림에서 볼 수 있듯이. 도 2 및 도 2에 도시된 바와 같다. 도 3에 도시된 바와 같이, 워밍업을 갖는 모든 피니튜닝된 모델들은 모델보다 더 나은 성능을 보인다\n' +
+      '\n' +
+      '도 4: 퍼플렉시티 다운스트림 대 퍼플렉시티 업스트림, RP 피니튜닝. 녹색 점은 준비 단계의 끝을 나타냅니다. 빨간색 점은 다운스트림 미세 조정을 시작하기 전의 복잡성을 나타냅니다. 최대 학습률을 높이면 다운스트림 데이터에 대한 성능이 향상되지만 업스트림에 대한 망각을 유발한다. 이 그림은 그림 2와 3과 동일한 결과를 보고한다.\n' +
+      '\n' +
+      '도 3: 상이한 최대 학습 속도에 대한 파일 상 손실의 진화. 파란색 곡선은 처음부터 훈련된 모델을 보고합니다. 최대 학습률을 높이면 업스트림 데이터의 최종 손실이 지속적으로 증가하며, 즉 망각을 증가시킨다. 스크래치 기준선은 파일에서 일관되게 성능을 향상시키는 반면 슬림파자마에서 훈련되어 두 데이터 세트 간에 상당한 시너지 효과를 보여준다.\n' +
+      '\n' +
+      '도 2: 상이한 최대 학습 속도에 대한 슬림파자마의 손실의 진화. 파란색 곡선은 처음부터 훈련된 모델을 보고합니다. 최대 학습률을 증가시키면 다운스트림 데이터의 최종 손실이 지속적으로 감소한다. 수렴 시, 지속적으로 사전 훈련되는 모델들은 스크래치 및 일정한 LR 베이스라인들을 능가한다. 그러나, 일정한 학습률 모델은 첫 번째 100B 토큰 내에서 최상의 성능을 달성한다.\n' +
+      '\n' +
+      '처음부터 훈련받았다. 이는 다운스트림 데이터셋이 업스트림 데이터셋의 스케일 상에 있고 업스트림 데이터셋과 중복되는 경우에도 재학습 대신 피니튜닝이 성능을 향상시킬 수 있음을 보여준다. 또한 \\(200\\)B 토큰 이후, 처음부터 훈련된 모델이 일정한 학습률을 사용하여 미세 조정된 모델보다 더 나은 성능을 보인다는 것을 관찰한다.\n' +
+      '\n' +
+      '### 동일한 데이터에 대한 다시 데우기\n' +
+      '\n' +
+      '이전 실험에서 우리는 새로운 데이터에 대한 피니튜닝이 과거 데이터에 대한 손실을 빠르게 증가시키고 나중에 감소시킨다는 것을 보았다. 최대 학습률이 더 클 때 증가폭이 더 크다. 손실 증가에 대한 한 가지 가설은 상류 데이터와 하류 데이터 사이의 분포 이동이 훈련 과정을 방해한다는 것이다. 이 가설을 평가하기 위해 분배 이동이 없는 환경에서 준비 정책을 적용한다. 즉, 우리는 파일에서 미세 조정을 통해 그림 3과 4에서 실험을 복제한다.\n' +
+      '\n' +
+      '**설정:** 이 실험에서는 SlimPajama 데이터를 미세 조정 하는 대신 Sec. 4.2 실험과 동일한 준비 정책의 매개 변수를 사용 하 여 파일 데이터의 50B 토큰을 미세 조정 합니다.\n' +
+      '\n' +
+      '**결과:** 그림입니다. 도 5를 참조하면, Pile에 대한 사전 훈련을 계속하면서 학습률을 재온하는 것은 SlimPajama 데이터 Fig.에서 재온하는 것과 유사한 효과가 있음을 알 수 있다. 다운스트림 유효성 검사 손실을 볼 때 3입니다. 이는 Pile과 SlimPajama 사이의 분포 이동이 sec. 4.2에서 관찰된 학습 속도를 다시 데우는 부정적인 영향에 대한 책임이 아니라 최적화 역학도 이러한 손실 증가에 역할을 한다는 것을 시사한다.\n' +
+      '\n' +
+      '도. 도 6은 트레이닝이 먼저 파일 및 슬림파자마 데이터 양쪽에서 당혹감을 증가시키지만 양쪽에서 후에 감소시킨다는 것을 도시한다. 흥미롭게도, Fig. 도 6은 Pile 상에서 미세조정을 할 때 SlimPajama perplexity와 Pile perplexity의 선형관계를 나타낸 반면, SlimPajama 상에서 미세조정을 할 때는 그렇지 않았다(도 3). 이 관계에 대한 한 가지 가능한 설명은 파일에서 훈련된 모델이 워밍업 동안 최소값을 벗어나 학습률이 저하된 것과 동일한 최소값으로 회귀하여 선형 추세를 산출한다는 것이다.\n' +
+      '\n' +
+      '**Takeaway 3:**\n' +
+      '\n' +
+      '* 학습 속도를 다시 변경 하는 것은 동일한 데이터 세트에 대해 학습 하는 동안 다시 데운 다음 학습 속도를 감소 시키는 것으로 입증 된 것처럼 다운스트림 작업에서 학습을 시작할 때 이전에 보여지는 성능 저하에 대 한 중요한 원인으로 보입니다.\n' +
+      '* 모델은 동일한 데이터 세트에 대해 학습할 때 학습 속도를 다시 데우기 때문에 성능 적중에서 복구할 수 없는 것으로 보입니다.\n' +
+      '\n' +
+      '### Earlier Checkpoints 평가\n' +
+      '\n' +
+      '**설정:** 모델 사전 훈련에서 3개의 검사점을 선택 하 여 통합 되지 않은 검사점으로 시작 하 여 준비 전략이 도움이 되는지 테스트 합니다. 우리의 가설은 수렴에서 더 멀리 있는 체크포인트를 선택하면 이러한 체크포인트가 손실 경관의 더 유리한 지점에 위치할 수 있기 때문에 다운스트림 작업에 대한 적응에 도움이 될 수 있다는 것이다.\n' +
+      '\n' +
+      '매우 다른 체크포인트를 선택하기 위해 마지막 사전 트레이닝 체크포인트(즉, \\(143,000\\)iters 후 Pythia 410M)와 그림의 모든 모델이 달성한 최대 파일 유효성 검사 손실 근처에서 파일 유효성 검사 손실을 달성하는 이전 체크포인트를 비교한다. 1(아래)(\\(\\sim 2.5\\)) 및 두 개의 다른 검사점 사이에 세 번째 검사점이 있다.\n' +
+      '\n' +
+      '도 5: 파일에서 다시 미세 조정하면서 파일 유효성 검사 손실. Sec. 4.2에서 관찰된 웜업 현상은 동일한 데이터 분포에서 다시 미세 조정에도 적용되는 것으로 관찰된다. Warm-up token=\\(1\\%\\) downstream tokens, \\(MinLr=0.1\\cdot MaxLr\\).\n' +
+      '\n' +
+      '그림 6: 다양한 최대 학습률을 가진 파일에서 미세 조정 시 파일에서의 복잡성 대 슬림파자마에서의 복잡성. Warm-up token=\\(1\\%\\) downstream tokens, \\(MinLr=0.1\\cdot MaxLr\\). 녹색 점은 준비 단계의 끝을 나타냅니다.\n' +
+      '\n' +
+      '**결과:** SlimPajama의 유효성 검사 손실의 진화는 그림에 나와 있습니다. 7과 파일에서 검증 손실의 진화는 부록 A에 나와 있다. 도 7을 참조하면, 우리의 설정에서, 나중에 미세 조정을 위해 더 이른 체크포인트를 선택하는 것은 다운스트림 성능의 개선으로 이어지지 않는다. 따라서 최신 체크포인트를 선택하는 것이 가장 좋은 선택입니다. 우리는 사전 훈련이 모델을 다시 따뜻해지기 어렵게 만드는 가소성의 손실로 이끌지 않았다고 결론지을 수 있다.\n' +
+      '\n' +
+      '**로컬 결론:** 이 섹션에서 수행된 실험은 다운스트림 데이터가 업스트림 데이터와 유사한 출처인 경우에도 새 데이터에 대해 미리 훈련된 모델을 다시 데우는 것이 어려운 작업이라는 결론으로 이어졌습니다. 실험 결과, 워밍업에 사용된 토큰의 양이 성능에 큰 영향을 미치지 않으며, 최대 학습률을 증가시키면 최종 모델의 다운스트림 성능이 향상되고, 감소시키면 업스트림 성능이 향상되며, 초기 체크포인트를 선택하면 업스트림 데이터와 다운스트림 데이터 모두에서 성능이 감소한다.\n' +
+      '\n' +
+      '**Takeaway 4:**\n' +
+      '\n' +
+      '* 파일 사전 훈련 시 빠른 검사점을 사용 하 여 SlimPajama에서 더 빨리 학습 하지 않습니다.\n' +
+      '\n' +
+      '## 5 Discussion / Limiting\n' +
+      '\n' +
+      '**데이터 유사성 및 중복:** 실험 설정에서 업스트림 및 다운스트림 데이터는 특히 데이터 중복으로 인해 유사성이 높습니다. 지속적인 학습에서, 상이한 유형의 시프트는 성능의 변동을 초래할 수 있기 때문에(Lesort et al., 2021), 우리의 결과는 언어 도메인 적응 사전 트레이닝 설정과 같은 상이한 분배 시프트를 갖는 설정으로 일반화되지 않을 수 있다(Xu et al., 2019; Gururangan et al., 2020; Ke et al., 2023; Chakrabarty et al., 2019; Ke et al., 2023). 그럼에도 불구하고, Fig. 도 4 및 도 4에 도시된 바와 같다. 도 6을 참조하면, 파일에서 미세조정할 때 또는 슬림파자마에서 미세조정할 때 결과가 동일하지 않음을 알 수 있다. 가능한 설명은 데이터 분포의 약간의 변화조차도 학습 역학의 상당한 섭동을 유발할 수 있다는 것이다. 예를 들어, 이미지 분류의 맥락에서, Igl 등(2020)은 데이터세트 내의 라벨들의 10 내지 20 %의 갑작스런 전이가 다운스트림 성능에 얼마나 큰 영향을 미칠 수 있는지를 보여준다(도면 참조). (Igl 등, 2020)의 5.\n' +
+      '\n' +
+      '**Experiments Scale:**\n' +
+      '\n' +
+      'Sec. 2, 우리의 조사는 크기 410M의 모델과 크기 297B 토큰의 미세 조정 데이터 세트를 탐구한다. 이것은 예비 연구이지만 향후 작업에서 결론이 다른 모델 척도(예: 3B 및 7B)와 다른 데이터 세트 척도(예: 100B 및 600B)에서 유지되는지 여부를 검증할 계획이다. 또한, 이러한 벤치마크가 모델 능력의 진화에 대한 중요한 통찰력을 제공할 수 있기 때문에 손실이나 복잡함 대신 HELM(Liang et al., 2022) 또는 Harness(Gao et al., 2021)와 같은 벤치마크를 사용하여 전체 모델을 테스트할 계획이다.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      '실험 결과, 더 높은 최대 학습률로 워밍업하는 것이 파일에서 사전 학습된 모델이 슬림파자마에 적응하는 데 도움이 되는 반면, 더 작은 최대 학습률은 파일에서 성능을 보존한다는 것을 보여준다. 그러나 두 경우 모두 다시 데워진 모델이 처음부터 훈련된 모델보다 개선된다. 이러한 결과는 처음부터 교육을 다시 시작하기보다는 새로운 데이터 세트에 대한 지속적인 사전 교육을 사용하도록 동기를 부여한다. 그러나 더 큰 모델 규모, 다른 분포 이동에 대해 유사한 결과를 설정하고 이 전략이 모델을 업데이트하는 데 반복적으로 적용될 수 있는지 확인하기 위해서는 더 많은 연구가 필요하다.\n' +
+      '\n' +
+      '## 소프트웨어 및 데이터\n' +
+      '\n' +
+      'GPT-NeoX(Andonian et al., 2021), DeepSpeed(Rasley et al., 2020), nccl(NVIDIA, 2016), Apex(NVIDIA, 2019), Pytorch(Paszke et al., 2017), HuggingFace Transformers library(Wolf et al., 2020).\n' +
+      '\n' +
+      '## Acknowledgements\n' +
+      '\n' +
+      '우리는 캐나다 CIFAR AI 의장 프로그램과 캐나다 우수 연구 의장 프로그램의 지원을 인정한다. 또한 몬트리올 대학의 인공지능 장학금인 FRQNT 박사학위[B2X] 장학금[B.T.]의 자금 지원을 인정하고자 합니다.\n' +
+      '\n' +
+      '그림 7: 완전 수렴 체크포인트, 상류 포화점 및 상류 포화점의 \\(1/2\\)에서 훈련된 모델의 파일 유효성 검사 손실. 초기 체크포인트를 위한 블랙 컬러 디자인, 최신 체크포인트를 위한 레드 컬러, 사이사이에 있는 블루 컬러.\n' +
+      '\n' +
+      '본 연구는 INCITE 프로그램 상 "Scalable Foundation Models for Transferable Generalist AI"의 일환으로 제공되는 서밋 슈퍼컴퓨터의 컴퓨팅 자원 덕분에 가능하게 되었다. 이러한 자원은 계약 번호 DE-AC05-00OR22725에 따라 미국 에너지부의 과학부에서 지원하는 오크 리지 국립 연구소의 오크 리지 리더십 컴퓨팅 시설에서 제공했다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* A. Andonian, Q. 안소니 비더만 블랙갈리 Gao, E. Hallahan, J. Levy-Kramer, C. Leahy, L. 네슬러 파커 필러 푸로히트 송즈원 필, S. Weinbach (2021-08) GPT-NeoX: PyTorch의 대규모 자기회귀 언어 모델링 참고: [https://www.github.com/eleutherai/gpt-neox](https://www.github.com/eleutherai/gpt-neox) SS1에 의해 인용 됩니다.\n' +
+      '* J. Ash and R. P. Adams (2020) On warm-starting neural network training. Neural Information Processing Systems33, pp. 33884-3894. Cited by: SS1.\n' +
+      '*S. 비더만 H. 쇼엘코프 Q. 안소니 오브라이언 Purohit, U. S. Prashanth, E. Raff, and A. Pythia (2023) A suite for analyzing large language models across training and scaling. arXiv preprint arXiv:2304.01373. Cited by: SS1.\n' +
+      '*S. 검은색 비더만 안소니 가오락 골딩현희 맥도넬 미국 Pieshanth, L. Reynolds, J. Tow, B. Wang, and S. Weinbach(2022) GPT-neox-20b: 오픈소스 자기회귀 언어 모델. External Links: 2204.01373 Cited by: SS1.\n' +
+      '* T. B. Brown, B. Mann, N. 라이더 Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al. (2020) Language models are few-shot learners. Proceedings of the 34th International Conference on Neural Information Processing Systems, pp. 1877-1901. External Links: Link, Document Cited by: SS1.\n' +
+      '* L. 카치아 오트모 Ranzato, L. Denoyer (2021) On anytime learning at macroscale. arXiv preprint arXiv:2106.09563. Cited by: SS1.\n' +
+      '* L. 카치아 알준디 아사디 T. Tuytelaars, J. Pineau, and E. Belilovsky (2022) New insights to reduce sudden representation change in online continual learning. 국제 학습 표현 회의에서는 외부 링크: SS1에 의해 인용된 링크입니다.\n' +
+      '* T. Chakrabarty, C. Hidey, K. McKeown (2019) IMHO 미세 조정은 클레임 검출을 향상시킨다. Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long and Short Papers), Minneapolis, Minnesota, pp. 558-563. External Links: Link, Document Cited by: SS1.\n' +
+      '* T. 도대복 Ermon, A. Rudra, and C. Re(2022) Flashattention: 빠르고 메모리 효율적인 정확한 attention with io-awareness. Advances in Neural Information Processing Systems35, pp. 16344-16359. Cited by: SS1.\n' +
+      '*M. 다바리 Asadi, S. 무두르 Aljundi, and E. Belilovsky (2022) Probing representation forget in supervised and nonsupervised continual learning. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 16712-16721. Cited by: SS1.\n' +
+      '*M. 파라주바 Azizan, A. Mott, and A. Li (2020) Orthogonal gradient descent for Continual Learning. In International Conference on Artificial Intelligence and Statistics, pp. 3762-3773. External Links: Link, Document Cited by: SS1.\n' +
+      '* E. Fini, V. G. T. da Costa, X. 알라메다 피네다 Alahari, and J. Mairal(2022) Self-supervised models is Continual learners. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 9621-9630. Cited by: SS1.\n' +
+      '* R. M. French (1999) Catastrophic forgetting in connectionist networks. Trends in Cognitive Sciences3(4), pp.128-135. External Links: ISSN 13646613, Document Cited by: SS1.\n' +
+      '* L. 가오성 비더만 블랙, L. 골딩티 Hoppe, C. Foster, J. Phang, H. He, A. Thite, N. Nabeshima, B. Wang, and A. Zou (2020) The pile: 800gb dataset of various text for language modeling. arXiv preprint arXiv:2101.00027. Cited by: SS1.\n' +
+      '* L. 가오정토 비더만 블랙, A. 디포피, C. 포스터, L. 금종수 맥도넬 무엔노프 Reynolds, E. Tang, A. Thite, B. Wang, K. Wang, and A. Zou (2021) A framework for few-shot language model evaluation. 참고: [https://doi.org/10.5281/zenodo.5371628](https://doi.org/10.5281/zenodo.5371628) SS1에 의해 인용 됩니다.\n' +
+      '*S. 구루랑간 A. 마라소비치 S. 스웨이암디프타 Lo, I. Beltagy, D. Downey, and N. A. Smith (2020) Stop Stop pretraining: 언어 모델을 도메인 및 태스크에 적응시킨다. arXiv preprint arXiv:2004.10964. External Links: Link, 2004.10964 Cited by: SS1.\n' +
+      '\n' +
+      'Gururangan, S., Lewis, M., Holtzman, A., Smith, N. A., and Zettlemoyer, L. Demix 계층: 모듈식 언어 모델링을 위한 도메인 엉킴 해제 _ arXiv preprint arXiv:2108.05036_, 2021. URL [https://arxiv.org/abs/2108.05036](https://arxiv.org/abs/2108.05036).\n' +
+      '* Han 등(2021) Han, R., Ren, X., and Peng, N. ECONET: 이벤트 시간 추론을 위한 언어 모델의 효과적인 연속 사전 트레이닝. _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing_, pp. 5367-5380, Online and Punta Cana, Dominican Republic, November 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.436. URL [https://aclanthology.org/2021.emnlp-main.436](https://aclanthology.org/2021.emnlp-main.436)\n' +
+      '* Hoffmann 등(2022) Hoffmann, J., Borgeaud, S., Mensch, A., Buchatskaya, E., Cai, T., Rutherford, E., Casas, D. d. L., Hendricks, L. A., Welbl, J., Clark, A., et al. Training compute-optimal large language models. _ arXiv preprint arXiv:2203.15556_, 2022. URL [https://arxiv.org/abs/2203.15556](https://arxiv.org/abs/2203.15556)\n' +
+      '* Igl 등(2020) Igl, M., Farquhar, G., Luketina, J., Boehmer, W., and Whiteson, S. 비정상성이 심층 강화 학습의 일반화에 미치는 영향 _ arXiv preprint arXiv:2006.05826_, 2020. URL [https://arxiv.org/abs/2006.05826.pdf](https://arxiv.org/abs/2006.05826.pdf).\n' +
+      '* Jang 등(2021) Jang, J., Ye, S., Yang, S., Shin, J., Han, J., Kim, G., Choi, S. J., and Seo, M. 언어 모델의 지속적인 지식 학습을 향합니다. _ arXiv preprint arXiv:2110.03215_, 2021. URL [https://arxiv.org/abs/2110.03215](https://arxiv.org/abs/2110.03215).\n' +
+      '* Jang 등(2022) Jang, J., Ye, S., Lee, C., Yang, S., Shin, J., Han, J., Kim, G., and Seo, M. Temporalwiki: 끊임없이 발전하는 언어 모델을 훈련하고 평가하기 위한 평생 벤치마크입니다. 2022년\n' +
+      '* Workshop on Challenges & Perspectives in Creating Large Language Models_, pp. 1-16, May 2022. doi: 10.18653/v1/2022.bigscience-1.1. URL [https://aclanthology.org/2022.bigscience-1.1](https://aclanthology.org/2022.bigscience-1.1)\n' +
+      '* Ke 등(2023a) Ke, Z., Shao, Y., Lin, H., Konishi, T., Kim, G., and Liu, B. Continual pre-training of language models. _The 11번째 International Conference on Learning Representations_, 2023a. URL [https://openreview.net/forum?id=m_GDIItaI3o](https://openreview.net/forum?id=m_GDIItaI3o)입니다.\n' +
+      '* Ke et al.(2023b) Ke, Z., Shao, Y., Lin, H., Xu, H., Shu, L., and Liu, B. Adapting a language model while preserving its general knowledge. _ arXiv preprint arXiv:2301.08986_, 2023b.\n' +
+      '* Kirillov 등(2023) Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A. C., Lo, W. -Y., Dollar, P., and Girshick, R. 모든 항목을 분할합니다. _ arXiv:2304.02643_, 2023.\n' +
+      '* Kirkpatrick et al.(2017) Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Desjardins, G., Rusu, A. A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., et al. Overcoming catastrophic forgetting in neural networks. _ Proc. of the National Academy of sciences_, 2017. URL [https://www.pnas.org/content/pnas/114/13/3521.full.pdf](https://www.pnas.org/content/pnas/114/13/3521.full.pdf).\n' +
+      '* Lange 등(2023) Lange, M. D., van de Ven, G. M., and Tuytelaars, T. 평생학습에 대한 지속적인 평가: 안정성 격차 파악 _학습 표현에 대 한 11 번째 국제 회의_에서 2023. URL [https://openreview.net/forum?id=2y350cRstc6](https://openreview.net/forum?id=2y350cRstc6)입니다.\n' +
+      '* Neural Networks_, Budapest, Hungary, Jul 2019에 대한 국제 공동 회의 URL [https://hal.archives-ouvertes.fr/hal-01951954](https://hal.archives-ouvertes.fr/hal-01951954).\n' +
+      '* Lesort et al.(2021) Lesort, T., Caccia, M., and Rish, I. Understanding continual learning settings with data distribution drift analysis. _ arXiv preprint arXiv:2104.01678_, 2021.\n' +
+      '* Lesort 등(2023) Lesort, T., Ostapenko, O., Rodriguez, P., Arefin, M. R., Misra, D., Charlin, L., and Rish, I. Challenging common assumptions about catastrophic forgetting. 2023년\n' +
+      '* Liang et al.(2022) Liang, P., Bommasani, R., Lee, T., Tsipras, D., Soylu, D., Yasunaga, M., Zhang, Y., Narayanan, D., Wu, Y., Kumar, A., et al. Holistic evaluation of language models. _ arXiv preprint arXiv:2211.09110_, 2022.\n' +
+      '* Loshchilov & Hutter (2018) Loshchilov, I. and Hutter, F. Decoupled weight decay regularization. _학습 표현에 대한 국제 회의_에서 2018. URL [https://arxiv.org/abs/1711.05101](https://arxiv.org/abs/1711.05101).\n' +
+      '* Loureiro 등(2022) Loureiro, D., Barbieri, F., Neves, L., Espinosa Anke, L., and Camacho-collados, J. TimeLMs: Diachronic language models from Twitter. _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics: System Demonstrations_, pp. 251-260, Dublin, Ireland, May 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.acl-demo.25. URL [https://aclanthology.org/2022.acl-demo.25](https://aclanthology.org/2022.acl-demo.25)\n' +
+      '* Madaan 등(2021) Madaan, D., Yoon, J., Li, Y., Liu, Y., and Hwang, S. J. Representational continuity for nonsupervised continual learning. _International Conference on Learning Representations_ 2021.\n' +
+      '\n' +
+      '* Mirzadeh et al. (2020) Mirzadeh, S. I., Farajtabar, M., Pascanu, R., and Ghasemzadeh, H. Understanding the role of training regimes in continual learning. _ Advances in Neural Information Processing Systems_, 33:7308-7320, 2020.\n' +
+      '* Nguyen 등(2018) Nguyen, C. V., Li, Y., Bui, T. D., and Turner, R. E. Variational Continual Learning. _학습 표현에 대한 국제 회의_에서 2018. URL [https://arxiv.org/abs/1710.10628](https://arxiv.org/abs/1710.10628)입니다.\n' +
+      '* NVIDIA (2016) NVIDIA. NVIDIA Collective Communication Library (NCCL). [https://docs.nvidia.com/deeplearning/sdk/nccld-developer-guide/docs/index.html] (https://docs.nvidia.com/deeplearning/sdk/nccld-developer-guide/docs/index.html), 2016. Accessed: 9월 8일, 2023.\n' +
+      '* NVIDIA (2019) NVIDIA. Pytorch extension with NVIDIA-maintained utilities to streamline mixed precision and distributed training. [https://nvidia.github.io/apex/] (https://nvidia.github.io/apex/), 2019. Accessed: 9월 8일, 2023.\n' +
+      '* Oquab 등(2023) Oquab, M., Darcet, T., Moutakanni, T., Vo, H. V., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Howes, R., Huang, P.-Y., Xu, H., Sharma, V., Li, S. - W., Galuba, W., Rabbat, M., Assran, M., Balas, N., Synnaeve, G., Misra, I., Jegou, H., Mairal, J., Labatut, P., Joulin, A., and Bojanowski, P. Dinov2: Learning robust visual features without supervision, 2023.\n' +
+      '* Ostapenko et al. (2022) Ostapenko, O., Lesort, T., Rodriguez, P., Arefin, M. R., Douillard, A., Rish, I., and Charlin, L. 기초모형을 활용한 지속적 학습: 잠재재현, 2022년에 대한 실증적 연구\n' +
+      '* Paszke 등(2017) Paszke, A., Gross, S., Chintala, S., Chanan, G., Yang, E., DeVito, Z., Lin, Z., Desmaison, A., Antiga, L., and Lerer, A. Automatic Differentiation in PyTorch. 2017년\n' +
+      '* Qin 등(2022) Qin, Y., Zhang, J., Lin, Y., Liu, Z., Li, P., Sun, M., and Zhou, J. Elle: Efficient lifelong pre-training for emerging data. _ arXiv preprint arXiv:2203.06311_, 2022. URL [https://arxiv.org/abs/2203.06311](https://arxiv.org/abs/2203.06311)\n' +
+      '* Rae et al. (2021) Rae, J. W., Borgeaud, S., Cai, T., Millican, K., Hoffmann, J., Song, F., Aslanides, J., Henderson, S., Ring, R., Young, S., et al. Scaling language models: Methods, analysis & insights from training gopher. _ arXiv preprint arXiv:2112.11446_, 2021. URL [https://arxiv.org/abs/2112.11446](https://arxiv.org/abs/2112.11446).\n' +
+      '* Rao 등(2019) Rao, D., Visin, F., Rusu, A. A., Teh, Y. W., Pascanu, R., and Hadsell, R. 연속적인 비지도 표현 학습. 2019. URL [https://arxiv.org/pdf/1910.14481.pdf](https://arxiv.org/pdf/1910.14481.pdf).\n' +
+      '* Rasley 등(2020) Rasley, J., Rajbhandari, S., Ruwase, O., and He, Y. 심층 속도: 시스템 최적화를 통해 1000억 개 이상의 매개변수를 가진 딥러닝 모델을 학습할 수 있습니다. _Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining_, pp.3505-3506, 2020.\n' +
+      '* Rebuffi 등(2017) Rebuffi, S. - A., Kolesnikov, A., Sperl, G., and Lampert, C. H. icarl: Incremental classifier and representation learning. _Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition_, pp. 2001-2010, 2017. URL [https://arxiv.org/abs/1611.07725](https://arxiv.org/abs/1611.07725).\n' +
+      '* Scao et al.(2022) Scao, T. L., Fan, A., Akiki, C., Pavlick, E., Ilic, S., Hesslow, D., Castagne, R., Luccioni, A. S., Yvon, F., Galle, M., et al. Bloom: A 176b-parameter open-access multilingual language model. _ arXiv preprint arXiv:2211.05100_, 2022. URL [https://arxiv.org/abs/2211.05100](https://arxiv.org/abs/2211.05100)\n' +
+      '* Scialom et al. (2022) Scialom, T., Chakrabarty, T., and Muresan, S. 세밀하게 조정된 언어 모델은 지속적인 학습자입니다. _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pp. 6107-6122, 2022.\n' +
+      '* Seff 등(2017) Seff, A., Beatson, A., Suo, D., and Liu, H. Continual learning in generative adversarial nets. _ CoRR_, abs/1705.08395, 2017. URL [http://arxiv.org/abs/1705.08395](http://arxiv.org/abs/1705.08395).\n' +
+      '* Soboleva 등(2023) Soboleva, D., Al-Khateeb, F., Myers, R., Steeves, J. R., Hestness, J., and Dey, N. SlimPajama: RedPajama의 627B 토큰 정리 및 중복 제거된 버전. [https://www.cerebras.net/blog/slimpajama-a-627b-token-cleaned-and-deduplicated-version-of-redpajama] (https://www.cerebras.net/blog/slimpajama-a-627b-token-cleaned-and-deduplicated-version-of-redpajama), 2023. URL [https://huggingface.co/datasets/cerebras/SlimPajama-627B](https://huggingface.co/datasets/cerebras/SlimPajama-627B).\n' +
+      '* Together(2023) Together.xyz. Redpajama: llama 학습 데이터 세트를 재생하는 오픈 소스 레시피, 2023. URL [https://github.com/togethercomputer/RedPajama-Data](https://github.com/togethercomputer/RedPajama-Data)\n' +
+      '* Touvron 등(2023) Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M. - A., Lacroix, T., Roziere, B., Goyal, N., Hambro, E., Azhar, F., et al. Llama: Open and efficient foundation language models. _ arXiv preprint arXiv:2302.13971_, 2023. URL [https://arxiv.org/abs/2302.13971](https://arxiv.org/abs/2302.13971).\n' +
+      '* Winata et al. (2023) Winata, G. I., Xie, L., Radhakrishnan, K., Wu, S., Jin, X., Cheng, P., Kulkarni, M., and Preotiuc-Pietro, D. Overcoming catastrophic forgetting in massively multilingual continual learning. _ arXiv preprint arXiv:2305.16252_, 2023.\n' +
+      '* Wolf 등(2022) Wolf, T., Debut, L., Sanh, V., Chaumond, J., Delangue, C., Moi, A., Cistac, P., Ma, C., Jernite, Y., Plu, J., Xu, C., Le Scao, T., Gugger, S., Drame, M., Lhoest, Q., and Rush, A. M. Transformers: State-of-the-Art Natural Language Processing. 반장님\n' +
+      '\n' +
+      '38-45. Association for Computational Linguistics, October 2020. URL [https://www.aclweb.org/anthology/2020.emnlp-demos.6](https://www.aclweb.org/anthology/2020.emnlp-demos.6)\n' +
+      '* Xu et al. (2019) Xu, H., Liu, B., Shu, L., and Yu, P. S. Bert post-training for review reading comprehension and aspect-based sentiment analysis. _ arXiv preprint arXiv:1904.02232_, 2019.\n' +
+      '* Yang et al. (2022) Yang, G., Hu, E. J., Babuschkin, I., Sidor, S., Farhi, D., Pachocki, J., Liu, X., Chen, W., and Gao, J. Tensor programs v: Tuning large neural networks via zero-shot hyperparameter transfer. _NeurIPS 2021_에서 2022년 3월 URL [https://www.microsoft.com/en-us/research/publication/tuning-large-neural-networks-via-zero-shot-hyperparameter-transfer/](https://www.microsoft.com/en-us/research/publication/tuning-large-neural-networks-via-zero-shot-hyperparameter-transfer/)입니다.\n' +
+      '* Zhai 등(2019) Zhai, M., Chen, L., Tung, F., He, J., Nawhal, M., and Mori, G. Lifelong gan: Continual learning for conditional image generation. _Proceedings of the IEEE/CVF international conference on computer vision_, pp. 2759-2768, 2019.\n' +
+      '* Zhao et al.(2023) Zhao, W. X., Zhou, K., Li, J., Tang, T., Wang, X., Hou, Y., Min, Y., Zhang, B., Zhang, J., Dong, Z., et al. A survey of large language models. _ arXiv preprint arXiv:2303.18223_, 2023. URL [https://arxiv.org/abs/2303.18223](https://arxiv.org/abs/2303.18223).\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:11]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
