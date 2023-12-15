@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Stacked LLMs의 Joint Prompt Optimization\n' +
+      '\n' +
+      '변분 추론 사용\n' +
+      '\n' +
+      ' Alessandro Sordoni\\({}^{ab}\\)1 Xingdi Yuan\\({}^{a}\\) Marc-Alexandre Cote\\({}^{a}\\) Matheus Pereira\\({}^{a}\\)\n' +
+      '\n' +
+      'Adam Trischler\\({}^{a}\\) **Ziang Xiao\\({}^{a}\\)**Arian Hosseini\\({}^{b}\\)**Friederike Niedtner\\({}^{a}\\)**Nicolas Le Roux\\({}^{ab}\\)\n' +
+      '\n' +
+      'Microsoft Research Montreal\\({}^{a}\\)  MILA\\({}^{b}\\)\n' +
+      '\n' +
+      '각주 1: 교신저자: alsordon@microsoft.com\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'LOM(Large Language Model)은 시퀀스를 시퀀스에 대한 분포로 매핑하는 계산의 원자 단위로 볼 수 있다. 따라서, 이들은 언어 네트워크에서 확률적 언어 계층으로 볼 수 있으며, 여기서 학습 가능한 파라미터는 각 계층에서 자연어 프롬프트이다. 이러한 두 개의 레이어를 적층하고 한 레이어의 출력을 다음 레이어로 공급함으로써, 우리는 딥 언어 네트워크(Deep Language Network, DLN)를 얻는다. 먼저 1-계층 언어 네트워크(DLN-1)에 대한 신속한 최적화를 효과적으로 수행하는 방법을 보인다. 그런 다음, 두 프롬프트를 학습해야 하는 2-계층 DLN(DLN-2)에 적용되는 확장을 제시한다. 첫 번째 레이어의 출력을 잠재 변수로 고려하는 것이 핵심 아이디어이며, 이는 추론을 필요로 하며 생성 분포의 모수로 학습하도록 프롬프트한다. 먼저 다중 추론 및 자연어 이해 작업에서 DLN-1의 효과를 테스트한다. 그런 다음 DLN-2가 단일 계층보다 더 높은 성능에 도달할 수 있음을 보여주며, 네트워크의 각 LLM이 더 작고 덜 강력한 경우에도 GPT-4와 유사한 성능에 도달할 수 있다는 가능성을 보여준다. 상기 DLN 코드는 오픈 소스.2\n' +
+      '\n' +
+      '각주 2: 코드: [https://github.com/microsoft/deep-language-networks](https://github.com/microsoft/deep-language-networks)입니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '대형 언어 모델(LLM)의 크기는 주로 신흥 능력으로 인해 지난 몇 년 동안 크게 성장했지만 상당한 기술적, 사회적 비용[49; 2; 4]. 최근의 노력은 증류를 사용하여 일부 작업에서 더 큰 모델의 능력과 일치하는 더 작은 모델을 학습하거나[43; 36; 29; 13], 계산의 일부를 다른 전용 구성 요소에 오프로딩하는 데 중점을 두었다[28; 22; 25; 18]. 후자의 경우, 이것은 이러한 추가 모듈들로부터 필요한 정보를 검색하기 위해 신중하게 조작된 명령어들을 통해 행해진다[48; 41; 6; 54; 24].\n' +
+      '\n' +
+      '명령어 조정 LLM은 입력 시퀀스를 명령 또는 _prompt_에 조건 지정 된 출력 시퀀스에 대 한 분포에 매핑 합니다. 본 논문에서는 이러한 LLM을 학습 가능한 매개 변수가 프롬프트인 확률적 언어 계층으로 본다. 학습 가능한 파라미터가 각 계층에 연관된 프롬프트인 DLN(Deep Language Network)을 형성하기 위해 다수의 계층이 적층될 수 있다. 구체적으로, 각각의 층은 템플릿을 사용하여 그 프롬프트와 아래 층으로부터 오는 입력들 모두를 출력을 생성하기 전에 단일 시퀀스로 조직화한다(도 1 참조). 이 계층화는 작업을 일련의 더 작은 하위 작업으로 학습 가능한 분해를 유도하며, 각각은 LLM에 의해 더 쉽게 해결할 수 있다. 이 견해는 체인 LLM이 호출하는 최근 작품[41; 6; 54]과 유사성을 공유한다. 이 작업에서 파이프라인에서 학습 가능한 구성 요소를 통합 하는 방향으로 이동 합니다. 각 프롬프트는 최종 목표를 최대화 하도록 학습 될 수 있습니다.\n' +
+      '\n' +
+      '먼저, 분포 \\(p_{\\texttt{LM}}(y|x,\\pi)\\), \\(x\\) 및 \\(y\\)은 각각 문자열 입력과 출력이고 \\(\\pi\\)은 학습 가능한 프롬프트(그림 1, _left_)인 shallow 1-layer 언어 네트워크(DLN-1)에서 프롬프트 최적화를 수행하는 방법을 보여준다. 우리의 프롬프트 최적화 기법들은 Zhou 등[57]으로부터 자동 프롬프트 엔지니어(Automatic Prompt Engineer; APE) 절차를 확장한다. 우리는 프롬프트가 과제에서 어려운 예제의 언어화를 포함할 수 있는 방법을 보여준다. 최종 프롬프트는 지시 지시, 제로 샷 학습과 유사한 [17] 및 과제 예제, 인 컨텍스트 학습과 유사한 [20]의 조합이다. 이렇게 하면 다운스트림 성능이 크게 향상되어 여러 작업에서 APE를 능가합니다.\n' +
+      '\n' +
+      '그런 다음, 확률 분포를 파라미터화하는 2-계층 DLN(DLN-2)을 훈련시키는 방법을 보여준다:\n' +
+      '\n' +
+      '\\[p_{\\texttt{DLN-2}}(y|x)=\\sum_{h}p_{\\texttt{LM}}(y|h,x,\\pi_{1})\\,p_{\\texttt{ LM}}(h|x,\\pi_{0})\\,,\\]\n' +
+      '\n' +
+      '여기서 \\(h\\)는 첫 번째 LLM 레이어의 문자열 출력이다(도 1, _right_). 잠재변수로는 \\(h\\)을 고려하며, 한계 로그우도를 최대화하기 위해 \\(h\\)에 대한 근사 사후를 사용하는 변분 추론 알고리즘을 공식화한다. 이 형식주의는 두 층 이상을 쉽게 포괄한다는 점에 주목한다.\n' +
+      '\n' +
+      '숨겨진 언어 계층의 출력을 잠재 변수로 간주하면 CoT[48] 및 SC-CoT[46]와 같은 다양한 확립된 촉진 방법을 포괄할 수 있다. 특히, CoT는 첫 번째 레이어 프롬프트가 "단계별로 생각하자"로 설정되고 두 번째 레이어 프롬프트가 "답변이다"로 설정되는 특정 DLN-2로 볼 수 있다; 우리는 그러한 프롬프트를 학습하거나 그림 1과 같은 것에 대한 보충을 학습할 수 있다. SC-CoT는 작업 불가지론적 사전으로부터 샘플링된 CoT 스트링에 대해 주변화하는 것으로 볼 수 있다: 그림 1의 템플릿을 사용할 때(_right_), 우리의 방법은 성공적인 CoT에 대한 작업별 사전 분포를 학습함으로써 이러한 관점을 일반화한다.\n' +
+      '\n' +
+      '나머지 논문은 다음과 같이 구성되어 있다. 먼저, LLM을 얕은 네트워크로 해석하여 표준 모수 모델과 비모수 모델을 사용하여 많은 유추를 도출하고 이를 가장 잘 훈련하는 방법을 설명한다. 그들의 한계를 조사한 후, 우리는 그러한 두 개를 쌓을 것을 제안합니다.\n' +
+      '\n' +
+      '도 1: _왼쪽_: 감성 분석 작업을 수행하는 DLN-1의 예시: 입력과 훈련 가능한 프롬프트는 템플릿을 사용하여 병합되고 답변 생성을 위해 LM에 공급된다. _ Right_: 잔여 연결을 갖는 DLN-2, 날짜 이해 태스크를 수행하는 것: 두 개의 프롬프트가 학습될 필요가 있다. 이 예제에서 숨겨진 템플릿은 학습 가능한 접두사를 사용하여 Chain-Of-Thought [48]을 확장합니다. 첫 번째 계층인 숨김의 출력을 _잠재 변수_\\(h\\)로 간주합니다. 변수추론을 이용하여 \\(\\pi_{0},\\pi_{1}\\)을 학습한다. 템플릿들은 네트워크의 하이퍼파라미터로서 고려될 수 있다.\n' +
+      '\n' +
+      'DLN-2를 형성하기 위해 LMM을 사용한다. 변분추론(variational inference)을 사용하여 학습하는 방법을 보여주고, 일련의 추론과 언어 이해 작업에 대한 성능을 보여준다.\n' +
+      '\n' +
+      '## 2 One-Layer 언어 네트워크\n' +
+      '\n' +
+      '동결된 가중치를 사용 하 여 미리 훈련 된 LLM은 프롬프트에 의해 인덱싱 된 완전한 _함수 클래스_ 로 간주 될 수 있습니다. 입력 \\(x\\)에 대한 LLM의 출력 \\(y\\)은 \\(\\pi\\)과 \\(x\\)의 조합을 LLM에 공급함으로써 프롬프트 \\(\\pi\\)을 통해 변조될 수 있다. 따라서 낮은 수준의 관점에서 LLM의 함수 클래스는 아키텍처, 즉 깊이, 헤드 수, 컨텍스트 크기 등에 의해 정의되고 훈련은 매개변수 수준에서 발생한다. 데이터 및 계산 집약적이며 거의 수행되지 않아야 합니다. 상위 레벨 관점에서, LLM의 함수 클래스는 선택된 사전 트레이닝된 모델(LLAMA[44], text-davinci-003, GPT-4 등)에 의해 정의되고, 트레이닝은 모델을 미세 조정하거나 프롬프트를 선택함으로써 발생한다.\n' +
+      '\n' +
+      '즉각적인 수준에서 LLM을 최적화하는 두 가지 방법이 있다. 첫 번째는 매개 변수 최적화인 _prompt engineering_입니다. 여기서 최적화 공간은 데이터 세트의 크기와 무관합니다. 이러한 최적화는 보통 이산 공간에서 발생하기 때문에, 그래디언트 기반 기술은 적용되지 않으며 대부분의 노력은 랜덤 또는 로컬 검색과 인간 휴리스틱의 조합에 의존한다[21; 55]. 두 번째 것은 _in-context learning_ (ICL), 비모수적 최적화 기법으로서, 솔루션은 예들의 서브세트의 직접 함수이다[5; 20]. 이 접근법은 적은 샷 학습에도 잘 작동하지만 더 큰 데이터 세트로 확장하는 것은 성능과 계산 문제를 모두 가지고 있다. 우리는 이제 언어 네트워크에서 프롬프트 집합을 학습하는 궁극적인 목표를 가지고 이산 프롬프트 최적화[57; 21]의 이전 작업을 일반화해야 한다.\n' +
+      '\n' +
+      '### Language Layers\n' +
+      '\n' +
+      '우리는 _언어 계층_ 을 사용 하 여 문자열 \\(x\\)을 입력 하 고 문자열 \\(y\\)을 출력 하는 (확률적) 계산을 참조 합니다. 이 계산은 일반적으로 _prompt_ 또는 _instruction_[57]이라고 불리는 다른 문자열 \\(\\pi\\)에 의해 변조된다. 문자열 변환은 \\(x\\) 및 \\(\\pi\\)을 컨텍스트로 공급 하 고 연속 \\(y\\)을 생성 하 여 연산자 LM에 의해 수행 됩니다. _ 템플릿_은 LM 연산자에 공급 되기 전에 \\(x\\) 및 \\(\\pi\\)이 결합 되는 방법을 설명 합니다. 이들은 문자열을 변수로 받아들이고 문자열을 출력하는 함수이다. 우리는 이 글꼴 T로 그러한 템플릿을 나타낼 것이다. 단순 정방향 템플릿 F는 연결이다. 즉, \\(\\texttt{F}(x,\\pi)\\) = "\\(\\{\\pi\\}\\{x\\}\\)"이다. 우리는 또한 그림 1에서 볼 수 있는 더 복잡한 것을 탐구한다.\n' +
+      '\n' +
+      '입력 \\(x\\), 프롬프트 \\(\\pi\\) 및 템플릿 F가 주어지면 언어 계층은 LM에 의해 계산된 출력 문자열 \\(y\\)에 대한 확률 분포 \\(p_{\\texttt{LM}}(y|\\texttt{F}(x,\\pi))\\)을 정의합니다. 다음 절에서는 언어 계층에 대한 가중치 \\(\\pi\\)를 최적화하는 일반적인 프레임워크를 설명한다.\n' +
+      '\n' +
+      '### Prompt Optimization: Improved APE\n' +
+      '\n' +
+      '최상의 프롬프트에 대한 검색은 이산 공간에서 발생하기 때문에, 우리는 프롬프트 간의 거리 측정을 구현하기 위해 LLM을 사용하는 로컬 검색 방법에 의존할 것이다. 이 절차는 최근 Zhou et al. [57]에 의해 제안된 자동 프롬프트 엔지니어(Automatic Prompt Engineer, APE)의 확장으로 볼 수 있으며, 딥 언어 네트워크를 훈련하기 위한 알고리즘을 도입하는 데 디딤돌 역할을 할 것이다. 우리의 프롬프트 최적화 알고리즘은 다음과 같이 구조화될 수 있다:\n' +
+      '\n' +
+      '1. 현재 프롬프트 \\(\\pi\\) 및 예제의 현재 배치 \\(\\{x,y\\}\\)를 제공 하 여 프롬프트 _proposal_ 분포를 사용 하 여 \\(N\\) "로컬" 후보 \\(\\pi^{1},\\dots,\\pi^{N}\\)을 생성 합니다.\n' +
+      '2. (잠재적 확률적) _scoring_ 함수를 사용하여 각 후보에 점수를 매긴 다음, \\(\\pi=\\arg\\max_{\\pi^{n}}s(\\pi^{n})\\)를 선택합니다.\n' +
+      '\n' +
+      '프롬프트 제안 로컬 검색 알고리즘은 검색 공간을 크롤링하기 위해 입력 간의 거리 측정을 가정합니다. 이 설정에서는 프롬프트에 대한 로컬 수정을 생성하기 위해 LLM에 의존합니다. 우리의 프롬프트 제안 분배는 컨디셔닝 정보 i) 계층에 입력으로 주어진 배치, ii) 해당 출력 \\(\\{x,y,\\hat{y}\\}\\), iii) 현재 프롬프트 \\(\\pi\\)을 취한다. 제안 분포 \\(p_{\\texttt{LM}}(\\pi^{n}|\\texttt{B}_{\\pi}(\\{x,y,\\hat{y}\\},\\pi))\\)는 부록 D에서 볼 수 있는 특정 "후향" 템플릿 \\(\\texttt{B}_{\\pi}\\)을 사용하여 이 정보를 래핑한다. 이 접근법은 Zhang et al. [55]가 사용한 명령 템플릿과 유사하지만 모델 자체의 예측에 대한 정보도 통합한다는 점을 제외하고는 모델이 자신의 오류를 수정하는 프롬프트를 제안하는 경향이 있음을 감안할 때 성능에 실증적으로 도움이 된다는 것을 발견했다. 우리는 프롬프트 제안 배포에서 샘플링하여 \\(N\\) 프롬프트 집합을 생성한다. 특히 중요한 점은 후보 풀 \\(\\pi^{1},\\ldots,\\pi^{N}\\)의 다양성을 보장하는 것이다. 섹션 4에서 후보 샘플의 다양성과 유용성을 개선하기 위한 몇 가지 전략을 고안한다.\n' +
+      '\n' +
+      '**프롬프트 선택** \\(N\\) 프롬프트 집합이 생성되면 점수 부여 함수를 사용하여 업데이트된 프롬프트를 선택합니다. 우리는 LM 연산자의 로그 우도에 대한 접근을 가정하고, 데이터 로그 우도 \\(\\pi=\\operatorname*{arg\\,max}_{\\pi^{n}}\\log p_{\\text{LM}}(y|\\text{F}(x;\\pi^{n}))\\)를 최대화하기 위해 후보 프롬프트의 순위를 매긴다. 실제로 우리는 이 로그 확률을 출력 문자열의 길이로 정규화한다. 이 작업에서 해당 메트릭에 초점을 맞추지만 사용할 수 있는 점수 함수에 제한이 없습니다. 우리는 효율성에 대한 잘 수행되는 프롬프트의 메모리뿐만 아니라 선택 메커니즘의 견고성을 증가시키기 위해 역추적(backtracking)을 사용한다. 우리는 섹션 4에서 두 전략을 모두 제시한다. 1층 프롬프트 최적화 알고리즘의 스케치는 단순화를 위해 역추적과 메모리를 무시하고 알고리즘 1에 설명되어 있다.\n' +
+      '\n' +
+      '```\n' +
+      '0:\\(\\hat{y}\\sim p_{\\text{LM}}^{t}(y|c)\\)\\(\\triangleright\\) generate a completion of prefix \\(c\\) with temperature \\(t\\)\n' +
+      '0:\\(\\log p_{\\text{LM}}(h|c)\\)\\(\\triangleright\\) return log-prob of \\(h\\) following \\(c\\)\n' +
+      '0:\\(N\\): 프롬프트 샘플, \\(I\\): 반복, \\(\\mathcal{D}\\): 데이터 세트\n' +
+      '0:F: 추론/전진 패스용 템플릿\n' +
+      '0:\\(\\texttt{B}_{\\pi}\\): 신속한 제안/후진 패스를 위한 템플릿입니다.\n' +
+      '1: 작업 설명 또는 비어 있는 \\(\\pi\\) 초기화\n' +
+      '2:for\\(i\\) in \\([1,I]\\)do\n' +
+      '3:\\(x,y\\sim\\mathcal{D}\\)\\(\\triangleright\\) Sample minibatch\n' +
+      '4:\\(\\hat{y}\\gets p_{\\text{LM}}^{0}(y|\\text{F}(x,\\pi))\\)\\(\\triangleright\\) Do inference pass\n' +
+      '5:\\(\\pi^{1},\\ldots,\\pi^{N}\\sim p_{\\text{LM}}^{0,\\pi}(\\pi|\\texttt{B}_{\\pi}(\\{x,y, \\hat{y}\\},\\pi))\\)\\(\\triangleright\\) Sample \\(N\\) candidate prompts\n' +
+      '6:\\(s^{1},\\ldots,s^{N}\\leftarrow\\log p_{\\text{LM}}(y|\\text{F}(x,\\pi^{n}))\\)\\(\\triangleright\\) Score all prompts\n' +
+      '7:\\(\\pi\\leftarrow\\arg\\max_{\\pi^{n}}\\{s^{1},\\ldots,s^{N}\\}\\)\\(\\triangleright\\) Select prompt with best score\n' +
+      '8:endfor\n' +
+      '```\n' +
+      '\n' +
+      '**알고리즘 1** DLN-1(One-Layer Language Network) 학습 알고리즘\n' +
+      '\n' +
+      '우리의 프롬프트 최적화의 결과는 표 1에서 찾을 수 있으며 섹션 5.2에서 자세히 논의될 것이다. 이제 프롬프트 최적화를 두 개의 레이어를 가진 아키텍처로 확장하기로 한다.\n' +
+      '\n' +
+      '## 3 Two-Layer Deep Language Networks (DLN-2)\n' +
+      '\n' +
+      'DLN-1의 자연스러운 확장은 언어 계층들이 적층된 DLN-2, 즉 제1 언어 계층의 출력이 제2 언어 계층에 대한 입력이다. 2 계층 네트워크는 형식의 출력에 대 한 분포를 유도 합니다.\n' +
+      '\n' +
+      '\\[p_{\\texttt{DLN-2}}(y|x)=\\sum_{h}p_{\\texttt{LM}}(y|\\text{F}_{r}(h,x,\\pi_{1}))p _{\\texttt{LM}}(h|\\text{F}(x,\\pi_{0})) \\tag{1}\\]\n' +
+      '\n' +
+      '여기서 \\(h\\)은 잠재적으로 대상 \\(y\\)을 더 쉽게 설명할 수 있는 잠재 변수이다. 출력 레이어는 또한 \\(x\\)에서 \\(\\text{F}_{r}\\)까지 조정되어 잔여 연결을 형성한다(그림 1). 이 공식은 문서 요약을 안내하기 위해 잠재 언어 표현을 사용하는 과거 작업을 연상시킨다[26]. 그러나 이 경우 부호화/복호화 분포는 자연어 프롬프트 \\(\\Pi=\\{\\pi_{0},\\pi_{1}\\}\\)에 의해 매개변수화되며 LLM 매개변수에 대한 액세스를 가정하지 않는다.\n' +
+      '\n' +
+      '이 구조는 얕은 언어 네트워크보다 표현력이 높지만, 빠른 최적화 문제는 \\(\\pi_{0}\\)과 \\(\\pi_{1}\\)을 동시에 탐색해야 하기 때문에 더 어려워진다. 이 공간에서 무작위 검색을 하는 것은 비실용적이며 가중치의 수동 조정도 단일 프롬프트보다 기하급수적으로 어렵다. 우리는 이 문제를 해결하기 위해 변분 추론에 의존한다.\n' +
+      '\n' +
+      '### Variational Inference objective\n' +
+      '\n' +
+      '이 시스템을 계층적으로 분해하면 확률 모델의 근사 추론에서 얻은 도구를 활용하여 \\(\\Pi\\)을 학습할 수 있다. 특히 변분추론을 이용하여 \\(\\Pi\\)[3, 16]. 잠재 변수 \\(h\\)에 대한 근사 사후 \\(q(h)\\)을 가정하고 ELBO를 계산하여 \\(x\\)이 주어진 \\(y\\)의 한계 로그 우도를 결합한다.\n' +
+      '\n' +
+      '\\[\\log p_{\\texttt{DLN-2}}(y|x)\\geq\\sum_{h}q(h)\\left[\\log p_{\\texttt{LM}}(y| \\mathtt{F}_{r}(h,x,\\pi_{1}))p_{\\texttt{LM}}(h|\\mathtt{F}(x,\\pi_{0}))\\right]+H \\left[q(h)\\right], \\tag{2}\\]\n' +
+      '\n' +
+      '따라서 \\(\\pi_{0}\\)과 \\(\\pi_{1}\\): 두 개의 독립적인 최적화 문제에서 \\(\\pi\\)에 대한 최적화를 분해할 수 있다.\n' +
+      '\n' +
+      '\\[\\pi_{0}^{*}=\\arg\\max_{\\pi_{0}}\\sum_{x,\\,h}w_{h}\\log p(h|\\mathtt{F}(x,\\pi_{0})), \\ \\pi_{1}^{*}=\\arg\\max_{\\pi_{1}}\\sum_{(x,y),\\,h}w_{h}\\log p(y|\\mathtt{F}(h,x,\\pi_{1})) \\tag{3}\\]\n' +
+      '\n' +
+      '\\(\\pi_{1}\\)에 대한 검색은 섹션 2에 설명된 프롬프트 최적화와 동일하며, 입력은 이제 입력 \\(x\\) 외에 대략적인 사후 샘플 \\(h\\)에 의존한다는 차이가 있다. \\(\\pi_{0}\\)에 대한 검색은 유사한 전략을 사용하지만 \\(y\\) 대신 사후 샘플 \\(h\\)을 표적으로 사용한다.\n' +
+      '\n' +
+      '이 바인딩을 사용하면 최적화 w.r.t \\(\\Pi\\)를 분해할 수 있지만 실제 값에 가까운 경우에만 유용합니다. 그 느슨함은 \\(q(h)\\)와 참 뒤쪽 사이의 KL 발산이기 때문에 \\(\\text{KL}(q(h)||p(h|y,x))\\): 우리는 참 뒤쪽과 밀접하게 일치하는 근사적인 뒤쪽 \\(q\\)을 찾아야 한다. 다음에서 우리는 근사 후면을 파라메트릭하는 방법과 후면 첨삭을 통해 근사치를 조이는 방법을 지정한다.\n' +
+      '\n' +
+      '**숨겨진 제안** LLM을 사용하여 \\(q(h)\\)에서 후보 숨겨진 상태를 샘플링합니다. 명시되지 않는 한, 단순화를 위해 우리는 언어 계층에서 사용되는 동일한 LM 연산자를 사용한다. 근사 사후는 임의의 양의 정보를 조건화할 수 있지만 특히 유용한 것은 실제 목표 \\(y\\)를 조건화하는 것일 수 있다. "전진 패스"에서 오는 숨겨진 상태를 조건화 하면 \\(\\hat{h}\\sim p_{\\texttt{LM}}(h|\\mathtt{F}(x,\\pi_{0}))\\), \\(q_{\\texttt{edit}}(h)=p_{\\texttt{LM}}(h|\\mathtt{B}_{h}(\\hat{h},y,\\pi_{1}))\\). \\ (\\mathtt{B}_{h}\\)는 특별히 맞춤화된 숨겨진 제안 템플릿입니다 (부록 D). \\ (\\texttt{default}\\)는 일종의 편집 작업을 수행하며, 여기서 LM은 Ground-truth label \\(y\\)과 \\(\\pi_{1}\\)에 대한 추가 지식이 주어지면 숨겨진 변수 \\(\\hat{h}\\)를 다시 작성해야 한다. 또는 레이블에 대 한 추가 정보를 사용 하 여 사후를 사전과 동일하게 설정할 수 있습니다 (예: \\(q_{\\texttt{pri}}(h)=p_{\\texttt{LM}}(h|\\mathtt{F}(x,\\pi_{0}))\\), \\(q_{\\texttt{pri+}}(h)=p_{\\texttt{LM}}(h|\\mathtt{B}_{y}(x,\\pi_{0},y))\\)(부록 D). 이것은 라벨에 대한 특권 정보를 알고 있는 숨겨진 상태를 다시 계산하는 것에 해당한다. 우리는 \\(q_{\\texttt{pri}}\\)과 \\(q_{\\texttt{pri+}}\\)의 혼합물에서 숨겨진 상태를 샘플링하는 데 가장 효과적임을 발견했다.\n' +
+      '\n' +
+      '**Posterior Sharpening** \\(q(h)\\)에 학습 가능한 매개 변수가 없는 경우 유도된 근사 사후는 여전히 실제 사후와 멀리 있을 수 있습니다. 이 갭을 메우기 위해 우리는 각 표본 \\(h^{i}\\)을 실제 사후 분포에서 확률에 따라 재측정한다. 보다 정확하게, 우리는 \\(\\tilde{w}^{i}=\\log p_{\\texttt{LM}}(y|\\mathtt{F}_{r}(h^{i},x,\\pi_{1}))+\\log p_{ \\texttt{LM}}(h^{i}|\\mathtt{F}(x,\\pi_{0}))\\을 계산하고, 각각의 \\(h_{i}\\)에 확률 \\(w_{i}=\\exp(\\alpha\\tilde{w}_{i})/\\sum_{j}\\exp(\\alpha\\tilde{w}_{j})\\)를 할당한다. 여기서 \\(\\alpha\\)는 사후 가중치의 엔트로피를 제어하는 가변 온도 파라미터이다. DLN-2를 훈련시키기 위한 전체 알고리즘은 알고리즘 2에 제시되어 있다.\n' +
+      '\n' +
+      '## 4 실용적인 인스턴스화\n' +
+      '\n' +
+      '이 방법은 적층형 LLM 아키텍처에서 프롬프트를 학습하는 것을 목표로 하지만 템플릿에는 많은 양의 프롬프트 엔지니어링에 의존한다. 이후, 우리는 우리의 접근법이 실제로 작동하도록 하는 데 기본이 된 몇 가지 선택을 자세히 설명한다.\n' +
+      '\n' +
+      '**제안 다양성** 신속한 제안 배포 모두에 대한 샘플의 다양성을 보장하기 위해 두 가지 전략을 사용하는 데 도움이 되는 것으로 나타났습니다. 첫 번째는 제안 분포에서 표본을 추출하기 전에 역방향 템플릿 \\(\\mathtt{B}_{\\pi}\\)을 수정하는 것이다 \\(p_{\\texttt{LM}}(\\pi)\\). 이를 위해 기본 템플릿은 필기 명령어 풀에서 인스턴스화하는 "[message]" 변수를 사용하여 매개변수화하며, 모델이 따라야 하는 다양한 동작을 기술하여 새로운 \\(\\pi\\), 예를 들어 "[이전 명령어 단축", "유용한 예제 제공" 등을 제안한다. 이들은 _메타-명령어_, 즉 작업에 대한 더 나은 명령을 생성하는 방법에 대해 모델에 알려주는 고레벨 지시어로 해석될 수 있고, [12; 55]에 사용된 명령-유도 템플릿을 확장한다. 이것들은 부록 D에서 찾을 수 있다. 앞으로 우리는 이러한 지침으로 학습을 확장하는 것을 구상할 수 있다. \\(\\mathtt{B}_{\\pi}\\)의 경우, DLN의 가중치보다 _prior_에 대한 매개 변수로 기능할 수 있다. 더 많은 다양성을 보장하기 위한 두 번째 전략은 각 샘플 \\(\\pi^{n}\\)을 그리기 전에 현재 배치에서 다른 무작위 예제 하위 집합으로 \\(\\mathtt{B}_{\\pi}\\)을 인스턴스화하는 것이다. 이것은 각 샘플 \\(\\pi^{n}\\)에 대한 생성 컨텍스트를 효과적으로 수정한다.\n' +
+      '\n' +
+      '**학습 상황 내 학습** 특히 효과적인 한 가지 전략은 LM에 현재 프롬프트 \\(\\pi\\)를 개선하기 위한 유용한 예를 제공 하도록 요청 하는 추가 지침을 메타 명령 풀에 통합 하는 것입니다. 경험적으로, 모델이 작업에 대 한 합성 예제를 포함 하는 후보 프롬프트 \\(\\pi^{n}\\)를 자연 언어에 포함 하는 것을 관찰 했습니다. 이 흥미로운 행동의 예는 부록 F에서 찾을 수 있습니다. 결과 프롬프트가 표준 ICL보다 더 잘 수행 됨에 따라이 행동이 특히 흥미롭다는 것을 발견했습니다. 우리는 이것이 프롬프트의 예제의 _i)_ "언어화"로 인해 데이터 세트 구문을 더 적합한 것으로 수정 하 고 _ii)_ 모델이 동적 작업을 수행할 수 있다는 사실에 기인한다고 가정 합니다. 교육 중에 발생한 오류를 감안할 때 프롬프트에 통합하기 위해 가장 중요한 예를 모두 선택합니다. 따라서, DLN은 ICL[20, 35, 40, 18, 47]에 대한 중요한 예를 선택하는 최근 기술과 유사한 효과를 달성한다고 의심한다.\n' +
+      '\n' +
+      'DLN-1과 DLN-2의 역추적 및 메모리 최적화는 기울기 정보가 없고 계산상의 이유로 인해 각 최적화 단계에서 제한된 후보 집합 \\(\\pi^{n}\\)을 샘플링하기 때문에 어렵다. 네트워크가 샘플링/선택 오류에 강건할 수 있도록 여러 전략을 배포합니다. 먼저, 현재 프롬프트 \\(\\pi\\)을 현재 반복에서 점수를 매길 후보 프롬프트 집합에 포함시킨다 \\(\\pi^{n}\\). 이렇게 하면 이전 프롬프트가 더 잘 수행되면 모델이 단계를 수행하지 않을 수 있습니다. 둘째, 유효성 검사 집합 성능을 추적 하 여 검색 되는 \\(M=5\\) 최상의 프롬프트의 메모리를 유지 합니다.\n' +
+      '\n' +
+      '탐색 보상 DLN-2를 훈련할 때 첫 번째 레이어 프롬프트 \\(\\pi_{0}\\)가 매우 느리게 업데이트되고 있음을 경험적으로 관찰했다. 근사 사후 템플릿이 정방향 패스에서 사용된 사전과 공유한다는 사실로 인해 사후 샘플 \\(h^{i}\\)은 \\(\\hat{h}\\)에 가깝고 식 (3)의 최대화기는 \\(\\pi_{0}\\)으로 남아 있다. 이 문제를 해결하기 위해 우리는 각 후보의 점수에 \\(\\hat{h}\\)의 음의 로그 확률에 비례하는 탐색 보상을 추가한다. \\(r=-\\lambda\\,\\log p_{\\texttt{LM}}(\\hat{h}|\\mathbb{F}(x,\\pi^{n}))\\), \\(\\hat{y}\\neq y\\). 이것은 모델이 높은 확률 사후 샘플의 로그 확률을 최대화하는 동시에 잘못된 예측으로 이어지는 이전 샘플의 로그 확률을 최소화하는 프롬프트를 모두 찾도록 장려한다. 일정한 스케줄로 훈련하는 동안 \\(\\lambda\\)를 0으로 어닐링하고 각 태스크에 대한 검증 성능을 모니터링하여 초기 \\(\\lambda\\)을 선택한다.\n' +
+      '\n' +
+      '실험 및 결과\n' +
+      '\n' +
+      '두 가지 주요 연구 질문에 답하는 데 도움이 되는 일련의 실험을 설계하고 수행한다.\n' +
+      '\n' +
+      '* **Q1:** DLN-1을 사용 하 여 APE 및 ICL (In-Context Learning)을 능가할 수 있습니까?\n' +
+      '* **Q2:** 네트워크 깊이가 DLN-1에 대 한 추가 개선을 제공 하나요?\n' +
+      '\n' +
+      '### Experimental Setup\n' +
+      '\n' +
+      '데이터 집합과 태스크는 LLM의 0 또는 few-shot 학습 능력을 연구하는 이전 작업에서 일반적으로 사용되는 9개의 NLP 및 추론 태스크 집합을 채택한다[23; 10; 39; 42; 1]. 우리는 분류 작업에 중점을 둡니다. BigBench-Hard(BBH) [42] (Hyper., Nav., Date. and Logic.72)로부터 채택된 작업에 대해 BBH에서 제공하는 250개의 데이터 포인트를 테스트 세트로 사용한다. 우리는 BBH에 포함되지 않은 빅벤치[39]의 나머지 데이터 포인트를 취하여 무작위로(심지어) 훈련 및 검증 세트로 나눈다. [23] (Mpqa, Trec 및 Subj)에서 채택된 작업의 경우 훈련 및 테스트 세트에서 각각 400개 및 250개의 데이터 포인트를 무작위로 샘플링한다. 원래 유효성 검사 집합을 사용 합니다. 표범 [1](재난 및 항공)에서 채택된 작업의 경우 훈련, 유효 및 테스트로 400, 250 및 250 데이터 포인트를 무작위로 샘플링한다. 우리는 부록의 표 3에 모든 작업과 그 통계를 나열한다.\n' +
+      '\n' +
+      '각주 2: 우리는 7개의 개체가 있는 변형만 사용한다.\n' +
+      '\n' +
+      '정확도를 평가 척도로 사용합니다. 구체적으로, 입력이 주어지면 시스템의 출력 문자열과 데이터셋이 제공하는 지상-진실 출력 문자열을 비교한다. 우리는 두 현이 동일한 경우 1을, 그렇지 않은 경우 0을 얻는다. 비교 전에, 우리는 토큰화 및 대문자와 같은 문제를 다루기 위해 모델 출력과 지상 진실 모두에서 문자열을 처리한다. 모든 DLN 실험에서 하이퍼파라미터 검색을 수행하고 3개의 무작위 시드로 동일한 하이퍼파라미터 설정을 실행한다. 가장 높은 평균 검증 정확도를 달성하는 하이퍼파라미터 설정에 해당하는 3개의 시드에 대해 평균화된 테스트 정확도를 보고한다. 우리는 부록 I에서 하이퍼파라미터 검색의 세부 사항을 보고한다.\n' +
+      '\n' +
+      '본 논문에서는 OpenAI의 모델, 특히 GPT-3(text-davinci-003)과 GPT-4를 특별히 명시하지 않는 한 제안된 시스템의 백본으로 사용한다. DLN의 경우 배치 크기 20을 사용 하 고 2 반복마다 평가 되는 유효성 검사 성능을 조기에 중지 하 여 20 반복을 훈련 합니다. 그런 다음 테스트 점수를 보고합니다. 즉각적인 제안과 은닉된 샘플의 표본은 각각 \\(N=20\\)과 \\(K=5\\)이다.\n' +
+      '\n' +
+      '기준선 DLN을 두 종류의 기준선 시스템과 비교한다. 먼저, 동일한 백본(즉, GPT-3)이 장착된 시스템 세트를 테스트한다:\n' +
+      '\n' +
+      '* 0-샷: 입력이 주어지면, LLM은 제로-샷 방식으로 답변을 생성하도록 요구된다.\n' +
+      '* 5-샷(ICL): 문맥 내 예들로서 5개의 데이터 포인트들뿐만 아니라 입력이 주어지면, LLM은 답변을 생성하기 위해 질의된다. 다섯 가지 예는 훈련 세트에서 무작위로 샘플링된다.\n' +
+      '* KATE [20]: 입력이 주어지면, 우리는 기성 문장 인코더를 사용하여 트레이닝 세트로부터 가장 유사한 다섯 개의 데이터 포인트를 검색하고, 그것들을 문맥 내 예들로서 사용한다.\n' +
+      '* APE [57]: LLM은 소수의 입력-출력 쌍 예들이 주어진 작업에 대한 후보 프롬프트들의 풀을 생성하기 위해 질의된다. 후보 프롬프트들은 최상의 수행 명령 프롬프트를 찾기 위해 검증 세트 상에서 평가된다. 그런 다음 0샷 평가에 가장 좋은 지침이 사용됩니다. 우리는 15개 및 400개의 예들(각각 APE-15 및 APE-400)에 걸쳐 프롬프트를 최적화한다.\n' +
+      '* CoT[48]: 입력이 주어지면, LLM은 먼저 "단계별로 생각하자"라는 프롬프트와 함께 추론 경로를 생성하도록 질의된다. 그런 다음 입력과 첫 번째 출력을 조건으로 하여 LLM을 쿼리하여 답변을 생성한다. 이것은 CoT의 제로 샷 버전이고 DLN-2에 대한 자연스러운 베이스라인이다: 그것은 두 개의 LLM 호출을 수행하고 최적화 없이 DLN-2로 볼 수 있다. DLN-2와 비교할 때 이 기준선의 성능을 보고할 것이다.\n' +
+      '\n' +
+      '또한, 현재 가장 진보된 LLM 중 하나인 GPT-4와 비교한다. GPT-4를 사용하여 0-shot 및 ICL 설정을 테스트한다.\n' +
+      '\n' +
+      '### Dln-1\n' +
+      '\n' +
+      '첫 번째 실험 세트는 섹션 2에 설명된 1계층 언어 네트워크(DLN-1)를 평가한다. 표 1은 테스트 작업의 전체 집합에 대한 결과를 제시한다. 그 결과, 재난, Mpqa, 항공에서 가장 우수한 GPT-3 기반 방법의 성능과 일치하고 Logic.7, Nav에서 가장 우수한 GPT-3 기준선을 좁게 능가하는 것을 확인할 수 있었다. Hyper, Trec 및 Subj 상에서, DLN-1은 최상의 GPT-3 베이스라인(각각 약 20, 10 및 7 퍼센트 포인트)을 훨씬 능가한다. 하이퍼, 트렉, 그리고 재난에서는 GPT-4 기준선을 능가하기도 하는데, 다른 모든 업무에서 GPT-4를 훌륭하게 수행하지 못하고 있다. 언어 관례에 따라 형용사를 순서화하는 BBH 작업인 Hyper에 대한 DLN-1의 뛰어난 성능은 놀랍다. 이 결과를 더 잘 이해하기 위해 그림 2에서 최종 프롬프트를 보여준다. 프롬프트에는 교육 세트의 지침과 예제 목록이 모두 포함되어 있음을 알 수 있다. 이러한 예제는 성능에 미치는 영향을 기반으로 최적화기에 의해 자동으로 선택되었다. 이는 시험 예와의 유사성을 기준으로 맥락에 넣을 훈련 예제를 선택하는 KATE와 그 성능을 기준으로 프롬프트를 선택하는 APE가 결합된 것으로 볼 수 있다. 날짜에 DLN-1은 GPT-3 및 GPT-4 모두에 대해 0샷 기준선을 체계적으로 과소 수행하는 경향이 있다. 우리는 검증 세트에서 예제의 부족으로 인해 DLN-1이 과잉 적합함을 관찰했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c|c c c c|c c c} \\hline \\hline  & \\multicolumn{4}{c|}{**BigBench Hard**} & \\multicolumn{4}{c|}{**NLU**} & \\multicolumn{4}{c}{**Leopard**} \\\\ \\hline\n' +
+      '**Method** & **Hyper.** & **Nav.** & **Date.** & **Logic.7** & **Mpqa** & **Tree** & **Subj** & **Disaster** & **Airline** \\\\ \\hline\n' +
+      '**GPT-3** & & & & & & & & & & & & & & & & & & & & & & & & & &\n' +
+      '0-shot & 60.8 & 64.1 & 56.4 & 45.9 & 88.0 & 61.9 & 61.7 & 81.6 & 75.6 \\\\\n' +
+      '5-shot & 55.6 & 56.5 & 62.1 & 36.7 & 87.2 & 80.0 & 76.4 & 81.2 & 82.7 \\\\ KATE & 71.1 & 56.9 & 61.1 & 44.4 & 88.4 & 77.6 & 71.3\\(\\pm\\)5.5 & 61.3\\(\\pm\\)7.2 & 54.8\\(\\pm\\)14.6 & 81.6 \\\\ APE-15 & 68.5\\(\\pm\\)5.5 & 67.3\\(\\pm\\)7.7 & 33.1\\(\\pm\\)2.8 & 45.5\\(\\pm\\)4.7 & 85.5\\(\\pm\\)4.6 & 71.3\\(\\pm\\)5.5 & 61.3\\(\\pm\\)7.2 & 54.8\\(\\pm\\)14.6 & 81.5\\(\\pm\\)3.5 \\\\ APE-400 & 65.5\\(\\pm\\)4.7 & 56.9\\(\\pm\\)3.29 & 23.5\\(\\pm\\)14.1 & 45.6\\(\\pm\\)12.4 & 84.9\\(\\pm\\)9.7 & 72.0\\(\\pm\\)1.7 & 63.7\\(\\pm\\)9.2 & 60.3\\(\\pm\\)37.4 & 82.3\\(\\pm\\)10.0 \\\\ \\hline DLN-1 & 91.9\\(\\pm\\)3.0 & 68.5\\(\\pm\\)4.7 & 55.7\\(\\pm\\)4.5 & 47.5\\(\\pm\\)2.1 & 88.5\\(\\pm\\)2.5 & 89.7\\(\\pm\\)3.2 & 83.2\\(\\pm\\)6.5 & 81.7\\(\\pm\\)6.5 & 83.2\\(\\pm\\)5.5 \\\\ \\hline \\hline\n' +
+      '**GPT-4** & & & & & & & & & & & & & & & & & & & & & &\n' +
+      '0-shot & 64.0\\(\\pm\\)1.0 & 74.0\\(\\pm\\)1.0 & 79.2\\(\\pm\\)2.6 & 68.5\\(\\pm\\)3.5 & 86.3\\(\\pm\\)0.6 & 64.8\\(\\pm\\)1.7 & 72.5\\(\\pm\\)1.5 & 47.7\\(\\pm\\)0.6 & 84.5\\(\\pm\\)0.6 \\\\\\\n' +
+      '5-shot & 88.4\\(\\pm\\)2.6 & 75.7\\(\\pm\\)1.5 & 79.3\\(\\pm\\)1.1 & 62.8\\(\\pm\\)1.7 & 88.0\\(\\pm\\)3.0 & 82.5\\(\\pm\\)3.8 & 94.7\\(\\pm\\)3.5 & 63.6\\(\\pm\\)8.5 & 88.0\\(\\pm\\)1.0 \\\\\\\n' +
+      '16-shot & 93.3\\(\\pm\\)2.3 & 75.5\\(\\pm\\)5.1 & 80.9\\(\\pm\\)5.0 & 66.4\\(\\pm\\)3.6 & 91.3\\(\\pm\\)1.5 & 83.7\\(\\pm\\)0.6 & 96.5\\(\\pm\\)2.5 & 67.1\\(\\pm\\)4.0 & 88.3\\(\\pm\\)2.1 \\\\ \\hline DLN-1 & 95.2\\(\\pm\\)5.0 & 77.1\\(\\pm\\)4.7 & 76.7\\(\\pm\\)3.0 & 69.1\\(\\pm\\)2.5 & 91.1\\(\\pm\\)3.2 & 89.5\\(\\pm\\)2.1 & 93.1\\(\\pm\\)5.0 & 82.1\\(\\pm\\)3.8 & 85.9\\(\\pm\\)1.5 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: GPT-3 및 GPT-4에 대한 기준선과 비교하여 얕은 1층 언어 네트워크(DLN-1)의 세 개의 랜덤 시드들에 대해 평균화된 테스트 정확도. 훈련가능한 시스템(즉, APE 및 DLN-1) 또는 GPT-4에 의존하는 시스템의 경우, 95% 신뢰 구간을 보고한다.\n' +
+      '\n' +
+      '도 2: 하이퍼바톤 상의 DLN-1의 최종 프롬프트는 명령어들뿐만 아니라 트레이닝 세트로부터의 예들을 포함한다. 이러한 샘플은 프롬프트 최적화에 의해 자동으로 선택되었다. 어떤 면에서, 이 접근법은 문맥 내 학습과 프롬프트 최적화를 결합한다.\n' +
+      '\n' +
+      '### Dln-2\n' +
+      '\n' +
+      '우리는 2-계층 언어 네트워크(DLN-2)를 사용하여 깊이가 가장 유용할 것으로 예상되는 태스크와 GPT-4 0-샷 기준선, 즉 Nav., Date, Logic.7 [42]을 수행하는 DLN-1에 대한 실험을 통해 깊이의 효과를 조사한다. 네비게이션 이후로, 데이트 그리고 BBH의 Logic.7 태스크는 더 복잡한 공간 및 시간 추론을 필요로 하며, 이는 우리가 가장 기대하는 하위 태스크로의 분해가 도움이 될 것이다. DLN-2가 성능을 어느 정도 더 밀어낼 수 있는지 관심이 있기 때문에 DLN-1이 잘 수행하는 경우(GPT-4 0샷 기준선을 능가하는 경우에도) Subj 및 Disaster도 예로 포함한다.\n' +
+      '\n' +
+      'DLN-2에 대한 결과는 표 2에서 찾을 수 있다. DLN-1과 비교하여, DLN-2는 7.2% 절대 점수의 평균 부스트를 제공한다. 네비게이션에서 및 Date., DLN-2는 DLN-1의 성능을 크게 향상시켜, 모든 단일 계층 네트워크를 능가한다. Logic.7에서, 모든 메소드는 유사하게 수행되는 것으로 보인다. 이는 작업이 기본 LLM에 너무 어려울 수 있으므로 약한 기본 모델의 신속한 최적화의 한계를 강조할 수 있다는 사실을 가리킬 수 있다. Subj 및 Disaster에서, DLN-2는 DLN-1에 비해 추가 개선을 달성한다. 표 1의 0-샷 GPT-4 결과와 비교하여, Subj 및 Disaster에서, DLN-2는 평균적으로 20% 이상의 절대적 개선을 제공한다. 독자들이 부록 C에서 추가 실험 결과를 찾도록 권장한다.\n' +
+      '\n' +
+      '## 6 관련 작업\n' +
+      '\n' +
+      '**프롬프트 기반 기계 학습** GPT-3 [5]는 이제 기존 NLP 작업을 넘어 적용 된 ICL (In-context learning)이라는 NLP의 새로운 패러다임을 시작 했습니다. [21]. 체인-생각 프롬프트들(CoT)의 발견은 프롬프트의 주요 발전을 표시했다: LLM 성능은 프롬프트가 중간 추론 단계들[48](few-shot CoT)의 예들을 포함할 때 현저하게 개선되거나, 또는 단순히 모델에 "단계별로 생각"할 것을 지시할 때 [17](zero-shot CoT). CoT와 마찬가지로 DLN은 문제를 중간 단계로 분해하지만 이러한 단계를 각각 고유한 학습된 프롬프트에 의해 정의된 별도의 LLM 호출로 작동시킨다. CoT가 도입된 이후 촉진 기술은 더 역동적이고 반복적이도록 발전했다. 최근의 방법들은 종종 재귀적으로 동작한다. 예들은 RECITE[41], Self-ask[33], 및 질문-응답 Creswell et al. [6], Zhou et al. [56]을 위한 관련 방법들을 포함한다. 유사한 부류의 방법은 "인트로스펙션" [14]에 의존하며, 여기서 LLM은 섭취하라는 메시지가 표시되고 평가하여 자신의 이전 출력에 따라 작동할 수 있다. Self-critique[46], ReAct[54], Reflexion[38], Self-refine[24]는 Hao et al.[11], Du et al.[9], Yao et al.[53]과 함께 이 금형에 맞는다.\n' +
+      '\n' +
+      '**프롬프트 최적화** 자체 대화 및 자체 평가에 대한 개념을 기반으로 하는 기술은 DLN의 핵심 기능인 자동 프롬프트 최적화와 자연스럽게 일치합니다. 이 범주의 초기 작업에는 오토프롬트[37]와 GRIPS[32]가 포함된다. Deng et al. [7]은 이산 프롬프트를 최적화하기 위한 \'enumeration-then-selection\' 휴리스틱은 프롬프트 공간을 체계적으로 탐구하지 않는다고 주장한다. 이 문제를 극복하기 위해 RL 접근 방식을 취하며, 적절하게 설계되고 안정화된 보상 기능을 사용하여 소프트 Q-학습을 통해 정책 네트워크를 훈련시켜 효과적인 프롬프트를 생성한다. 깁스 샘플링을 통해 Repropmpting[52]은 CoT 레시피를 반복적으로 검색하여 신속한 성능을 자동으로 향상시킨다. DLN들과 가장 관련이 있는, Zhou 등[57]은 자동 프롬프트 엔지니어(Automatic prompt engineer; APE)를 제시한다. APE는 점수 함수를 최대화하기 위해 후보 풀을 검색하여 초기 프롬프트를 최적화합니다. DLN에서 APE에서 영감을 받은 접근법을 사용하고 제안/점수 함수를 변분 추론의 요소로 캐스팅한다. 동시 작업에서, Pryzant 등[34]은 자동 프롬프트 최적화에서 텍스트 구배를 사용하여 제안했다. 이 알고리즘은 LLM의 비모수적 피드백을 사용하여 프롬프트 생성 및 선택을 안내한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l l l l l} \\hline \\hline\n' +
+      '**Method** & **Nav.** & **Date.** & **Logic.7** & **Disaster** & **Subj** \\\\ \\hline\n' +
+      '0-shot & 64.1 & 56.4 & 45.9 & 81.6 & 61.7 \\\\ CoT & 69.3 & 72.4 & 41.1 & 54.4 & 59.3 \\\\ APE & 67.3\\(\\pm\\)7.7 & 32.1\\(\\pm\\)28.5 & 45.5\\(\\pm\\)4.7 & 54.8\\(\\pm\\)14.6 & 61.3\\(\\pm\\)7.2 \\\\ APE-400 & 56.9\\(\\pm\\)32.9 & 23.5\\(\\pm\\)14.1 & 45.6\\(\\pm\\)12.4 & 60.3\\(\\pm\\)37.4 & 63.7\\(\\pm\\)9.2 \\\\ \\hline DLN-1 & 68.5\\(\\pm\\)4.7 & 55.7\\(\\pm\\)4.5 & 47.5\\(\\pm\\)2.1 & 81.7\\(\\pm\\)6.5 & 83.2\\(\\pm\\)5.5 \\\\ DLN-2 & 83.1\\(\\pm\\)24.7 & 75.2\\(\\pm\\)14.8 & 45.7\\(\\pm\\)3.5 & 82.8\\(\\pm\\)2.5 & 85.9\\(\\pm\\)8.7 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: GPT-3을 LLM으로 사용한 DLN-2 테스트 정확도.\n' +
+      '\n' +
+      '**다층 LLM 시스템** 최근 몇 가지 작업은 LLM을 DLN의 핵심 개념인 계산 그래프의 노드로 구성합니다. 위에서 인용한 일부 작업은 이 아이디어의 사례로 볼 수 있다. 유사하게, Khot 등[15]은 별개의 LLM 모듈들을 호출하는 기본 "제어 흐름"을 생성하기 위해 LLM을 유도한다. Wu 등[50]은 "LLM 프리미티브" 동작들의 세트에 기초하여 체인화된 LLM들의 상호작용 시스템인 AI 체인들을 제안한다. 그들은 참가자들이 체인을 수정하는 20인 사용자 연구를 수행하고, 이 과정을 발견하여 작업 수행, 투명성 및 통제 가능성을 향상시킨다. 도한 등[8]은 LLM과 그래픽 모델을 "언어 모델 캐스케이드"로 통일한다. 특히, 문자열 값 랜덤 변수를 사용하여 그래픽 모델로 LLM 구성을 캐스팅한다. 3 스크래치패드[30], 체인-오브-사상[48], 도구 사용 [25] 및 기타 여러 프롬프트 전략이 형식론에 적합한 방법을 보여준다. DLN은 또한 그 프레임워크의 일반성 때문에 언어 모델 캐스케이드의 사례로 간주될 수 있다. 그러나 Dohan 등 [8]의 개념적 작업을 넘어서 LLM 기반 그래픽 모델에서 추론하기 위한 효과적인 기술을 제시하고 LLM의 학습된 네트워크를 여러 다운스트림 작업에 적용한다.\n' +
+      '\n' +
+      '각주 3: 먀오와 블룬섬[27]의 초기 작업도 문자열을 확률 변수로 취급했다.\n' +
+      '\n' +
+      '## 7 결론 및 향후 작업\n' +
+      '\n' +
+      '본 논문에서는 각 계층이 LLM인 심층 네트워크에서 조인트 프롬프트 최적화를 위한 알고리즘을 소개한다. 이를 위해 각 은닉 LLM 레이어의 출력을 추론에 필요한 잠재 변수로 간주한다. 개념적 관점에서 CoT가 잔류 연결을 가진 DLN-2로 볼 수 있는 방법을 시연했다. 유사하게, 생성된 지식 프롬프팅[19]은 고정된 순방향 전용 DLN-2로서 고려될 수 있으며, 여기서 첫 번째 계층에서 LLM은 관련 지식을 생성하고, 두 번째 계층에서 다른 LLM은 생성된 지식을 입력으로 받아 최종 답변을 생성한다. ReAct [54], Reflexicon [38], Self-Consistency [46]과 같은 다른 프롬프트 기술은 모두 다른 프롬프트 초기화를 가진 DLN-1의 앙상블일 수 있다.\n' +
+      '\n' +
+      '지금까지 1-레이어 및 2-레이어 LN만 테스트했지만, 우리는 이미 더 작은 LLM의 성능이 적절하게 적층되고 프롬프트될 때 부스팅될 수 있음을 보여준다. 우리는 이러한 아키텍처의 모듈성이 새로운 사용 사례에 더 적응하고 재사용할 수 있도록 만들 것이라고 믿습니다. 다운스트림 작업에 대한 정확성은 매력적인 지표이지만, 예를 들어 모델을 자신의 사용 사례에 쉽게 적용하거나 여러 기존 모델을 활용하는 능력과 같은 다른 고려 사항이 중요하다고 주장한다.\n' +
+      '\n' +
+      '우리는 GPT-3가 항상 예를 들어 답을 생성하는 경향이 있다는 것을 알아차렸는데, 이는 모델이 유용한 응답을 생성하는 쪽으로 편향되는 특정 0-샷 미세 조정 절차 때문일 수 있다. 이는 "적층 가능한" LLM을 미세 조정할 수 있는지, DLN이 그러한 목적을 위한 훈련 데이터를 생성하기 위한 프레임워크로 사용될 수 있는지에 대한 질문을 제기한다. 둘째, 역방향 및 순방향 템플릿을 설계하였으며, 향후 이러한 템플릿의 일부를 학습하기 위해 작업을 확장하고자 한다. 이를 통해 가변 바운드가 더 엄격해지고 DLN의 최적화가 완화될 것으로 기대한다. 또한, 2계층 DLN만을 제안했지만 프레임워크는 임의 지향 비순환 그래프를 수용한다.\n' +
+      '\n' +
+      '영향 진술 기술 작업을 통해 사회적 문제를 해결하는 것의 한계를 충분히 알고 있지만 우리와 같은 모듈식 접근법이 LLM과 관련된 문제 중 일부를 완화하기를 바란다. 또한 이러한 모델의 재사용성과 적응성을 촉진함으로써 더 다양한 사용 사례에 더 잘 적응할 수 있기를 바란다. 그러나 인공 벤치마크에 대한 이러한 모델의 성능에 대해 논의하지만 이러한 모델이 언제 어떻게 배포되어야 하는지에 대한 문제는 다루지 않으며 오남용에 대한 추가 보증을 제공하지 않는다. 또한 실제적이더라도 인공 작업에 대한 성능이 통제되지 않은 환경에서 성능을 대표하지 않으며 높은 위험 상황에서 이러한 모델의 배치를 정당화하기에 충분하지 않다는 점을 강조한다.\n' +
+      '\n' +
+      '승인: 이 프로젝트의 첫 번째 단계에서 초안에 대한 유용한 피드백에 대해 실비우 피티스, 니콜레이 말킨 및 통 왕의 조언에 대해 인정하고 싶다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '*[1]S. 반살 Jha, and A. McCallum (2020) Learning to few-shot learn across various natural language classification tasks. In Proceedings of the 28th International Conference on Computational Linguistics, Barcelona, Spain, pp. 5108-5123. Cited by: SS1.\n' +
+      '*[2]E. M. Bender, T. 게브루, A. 맥밀란 소령, M. 미첼(2021) 확률적 앵무새의 위험성에 대해: 언어 모델이 너무 클 수 있을까? Proceedings of the 2021 ACM conference on fairness, accountability, and transparency, pp. 610-623. Cited by: SS1.\n' +
+      '* [3]D. M. Blei, A. Kucukelbir, and J. D. McAuliffe (2017) Variational inference: a review for statisticians. Journal of the American statistical Association112(518), pp. 859-877. Cited by: SS1.\n' +
+      '*[4]S. L. Blodgett, Q. V. Liao, A. Olteanu, M. Muller, C. Shuerman, C. Tan, and Q. 양(2022) 책임 있는 언어 기술: 피해를 예측하고 완화합니다. In Extended Abstracts of the 2022 CHI Conference on Human Factors in Computing Systems, CHI EA \'22, New York, NY, USA, pp. 610-623. Cited by: SS1.\n' +
+      '*[5]T. B. Mann, N. 라이더 Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al. (2020) Language models are few-shot learners. Neural Information Processing Systems33, pp. 1877-1901. Cited by: SS1.\n' +
+      '*[6]A. 크레스웰 Shanahan, and I. Higgins (2022) Selection-inference: 해석 가능한 논리적 추론을 위해 큰 언어 모델을 이용한다. arXiv preprint arXiv:2205.09712. Cited by: SS1.\n' +
+      '*[7]M. 등종희 왕호국 서민 송은평성 Hu(2022) Rlprompt: 강화 학습으로 이산 텍스트 프롬프트를 최적화한다. Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, EMNLP 2022, Abu Dhabi, United Arab Emirates, December 7-11, 2022, pp. 3369-3391. by: SS1.\n' +
+      '*[8]D. 도한우 Xu, A. Lewkowycz, J. Austin, D. Bieber, R. G. Lopes, Y. Wu, H. Michalewski, R. A. Saurous, J. Sohl-Dickstein, et al. (2022) Language model cascades. arXiv preprint arXiv:2207.10342. Cited by: SS1.\n' +
+      '*[9]Y. 두성 Li, A. Torralba, J. B. Tenenbaum, and I. Mordatch (2023) Improving factuality and reasoning in language models through multiagent debate. 에 의해 인용된다: SS1.\n' +
+      '*[10]T. Gao, A. Fisch, and D. Chen (2021) Making a pre-training language models better few-shot learners. The Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers), Online, pp. 3816-3830. by: SS1.\n' +
+      '*[11]S. 하오영 구현마 왕덕후 Hu(2023) Reasoning with language model is planning with world model. arXiv preprint arXiv:2305.14992. Cited by: SS1.\n' +
+      '*[12]O. 호노비치 Shaham, S. R. Bowman, O. Levy(2022) Instruction induction: few examples to natural language task description. 에 의해 인용된다: SS1.\n' +
+      '*[13]A. 호세이니 Reddy, D. Bahdanau, R. D. Hjelm, A. Sordoni, and A. C. Courville (2021) Understanding by understanding not: modeling negation in language models. Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL-HLT 2021, Online, June 6-11, 2021, pp. 1301-1312. Cited by: SS1.\n' +
+      '*[14]W. 황화샤 Xiao, H. Chan, J. Liang, P. Florence, A. Zeng, J. Tompson, I. Mordatch, Y. Chebotar, et al. (2022) Inner monologue: embodied reasoning through planning with language models. arXiv preprint arXiv:2207.05608. Cited by: SS1.\n' +
+      '\n' +
+      '* [15] Khot, T., Trivedi, H., Finlayson, M., Fu, Y., Richardson, K., Clark, P., and Sabharwal, A. (2023). Decomposed prompting: A modular approach for solving complex tasks. _International Conference on Learning Representations_.\n' +
+      '* [16] Kingma, D. P. and Welling, M. (2022). Auto-encoding variational bayes.\n' +
+      '* [17] Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., and Iwasawa, Y. (2022). Large language models are zero-shot reasoners. In Koyejo, S., Mohamed, S., Agarwal, A., Belgrave, D., Cho, K., and Oh, A., editors, _Advances in Neural Information Processing Systems_, volume 35, pages 22199-22213. Curran Associates, Inc.\n' +
+      '* [18] Lazaridou, A., Gribovskaya, E., Stokowiec, W., and Grigorev, N. (2022). Internet-augmented language models through few-shot prompting for open-domain question answering. _arXiv preprint arXiv:2203.05115_.\n' +
+      '* [19] Liu, J., Liu, A., Lu, X., Welleck, S., West, P., Le Bras, R., Choi, Y., and Hajishirzi, H. (2022a). Generated knowledge prompting for commonsense reasoning. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 3154-3169.\n' +
+      '* [20] Liu, J., Shen, D., Zhang, Y., Dolan, B., Carin, L., and Chen, W. (2021). What makes good in-context examples for gpt-3?\n' +
+      '* [21] Liu, P., Yuan, W., Fu, J., Jiang, Z., Hayashi, H., and Neubig, G. (2023). Pre-train, prompt, and predict: A systematic survey of prompting methods in natural language processing. _ACM Computing Surveys_, 55(9):1-35.\n' +
+      '* [22] Liu, R., Wei, J., Gu, S. S., Wu, T.-Y., Vosoughi, S., Cui, C., Zhou, D., and Dai, A. M. (2022b). Mind\'s eye: Grounded language model reasoning through simulation. _arXiv preprint arXiv:2210.05359_.\n' +
+      '* [23] Lu, Y., Bartolo, M., Moore, A., Riedel, S., and Stenetorp, P. (2022). Fantastically ordered prompts and where to find them: Overcoming few-shot prompt order sensitivity. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 8086-8098, Dublin, Ireland. Association for Computational Linguistics.\n' +
+      '* [24] Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L., Wiegreffe, S., Alon, U., Dziri, N., Prabhumoye, S., Yang, Y., Welleck, S., Majumder, B. P., Gupta, S., Yazdanbakhsh, A., and Clark, P. (2023). Self-refine: Iterative refinement with self-feedback.\n' +
+      '* [25] Mialon, G., Dessi, R., Lomeli, M., Nalmpantis, C., Pasunuru, R., Raileanu, R., Roziere, B., Schick, T., Dwivedi-Yu, J., Celikyilmaz, A., Grave, E., LeCun, Y., and Scialom, T. (2023). Augmented language models: a survey.\n' +
+      '* [26] Miao, Y. and Blunsom, P. (2016a). Language as a latent variable: Discrete generative models for sentence compression. In _Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing_, pages 319-328, Austin, Texas. Association for Computational Linguistics.\n' +
+      '* [27] Miao, Y. and Blunsom, P. (2016b). Language as a latent variable: Discrete generative models for sentence compression. In _Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing_, pages 319-328.\n' +
+      '* [28] Min, S., Lyu, X., Holtzman, A., Artetxe, M., Lewis, M., Hajishirzi, H., and Zettlemoyer, L. (2022). Rethinking the role of demonstrations: What makes in-context learning work? In _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pages 11048-11064, Abu Dhabi, United Arab Emirates. Association for Computational Linguistics.\n' +
+      '* [29] Mukherjee, S. and Awadallah, A. H. (2020). Xtremedistil: Multi-stage distillation for massive multilingual models. In Jurafsky, D., Chai, J., Schluter, N., and Tetreault, J. R., editors, _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, ACL 2020, Online, July 5-10, 2020_, pages 2221-2234. Association for Computational Linguistics.\n' +
+      '\n' +
+      '* [30] Nye, M., Andreassen, A. J., Gur-Ari, G., Michalewski, H., Austin, J., Bieber, D., Dohan, D., Lewkowycz, A., Bosma, M., Luan, D., et al. (2021). Show your work: Scratchpads for intermediate computation with language models. _arXiv preprint arXiv:2112.00114_.\n' +
+      '* [31] Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. (2022). Training language models to follow instructions with human feedback. _Advances in Neural Information Processing Systems_, 35:27730-27744.\n' +
+      '* [32] Prasad, A., Hase, P., Zhou, X., and Bansal, M. (2022). Gripps: Gradient-free, edit-based instruction search for prompting large language models. _arXiv preprint arXiv:2203.07281_.\n' +
+      '* [33] Press, O., Zhang, M., Min, S., Schmidt, L., Smith, N. A., and Lewis, M. (2022). Measuring and narrowing the compositionality gap in language models. _arXiv preprint arXiv:2210.03350_.\n' +
+      '* [34] Pryzant, R., Iter, D., Li, J., Lee, Y. T., Zhu, C., and Zeng, M. (2023). Automatic prompt optimization with gradient descent and beam search. _arXiv preprint arXiv:2305.03495_.\n' +
+      '* [35] Rubin, O., Herzig, J., and Berant, J. (2022). Learning to retrieve prompts for in-context learning. In _Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 2655-2671.\n' +
+      '* [36] Sanh, V., Debut, L., Chaumond, J., and Wolf, T. (2019). Distilbert, a distilled version of BERT: smaller, faster, cheaper and lighter. _CoRR_, abs/1910.01108.\n' +
+      '* [37] Shin, T., Razeghi, Y., Logan IV, R. L., Wallace, E., and Singh, S. (2020). Autoprompt: Eliciting knowledge from language models with automatically generated prompts. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pages 4222-4235.\n' +
+      '* [38] Shinn, N., Labash, B., and Gopinath, A. (2023). Reflexion: an autonomous agent with dynamic memory and self-reflection. _arXiv preprint arXiv:2303.11366_.\n' +
+      '* [39] Srivastava, A., Rastogi, A., Rao, A., Shoeb, A. A. M., Abid, A., Fisch, A., Brown, A. R., Santoro, A., Gupta, A., Garriga-Alonso, A., et al. (2022). Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _arXiv preprint arXiv:2206.04615_.\n' +
+      '* [40] Su, H., Kasai, J., Wu, C. H., Shi, W., Wang, T., Xin, J., Zhang, R., Ostendorf, M., Zettlemoyer, L., Smith, N. A., et al. (2023). Selective annotation makes language models better few-shot learners. _International Conference on Learning Representations_.\n' +
+      '* [41] Sun, Z., Wang, X., Tay, Y., Yang, Y., and Zhou, D. (2022). Recitation-augmented language models. _arXiv preprint arXiv:2210.01296_.\n' +
+      '* [42] Suzgun, M., Scales, N., Scharli, N., Gehrmann, S., Tay, Y., Chung, H. W., Chowdhery, A., Le, Q. V., Chi, E. H., Zhou, D.,, and Wei, J. (2022). Challenging big-bench tasks and whether chain-of-thought can solve them. _arXiv preprint arXiv:2210.09261_.\n' +
+      '* [43] Tang, R., Lu, Y., Liu, L., Mou, L., Vechtomova, O., and Lin, J. (2019). Distilling task-specific knowledge from BERT into simple neural networks. _CoRR_, abs/1903.12136.\n' +
+      '* [44] Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M.-A., Lacroix, T., Roziere, B., Goyal, N., Hambro, E., Azhar, F., Rodriguez, A., Joulin, A., Grave, E., and Lample, G. (2023a). Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_.\n' +
+      '* [45] Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S., Bikel, D., Blecher, L., Ferrer, C. C., Chen, M., Cucurull, G., Esibbu, D., Fernandes, J., Fu, J., Fu, W., Fuller, B., Gao, C., Goswami, V., Goyal, N., Hartshorn, A., Hosseini, S., Hou, R., Inan, H., Kardas, M., Kerkez, V., Khabsa, M., Kloumann, I., Korenev, A., Koura, P. S., Lachaux, M.-A., Lavril, T., Lee, J., Liskovich, D., Lu, Y., Mao, Y., Martinet, X., Mihaylov, T., Mishra, P., Molybog, I., Nie, Y., Poulton, A., Reizenstein, J., Rungta, R., Saladi, K., Schelten, A., Silva, R., Smith, E. M., Subramanian, R., Tan, X. E., Tang, B., Taylor, R., Williams, A., Kuan, J. X., Xu, P., Yan, Z., Zarov, I., Zhang, Y., Fan, A., Kambadur, M., Narang, S., Rodriguez, A., Stojnic, R., Edunov, S., and Scialom, T. (2023b). Llama 2: Open foundation and fine-tuned chat models.\n' +
+      '\n' +
+      '* [46] Wang, X., Wei, J., Schuurmans, D., Le, Q., Chi, E., and Zhou, D. (2023a). Self-consistency improves chain of thought reasoning in language models. _International Conference on Learning Representations_.\n' +
+      '* [47] Wang, X., Zhu, W., Saxon, M., Steyvers, M., and Wang, W. Y. (2023b). Large language models are implicitly topic models: Explaining and finding good demonstrations for in-context learning.\n' +
+      '* [48] Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E. H., Le, Q. V., and Zhou, D. (2022). Chain-of-thought prompting elicits reasoning in large language models. In _NeurIPS_.\n' +
+      '* [49] Weidinger, L., Uesato, J., Rauh, M., Griffin, C., Huang, P.-S., Mellor, J., Glaese, A., Cheng, M., Balle, B., Kasirzadeh, A., et al. (2022). Taxonomy of risks posed by language models. In _2022 ACM Conference on Fairness, Accountability, and Transparency_, pages 214-229.\n' +
+      '* [50] Wu, T., Terry, M., and Cai, C. J. (2022). Ai chains: Transparent and controllable human-ai interaction by chaining large language model prompts. In _Proceedings of the 2022 CHI Conference on Human Factors in Computing Systems_, pages 1-22.\n' +
+      '* [51] Xu, C., Sun, Q., Zheng, K., Geng, X., Zhao, P., Feng, J., Tao, C., and Jiang, D. (2023a). Wizardlm: Empowering large language models to follow complex instructions.\n' +
+      '* [52] Xu, W., Banburski-Fahey, A., and Jojic, N. (2023b). Reprompting: Automated chain-of-thought prompt inference through gibbs sampling. _arXiv preprint arXiv:2305.09993_.\n' +
+      '* [53] Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T. L., Cao, Y., and Narasimhan, K. (2023a). Tree of thoughts: Deliberate problem solving with large language models.\n' +
+      '* [54] Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., and Cao, Y. (2023b). React: Synergizing reasoning and acting in language models. _International Conference on Learning Representations_.\n' +
+      '* [55] Zhang, Z., Zhang, A., Li, M., and Smola, A. (2023). Automatic chain of thought prompting in large language models. _International Conference on Learning Representations_.\n' +
+      '* [56] Zhou, D., Scharli, N., Hou, L., Wei, J., Scales, N., Wang, X., Schuurmans, D., Bousquet, O., Le, Q., and Chi, E. (2023a). Least-to-most prompting enables complex reasoning in large language models. _International Conference on Learning Representations_.\n' +
+      '* [57] Zhou, Y., Muresanu, A. I., Han, Z., Paster, K., Pitis, S., Chan, H., and Ba, J. (2023b). Large language models are human-level prompt engineers. _International Conference on Learning Representations_.\n' +
+      '\n' +
+      '#### 부록의 콘텐츠:\n' +
+      '\n' +
+      '* 부록 A에서 이 작업에 대한 각 저자의 기여도를 나열합니다.\n' +
+      '* 부록 B에서 작업 통계 및 DLN을 초기화하는 데 사용한 프롬프트 문자열을 포함한 추가 실험 세부 정보를 제공합니다.\n' +
+      '* 부록 C에서 비교 하는 추가 실험 및 기준선을 제공 합니다.\n' +
+      '* 부록 D에서 DLN에서 사용 되는 순방향 및 역방향 템플릿을 제공 합니다.\n' +
+      '* 부록 E에서는 다중 계층 설정에서 DLN 학습을 일반화하는 알고리즘을 제공합니다.\n' +
+      '* 부록 F에서 문맥 내 학습과 유사한 동작을 나타내는 학습된 가중치의 예를 보여 줍니다.\n' +
+      '* 부록 G에서 2 계층 DLN에 의해 학습된 가중치의 예를 보여 줍니다.\n' +
+      '* 부록 H에서 2 계층 DLN에 의해 생성 된 숨겨진 상태의 예를 보여 줍니다.\n' +
+      '* 부록 I에서 하이퍼 매개 변수 정보를 포함한 구현 세부 정보를 제공합니다.\n' +
+      '* 부록 J에서 DLN 개발에 사용되는 리소스와 가격 책정에 대해 설명합니다.\n' +
+      '\n' +
+      'Contributions\n' +
+      '\n' +
+      'Alessandro Sordoni는 DLN의 일반적인 개념을 제안하였는데, 이는 여러 프롬프트가 역방향 자연어 연산을 통해 각 계층에서 학습되고, 합성 문맥 예제와 DLN-2에 대한 탐색 보상을 생성하도록 제안하며, 코드를 작성하고 실험을 실행했으며, 섹션 2, 3, 4에 초점을 맞추고 나머지 섹션의 작성에 기여했다.\n' +
+      '\n' +
+      '싱디 위안은 DLN의 기본 아이디어를 공동 개발하고 코드의 일부를 작성했으며, 또한 공동 설계 및 실험 수행을 도왔다. 그들은 주로 섹션 5와 섹션 6의 논문 작성에 기여했다.\n' +
+      '\n' +
+      '마크-알렉산드르 코트는 OpenAI 모델에 전화를 걸기 위한 실험과 인프라를 도왔다. 그들은 또한 훈련 중에 DLN의 프롬프트의 진화를 시각화하기 위한 데모를 구축했으며 주로 알고리즘과 부록에 초점을 맞춘 논문 작성에 기여했다.\n' +
+      '\n' +
+      'Matheus Pereira는 AT와 함께 이전의 비변수 역연산자를 공동 코딩하고, APE 및 DLN-2 계층 실험을 돕고, 총 실험 비용을 추정하는 방법을 구현하고, 훈련 중 DLN의 프롬프트의 진화를 시각화하기 위한 데모를 구축하고, DLN 코드의 해제에 기여했다.\n' +
+      '\n' +
+      'Adam Trischler는 템플릿 개념과 반복을 돕고 MP와 이전의 비변인 역연산자를 공동 코딩했으며 주로 문헌 검토와 함께 논문 작성에 기여했다.\n' +
+      '\n' +
+      '장샤오는 모델 평가와 실험 설정을 돕고 문헌 검토와 토론을 중심으로 논문 작성에 기여했다.\n' +
+      '\n' +
+      '프로젝트 전반에 걸친 개발 논의에 아리안 호세이니가 참여하여 논문에 대한 문헌고찰을 작성하는 데 기여하였다.\n' +
+      '\n' +
+      'Friederike Niedtner는 팀이 올바른 우선순위에 집중할 수 있도록 프로젝트를 조직하고 관리했다.\n' +
+      '\n' +
+      'Nicolas Le Roux는 변분 추론 공식과 사후 선명화를 제안했다. 그들은 그 프로젝트에 대한 안내와 멘토링을 제공했다. 그들은 또한 주로 섹션 1, 2, 3과 같은 논문을 쓰는 데 기여했다.\n' +
+      '\n' +
+      '## 부록 B 추가 실험 세부 정보\n' +
+      '\n' +
+      '### 추가 작업 정보\n' +
+      '\n' +
+      '표 3에서는 우리가 사용하는 모든 작업과 그 통계에 대한 간략한 설명을 제공한다.\n' +
+      '\n' +
+      '### Prompt Initialization\n' +
+      '\n' +
+      '우리는 DLN들의 "분류" 계층, 즉 1-계층 LN의 첫 번째 계층 및 2-계층 DLN의 두 번째 계층을 표 4에 보고된 바와 같은 질문 또는 태스크 설명과 함께 초기화한다. 이러한 동일한 초기화들을 사용하여 0-샷 성능을 계산한다. 그러므로, 초기화 시에, 1-레이어 LN은 0-샷 베이스라인과 동등하다. 2-레이어 DLN의 은닉 레이어의 경우, Nav에 대해 "문제를 더 간단하게 하기 위해 분해하기:"라는 프롬프트를 초기화한다. and Subj, and "* (empty string) for Date. 그리고 Logic.7. 우리는 이 숨겨진 계층에 대해 다른 초기화를 시도하지 않았고, 이것은 미래의 탐험을 위해 남겨둔다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c c l} \\hline \\hline Task & \\(|\\text{train}|\\) & \\(|\\text{valid}|\\) & \\(|\\text{test}|\\) & \\(|\\text{class}|\\) & Description \\\\ \\hline Mpqa & 400 & 256 & 250 & 2 & Sentiment analysis. \\\\ Trec & 400 & 256 & 250 & 6 & Question type classification. \\\\ Subj & 400 & 256 & 250 & 2 & Determine whether a sentence is subjective or objective. \\\\ Disaster & 400 & 250 & 250 & 2 & Determine whether a sentence is relevant to a disaster. \\\\ Airline & 400 & 250 & 250 & 3 & Airline tweet sentiment analysis. \\\\ Hyper. & 400 & 1000 & 250 & 2 & Order adjectives correctly in English sentences. \\\\ Nav. & 375 & 375 & 250 & 2 & Spatial reasoning given navigation instructions. \\\\ Date. & 59 & 60 & 250 & 6 & Infer a date from context. \\\\ Logic.7 & 225 & 225 & 250 & 7 & Deduce the order of seven objects given instruction. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: 본 작업에 사용된 작업.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:17]\n' +
+      '\n' +
+      '### 계층별 학습 DLN-2\n' +
+      '\n' +
+      '우리는 또한 DLN-2를 위한 다른 학습 전략: 계층별 사전 훈련을 탐색했다. 우리는 섹션 2의 기술을 사용하여 단일 계층 DLN의 학습을 시작한다. 이 최적화 끝에서 얻은 프롬프트를 \\(\\pi^{*}\\)이라고 부른다. 그런 다음, \\(\\pi_{1}=\\pi^{*}\\)을 초기화하여 DLN-2를 학습하고, 변분추론을 이용하여 바닥층의 파라미터인 \\(\\pi_{0}\\)을 학습한다. 우리는 두 가지 변형을 탐구합니다. 하나는 마지막 레이어를 고정 상태로 유지하고 하나는 마지막 레이어를 미세 조정합니다. 우리는 그들의 결과를 표 9에 보고한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c} \\hline \\hline\n' +
+      '**Method** & **Nav.** & **Logic.7** & **Subj** \\\\ \\hline\n' +
+      '0-shot & 58.0 & 0.0 & 65.8 \\\\\n' +
+      '5-shot & 56.0 & 28.0 & 50.8 \\\\ \\hline DLN-1 & 61.1 & 31.0 & 79.8 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 7: WizardLM-v1.2 13B를 LLM으로 사용하여 정확도를 테스트한다. 이 오픈 소스 모델은 문맥에서 몇 개의 샷 예제를 캡처할 수 있는 능력이 현저히 떨어지는 것 같다. DLN-1은 여기 모든 작업에서 ICL보다 성능이 뛰어납니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c c} \\hline \\hline\n' +
+      '**Method** & **Nav.** & **Date.** & **Logic.7** & **Subj** \\\\ \\hline\n' +
+      '0-shot & 42.0\\(\\pm\\)0.0 & 25.2\\(\\pm\\)0.0 & 14.4\\(\\pm\\)0.0 & 62.4\\(\\pm\\)0.0 \\\\\n' +
+      '5-shot & 43.2\\(\\pm\\)12.5 & 21.1\\(\\pm\\)9.7 & 16.4\\(\\pm\\)2.6 & 67.7\\(\\pm\\)15.5 \\\\ \\hline DLN-1 + GPT3 & 43.6\\(\\pm\\)0.0 & 21.9\\(\\pm\\)5.7 & 33.1\\(\\pm\\)10.9 & 80.9\\(\\pm\\)11.5 \\\\ DLN-1 & 44.9\\(\\pm\\)6.4 & 31.6\\(\\pm\\)10.5 & 38.4\\(\\pm\\)3.6 & 76.1\\(\\pm\\)4.5 \\\\ \\hline DLN-2 + GPT3 & 43.7\\(\\pm\\)3.0 & 51.1\\(\\pm\\)4.0 & 21.9\\(\\pm\\)4.9 & 59.1\\(\\pm\\)16.7 \\\\ DLN-2 & 68.9\\(\\pm\\)14.4 & 61.7\\(\\pm\\)17.6 & 20.0\\(\\pm\\)13.7 & 63.1\\(\\pm\\)25.4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 8: 95% 신뢰 구간을 갖는 3개의 무작위 종자에 대해 평균화된 테스트 정확도. 모든 방법은 LLaMA2-70B-Chat을 LLM으로 사용하고 DLN + GPT3은 텍스트-다빈치-003을 백워드 LLM으로 사용하여 신속하고 숨겨진 제안을 사용한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l||c c c c} \\hline \\hline  & Nav. & Date. & Logic.7 & Subj \\\\ \\hline DLN-2 (_fix 2nd_) & 73.1 & 61.6 & 43.3 & 80.2 \\\\ DLN-2 (_fine-tune 2nd_) & 76.4 & 62.8 & 40.7 & 84.5 \\\\ \\hline DLN-2 (_end-to-end_) & 83.1 & 75.2 & 45.7 & 85.9 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 9: 3개의 무작위 종자에 대해 평균한 테스트 정확도. 우리는 DLN-2에 대한 계층별 훈련과 종단 간 훈련을 비교한다.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:19]\n' +
+      '\n' +
+      '```\n' +
+      '```\n' +
+      '1:Input:\n' +
+      '2: 학생은 텍스트 입력으로부터 텍스트 출력을 생성해야 하는 과제를 완료하고 있다. 학생은 각 입력이 주어진 출력을 생성하는 방법을 설명하는 명령을 받는다. 그 학생은 약간의 실수를 저질렀다. 당신의 과제는 학생이 오류를 고칠 수 있도록 지도를 개선하는 것입니다.\n' +
+      '```\n' +
+      '1: 이것이 지시였다.\n' +
+      '2:## instruction \\(\\triangleright\\) [I prompt ][END]\n' +
+      '3:# Student successes (% for backward_info in backward_infos %) [% if backward_info.loss == 0.0 %)\n' +
+      '4:# input: \\(\\triangleright\\) [backward_info.input ]]\n' +
+      '5:# Correct Output: \\(\\triangleright\\) [[ backward_info.target ]]\n' +
+      '6:% endif % % endif %\n' +
+      '7:# 학생 오류(% for backward_info in backward_infos %) [% if backward_info.loss > 0.0 %)\n' +
+      '8:# input: \\(\\triangleright\\) [[ backward_info.input ]]\n' +
+      '9:# Student Output: \\(\\triangleright\\) [[ backward_info.output ]]\n' +
+      '10:# Correct Output: \\(\\triangleright\\) [[ backward_info.target ]]\n' +
+      '11 : [% endif %] % endif %\n' +
+      '12: 학생의 오류를 수정하기 위한 지도를 개선한다. [{ message ]}\n' +
+      '13:# 명령 \\(>\\) message_alternatives: - 몇 단어 또는 짧은 문장을 추가 하 여 명령을 명확 합니다. 간결하게 - 과제 해결 방법에 대 한 예제를 제공 하 여 지침을 개선 합니다. 간결하게 - 불필요한 단어 또는 문장을 제거 하 여 지침을 단축 합니다. - 모호성을 피하기 위해 자세한 정보를 제공하여 지침을 다시 작성합니다. Be concise. ```\n' +
+      'Background Hidden Template \\(\\mathbf{S}_{h}\\)\n' +
+      '``` template: ([ input ]) Given that the answer is: [{ y }]\n' +
+      '12:{ prompt } Let\'s think step by step. ```\n' +
+      '\n' +
+      '다음 대안은 다음 프롬프트에서 최종 계층 \\(\\pi_{1}\\), 입력에서 입력 \\(x\\), 순방향 통과에서 숨겨진 상태 \\(\\hat{h}\\) 및 접지-진실 출력 \\(y\\)에 대한 프롬프트를 입력으로 하는 보다 장황한 템플릿이다. 숨겨진 샘플의 다양성을 증가시키기 위해 메시지를 대체하기 위해 서로 다른 메시지 대안을 샘플링하는 유사한 전략을 사용한다: 실제로 우리는 \\(p_{\\texttt{LM}}(h|x,\\pi_{0})\\), \\(y\\) 컨디셔닝이 있는 \\(q(h|x,y,\\pi_{0})\\)의 혼합 템플릿에서 숨겨진 상태로부터 샘플링하는 것이 잘 작동한다는 것을 발견했다. 우리는 이것이 ELBO에 나타나는 \\(\\text{KL}(q(h)||p_{\\texttt{LM}}(h|x,\\pi_{0}))\\) 후방 분포와 이전 분포 사이의 KL 발산 항을 캡핑하는 효과가 있다고 의심한다. 향후 사후 제안에 대한 프롬프트를 학습함으로써 이를 보다 원론적으로 해결할 수 있을 것이다.\n' +
+      '\n' +
+      '## 부록 E Generalized VI to Multiple Layer\n' +
+      '\n' +
+      '우리는 알고리즘 3에서 다중 레이어에 대한 일반화된 훈련 알고리즘을 보고한다.\n' +
+      '\n' +
+      '```\n' +
+      '1:\\(\\hat{h}\\sim p_{\\texttt{LM}}^{t}(x)\\): 온도 \\(t\\)에서 접두사 \\(x\\)의 완료를 생성합니다.\n' +
+      '2:\\(\\log p_{\\texttt{LM}}(h|x)\\): \\(x\\) 다음 \\(h\\)의 log-prob를 반환합니다.\n' +
+      '3:\\(\\hat{h}_{l},\\dots,\\hat{h}_{L}\\gets p_{\\texttt{LM}}^{0}(\\text{F}(\\hat{h}_ {l-1},\\pi_{l-1}))\\)\\(\\triangleright\\) 모든 레이어에 대한 추론 패스 \\(0<l\\leq L\\)\n' +
+      '4:\\(h_{L}^{*}\\gets y\\)\n' +
+      '5:for\\(l\\) in \\([L-1,1]\\)do\n' +
+      '6:\\(h_{1}^{1},\\dots,h_{K}^{K}\\sim p_{\\texttt{LM}}^{0,T}(\\texttt{B}_{h}(\\hat{h}_ {l},h_{l+1}^{*},\\pi_{l}))\\)\\(\\triangleright\\) Sample \\(K\\) posterior proposals for \\(h_{l}\\)\n' +
+      '7:\\(\\alpha_{1}^{1},\\dots,\\alpha_{K}^{K}\\leftarrow\\log p_{\\texttt{LM}}(h_{l}^{k}| \\text{F}(\\hat{h}_{l-1},\\pi_{l-1}))\\)\\(\\triangleright\\) Compute prior log-probs for all \\(h_{l}^{k}\\) samples\n' +
+      '8:\\(\\beta_{1}^{1},\\dots,\\beta_{K}^{K}\\leftarrow\\log p_{\\texttt{LM}}(h_{l+1}^{*}| \\text{F}(h_{l}^{k},\\pi_{l}))\\)\\(\\triangleright\\) 모든 \\(h_{l}^{k}\\) 샘플에 대한 로그 우도 계산\n' +
+      '9:\\(q_{l}^{k}\\leftarrow\\exp(\\alpha_{l}^{k}+\\beta_{l}^{k})/(\\sum_{k}\\exp(\\alpha_{l}^{k}+\\beta_{l}^{k}))\\)\\(\\triangleright\\)의 정규화된 후방 무게 계산\n' +
+      '10:\\(h_{l}^{*}\\leftarrow\\arg\\max_{h_{l}}\\{q_{l}^{1},\\dots,q_{l}^{K}\\}\\)\\(\\triangleright\\) layer \\(l\\)에 가장 적합한 posterior sample을 선택합니다.\n' +
+      '11:endfor\n' +
+      '12:for\\(l\\) in \\([L-1,0]\\)do\n' +
+      '13:\\(\\pi_{1}^{1},\\dots,\\pi_{N}^{N}\\sim p_{\\texttt{LM}}^{0,T}(\\texttt{B}_{\\pi}(\\{ \\hat{h}_{l},\\hat{h}_{l+1},h_{l+1}^{*}\\},\\pi_{l}))\\)\\(\\triangleright\\) Sample \\(N\\) for \\(\\pi_{l}\\) candidate prompts\n' +
+      '14:\\(s_{l}^{1},\\dots,s_{l}^{N}\\leftarrow\\sum_{k}\\sum_{k^{\\prime}}q_{l}^{k}q_{l+1}^{ k^{\\prime}}\\log p_{\\texttt{LM}}(h_{l+1}^{k^{\\prime}}|\\text{F}(h_{l}^{k},\\pi_{l}^{ n}))\\)\\(\\triangleright\\) Compute ELBO for all prompts \\(\\pi_{l}^{n}\\)\n' +
+      '15:\\(\\pi_{l}\\leftarrow\\arg\\max_{\\pi_{l}^{n}}\\{s_{l}^{1},\\dots,s_{l}^{N}\\}\\)\\(\\triangleright\\) Select prompt \\(\\pi_{l}\\) with best score\n' +
+      '16:endfor\n' +
+      '17:endfor\n' +
+      '```\n' +
+      '\n' +
+      '**알고리즘 3** 심층 언어 네트워크 학습 알고리즘\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:22]\n' +
+      '\n' +
+      '## 부록 H 은닉 상태의 예\n' +
+      '\n' +
+      '우리는 아래 네비게이터의 섹션 G.1에서 2층 DLN에 의해 생성된 전방 패스를 보고한다.\n' +
+      '\n' +
+      '```\n' +
+      'Input:\\(a\\)\n' +
+      '```\n' +
+      '\n' +
+      '이 지침을 따르시면 출발점으로 돌아가시나요? 세 걸음. 10걸음 걸으세요. 4걸음. 한 걸음 Options: - Yes - No ```\n' +
+      '```\n' +
+      '1. 3단계 수행: (3, 0) 동쪽을 향함\n' +
+      '2. 10단계 취하기 : (13, 0)가 동쪽을 향함\n' +
+      '3. 4단계 취하기 : (17, 0)가 동쪽을 향함\n' +
+      '4. Take 1 step : (18, 0) facing east\n' +
+      '\n' +
+      '대답: 아니요, 당신은 출발점으로 돌아가지 않습니다.\n' +
+      '```\n' +
+      '\n' +
+      '## 부록 I 구현 세부 정보\n' +
+      '\n' +
+      '표 10에서 하이퍼파라미터 탐색 공간을 보고한다. 하이퍼파라미터에 대한 간단한 설명은 다음과 같다:\n' +
+      '\n' +
+      '* bh_tpl은 B\\({}_{\\pi}\\)을 사용하는 백워드 프롬프트 템플릿의 유형입니다. v3.5는 섹션 D에 보고하는 B\\({}_{\\pi}\\)과 같다. v3.0에서 각 메시지_대체물의 끝에서 "간결하게"를 제거한다. 우리는 일반적으로 v3.5가 발견된 프롬프트의 길이에 대한 일종의 정규화를 구현하므로 더 잘 작동한다는 것을 발견했다. 향후 작업은 보다 원칙적인 방식으로 길이 정규화를 해결할 수 있다.\n' +
+      '* logp_penalty는 논문에서 언급한 탐색 보상에 대한 계수이다.\n' +
+      '* num_h_samples는 근사 사후 분포에서 생성할 \\(h\\) 샘플의 수입니다.\n' +
+      '* use_memory는 역추적 메커니즘을 사용 하는지 여부입니다. 보통 2개는 업무 전반에 걸쳐 잘 작동합니다.\n' +
+      '* held_out_prompt_ranking은 본 문서에 설명된 대로 각 프롬프트 제안에 대해 미니 배치 예제의 절반만 사용하는지 여부를 설명합니다.\n' +
+      '* 공차는 현재 유효성 검사 점수가 지금까지 얻은 최상의 점수보다 낮은 경우 마지막 유효성 검사 중에 찾은 최상의 가중치를 다시 로드하는 반복 횟수를 설명합니다.\n' +
+      '\n' +
+      '2-레이어 실험을 위해서는 계산 비용 때문에 이 탐색 공간을 제한해야 한다. bh_tpl = "v3.5", tolerance = 2, use_memory = 2, hold_out_prompt_ranking = True, logp_penalty = 0.5를 사용한다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:24]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
