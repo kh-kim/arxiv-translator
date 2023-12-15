@@ -4,6 +4,6 @@
 
 [Ar5iv Version](https://ar5iv.org/abs/2304.12244)
 
-[English Version](https://raw.githack.com/kh-kim/arxiv-translator/master/2304.12244/paper.en.html)
+[English Version](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2304.12244/paper.en.html)
 
-[Korean Version](https://raw.githack.com/kh-kim/arxiv-translator/master/2304.12244/paper.ko.html)
+[Korean Version](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2304.12244/paper.ko.html)
