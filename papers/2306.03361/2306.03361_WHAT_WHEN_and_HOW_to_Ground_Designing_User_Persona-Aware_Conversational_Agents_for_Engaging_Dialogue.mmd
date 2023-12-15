@@ -1,0 +1,228 @@
+_What_, _When_, and _How_ to Ground: Designing User Persona-Aware Conversational Agents for Engaging Dialogue
+
+ Deuksin Kwon\({}^{1,2}\) Sunwoo Lee\({}^{1}\) Ki Hyun Kim\({}^{1}\) Seojin Lee\({}^{1}\) Taeyoon Kim\({}^{1}\) Eric Davis\({}^{1}\)
+
+\({}^{1}\) SK Telecom, South Korea, \({}^{2}\) University of Southern California
+
+{ds.kwon, sunwoo.lois, kimkihyun, skt.kaylee, tae.y.kim, eric.davis}@sk.com
+
+deuksin.kwon@usc.edu
+
+###### Abstract
+
+This paper presents a method for building a personalized open-domain dialogue system to address the WWH (WHAT, WHEN, and HOW) problem for natural response generation in a commercial setting, where personalized dialogue responses are heavily interleaved with casual response turns. The proposed approach involves weighted dataset blending, negative persona information augmentation methods, and the design of personalized conversation datasets to address the challenges of WWH in personalized, open-domain dialogue systems. Our work effectively balances dialogue fluency and tendency to ground, while also introducing a response-type label to improve the controllability and explainability of the grounded responses. The combination of these methods leads to more fluent conversations, as evidenced by subjective human evaluations as well as objective evaluations.
+
+## 1 Introduction
+
+A personalized dialogue (PD) system is capable of generating user-customized responses based on long-term memory about the user's persona, leading to more trustworthy and engaging conversations (Ranjbartabar et al., 2021; Xu et al., 2022). In our study, persona attributes cover comprehensive user-related information, such as personality, behaviors, preferences, and experience.
+
+The key to enhanced user engagement in a PD system lies in finding a persona that is contextually relevant and appropriate, on which a model is grounded to generate a natural response. However, as shown in the example in Figure 1, PD systems usually need to select relevant persona attributes from a given subset of N persona attributes, which is usually provided by external memory or retrieved from the user persona pool. Considering the fact that the agent's response is usually annotated with associated oracle persona information in the training dataset, deciding what persona attribute to select in each turn during model inference is a non-trivial problem. (We will refer to this problem as the "WHAT to ground" problem hereafter.) Another aspect to consider in a PD system is that under certain dialogue contexts, it is better not to generate a personalized response given retrieved persona attributes in order to create a more natural interaction (the second response in Figure 1). As shown in the example, it is usually difficult for the retrieval module to determine whether to use persona information for response generation. We also need a model to decide when to ground persona information with a given persona subset for every turn (We will call this the "WHEN to ground" problem hereafter).
+
+Given such a challenge, designing a user-based persona-aware PD system capable of generating engaging and human-like personalized responses requires addressing the "WHAT," "WHEN," and "HOW" (WWH) questions: 1) What personal information should be grounded given the conversation context, 2) When to generate responses using personal information, and 3) How to make natural and human-like personalized response.
+
+Figure 1: A sample of personalized conversation grounded on user persona. For every agent utterance, the persona attributes to be grounded in the response are retrieved by a retrieval model. Then, the agent make a decision about generating personalized response given dialogue context and retrieved persona subset.
+
+Most previous research on personalized dialogue systems has focused on generating natural responses in ideal personalized conversation settings Liu et al. (2020); Dong et al. (2022); Xu et al. (2022); Fu et al. (2022), where issues related to heavily interleaving personalized responses with casual dialogue turns are not considered. However, we believe that these are significant problems that need to be addressed in real-world personalized conversational systems.
+
+Large-scale Language Models (LLMs) such as GPT-3 have shown outstanding capabilities in various Natural Language Understanding (NLU) tasks and especially, in-context learning Brown et al. (2020). However, the inherent abilities of LLMs alone are insufficient to effectively address the WWH problems in real-world service environments. Moreover, it is very tricky to generate natural and engaging personalized responses and sophisticatedly control the output of the model in multi-turn/session scenarios, relying solely on prompt engineering.
+
+In addressing the research gap and real-world challenges, we propose a method that controls the inclination of models to generate personalized responses. Our technique blends persona-augmented datasets to construct a personalized dialogue system, thus enabling human-like natural conversations. Our approach involves the following steps:
+
+1) We create a Multi-Session Personalized Conversation (MSPC) dataset. This trains the model to ground the provided persona information effectively for a personalized response. 2) We control the model's persona-grounding level by adjusting the blending weights of the conversational datasets. Furthermore, we enrich the dataset with negative samples of persona subsets at the turn level for model fine-tuning. 3) To enhance both generation quality and the controllability and interpretability of persona-grounded generation, we use a turn label. This label indicates whether a turn is personalized or casual and serves as one of the inputs. Ultimately, we build a personalized dialogue system by fine-tuning an 18-billion parameter large language model (LLM). This LLM has a high level of understanding of conversation history, the ability to generate high-quality responses, and the capacity to focus effectively on given inputs, including users' personas.
+
+We also propose four grounding type categorizations to allow for analysis of the model's grounding patterns and detailed performance in subjective evaluation using _sensibleness_ and _specificity_, which complements the objective evaluation based on _groundedness_, and _fluency_.
+
+## 2 Related Work
+
+Since the release of the **PersonaChat** dataset Zhang et al. (2018), methods to generate personalized responses that are consistent with or grounded on a persona have been extensively studied Lee et al. (2021); Liu et al. (2020); Xu et al. (2021, 2022). Most of the studies focus on addressing the _WHAT_ and _HOW_ challenges by the use of diverse model architectures, modules, and training frameworks Fu et al. (2022); Dong et al. (2022).
+
+With respect to the _How_, Liu et al. (2020) propose an RL-based approach for generating personalized dialogue with rewards for mutual persona perception. Wu et al. (2019) and Fu et al. (2022) employ variational methods to generate personalized and knowledgeable response generation. Song
+
+Figure 2: The overall framework of our proposed personalized dialogue system
+
+et al. (2019) addresses both _WHAT_ and _HOW_ by generating persona-grounded responses via CVAE with a selected persona from a memory. Xu et al. (2022) and Bae et al. (2022) also tackle the same problems via a persona retrieval module and a generator module.
+
+However, to the best of our knowledge, there has been no work on addressing all three _WWH_ questions in PD system. Therefore, considering the crucial importance of addressing the _WWH_ issues in a commercial system, we propose novel methods to tackle all three _WWH_ questions, which are mission-critical for a commercial system.
+
+## 3 Dataset
+
+To develop a PD system that addresses the _WWH_ problems, we construct a Korean Multi-Session Personalized Dialogue dataset, which we refer to as MSPD. This dataset includes an agent that performs several unique roles, setting it apart from other PD datasets. Primarily, the agent is required to remember user persona attributes, including any persona attributes introduced during the conversation. The agent must also produce personalized responses that are both reasonably and timely grounded on the persona. The goal of this dataset is to enable a model to learn the _HOW_ and _WHEN_ of grounding. On average, the dataset contains 4 sessions per episode, with each session consisting of 10-12 turns between the user and the agent. This format allows the agent to learn how to sustain a natural conversation flow, both within and between sessions. As illustrated in the red and blue text in Figure 3, we annotate the persona used in responses and user utterances that include personal information the model should remember. Specifically, to address the _WHEN_ and _HOW_ problems from a dataset perspective, we cap the number of personalized responses per session at two or fewer, and performed rigorous reviews to ensure the quality and appropriateness of personalized responses within conversations. This approach allows us to construct 13,469 episodes in total. Statistics and other samples from the MSPD dataset can be found in Appendices A and B.
+
+Alongside the MSPD, we incorporate a variety of informal dialogue datasets, referred to as \(D_{casual}\), to train a more balanced model capable of generating high-quality daily, knowledge-based, empathetic, and personalized conversations. \(D_{casual}\) consists of a comprehensive collection of approximately 12.5 million utterances. We use carefully-curated Korean dialogue datasets available online1, developed by National Information Society Agency (NIA), as well as crowdsourced conversational datasets, including Korean versions of **PersonaChat**, **EmpatheticDialogues**, and **Wizard of Wikipedia**(Dinan et al., 2018; Rashkin et al., 2018; Zhang et al., 2018).
+
+Footnote 1: [https://aihub.or.kr/](https://aihub.or.kr/)
+
+## 4 Methodology
+
+As shown in Figure 2, we train our model during the training phase to address the _WHAT_ and _WHEN_ questions using a variety of methods. These include
+
+Figure 3: An example of a session from our proposed MSPD dataset. The left figure represents a dialogue between the user (U) and the agent (A), where red text and information within brackets indicate the agent’s personalized responses (PR) and the index of a corresponding persona attribute. Blue text and content within brackets represent the user’s new persona and its corresponding persona index. The right figure contains details about persona attributes, including the user’s demographic information
+
+different types of negative persona augmentation, dataset blending, and response type generation. During the inference phase, given the dialogue context and a subset of persona attributes, the model is capable of generating suitable personalized responses. These persona subsets are retrieved from individual persona attributes determined by the context of the conversation. Additionally, the model provides an explanation for its decision through response type labels (RTL). Conditioning on the RTL, allows us to explicitly control the generation of a personalized response.
+
+### Persona-Grounded Generation
+
+In this study, every input of the training dataset consists of user demographic information \(d\) (e.g. _gender_, _age_), a subset of user persona \(\rho^{m}\), which consists of persona attributes, and dialogue context \(c^{m}=[u_{1},a_{1},u_{2},a_{2},\cdots,u_{m-1},a_{m-1},u_{m}]\). \(u\) and \(a\) refer to the user and agent, respectively, and the target response \(y^{m}=[y^{m}_{1},\cdots,y^{m}_{\ell}]\) is indexed to the \(m_{th}\) agent response \(a_{m}\).
+
+Given the input, which is in the format of \((d,\rho^{m},c^{m})\), we optimize the model via the conditional probability for personalized response \(y^{m}\) and a loss function with Negative Log-Likelihood (NLL) loss that can be formulated as:
+
+\[P(y^{m}|d,p^{m},c^{m})=\prod_{t=1}^{\ell}P(y^{m}_{t}|d,\rho^{m},c^{m},y^{m}_{< t}) \tag{1}\]
+
+\[\mathcal{L}_{NLL}=-\sum_{t=1}^{\ell}\text{log}\;P(y^{m}_{t}|d,\rho^{m},c^{m},y^ {m}_{<t}) \tag{2}\]
+
+where \(\ell\) is the length of the target response.
+
+### Dataset Blending
+
+Blending a variety of conversational datasets has been shown to improve the diversity, empathy, and knowledge of a dialogue system, leading to more natural and engaging conversations Smith et al. (2020). By blending the MSPD, which is tailored for personalized conversations, with various types of casual dialogue datasets, \(D_{casual}\), the model becomes more balanced and adept at cohesive and natural conversations.
+
+We define a data instance as (\(c\), \(r\)) where \(c\) and \(r\) are the dialogue context and target response, respectively as described in section 4.1. We blend datasets by instance according to blending weights for each dataset. In particular, in order to finely control the _WWH_ problems with the blending weights (\(w\)), the MSPD dataset is divided into the agent's personalized responses (\(\mathcal{D}_{\text{MSPD-PR}}\)) and non-personalized responses (\(\mathcal{D}_{\text{MSPD-NPR}}\)) (e.g., agent's red and black colored responses in Figure 3, respectively). The final training dataset is assembled by over-sampling or under-sampling individual datasets. The training data size of individual dataset is determined by the weighted number of data instances for each dataset, defined by
+
+\[\|\mathcal{D}_{\text{i\;(train)}}\|=\frac{w_{i}}{\sum_{j=1}^{N}w_{j}}\times\| \mathcal{D}\| \tag{3}\]
+
+where a set of \(N\) conversational datasets \(\mathcal{D}=\{\mathcal{D}_{casual_{1}},\cdots,\mathcal{D}_{casual_{k}}, \mathcal{D}_{\text{MSPD-PR}},\mathcal{D}_{\text{MSPD-NPR}}\}\), \(\mathcal{D}_{i}\) is \(i\)-th dataset in \(\mathcal{D}\).
+
+### Control of _When_ & _What_ by Negative Samples
+
+**Control of _When_** To address the _WHEN_ problem, it is important to control a model's propensity to generate a persona-grounded response. Given a persona, an agent must generate personalized responses at the right time to create coherent and natural conversations. Generating persona-grounded responses too frequently leads to unnatural conversations. On the other hand, a model that generates personalized responses too infrequently does not sufficiently enhance a user's engagement with the agent.
+
+In particular situations where a persona subset is retrieved by a retrieval model at each turn, the model should generate a casual response instead of generating a personalized response, resulting in a more natural flow. In order to learn this natural flow, we intentionally include a persona subset consisting of all contextually irrelevant persona attributes in the input for non-personalized responses. We call this a negative persona subset augmentation in our study. This augmentation "suppresses" the model's inclination to ground too frequently. However, too much augmentation can hinder the model's ability to ground, so we perform the negative persona subset augmentation only for data in \(\mathcal{D}_{\text{MSPD-NPR}}\), not all casual datasets \(D_{casual}\).
+
+**Control of _What_** When a model generates a persona-grounded response, it needs to determine the _WHAT_, i.e., the specific persona attribute on which to base the response. By providing both the ground-truth persona attributes, \(\rho_{\text{pos}}\), which are relevant to the response, and "negative" persona at tributes, \(\rho_{\text{neg}1},...,\rho\text{neg}_{k-1}\), which are not relevant to the target response, the model learns to select the appropriate persona attribute(s) from multiple options given the current dialogue context. We refer to the process of adding multiple negative persona attributes to a ground truth persona as negative persona attribute augmentation.
+
+Finally, we vary the subset of the persona \(\rho\) in (1) for negative persona augmentation depending on the response type:
+
+\[\rho=\begin{cases}\rho_{\text{npr}}\text{ for non-personalized response }\in\mathcal{D}_{\text{MSPD-NPR}}\\ \rho_{\text{pr}}\text{ for personalized response }\in\mathcal{D}_{\text{MSPD-PR}}\\ \rho_{\text{c}}\text{ for casual response }\in\mathcal{D}_{\text{casual}}\end{cases}\]
+
+, where \(\rho_{\text{npr}}=\{\rho_{\text{neg}_{1}},\cdots,\rho_{\text{neg}_{k}}\}\),
+
+\(\rho_{\text{pr}}=\{\rho_{\text{pos}},\rho_{\text{neg}_{1}},\cdots,\rho_{ \text{neg}_{k-1}}\}\), and \(\rho_{\text{c}}=\phi\).
+
+### Controllability & Explainability via Response Type Label
+
+**Controllability** In a commercial setting, it is often necessary to determine whether to generate a personalized response based on business logic. For instance, this might include deciding when the agent should proactively send a message to users. We can exert explicit control over the model's decision regarding the _WHEN_ by employing Response Type Labels (RTL), denoted as <RTL>.
+
+First, we train the model to generate both a response and corresponding RTL token: \(P(\text{<RTL>},y|d,\rho,c)\) in (1). We have pre-defined special tokens <PRTL> for personalized response type labels and <CRTL> for casual response type labels. Then, at inference time, we can insert the RTL to generate a response that corresponds to the response type: \(y\sim P_{\theta}(\cdot|d,\rho,c,\text{<PRTL>})\) or \(y\sim P_{\theta}(\cdot|d,\rho,c,\text{<CRTL>})\).
+
+**Explainability** Error analysis is a crucial element in commercial systems for swift debugging and resolution of issues. However, this process can often be labor-intensive, typically involving a manual review of log data to evaluate the quality and appropriacy of generated personalized responses. Therefore, besides enhancing controllability, we also employ the Response Type Label (RTL) to improve the explainability of the model's generated responses. In this regard, the level of explainability provided by the RTL facilitates easier and more efficient error analysis, leading to improved service operation.
+
+## 5 Experiments
+
+### Experimental Setup
+
+To validate the efficacy of our proposed methods in building a controllable Personalized Dialogue (PD) system that addresses the _WWH_ problems, we compare the performance of several models. These are enhanced with fine-tuned baseline models, such as dataset blending and negative sampling methods. Additionally, by comparing models trained with different blending weights, we evaluate the impact of the blending weight on the model's grounding propensity and fluency. The baseline models are all derived from our in-house 18B parameter pre-trained language model, which shares the same architecture as GPT-3 Brown et al. (2020). All experiments are conducted on SKT's proprietary supercomputer, Titan, equipped with NVIDIA A100 SXM4 80GB GPUs.
+
+### Evaluation
+
+**Objective Evaluation** We use perplexity (PPL) to measure the fluency of the responses generated by the model. In addition, the F1 score between the persona attributes and the generated response acts as a proxy to evaluate the model's ability to ground. We also calculate the P-coverage score, which measures how well the user persona is reflected in the generated responses Song et al. (2019).
+
+**Subjective Evaluation** We complement objective evaluation metrics with subjective human evaluation at both the session and turn levels, specifically employing the Sensibleness and Specificity (SS) score rated as either 0 or 1 at the turn level Adiwardana et al. (2020). Particularly, to analyze the pattern and quality of grounded responses at the turn level, we categorize them according to our proposed four grounding types, which are as follows. First, we assess whether the agent's response, \(y\), is personalized. Second, we categorize \(y\) based on two criteria: **grounding level** and **consistency**.
+
+Under the **grounding level**, we have two subcategories: 1) _Hard Grounding_, where there's a direct and explicit association between \(y\) and the persona attribute, \(\rho_{\text{pos}}\), characterized by high expressive similarity. 2) _Soft Grounding_, where there's an indirect and implicit association between \(y\) and \(\rho_{\text{pos}}\), marked by low expressive similarity.
+
+Under the **consistency** category, we have two subcategories: 1) _Consistent Grounding_, where there's consistency between \(y\) and the given \(\rho_{\text{pos}}\)2) _Inconsistent Grounding_, where there's an inconsistency between \(y\) and the given \(\rho_{\text{pos}}\).
+
+### Results
+
+#### 5.3.1 Effect of Negative Persona Attributes
+
+Table 1 illustrates the impact of introducing negative persona attributes on persona-grounded response generation. \(Model_{1}\) trained with only one given positive persona attribute shows the highest F1 and PPL scores of 11.4 and 0.28, respectively. On the other hand, \(Model_{2}\) trained with negative persona attributes has a PPL of 10.97 and an F1 score of 10.15, which is slightly lower than \(Model_{1}\). Despite the decrease in grounding frequency, the model demonstrates improved response generation by reasonably selecting an appropriate persona attribute given the dialogue context. We hypothesize that the PPL increases because the model learns to distinguish the most suitable persona among several persona attributes in a given context. Furthermore, despite the reduced inclination to ground, we observe that the model can still generate high-quality personalized responses at every turn.
+
+#### 5.3.2 Effect of Negative Persona Subset
+
+Table 1 illustrates the effectiveness of the negative persona subset in controlling the _WHEN_ problem. Through the application of the negative persona subset, \(Model_{3}\) learns to refrain from generating personalized responses when the persona attributes are not appropriate for the given context. In Table 1, \(Model_{3}\) demonstrates a decrease in persona grounding and a significant increase in fluency compared to \(Model_{2}\), as indicated by the lower PPL, F1, and P-Cover scores (9.37, 01, and 0.05, respectively). We believe the key reason for this enhanced fluency is that the model generates more frequent and natural casual responses to non-personalized turns in the test set, without the need to ground on irrelevant persona subsets.
+
+#### 5.3.3 Effects of Blending Datasets: Trade-Off between Model Fluency and Grounding
+
+As shown in Table 2, there is a trade-off between the model's fluency and tendency to ground. As the weight of the MSPDNRP dataset with negative persona augmentations increases, the F1 score decreases from 0.14 to 0.06, and the P-cover score falls from 0.06 to 0.1 and 0.05. Conversely, the PPL decreases from 10.46 to 9.33. This means that an increase in the number of persona augmented negative samples means the model ground less frequently, leading to a more natural conversation flow with better quality responses.
+
+Achieving natural and engaging conversations requires careful consideration of the trade-off between the model's inclination to ground and response fluency. To control the _WWH_ balance, we can adjust the blending weights for datasets with different persona augmentations and select appropriate values for PPL and F1 scores. We set a F1 score of '1' as the minimum threshold for the model's grounding tendency, as we have consistently observed that models with F1 scores below 1 seldom attempt grounding in conversations. This approach ensures that optimal PD systems maintain a balance between a sufficient quantity of grounded responses and a high fluency score.
+
+#### 5.3.4 Effect of RTL Generation: Enhanced Explainability and Fluency
+
+As can be seen in Table 1, based on the F1 score and P-Cover, \(Model_{4}\) trained to generate both RTL and personalized responses, demonstrates little difference in tendency to ground when compared to \(Model_{3}\). On the other hand, we found that the PPL score decreased to 8.88. This result is consistent with Kim et al. (2022)'s research, which showed that the quality of generation was enhanced when information related to the target response was generated simultaneously.
+
+\begin{table}
+\begin{tabular}{l l c c c c c} \hline \hline Model ID & Method & Dataset & \# Attribute & 
+\begin{tabular}{c} Fluency \\ \end{tabular} & Groundness \\ \cline{3-6}  & & & PPL & F1 & P-Cover \\ \hline \(Model_{1}\) & Base (Positive Only) & MSPDNRP + \(\mathcal{D}_{\text{consal}}\) & 1 & 11.4 & 0.28 & 0.12 \\ \(Model_{2}\) & + Negative Persona Attributes Augmentation & MSPDNRP + \(\mathcal{D}_{\text{consal}}\) & 5 & 10.97 & 0.15 & 0.07 \\ \(Model_{3}\) & + Negative Persona Subset Augmentation & MSPDNR + MSPDNR + \(\mathcal{D}_{\text{consal}}\) & 5 & 9.37 & 0.1 & 0.05 \\ \(Model_{4}\) & + RTL Generation & MSPDNRP + MSPDNR + \(\mathcal{D}_{\text{consal}}\) & 5 & 8.88 & 0.1 & 0.046 \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: The Results of Objective Evaluation
+
+\begin{table}
+\begin{tabular}{c c c c c c c} \hline \hline \multirow{2}{*}{Model} & \multicolumn{3}{c}{Biencing Weight} & \multicolumn{3}{c}{Evaluating} \\ \cline{2-7}  & \(\mathcal{D}_{\text{total}}\) & MSPDNR & MSPDNR & F1 & P-Cover & PPL \\ \hline \multirow{3}{*}{\(Model_{3}\) (Negative Persona Subset Aug. 95)} & 0.94 & 0.5 & 0.1 & 0.14 & 0.06 & 10.46 \\  & 0.92 & 0.5 & 0.3 & 0.12 & 0.05 & 10.04 \\ \cline{1-1}  & 0.90 & 0.5 & 0.5 & 0.11 & 0.05 & 9.91 \\ \cline{1-1}  & 0.87 & 0.5 & 0.8 & 0.1 & 0.05 & 9.33 \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: Evaluations with Different Blending WeightsWe also evaluated explainability by analyzing whether the generated Response Type Labels (RTL) accurately reflect the model's decisions on persona grounding. For this purpose, we sampled 90 generated responses for each response type. The accuracy of the generated RTL for the casual and the personalized response type wa 96.7% and 98.8%, respectively. This confirms that generating the RTL provides a reliable explanation for the model's decision on the _WHEN_ problem.
+
+#### 5.3.5 Subjective Grounding Evaluation
+
+The high average (over 0.8) scores for both turn and session levels in Table 3 demonstrate that models trained on the high-quality MSPD dataset can generate appropriate responses. In the grounding evaluation, the vast majority of both hard and soft grounding cases demonstrated persona-consistent results. Both models exhibited nearly four times as many hard grounding instances as soft groundings, and they had a lower rate of "bad-sensible" responses. This suggests that the models are strongly inclined to ground persona information in responses in a manner that is both natural and explicit, given the context. Upon closer examination of "bad-sensible" instances of hard grounding, we found that as the models concentrate more on grounding the persona, responses can sometimes become unnatural within the given context. However, the proportion of "bad sensible" grounding responses was in the 10% range, confirming that the model generally generates high-quality personalized responses.
+
+The RTL generation model (\(Model_{4}\)) shows a lower inclination to ground, yet it had a better bad-sensible ratio. Therefore, in accordance with the objective evaluation result, we can confirm that generating both the response and the RTL can have a positive effect on fluency, even though there is no significant improvement in terms of session evaluation.
+
+#### 5.3.6 Correlation between objective and subjective evaluations
+
+We confirmed a positive correlation between fluency, as measured by PPL, and human sensibleness judgment. \(Model_{4}\) exhibited a decrease of 0.49 in PPL compared to \(Model_{3}\), indicating improved fluency in Table 1. In the session and turn evaluation presented in Table 3, \(Model_{4}\) exhibited significantly higher scores compared to \(Model_{3}\) across all evaluation criteria related to fluency. Turn-level grounding evaluation also revealed a lower bad sensibleness ratio for personalized/non-personalized turns (0.13 and 0.03, respectively), confirming enhanced sensibleness of \(Model_{4}\)'s responses. We also found a positive correlation between subjective evaluation (i.e., the amount of grounded generation) and the P-Coverage metric used to assess grounding propensity. In Table 1, \(Model_{4}\) exhibited a slight decrease in P-Coverage compared to \(Model_{3}\). This corresponds to the reduced number (approximately 40) of personalized turns generated by \(Model_{4}\) in Table 3, reflecting an actual decrease in the model's grounding propensity. Consequently, considering the cost of subjective evaluation, objective assessment appears feasible for accurately evaluating the model's fluency and grounding tendencies in real-world service operations.
+
+## Conclusion
+
+We proposed a method to build a personalized open-domain dialogue system that addresses the _WWH_ problem for natural and engaging conversation through weighted dataset blending (_WHEN_), negative persona subsets (_WHEN_), negative persona attributes (_WHAT_), and the creation of highly curated personalized conversation datasets (_HOW_). We also demonstrate that generating a response type label (_RTL_) enhances both the controllability and explainability of model decisions about the _WHEN_; this is crucial in commercial service. Experimental results show the effectiveness of our proposed methods in addressing and controlling the _WWH_ problem, as seen in both subjective and objective evaluations.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c c} \hline \hline \multirow{2}{*}{Model} & \multicolumn{4}{c}{**Session / Turn Evaluation**} & \multicolumn{4}{c}{**Grounding Evaluation**} & \\ \cline{2-10}  & \multicolumn{2}{c}{Session Score} & \multicolumn{2}{c}{Session-Benes} & \multicolumn{2}{c}{Specificity} & \multicolumn{2}{c}{Hand Grounding} & \multicolumn{2}{c}{Soft Grounding} & \multicolumn{2}{c}{Sub Total} & \multicolumn{2}{c}{Non-personalized} & \multicolumn{2}{c}{Total} \\ \cline{5-10}  & \multicolumn{2}{c}{Session Score} & \multicolumn{2}{c}{(Time-level)} & \multicolumn{2}{c}{(Time-level)} & \multicolumn{2}{c}{(Time-level)} & \multicolumn{2}{c}{Consitect} & \multicolumn{2}{c}{Inconsistent} & \multicolumn{2}{c}{Consistent} & \multicolumn{2}{c}{Inconsistent} \\ \hline \(Model_{3}\) & 0.80 & 0.914 & 0.76 & 0.14 (23/162) & NA (00) & 0.23 (9/40) & 1.0 (1/1) & 0.16 (33/203) & 0.03 (10/297) & 0.09 (43/500) \\ \(Model_{4}\) & 0.885 & 0.939 & 0.875 & 0.13 (16/125) & NA (00) & 0.17(6/39) & NA (00) & 0.13 (22/160) & 0.03 (11/03) & 0.06 (33/543) \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: Results of Subjective Evaluation. 1) Session & Turn level Evaluation and 2) Grounding Evaluation: the ratio of the count of bad sensible responses to the count of each grounding type described in 5.2. A bad sensible response means that the response scored a 0 on the “sensible” evaluation.
+
+## Acknowledgements
+
+We would like to express our sincere gratitude to the members of SK Telecom and A.Tech for their dedicated support throughout this project. Special thanks are extended to the members of the Foundation Modeling team for their technical assistance, meaningful discussions, and contributions to improving the model's performance, training, and deployment. Additionally, we would like to thank the linguists from the Dialogue PO team for their invaluable contributions in generating and evaluating high-quality datasets for model training and improvement.
+
+## References
+
+* A. Adiwardana, M. Luong, D. R. So, J. Hall, N. Fiedel, R. Thoppilan, Z. Yang, A. Kulshreshtha, G. Nemade, Y. Lu, et al. (2020)Towards a human-like open-domain chatbot. arXiv preprint arXiv:2001.09977. Cited by: SS1.
+* S. Bae, D. Kwak, S. Kang, M. Y. Lee, S. Kim, Y. Jeong, H. Kim, S. Lee, W. Park, and N. Sung (2022)Keep me updated! memory management in long-term conversations. arXiv preprint arXiv:2210.08750. Cited by: SS1.
+* T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al. (2020)Language models are few-shot learners. Advances in neural information processing systems33, pp. 1877-1901. Cited by: SS1.
+* E. Dinan, S. Roller, K. Shuster, A. Fan, M. Auli, and J. Weston (2018)Wizard of wikipedia: knowledge-powered conversational agents. arXiv preprint arXiv:1811.01241. Cited by: SS1.
+* W. Dong, S. Feng, D. Wang, and Y. Zhang (2022)I know you better: user profile aware personalized dialogue generation. In Advanced Data Mining and Applications: 17th International Conference, ADMA 2021, Sydney, NSW, Australia, February 2-4, 2022, Proceedings, Part II, pp. 192-205. Cited by: SS1.
+* T. Fu, X. Zhao, C. Tao, J. Wen, and R. Yan (2022)There are a thousand hamlets in a thousand people's eyes: enhancing knowledge-grounded dialogue with personal memory. arXiv preprint arXiv:2204.02624. Cited by: SS1.
+* H. Kim, Y. Yu, L. Jiang, X. Lu, D. Khashabi, G. Kim, Y. Choi, and M. Sap (2022)Prosocial dialog: a prosocial backbone for conversational agents. arXiv preprint arXiv:2205.12688. Cited by: SS1.
+* J. Yang Lee, K. A. Lee, and W. S. Gan (2021)Generating personalized dialogue via multi-task meta-learning. arXiv preprint arXiv:2108.03377. Cited by: SS1.
+* Q. Liu, Y. Chen, B. Chen, J. Lou, Z. Chen, B. Zhou, and D. Zhang (2020)You impress me: dialogue generation via mutual persona perception. arXiv preprint arXiv:2004.05388. Cited by: SS1.
+* H. Ranjbartabar, D. Richards, A. A. Bilgin, and C. Kutay (2021)Do you mind if i ask? addressing the cold start problem in personalised relational agent conversation. In Proceedings of the 21st ACM International Conference on Intelligent Virtual Agents, pp. 167-174. Cited by: SS1.
+* H. Rashkin, E. M. Smith, M. Li, and Y. Boureau (2018)Towards empathetic open-domain conversation models: a new benchmark and dataset. arXiv preprint arXiv:1811.00207. Cited by: SS1.
+* E. M. Smith, M. Williamson, K. Shuster, J. Weston, and Y. Boureau (2020)Can you put it all together: evaluating conversational agents' ability to blend skills. arXiv preprint arXiv:2004.08449. Cited by: SS1.
+* H. Song, W. Zhang, Y. Cui, D. Wang, and T. Liu (2019)Exploiting persona information for diverse generation of conversational responses. arXiv preprint arXiv:1905.12188. Cited by: SS1.
+* B. Wu, M. Li, Z. Wang, Y. Chen, D. Wong, Q. Feng, J. Huang, and B. Wang (2019)Guiding variational response generator to exploit persona. arXiv preprint arXiv:1911.02390. Cited by: SS1.
+* J. Xu, A. Szlam, and J. Weston (2021)Beyond goldfish memory: long-term open-domain conversation. arXiv preprint arXiv:2107.07567. Cited by: SS1.
+* X. Xu, Z. Gou, W. Wu, Z. Niu, H. Wu, H. Wang, and S. Wang (2022)Long time no see! open-domain conversation with long-term persona memory. arXiv preprint arXiv:2203.05797. Cited by: SS1.
+* S. Zhang, E. Dinan, J. Urbanek, A. Szlam, D. Kiela, and J. Weston (2018)Personalizing dialogue agents: i have a dog, do you have pets too?. arXiv preprint arXiv:1801.07243. Cited by: SS1.
+
+## Appendix A Details of MSPD Dataset
+
+### Statistics of MSPD
+
+### Model Training Settings
+
+For the experiments in our study, we fine-tuned an 18B parameter model with the same architecture as GPT-3 (Brown et al., 2020), but with 40 layers, a hidden size of 6144, and 48 attention heads. The model is trained for a single epoch with a micro batch size of 8, using a learning rate of 1.0e-05. To prevent overfitting, a dropout rate of 0.1 and a weight decay of 1.0e-1 are employed. The input sequence length is 1024. The models in Table 1 1 are trained with the blending weight set to 0.85 for \(D_{casual}\) datasets, 0.7 for MSPD\({}_{PR}\), and 0.8 for the MSPD\({}_{NPR}\) dataset.
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline Types & \\ \hline \# Episodes & 13,469 \\ \# Sessions & 53,880 \\ \# Utterances & 601,062 \\ Avg. \# turns per session & 11.15 \\ Avg. \# personalized response per session & 1.90 \\ Avg. \# user persona per episode & 7.18 \\ Avg. \# newly aggregated persona per episode & 2.18 \\ Avg. length of user utterances & 33.72 \\ Avg. length of agent response & 28.10 \\ \hline \hline \end{tabular}
+\end{table}
+Table 4: Statistics of the MSPD Dataset
+
+## Appendix B Examples
+
+### Example of MSPD Dataset
+
+Figure 4: A sample of a multi-session conversation in the MSPD
+
+### Subjective Evaluation
+
+Figure 5: A snapshot of the subjective evaluation Tool.
+
+Figure 6: Example of generations of our personalized dialogue model with subjective evaluation for hard grounding. Blue colored texts are persona-grounded responses and person attributes on which the model grounds the response
+
+Figure 7: Example of subjective evaluation for soft grounding and fail cases
+
+### Deployment Tool: Sanity Testing
+
+Figure 8: A Snapshot of the Sanity Testing Tool. 1) The leftmost area is for interactive conversation with the agent, and the <PL> and <DL> tags refer to the response type generated by the model; <PL> is a personalized response, and <DL> is a non-personalized response type. 2) The center pane shows information related to the user and the current turn. And 3) the window on the right displays user persona.
