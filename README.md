@@ -8,8 +8,10 @@
 
 ## Paper List
 
+새 창 열기가 지원되지 않습니다. 직접 새 창으로 열기를 통해 열기를 권장합니다.
+
 | ArXiv ID | Title | ArXiv / Ar5iv | English / Korean |
-|:--------:|:-----:|:-------------:|:----------------:|
+|:--------:|-------|:-------------:|:----------------:|
 | 2311.16867 | The Falcon Series of Open Language Models | [arXiv](https://arxiv.org/abs/2311.16867) / [ar5iv](https://ar5iv.org/abs/2311.16867) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2311.16867/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2311.16867/paper.ko.html) |
 | 2311.11045 | Orca 2 Teaching Small Language Models How to Reason | [arXiv](https://arxiv.org/abs/2311.11045) / [ar5iv](https://ar5iv.org/abs/2311.11045) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2311.11045/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2311.11045/paper.ko.html) |
 | 2310.04406 | Language Agent Tree Search Unifies Reasoning Acting and Planning in Language Models | [arXiv](https://arxiv.org/abs/2310.04406) / [ar5iv](https://ar5iv.org/abs/2310.04406) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2310.04406/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2310.04406/paper.ko.html) |
