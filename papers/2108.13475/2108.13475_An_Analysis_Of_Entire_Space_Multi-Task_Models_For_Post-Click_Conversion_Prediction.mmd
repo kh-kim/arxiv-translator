@@ -1,0 +1,164 @@
+[MISSING_PAGE_FAIL:1]
+
+The existence of these similar events naturally raises two questions: (1) how should the objectives be modelled and (2) what is the best way to elicit positive transfer between tasks. The answers to these questions are, of course, dependent on the problem at hand. In this paper, we restrict our focus to a specific, but important, real-world scenario: predicting post-click conversion rates (CVR) for the purpose of online advertising on Twitter.
+
+In the most straightforward setup, ad click-through rate (CTR) and CVR prediction are treated as separate supervised learning problems with two models trained independently. Of these tasks, CVR prediction is usually more challenging for two reasons. The first reason is **data sparsity**: every impression shown to a user generates training data for a CTR model whereas only impressions which result in a click generate training data for a CVR model. The number of impressions that generate ad-click engagements are typically a small fraction, sometimes less than 1%, so the CVR model must be trained with significantly less data. This challenge is exacerbated by the fact that exploration data is expensive to obtain as there is opportunity cost associated with each served ad impression. Put differently, serving random traffic for better exploration comes with a significant financial disincentive. The second reason is **data bias**: the CVR model needs to make predictions over all impressions, however, only impressions which resulted in a click are used as training examples. That is, for an impression which did not result in a click, we lack the counterfactual information about whether this would have resulted in a conversion had the user clicked on the ad (see Figure 1).
+
+Recent work (Koshelev et al., 2017) introduced an approach to modeling CVR they named Entire Space Multitask Model (ESMM) which has two key ideas: (1) sharing parameters for representation learning between the CVR and CTR problem and (2) modeling the CVR unconditionally which allows training the CVR model on all impression samples (they term "entire space" modeling). We expand on these descriptions below.
+
+Here we systematically investigated, through the use of ablation studies, the mechanisms behind the good performance of the ESMM model. We reproduced the findings of (Koshelev et al., 2017) that ESMM outperforms modeling CVR and CTR as separate models on a different, industry scale dataset. However, we also found that a similar level of performance can be obtained by approaches which incorporated only one aspect of the ESMM model. That is, models which use only parameter sharing between CVR or CTR, or only "entire space" training.
+
+### Problem Formulation
+
+We consider the conversion prediction problem under standard supervised learning assumptions. That is, we are assumed to be presented with an ad _context_, denoted \(x\), that represents the attributes of the ad placement, user request, and the ad itself, drawn i.i.d. from some stationary distribution, \(D\). If this ad candidate is presented and observed by the user (an "impression") then the user will elect to _click_ on the ad, denoted \(y=1\), with probability \(p(y=1|x)\). Additionally, the user may also elect to _convert_ by installing the advertised application or purchasing the product, denoted \(z=1\), with probability \(p(z=1|y=1,x)\). By construction, a conversion is only possible if the user has clicked: that is, \(p(z=1|y=0,x)=0\). The goal is to produce a classification function, \(f(x;\theta)\rightarrow[0,1]\), that minimizes the expected (cross-entropy) loss for any new example drawn from the same distribution. That is, we aim to find model parameters, \(\theta\), where \(\arg\min_{\theta}\mathbb{E}_{D}\)\([L(f(x;\theta),z)]\), for \(L(p,z)=-(z\cdot\log(p)+(1-z)\cdot\log(1-p))\).
+
+### Related work
+
+Deep learning based models have been widely studied for use in multi-task and transfer learning (Koshelev et al., 2017; Koshelev et al., 2018; Koshelev et al., 2019; Koshelev et al., 2019; Koshelev et al., 2020). One common approach to transfer learning is to share neural network parameters between related tasks, until the final hidden layer of a deep network (Koshelev et al., 2019). The general consensus from this body of work is that relatively straightforward techniques often work well in practice and can greatly reduce the amount of time or data required to learn a new task (see survey: (Han et al., 2017)). However, transfer learning can be challenging to do well, and can easily result in negative transfer if done naively (Han et al., 2017; Chen et al., 2018).
+
+Regarding the specific task of conversion prediction for online advertising, the expense of obtaining labeled conversion data and the inherent rarity of successful advertising-driven conversions has encouraged the development of multi-task learning approaches in numerous industrial contexts. While the business-sensitive nature of this application does dissuade publication of production systems, there are some representative examples in the literature. For instance, as early as 2014 hierarchical multi-task learning (MTL) conversion models were deployed at scale at Yahoo (Chen et al., 2018), (Chen et al., 2018) described a multi-task feature engineering approach for online advertising.
+
+The approach discussed in (Chen et al., 2018) most closely relates to the work presented in this report. There the authors addressed the problems of data sparsity in the post-click conversion task through a proposed a multi-task model sharing parameters between CTR and CVR tasks. Additionally, the authors aim to address the dataset bias issue by predicting the joint probability of click and conversion - treating the marginal CTR prediction as an auxiliary task. This work demonstrated improved prediction performance over baselines. Also, notably, (Han et al., 2017) consider similar approaches for this task with a specific focus towards the issue of delayed feedback; while interesting, the challenge of delayed feedback falls outside the scope of this work.
+
+## 2. Methods
+
+As detailed above, the main quantity of interest for ad ranking systems is the user-ad conversion rate, \(p(z=1|x)\). There are a number of ways to decompose this prediction, which result in different characteristics and may allow for different MTL approaches. For instance, choosing to ignore the decomposition of \(p(z=1|x)\), into \(p(z=1|y=1,x)\cdot p(y=1|x)\), leaves only a single prediction, and hence a single-task deep neural network (DNN) architecture training in the impression space.
+
+In this work, we test 6 different approaches, including the naive choice just described. Although MTL models have the potential to become complex we constrain our analysis to the use of (1) hard parameter sharing, (2) careful selection of training spaces and prediction heads, and (3) conditionally aware CVR prediction. We describe the 6 modeling approaches below1 and also present this information for direct comparison in Figure 2.
+
+Footnote 1: Table 1 in the Appendix provides a checklist-style summary of all our model designs, as well as some additional implementation details.
+
+We denote the baseline approach _Independent Prediction_ (IP) which treats CTR and CVR as separate tasks: two multi-layer perceptron (MLPs) with no shared parameters. CTR prediction, \(\hat{p}(y=1|x)\), is trained on negative downsampled
+
+Figure 1. Event flow from impressions to clicks (\(y\)) to conversions (\(z\)). Impressions with ad-click engagements, \(y=1\), are much sparser compared to those without ad-clicks, \(y=0\). The dashed lines indicate conditional likelihoods that cannot be observed in practice: that is, missing counterfactuals that cause data bias. Conversion models trained only on clicked data, predicting \(p(z|y=1,x)\), are affected by both the sparsity and bias when used for conversion inference on the space of all impressions.
+
+click data and CVR prediction, \(\hat{p}(z=1|y=1,x)\), is trained using impressions that were clicked, \(y=1\). The final prediction is constructed as the product of those two predictions, \(\hat{p}(z=1,y=1|x)=\hat{p}(z=1|y=1,x)\cdot\hat{p}(y=1|x)\).
+
+The primary approach introduced in [6] is to train a model to directly predict \(\hat{p}(z=1,y=1|x)\) along with predicting \(\hat{p}(y=1|x)\), and constructing the network such that \(\hat{p}(z=1,y=1|x)=\hat{p}(z=1|y=1,x)\cdot\hat{p}(y=1|x)\). That is, there is an internal node in the network that can be considered as a prediction of \(\hat{p}(z=1|y=1,x)\), but there is no loss directly optimizing this prediction. We refer to this approach as the _Entire Space Multitask Model (ESMM)_, the name used by [6]. Our model is conceptually equivalent but the specific architecture is different (see Section 2.3), in that we used hard parameter sharing in early DNN layers, as opposed to just the feature embeddings.
+
+The ESMM approach introduces 3 characteristics distinct from the baseline (IP) approach:
+
+* ESMM uses hard parameter sharing between the CTR and CVR task. (Shared Parameters)
+* ESMM trains the install prediction over the entire space of impressions by predicting \(\hat{p}(z=1,y=1|x)\) rather than \(\hat{p}(z=1|y=1,x)\). (Entire Space)
+* ESMM implicitly weights the install prediction's loss by the click prediction. (Weighted CVR)
+
+In order to separate the impact of these characteristics and understand their individual and combined effects we tested several variants of ESMM. _Entire Space Multitask Model - No Shared_ (ESMM-NS) uses the same losses as ESMM
+
+Figure 2: Different modeling approaches evaluated here. Independent Predictions (IP) serves as the baseline which models CVR and CTR as independent tasks. Entire Space Multitask Model (ESMM) includes all 3 characteristics, namely Shared Parameters, Entire Space prediction and Weighted CVR. The other models incorporate only some of these characteristics, allowing us to study their contributions to performance. The MLP labels (CTR, CVR) indicate the space of data used in training. CTR is all training examples (entire space), CVR is the subset of examples where \(y=1\). (e.g. the ESMM-NS has two MLPs, both of which are trained on the CTR data). See Section 2 for a description of each model.
+
+but has no shared parameters between the CVR and CTR prediction tasks. The _ESSP-Split_ model uses the same losses as the ESMM model and Shared Parameters, but the two predictions, \(\hat{p}(y=1|x)\) and \(\hat{p}(z=1,y=1|x)\), are made by independent heads with no constraint on their relationship2. _Independent Predictions Shared Parameters_ (IPSP) uses the same approach and losses as the IP model (that is, it is not an Entire Space model) but shares parameters between the CVR and CTR prediction. Finally, _Entire Space Prediction (ESP)_ just predicts \(\hat{p}(z=1,y=1|x)\) with a single model, thus training over the whole space, but makes no use of the CTR task.
+
+Footnote 2: This means that the predictions of the two heads may be inconsistent since its possible for the model to predict \(\hat{p}(z=1,y=1|x)>\hat{p}(y=1|x)\). In practice, this does not occur very often.
+
+### Dataset and Training Setup
+
+The evaluation dataset for this paper is comprised of real click and conversion data for digital mobile app install ads served on Twitter, as well as MoPub, Twitter's mobile display network (e.g. in-game ads). While this real-world dataset allows us to evaluate the performance of these technologies on a truly representative problem the dataset itself is not publicly available due to numerous user privacy and business-sensitive constraints. Specifically, in each of the evaluations below a fixed dataset of click and conversion events collected during a consecutive number of days in mid 2020 were used for model training and evaluation. The raw data consisted of over 5 billion ad impressions (later down-sampled, as discussed below), over 50 million ad clicks, and several million conversion events3. Note, as discussed below, evaluation hold-out sets for these experiments always ensure past vs. future evaluation, such as training on the previous 14 days of data and testing on the 15th day. Also note, when training on the first \(N\) days the examples are shuffled to make the data approximately i.i.d.
+
+Footnote 3: Specific dataset counts are approximated to avoid disclosure of proprietary information.
+
+Below, the results reported are for a single evaluation day. However, the robustness of these modeling approaches to temporal shift, i.e. how prediction performance changes as the model is tasked to make predictions further into the future without the benefit of retraining, were also evaluated. While this is a particularly interesting, and practically relevant, aspect of this problem we ultimately did not observe a noteworthy difference between the approaches in this regard.
+
+#### 2.1.1. Negative downsampling
+
+Imbalanced datasets are a common problem in advertising datasets. We downsampled negative examples by some factor, \(f\), and in order to calibrate the model, upweighted each negative sample by the same factor, \(f\). Note that all samples where \(y=1\) were kept, no downsampling was done based on the conversion label, \(z\). The evaluation dataset was generated identically, with the same downsampling and upweighting procedure applied to negatives for the click task.
+
+### Metrics
+
+Ultimately, for the purpose of ranking potential ads and valuing impressions, we are interested in the probability that an impression leads to a conversion, \(p(z=1|x)=p(z=1,y=1|x)\). For this task we require predictions to be well-calibrated so we focused on the cross-entropy loss (we report PR-AUC in Appendix B). We report our scores as relative percentage performance improvements versus the baseline model.
+
+### Model architecture
+
+Since the models each have slightly different characteristics the exact architectures vary; however, the number of trainable parameters was kept comparable across all MLPs4. The multi-task models (except ESMM-NS) had two shared layers after the feature embeddings, followed by two layers _per head_ as the model branched. Models using a "Weighted CVR", e.g. ESMM, had the two branches reconnect with no trainable parameters after the \(p(y=1|x)\) entity and the implicit \(p(z=1|y=1,x)\) entity5, as in (Beng et al., 2017). Models without this characteristic, e.g. IPSP, had a single entity at the root of each branch. We experimented with larger models, in terms of both wider layers and greater depth (more layers) for both the shared and branched parts of the network, but this did not bring any benefit. Larger models were also trained with batch normalization layers both included and excluded. The lack of benefit might be explained by lack of sufficient training data; though this is just another example of the wider open question about why larger models do not consistently perform better on recommendation tasks (Beng et al., 2017).
+
+Footnote 4: IP and ESMM-NS have two MLPs and therefore about twice as many parameters overall.
+
+Footnote 5: The entity is “implicit” because there is no output for this value but the node can be interpreted as this prediction
+
+## 3. Results
+
+We manually tuned all the models for similar numbers of experiments to find the best hyperparameters. In general, the models were fairly robust to hyperparameter choices, with the exception being the ESMM model which did have slightly more varied performance as a function of hyper-parameter values, discussed below.
+
+Figure 3 gives a summary of the key results from our experiments. They provide clear evidence that a _meaningful decomposition_ of the prediction task has clear benefits, shown by ESP performing 2% worse than IP. This naive approach to training on the entire space of predictions leaves the model susceptible to learning noise when the positive install labels are so relatively infrequent, unaided by the useful signal that the click labels can provide.
+
+There is then a performance jump to the ESSP-Split model, with a marked increase versus ESP. This comparison highlights the utility of hard parameter sharing. This is the 'classical' benefit of MTL - which is often discussed in terms of "shared representations" or additional "regularization" (Beng et al., 2017). This same impact is demonstrated by IPSP,
+
+Figure 3. Model performance by multi-task setup. Performance gains normalized by the mean score of the baseline IP model. The standard error for each model’s performance difference (against IP mean) is calculated across at least 10 runs. The results show that there are multiple mechanisms for inducing positive transfer, but that hard parameter sharing alone (IPSP) may be optimal. Better than column indicates models that this model outperforms \(p<0.01\), 2-sided t-test.
+
+the best performing model, which kept the tasks as independent heads but leveraged combined early layer feature transformations. The benefit of the signal from the CTR task through shared parameters provided all of the gains in performance seen in alternative model designs.
+
+Surprisingly, ESMM-NS performed very competitively. By simply weighting the loss on the CVR head by the click prediction, \(\hat{p}(y=1|x)\), the model was able to perform better than baseline, and even beat ESSP-Split (not statistically significant). We suggest that what this highlights is the extent of the _data bias_ problem. If training on the entire space then there has to be some mechanism to assign'relevance' to the CVR samples - otherwise, you get the poor performance of ESP. This, seemingly small detail, is (empirically) more important than any classical transfer learning arguments (since ESMM beats ESSP-Split). We do note that ESMM-NS increases the size of the model compared with all the other MTL designs, since, like baseline, it has two separate embeddings which is where most parameters exist even in very deep RecSys models. However, we don't suggest that the extra parameters are really helpful in this instance. In fact, given (over)fitting biased data seems to be an issue, more parameters alone would be likely to make things worse.
+
+Finally, ESMM had similar performance to IPSP, albeit with greater variability. We tentatively suggest that with increased effort it may be possible to get consistent, larger performance gains from a well-tuned ESMM model. That is, we posit that the marginal benefit from increased model tuning for ESMM is much greater than for any of the other models. This would make sense given its design allows for the most complex learning interactions. But it is also a weakness in that simpler approaches may require less tuning.
+
+An alternative view is that IPSP not training on the entire space may be positive since this avoids directly optimizing \(p(z=1,y=1|x)\), which is arguably the most difficult training objective (i.e. having the worst signal-to-noise ratio).
+
+## 4. Conclusion
+
+We provide clear evidence that simple MTL methods can improve conversion model performance. Our experiments show that hard parameter sharing alone (IPSP) might be optimal for improving performance with significant, and relatively easy, wins versus a factored (IP) or naive (ESP) baseline. We also establish the importance of counteracting the data bias problem that occurs when trying to predict installs on the entire space of impressions. The surprisingly simple solution of a weighted conditional install prediction tackles the bias well. However, we note that the gains from these two characteristics do not seem to be additive when combined. Whilst we studied this problem in the context of clicks and conversions, we suggest that this simple methodology can be used to explore other conditionally dependent tasks, as the methods to counter the fundamental problems of data sparsity and data bias should generalise well.
+
+## 5. Ethical Considerations
+
+The research in the submitted paper has been reviewed as part of our organisation's research and publishing process. This includes privacy and legal review to help ensure that all necessary obligations are satisfied.
+
+As with many companies that rely on advertising to fund free and open access to products and services, our platform utilizes algorithms that recommend personalized content, including ads. Recommender systems are imperfect, and automated decision systems may not treat all people equitably. The identification and prevention of inequity and bias in ML is a growing field of research that we closely follow.
+
+Despite ongoing efforts to detect and prevent algorithmic amplification of bias, inequality still exists in society and therefore may impact the source data used to train many models. The authors of this paper are not aware that the experiments conducted resulted in any positive or negative impacts on the inherent bias that exists in recommender systems.
+
+## References
+
+* A. Ahmed, A. Das, and A. J. Smola (2014)Scalable hierarchical multitask learning algorithms for conversion optimization in display advertising. In ACM International Conference on Web Search And Data Mining (WSDM), Cited by: SS1, SS2.
+* Y. Bengio (2012)Deep learning of representations for unsupervised and transfer learning. In Proceedings of ICML Workshop on Unsupervised and Transfer Learning (Proceedings of Machine Learning Research, Vol. 27), K. Guyon, G. Dror, V. Lemaire, G. Taylor, and D. Silver (Eds.), pp. 17-36. External Links: Link, Document Cited by: SS1, SS2.
+* J. Devlin, M. Chang, K. Lee, and K. Toutanova (2018)Bert: pre-training of deep bidirectional transformers for language understanding. arXiv preprint arXiv:1810.04805. Cited by: SS1, SS2.
+* J. Kirkpatrick, R. Pascanu, N. Rabinowitz, J. Veness, G. Desjardins, A. A. Rusu, K. Milan, J. Quan, T. Ramalho, A. Grabska-Barwinska, et al. (2017)Overcoming catastrophic forgetting in neural networks. Proceedings of the national academy of sciences114 (13), pp. 3521-3526. Cited by: SS1, SS2.
+* J. Ma, Z. Zhao, X. Yi, J. Chen, L. Hong, and E. H. Chi (2018)Modeling task relationships in multi-task learning with multi-gate mixture-of-experts. In Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining, KDD '18), pp. 1930-1939. External Links: Link, Document Cited by: SS1, SS2.
+* X. Ma, L. Zhao, G. Huang, Z. Wang, Z. Hu, X. Zhu, and K. Gai (2018)Entire space multi-task model: an effective approach for estimating post-click conversion rate. In The 41st International ACM SIGIR Conference on Research & Development in Information Retrieval, pp. 1137-1140. Cited by: SS1, SS2.
+* C. Perlich, B. Dalessandro, T. Raeder, O. Stitelman, and F. J. Provost (2014)Machine learning for targeted display advertising: transfer learning in action. Mach. Learn.95 (1), pp. 103-127. External Links: Link, Document Cited by: SS1, SS2.
+* Z. Qin, L. Yan, H. Zhuang, Y. Tay, R. K. Pasumarthi, X. Wang, M. Bendersky, and M. Najork (2021)Are neural rankers still outperformed by gradient boosted decision trees?. In International Conference on Learning Representations, pp. 11197-1120. Cited by: SS1, SS2.
+* S. Ruder (2017)An overview of multi-task learning in deep neural networks. External Links: Link, Document Cited by: SS1, SS2.
+* C. Tan, F. Sun, T. Kong, W. Zhang, C. Yang, and C. Liu (2018)A survey on deep transfer learning. In International conference on artificial neural networks, pp. 270-279. Cited by: SS1, SS2.
+* H. Tang, J. Liu, M. Zhao, and X. Gong (2020)Progressive layered extraction (prime): a novel multi-task learning (MTL) model for personalized recommendations. In Fourteenth ACM Conference on Recommender Systems, pp. 269-278. Cited by: SS1, SS2.
+* Y. Wang, J. Zhang, Q. Da, and A. Zeng (2020)Delayed feedback modeling for the entire space conversion rate prediction. arXiv preprint arXiv:2011.11826. Cited by: SS1, SS2.
+* J. Yosinski, J. Clune, Y. Bengio, and H. Lipson (2014)How transferable are features in deep neural networks?. CoRRabs/1411.1792. External Links: Link, 1411.1792 Cited by: SS1, SS2.
+* Y. Zhang and Q. Yang (2021)A survey on multi-task learning. External Links: Link, 1707.08114 Cited by: SS1, SS2.
+* Z. Zhao, L. Hong, L. Wei, J. Chen, A. Nath, S. Andrews, A. Kumthekar, M. Sathiamoorthy, X. Yi, and E. Chi (2019)Recommending what video to watch next: a multitask ranking system. In Proceedings of the 13th ACM Conference on Recommender Systems, pp. 43-51. External Links: Link, Document Cited by: SS1, SS2.
+
+Model Characteristics Checklist
+
+Table 1 provides a summary of the design choices made for each model. We also provide some additional description below to remove any ambiguity surrounding how the models were implemented.
+
+The IP model, our baseline, uses two completely disjoint MLPs. One model is trained with a dataset of impressions, \(x\), and predicts clicks, \(y\). The other model is given a dataset of clicked impressions, \(y=1\), and predicts installs, \(z\).
+
+For the rest of the models a single dataset containing _downsampled impressions and all clicks_ was used. We then use sample weights on the respective loss heads to produce the training regime required, along with model design, discussed in Section 2.
+
+ESMM, ESMM-NS, and ESSP-Split use all the training samples on both heads. That is, the sample weight is set to 1.0 for every sample for both losses.
+
+The IPSP model requires setting some sample weights to 0.0. Specifically, any impression that was not clicked, \(y=0\), had a sample weight of zero for the CVR prediction, \(p(z=1|y=1,x)\). As a consequence, only the parameters in the CTR branch and the shared parameters (via the CTR branch) would be updated for these unclicked samples. This does mean that for a set batch size, the number of samples generating gradient updates via the CVR loss is (1) variable and (2) smaller than the batch size6.
+
+Footnote 6: (2) holds in all cases, other than the vanishingly low probability event that all the samples in a batch were clicked.
+
+The ESP model uses a single dataset, requiring only the install label, \(z\), with all sample weights set to 1.0.
+
+## Appendix B Pr-Auc
+
+We focused on the cross-entropy metric, because for many online advertising applications the calibration of the model is important. However, for completeness we include the results with PR-AUC metric in Figure 4. Although the ordering of the mean shifts compared with the CE metric, the overall conclusion is unchanged. Several different approaches outperform the baseline IP approach, and all shared parameter or entire space models perform fairly well. Notably, ESP performs much better on this metric.
+
+## Appendix C Non-stationarity
+
+We thought it might also be interesting to observe the performance degradation of the model's predictions. In general our evaluation metrics were calculated on the next day of data, i.e (training+1)-th day. For these experiments we wanted to observe what happened as we increased the period of time between training and predictions. The idea motivating the experiment was that there may be some difference in the way the models learn (e.g. one possibility being that the MTL model is forced to learn better user embeddings that, _possibly_, could generalise better over time). The comparison here was between the IP and ESMM model designs.
+
+\begin{table}
+\begin{tabular}{c|c|c|c} Model Name & Shared Parameters & Entire Space & Weighted CVR \\ \hline IP & & & \\ ESMM & ✓ & ✓ & ✓ \\ ESMM-NS & & ✓ & ✓ \\ ESSP-Split & ✓ & ✓ & \\ IPSP & ✓ & & \\ ESP & & ✓ & \\ \end{tabular}
+\end{table}
+Table 1. The 6 different models tested and the ”characteristics” which each model captures.
+
+The data in Figure 5 was generated by training 10 models of both types (each with their own set of tuned hyperparameters) and evaluating each of these models on the \(n\)-th day of data after training for \(n=2,3,...,6\). The cloud of points are the scores for each model on a given day and the X marker denotes the mean (the variance is not significantly different so we omit it from this plot). We did not observe any meaningful patterns or behaviour of the performance delta. The ESMM model does retain its performance win over the IP model, albeit by Day 6 this is practically zero, but
+
+Figure 4. PR-AUC performance of models.
+
+Figure 5. Model performance decay
+
+the prediction performance of both models seems to decay similarly. Note, there is significant inter-day variation in the performance which explains the gains seen between day 5 and 6, and the small (average) improvement for ESMM between day 2 and 3. These "improvements" are just fluctuations in the data and not a consequence of any modelling decisions: put differently, such patterns would likely emerge (stochastically) with any type of classifier.
+
+## Appendix D Ctr Task
+
+We have assumed throughout that installs, \(p(z=1|x)\), are the quantity of interest, and that clicks, \(p(y=1|x)\), are of no interest, except insofar as they are relevant for the install prediction. We note that CTR performance in these models fluctuates dramatically. ESP, for example, does not even predict CTR, and any model featuring Weighted CVR performs badly for CTR. This should be no surprise as the gradient from the CVR head is partially backpropagated through the CTR branch via the multiplication operation. We note this because engineers, or teams, that have a business or machine learning motivation to accurately predict CTR will (1) either have to train a separate model specifically for this task or (2) accept the performance penalty for certain model designs.
