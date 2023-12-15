@@ -31,6 +31,7 @@
 | 2201.11903 | Chain-of-Thought Prompting Elicits Reasoning in Large Language Models | [arXiv](https://arxiv.org/abs/2201.11903) / [ar5iv](https://ar5iv.org/abs/2201.11903) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2201.11903/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2201.11903/paper.ko.html) |
 | 2106.09685 | LoRA Low-Rank Adaptation of Large Language Models | [arXiv](https://arxiv.org/abs/2106.09685) / [ar5iv](https://ar5iv.org/abs/2106.09685) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2106.09685/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2106.09685/paper.ko.html) |
 | 2101.03961 | Switch Transformers Scaling to Trillion Parameter Models with Simple and Efficient Sparsity | [arXiv](https://arxiv.org/abs/2101.03961) / [ar5iv](https://ar5iv.org/abs/2101.03961) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2101.03961/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2101.03961/paper.ko.html) |
+| 2002.06563 | Epidemic analysis of COVID-19 in China by dynamical modeling | [arXiv](https://arxiv.org/abs/2002.06563) / [ar5iv](https://ar5iv.org/abs/2002.06563) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2002.06563/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2002.06563/paper.ko.html) |
 
 ## Procedure
 
