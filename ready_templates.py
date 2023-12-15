@@ -60,7 +60,7 @@ def update_main_readme():
                 arxiv_id=arxiv_id_list[i],
                 title=title_list[i],
                 arxiv_url=arxiv_url_list[i],
-                new_tab="{:target=\"_blank\"}",
+                new_tab="", #"{:target=\"_blank\"}",
                 ar5iv_url=ar5iv_url_list[i],
                 en_html_url=en_html_url_list[i],
                 ko_html_url=ko_html_url_list[i],
