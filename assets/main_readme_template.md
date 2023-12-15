@@ -8,6 +8,8 @@
 
 ## Paper List
 
+새 창 열기가 지원되지 않습니다. 직접 새 창으로 열기를 통해 열기를 권장합니다.
+
 {paper_list}
 
 ## Procedure

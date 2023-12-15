@@ -53,7 +53,7 @@ def update_main_readme():
 
     insertion_lines = [
         "| ArXiv ID | Title | ArXiv / Ar5iv | English / Korean |",
-        "|:--------:|:-----:|:-------------:|:----------------:|",
+        "|:--------:|-------|:-------------:|:----------------:|",
     ]
     for i in range(len(pdf_fn_list)):
         insertion_lines.append(
