@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Self-Consistency Enhancement Chain of Thought Reasoning in Language Models\n' +
+      '\n' +
+      'Xuezhi Wang\\({}^{{\\ddagger}\\ddagger}\\) Jason Wei\\({}^{\\dagger}\\) Dale Schuurmans\\({}^{\\dagger}\\) Quoc Le\\({}^{\\dagger}\\) Ed H. Chi\\({}^{\\dagger}\\)\n' +
+      '\n' +
+      'Sharan Narang\\({}^{\\dagger}\\) Aakanksha Chowdhery\\({}^{\\dagger}\\) Denny Zhou\\({}^{\\dagger\\lx@sectionsign}\\)\n' +
+      '\n' +
+      '({}^{\\dagger}\\)구글 연구팀\n' +
+      '\n' +
+      '\\({}^{\\ddagger}\\)xuezhiw@google.com, \\({}^{\\lx@sectionsign}\\)dennyzhou@google.com\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '사전 훈련된 대형 언어 모델과 결합된 사상 사슬 프롬프트는 복잡한 추론 작업에 대한 고무적인 결과를 달성했다. 본 논문에서는 체인-오브-생각 프롬프팅에서 사용되는 나이브 그리디 디코딩을 대체하기 위한 새로운 디코딩 전략인 _self-consistency_를 제안한다. 먼저 탐욕스러운 추론 경로만을 취하는 것이 아니라 다양한 추론 경로를 샘플링하고, 샘플링된 추론 경로를 주변화하여 가장 일관된 답변을 선택한다. 자기일관성은 복잡한 추론 문제가 일반적으로 고유한 정답으로 이어지는 여러 가지 다른 사고 방식을 인정한다는 직관을 활용한다. 그 결과, GSM8K(+17.9%), SVAMP(+11.0%), AQuA(+12.2%), StrategyQA(+6.4%), ARC-challenge(+3.9%)를 포함한 다양한 산술 및 상식 추론 벤치마크에서 자기일관성이 연쇄사고의 성과를 현저하게 향상시키는 것으로 나타났다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '언어 모델이 다양한 NLP 태스크에 걸쳐 괄목할만한 성공을 입증했지만, 추론을 입증하는 능력은 종종 제한으로 간주되며, 이는 모델 규모를 증가시키는 것만으로 극복될 수 없다(Rae et al., 2021; BIG-bench collaboration, 2021, _inter alia_). 이러한 단점을 해결하기 위한 노력으로 Wei 등(2022)은 _chain-of-thought prompting_을 제안하였는데, 여기서 언어 모델은 사람이 태스크를 풀 때 사용할 수 있는 추론 프로세스를 모방하는 일련의 짧은 문장을 생성하도록 프롬프트된다. 예를 들어, _"주차장에 3대의 자동차가 있고 2대의 자동차가 더 도착한 경우, 주차장에 몇 대의 자동차가 있습니까?"라는 질문을 고려할 때, _"5"_로 직접 응답하는 대신, 언어 모델이 전체 체인으로 응답하도록 프롬프트될 것이다: _"이미 주차장에 3대의 자동차가 있다. 2대의 자동차가 더 도착합니다. 이제 3+2=5대의 자동차가 있습니다. 답은 5입니다."_. 체인-생각 프롬프트는 다양한 다단계 추론 태스크에 걸쳐 모델 성능을 상당히 향상시키는 것으로 관찰되었다(Wei 등, 2022).\n' +
+      '\n' +
+      '본 논문에서는 체인-오브-사상 프롬프팅(Wei et al., 2022)에서 사용되는 탐욕적 디코딩 전략을 대체하기 위해 자기 일관성(self-consistency)이라는 새로운 디코딩 전략을 도입하여 언어 모델의 추론 성능을 상당한 마진만큼 더 향상시킨다. 자기일관성은 복잡한 추론 과제가 일반적으로 정답에 도달하는 여러 추론 경로를 인정한다는 직관을 활용한다(Stanovich and West, 2000). 문제에 대해 숙의적 사고와 분석이 요구될수록(Evans, 2010), 답을 회복할 수 있는 추론 경로의 다양성이 커진다.\n' +
+      '\n' +
+      '도 1은 자기 일관성 방법을 예를 들어 도시한 것이다. 먼저, 연쇄 추론 프롬프팅으로 언어 모델을 프롬프트한 다음, 최적의 추론 경로를 탐욕스럽게 디코딩하는 대신, "샘플 및 한계화" 디코딩 절차를 제안한다. 먼저, 언어 모델의 디코더로부터 _샘플_하여 _다양한 추론 경로 집합을 생성한다; 각각의 추론 경로는 다른 최종 답변을 초래할 수 있으므로, 샘플된 추론 경로를 _한계화함으로써 최종 답변 집합에서 가장 일관된 답변을 찾는다. 이러한 접근법은 여러 가지 다른 사고 방식이 동일한 답으로 이어질 경우 최종 답이 정확하다는 더 큰 확신을 갖게 된다는 인간의 경험과 유사하다. 자기 일관성은 다른 디코딩 방법에 비해 탐욕스러운 디코딩을 페스트하는 반복성과 지역 최적성을 피하는 동시에 단일 표본 세대의 확률성을 완화한다.\n' +
+      '\n' +
+      '자기-일관성은 추가 검증자를 트레이닝하거나(Cobbe et al., 2021) 생성 품질을 개선하기 위해 추가 인간 주석이 주어진 재순위자를 트레이닝하는 이전의 접근법들보다 훨씬 간단하다(Thoppilan et al., 2022). 대신 자기 일관성은 완전히 _감독 되지 않음_ 이며 미리 훈련 된 언어 모델을 사용 하 여 선반에서 작동 하 고 추가 인간 주석이 필요 하지 않으며 추가 교육, 보조 모델 또는 미세 조정을 피 합니다. 자기 일관성은 또한 여러 모델을 훈련하고 각 모델의 출력을 집계하는 일반적인 앙상블 접근법과 다르며 _단일_ 언어 모델 위에서 작동하는 "자기 유사"와 더 유사하다.\n' +
+      '\n' +
+      '공용 UL2-20B(Tay et al., 2022)와 GPT-3-175B(Brown et al., 2020)의 4가지 언어 모델과 LaMDA-137B(Thoppilan et al., 2022)와 PaLM-540B(Chowdrey et al., 2022)의 2가지 조밀하게 활성화된 디코더 전용 언어 모델에 대해 광범위한 산술 및 상식 추론 작업에 대한 자기 일관성을 평가한다. 4가지 언어 모델 모두에서 자기 일관성은 모든 작업에 걸쳐 현저한 여백에 의해 과잉 사고 연쇄를 개선한다. 특히, PaLM-540B 또는 GPT-3과 함께 사용될 때, 자기 일관성은 GSM8K(Cobbe et al., 2021)(+17.9% 절대 정확도 이득), SVAMP(Patel et al., 2021)(+11.0%), AQuA(Ling et al., 2017)(+12.2%) 및 StrategyQA(Geva et al., 2021)(+6.4%) 및 ARC-챌린지(Clark et al., 2018)(+3.9%)와 같은 상식 추론 태스크 전반에 걸쳐 새로운 최신 수준의 성능을 달성한다. 추가 실험에서, 표준 프롬프트(Ye and Durrett, 2022)에 비해 연쇄 사상(chain-of-thought)을 추가하면 성능이 저하될 수 있는 NLP 태스크에서 자기 일관성이 강건하게 성능을 향상시킬 수 있음을 보여준다. 또한 자기 일관성은 샘플 및 순위, 빔 검색, 앙상블 기반 접근법보다 훨씬 더 우수하며 샘플링 전략과 불완전한 프롬프트에 강력하다는 것을 보여준다.\n' +
+      '\n' +
+      '## 다양한 추론 경로에 대한 2 자기 일관성\n' +
+      '\n' +
+      '인류의 두드러진 측면은 사람들이 다르게 생각하는 것이다. 고의적 사고를 요하는 과제에서는 문제를 공격할 수 있는 여러 가지 방법이 있을 가능성이 있다고 가정하는 것은 당연하다. 이러한 과정은 언어 모델의 디코더로부터 샘플링을 통해 언어 모델에서 시뮬레이션될 수 있음을 제안한다. 예를 들어, 도 1에 도시된 바와 같이, 모델은 모두 동일한 정답에 도달하는 수학 질문에 대해 몇 개의 그럴듯한 응답을 생성할 수 있다(출력 1 및 3). 언어 모델은 완벽한 추론자가 아니기 때문에 모델이 잘못된 추론 경로를 생성하거나 추론 단계 중 하나(예: 출력 2)에서 실수를 할 수 있지만 이러한 솔루션은 _동일한_ 답변에 도달할 가능성이 낮습니다. 즉, 우리는 올바른 추론 과정이 다양하더라도 잘못된 과정보다 최종 답에서 더 큰 일치를 보이는 경향이 있다고 가정한다.\n' +
+      '\n' +
+      '다음 _자기 일관성_ 방법을 제안 하 여이 직관을 활용 합니다. 먼저, 수동으로 작성된 체인-오브-사상 예시들의 세트로 언어 모델이 프롬프트된다(Wei 등, 2022). 다음,\n' +
+      '\n' +
+      '그림 1: 자기 일관성 방법은 (1) CoT 프롬프팅을 사용하여 언어 모델을 프롬프트하는 단계; (2) CoT 프롬프팅에서 "탐욕스러운 디코딩"을 언어 모델의 디코더에서 샘플링하여 다양한 추론 경로 집합을 생성하는 단계; (3) 추론 경로를 주변화하고 최종 답변 집합에서 가장 일관된 답변을 선택하여 집계하는 단계를 포함한다.\n' +
+      '\n' +
+      '언어 모델의 디코더로부터 후보 출력들의 집합을 샘플링하여 다양한 후보 추론 경로들을 생성한다. 셀프-일관성은 온도 샘플링(Ackley et al., 1985; Ficler and Goldberg, 2017), top-\\(k\\) 샘플링(Fan et al., 2018; Holtzman et al., 2018; Radford et al., 2019), 및 핵 샘플링(Holtzman et al., 2020)을 포함하는 대부분의 기존 샘플링 알고리즘과 호환된다. 마지막으로, 표본화된 추론 경로를 주변화하고 생성된 답변 중 가장 일관성이 높은 답변을 선택하여 답변을 집계한다.\n' +
+      '\n' +
+      '더 자세하게, 생성된 답변 \\(\\mathbf{a}_{i}\\)은 고정된 답변 집합인 \\(\\mathbf{a}_{i}\\in\\mathbb{A}\\)에서 나온 것이라고 가정하며, 여기서 \\(i=1,\\ldots,m\\)은 디코더로부터 샘플링된 \\(m\\) 후보 출력들을 인덱싱한다. 즉, 질문과 프롬프트가 주어졌을 때, 자기일관성은 추론 경로를 나타내는 토큰의 시퀀스인 잠재 변수 \\(\\mathbf{r}_{i}\\)을 추가로 도입하고, \\(\\mathbf{r}_{i},\\mathbf{a}_{i})\\)의 생성을 결합한다. 여기서, \\(\\mathbf{r}_{i}\\shortrightarrow\\mathbf{a}_{i}\\), 즉 추론 경로 \\(\\mathbf{r}_{i}\\)은 선택적이며 최종 응답 \\(\\mathbf{a}_{i}\\)에 도달하는 데만 사용된다. 예를 들어 그림 1의 출력 3을 고려하세요. 처음 몇 개의 문장 "_She eats 3 for breakfast... So she have 9 eggs * \\(\\mathcal{S}2=\\mathcal{S}18\\)._" 마지막 문장의 정답 18_은 \\(\\mathbf{r}_{i}\\)이고, 마지막 문장의 정답 18_은 \\(\\mathbf{a}_{i}\\)으로 파싱된다. 1 모델의 디코더에서 다수의 \\((\\mathbf{r}_{i},\\mathbf{a}_{i})\\)을 샘플링한 후, 자기일관성은 \\(\\mathbf{a}_{i}\\), 즉 \\(\\연산자명*{arg\\,max}_{a}\\sum_{i=1}^{m}\\mathbbm{1}\\left(\\mathbf{a}_{i}=a\\right)\\)에 대한 다수표를 취하여 \\(\\mathbf{r}_{i}\\)에 대한 주변화를 적용한다.\n' +
+      '\n' +
+      '각주 1: 구문 분석기는 작업에 따라 다릅니다. 산술 추론을 위해, 우리는 모델이 "답변"을 생성한 후 첫 번째 숫자 부분을 최종 답으로 파싱한다. 상식 추론을 위해, 우리는 모델이 "답은"을 생성한 후 전체 문자열 답을 최종 답으로 파싱한다. 대부분의 생성된 출력들은 “[추론 경로]. 답은 X”의 일관된 포맷을 갖는다. 이 형식으로 언어 모델을 프롬프트하면 됩니다.\n' +
+      '\n' +
+      '표 1에서는 서로 다른 답변 집계 전략을 사용하여 추론 과제 집합에 대한 테스트 정확도를 보여준다. 대다수결 외에 각 \\((\\mathbf{r}_{i},\\mathbf{a}_{i})\\)를 \\(P(\\mathbf{r}_{i},\\mathbf{a}_{i}\\mid\\text{prompt},\\text{question})\\)으로 가중치를 부여할 수 있다. (P(\\mathbf{r}_{i},\\mathbf{a}_{i}\\mid\\text{prompt},\\text{question})\\)을 계산할 때, 주어진 (prompt, question)를 생성하는 모델의 정규화되지 않은 확률을 취하거나, 조건부 확률을 출력 길이(Brown et al., 2020)로 정규화할 수 있다.\n' +
+      '\n' +
+      '\\[P(\\mathbf{r}_{i},\\mathbf{a}_{i}\\mid\\text{prompt},\\text{question})=\\exp^{\\frac{ 1}{R}\\sum_{k=1}^{K}\\log P(t_{k}|\\text{prompt},\\text{question},t_{1},\\ldots,t_{k-1})}, \\tag{1}\\]\n' +
+      '\n' +
+      '여기서 \\(\\log P(t_{k}\\mid\\text{prompt},\\text{question},t_{1},\\ldots,t_{k-1})\\)는 이전 토큰에 조건화된 \\((\\mathbf{r}_{i},\\mathbf{a}_{i})\\)에서 \\(k\\)-th 토큰 \\(t_{k}\\)을 생성할 로그 확률이고, \\(K\\)는 \\((\\mathbf{r}_{i},\\mathbf{a}_{i})\\)의 총 토큰 수입니다. 표 1에서 우리는 "가중치가 없는 합"을 취하는 것, 즉 \\(\\mathbf{a}_{i}\\)에 대해 직접 다수표를 취하는 것이 "정규화된 가중 합"을 사용하여 집계하는 것과 매우 유사한 정확도를 산출한다는 것을 보여준다. 이 모델의 출력 확률을 자세히 살펴보았는데, 이는 각 \\((\\mathbf{r}_{i},\\mathbf{a}_{i})\\), 정규화된 조건부 확률 \\(P(\\mathbf{r}_{i},\\mathbf{a}_{i}\\mid\\text{prompt},\\text{question})\\)이 서로 매우 가깝기 때문이다. 즉, 언어 모델은 그 세대를 "비슷한 가능성"으로 간주한다. 또한, 답변을 집계할 때 표 1의 결과는 "정규화된" 가중 합(즉, 식 1)이 정규화되지 않은 상대에 비해 훨씬 더 높은 정확도를 산출한다는 것을 보여준다. 완전성을 위해, 표 1에서 우리는 또한 "가중 평균"을 취하여 결과를 보고한다. 즉, 각 \\(a\\)은 가중 합을 \\(\\sum_{i=1}^{m}\\mathbbm{1}\\left(\\mathbf{a}_{i}=a\\right)\\)으로 나눈 점수를 얻으며, 이는 훨씬 더 나쁜 성능을 초래한다.\n' +
+      '\n' +
+      '각주 2: 이것은 또한 언어 모델이 잘 교정되지 않아서 올바른 솔루션과 잘못된 솔루션을 잘 구별할 수 없다는 것을 의미하며, 이는 또한 이전 작업에서 솔루션의 품질을 더 잘 판단하도록 추가 재순위자가 훈련된 이유를 설명한다(Cobbe et al., 2021; Thoppilan et al., 2022).\n' +
+      '\n' +
+      '자기일관성은 고정된 답을 가진 개방형 텍스트 생성과 최적 텍스트 생성 사이의 흥미로운 공간을 탐구한다. 추론 태스크들은 전형적으로 고정된 답변들을 가지며, 이것이 연구원들이 일반적으로 탐욕스러운 디코딩 접근법들을 고려했던 이유이다(Radford et al., 2019; Wei et al., 2022; Chowdhery et al., 2022). 그러나 우리는 원하는 답이 고정된 경우에도 추론 과정에 다양성을 도입하는 것이 매우 유익할 수 있다는 것을 발견했으며 따라서 우리는 활용한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c} \\hline \\hline  & GSM8K & MultiArith & AQuA & SVAMP & CSQA & ARC-c \\\\ \\hline Greedy decode & 56.5 & 94.7 & 35.8 & 79.0 & 79.0 & 85.2 \\\\ \\hline Weighted avg (unnormalized) & 56.3 \\(\\pm\\) 0.0 & 90.5 \\(\\pm\\) 0.0 & 35.8 \\(\\pm\\) 0.0 & 73.0 \\(\\pm\\) 0.0 & 74.8 \\(\\pm\\) 0.0 & 82.3 \\(\\pm\\) 0.0 \\\\ Weighted avg (normalized) & 22.1 \\(\\pm\\) 0.0 & 59.7 \\(\\pm\\) 0.0 & 15.7 \\(\\pm\\) 0.0 & 40.5 \\(\\pm\\) 0.0 & 52.1 \\(\\pm\\) 0.0 & 51.7 \\(\\pm\\) 0.0 \\\\ \\hline Weighted sum (unnormalized) & 59.9 \\(\\pm\\) 0.0 & 92.2 \\(\\pm\\) 0.0 & 38.2 \\(\\pm\\) 0.0 & 76.2 \\(\\pm\\) 0.0 & 76.2 \\(\\pm\\) 0.0 & 83.5 \\(\\pm\\) 0.0 \\\\ Weighted sum (normalized) & 74.1 \\(\\pm\\) 0.0 & 99.3 \\(\\pm\\) 0.0 & 48.0 \\(\\pm\\) 0.0 & 86.8 \\(\\pm\\) 0.0 & 80.7 \\(\\pm\\) 0.0 & 88.7 \\(\\pm\\) 0.0 \\\\ \\hline Unweighted sum (majority vote) & 74.4 \\(\\pm\\) 0.1 & 99.3 \\(\\pm\\) 0.0 & 48.3 \\(\\pm\\) 0.5 & 86.6 \\(\\pm\\) 0.1 & 80.7 \\(\\pm\\) 0.1 & 88.7 \\(\\pm\\) 0.1 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: PaLM-540B에 대한 상이한 답변 집계 전략의 정확도 비교.\n' +
+      '\n' +
+      '샘플링은, 개방형 텍스트 생성을 위해 일반적으로 사용되는 바와 같이(Radford et al., 2019; Brown et al., 2020; Thoppilan et al., 2022). 자아일관성은 최종 답변이 고정된 답변 집합에서 나온 문제에만 적용될 수 있지만, 원칙적으로 두 답변이 서로 일치하는지 또는 모순되는지 여부와 같이 여러 세대 간에 일관성의 좋은 메트릭을 정의할 수 있는 경우 이 접근법은 개방형 텍스트 생성 문제로 확장될 수 있다.\n' +
+      '\n' +
+      '## 3 Experiments\n' +
+      '\n' +
+      '다양한 추론 벤치마크에 대해 제안된 자기 일관성 방법과 기존 접근법을 비교하기 위해 일련의 실험을 수행했다. 자기 일관성은 다양한 모델 척도에 걸쳐 고려되는 모든 언어 모델에 대해 추론 정확도를 강력하게 향상시킨다는 것을 발견했다.\n' +
+      '\n' +
+      '### Experiment setup\n' +
+      '\n' +
+      '작업 및 데이터 세트.다음 추론 벤치마크에 대한 자기 일관성을 평가한다.3\n' +
+      '\n' +
+      '각주 3: 기본적으로 레이블을 평가에 사용할 수 있는 경우 모든 데이터 세트에 대해 테스트 분할을 사용합니다. CommonsenseQA의 경우 dev split를 사용 하 고 StrategyQA의 경우 BIG-bench 협업 (2021)의 질문 전용 집합을 사용 합니다. [https://github.com/google/BIC-bench/tree/main/bigbench/benchmark_tasks/strategyqa](https://github.com/google/BIC-bench/tree/main/bigbench/benchmark_tasks/strategyqa).\n' +
+      '\n' +
+      '* **산술 추론**. 이러한 작업을 위해 AddSub(Hosseini et al., 2014), MultiArith(Roy & Roth, 2015), ASDiv(Miao et al., 2020)를 포함하여 Math Word Problem Repository(Koncel-Kedziorski et al., 2016)를 사용하였다. 또한, 최근에 발표된 학년-학교-수학 문제의 벤치마크(GSM8K; Cobbe et al., 2021)인 AQUA-RAT(Ling et al., 2017) 및 수학 단어 문제에 대한 챌린지 데이터세트(SVAMP; Patel et al., 2021)를 포함하였다.\n' +
+      '* **상식 추론**. 이러한 작업은 CommonsenseQA(Talmor et al., 2019), StrategyQA(Geva et al., 2021), AI2 Reasoning Challenge(ARC)(Clark et al., 2018)를 사용하였다.\n' +
+      '* **상징 추론**. 우리는 두 개의 상징적 추론 과제: 웨이 등(2022)의 마지막 문자 연결(예를 들어, 입력은 "일론 머스크"이고 출력은 "nk"이어야 함) 및 코인플립(예를 들어, 몇 번의 플립 후에 동전은 헤드업, 동전은 여전히 헤드업?)을 평가한다.\n' +
+      '\n' +
+      '언어 모델과 프롬프트.우리는 다양한 척도를 가진 4개의 변압기 기반 언어 모델에 대한 자기 일관성을 평가한다.\n' +
+      '\n' +
+      '* UL2(Tay 등, 2022)는 200억 개의 파라미터를 갖는 데노이저의 혼합물에 대해 훈련된 인코더-디코더 모델이다. UL2는 완전히 오픈 소스 4이며 제로 샷 SuperGLUE에서 GPT-3과 비슷하거나 더 나은 성능을 가지며 20B 매개 변수만 있으므로 컴퓨팅에 더 적합합니다. 각주 4: [https://github.com/google-research/google-research/tree/master/ul2](https://github.com/google-research/google-research/tree/master/ul2)에서 모델 검사점입니다.\n' +
+      '* GPT-3 (Brown et al., 2020) with 175-billion parameters. 코덱스 시리즈 (Chen 등, 2021)의 두 개의 공용 엔진 _code-davinci-001_ 및 _code-davinci-002_ 를 사용 하 여 재현성을 지원 합니다. 5 각주 5: [https://openai.com/api/](https://openai.com/api/)에서 사용할 수 있는 공용 API입니다.\n' +
+      '* LaMDA-137B (Thoppilan et al., 2022)는 웹 문서, 다이얼로그 데이터 및 위키피디아의 혼합물에 사전 훈련된, 137-billion 파라미터를 갖는 조밀한 좌-우, 디코더 전용 언어 모델;\n' +
+      '* PaLM-540B(Chowdhery et al., 2022)는 필터링된 웹페이지, 책, 위키피디아, 뉴스 기사, 소스 코드 및 소셜 미디어 대화를 갖는 7800억 토큰의 고품질 코퍼스에서 사전 훈련된 540억 개의 파라미터를 갖는 조밀한 좌-우, 디코더 전용 언어 모델이다.\n' +
+      '\n' +
+      '우리는 언어 모델을 훈련하거나 미세 조정하지 않고 몇 번의 샷 설정에서 모든 실험을 수행한다. 공정한 비교를 위해 Wei et al.(2022)과 같은 프롬프트를 사용한다. 모든 산술 추론 작업에 대해 동일한 8개의 수작업으로 작성된 예제 집합을 사용한다. 각 상식 추론 작업에 대해 4-7개의 예제들이 수작업으로 구성된 체인-생각 프롬프트를 사용하여 훈련 집합에서 무작위로 선택된다. 6 사용된 프롬프트에 대한 자세한 내용은 부록 A.3에 나와 있다.\n' +
+      '\n' +
+      '각주 6: 자기 일관성은 다양한 프롬프트 세트에 강력하며 부록 A.1.2에 연구를 제공한다.\n' +
+      '\n' +
+      '샘플링 기법.다양한 추론 경로를 샘플링하기 위해 Radford et al. (2019), Holtzman et al. (2020)의 오픈 텍스트 생성 방법과 유사한 설정을 따랐다. 특히 UL2-20B와 LaMDA-137B의 경우 온도 샘플링을 \\(T=0.5\\)로 적용하고 상단-\\(k\\)(\\(k=40\\)) 토큰에서 가장 높은 확률로 절단하였으며 PaLM-540B의 경우 \\(T=0.7\\), \\(k=40\\), GPT-3의 경우 상단-\\(k\\) 절단이 없는 \\(T=0.7\\)을 적용하였다. 자기 일관성이 일반적으로 샘플링 전략 및 매개변수에 강력하다는 것을 보여주기 위해 섹션 3.5의 절제 연구를 제공한다.\n' +
+      '\n' +
+      '### Main Results\n' +
+      '\n' +
+      '우리는 10개의 런에 걸쳐 평균화된 자기 일관성 결과를 보고하며, 여기서 각 런의 디코더에서 독립적으로 40개의 출력을 샘플링했다. 우리가 비교 하는 기준선은 greedy 디코딩 (Wei et al., 2022)을 사용 하 여 생각 하는 체인입니다 (**CoT-prompting** 이라고 함). 이는 이전에 대규모 언어 모델에서 디코딩에 사용 되었습니다 (Chowdhery et al., 2022).\n' +
+      '\n' +
+      '산술 추론 결과는 표 2.7에 나와 있습니다. 자체 일관성은 연쇄 사고 프롬프트에 비해 **모든 4개 언어 모델** 에 대해 산술 추론 성능을 크게 향상시킵니다. 더 놀랍게도, 언어 모델의 규모가 증가할 때 이득이 더 크게 나타난다. 예를 들어, UL2-20B보다 +3%-6%의 절대 정확도 향상을 보이지만 LaMDA-137B 및 GPT-3의 경우 +9%-23%이다. 대부분의 태스크(예: GPT-3 및 PaLM-540B)에서 이미 높은 정확도를 달성한 더 큰 모델의 경우, 자기 일관성은 여전히 AQuA 및 GSM8K와 같은 태스크에서 +12%-18%의 절대 정확도, SVAMP 및 ASDiv에서 +7%-11%로 상당한 추가 이득을 기여한다. 자기 일관성을 사용하여 거의 모든 작업에 대해 새로운 최신 결과를 달성한다. 자기 일관성이 감독되지 않고 작업에 무관하다는 사실에도 불구하고 이러한 결과는 작업별 훈련을 필요로 하는 기존 접근법 또는 수천 개의 예(예: GSM8K)와 미세 조정을 필요로 하는 기존 접근법과 유리하게 비교된다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c l l l l l l l} \\hline \\hline  & Method & AddSub & MultiArith & ASDiv & AQuA & SVAMP & GSM8K \\\\ \\hline \\multirow{3}{*}{UL2-20B} & Previous SoTA & **94.9\\({}^{a}\\)** & 60.5\\({}^{a}\\) & 75.3\\({}^{b}\\) & 37.9\\({}^{c}\\) & 57.4\\({}^{d}\\) & 35\\({}^{e}\\) / 55\\({}^{g}\\) \\\\ \\hline \\multirow{3}{*}{UL2-20B} & CoT-prompting & 18.2 & 10.7 & 16.9 & 23.6 & 12.6 & 4.1 \\\\  & Self-consistency & 24.8 (+6.6) & 15.0 (+4.3) & 21.5 (+4.6) & 26.9 (+3.3) & 19.4 (+6.8) & 7.3 (+3.2) \\\\ \\hline \\multirow{3}{*}{LaMDA-137B} & CoT-prompting & 52.9 & 51.8 & 49.0 & 17.7 & 38.9 & 17.1 \\\\  & Self-consistency & 63.5 (+10.6) & 75.7 (+23.9) & 58.2 (+9.2) & 26.8 (+9.1) & 53.3 (+14.4) & 27.7 (+10.6) \\\\ \\hline \\multirow{3}{*}{PaLM-540B} & CoT-prompting & 91.9 & 94.7 & 74.0 & 35.8 & 79.0 & 56.5 \\\\  & Self-consistency & 93.7 (+1.8) & 99.3 (+4.6) & 81.9 (+7.9) & 48.3 (+12.5) & 86.6 (+7.6) & 74.4 (+17.9) \\\\ \\hline \\multirow{3}{*}{GPT-3} & CoT-prompting & 57.2 & 59.5 & 52.7 & 18.9 & 39.8 & 14.6 \\\\  & Self-consistency & 67.8 (+10.6) & 82.7 (+23.2) & 61.9 (+9.2) & 25.6 (+6.7) & 54.5 (+14.7) & 23.4 (+8.8) \\\\ \\hline \\multirow{3}{*}{GPT-3} & CoT-prompting & 89.4 & 96.2 & 80.1 & 39.8 & 75.8 & 60.1 \\\\  & Self-consistency & 91.6 (+2.2) & **100.0** (+3.8) & **87.8** (+7.6) & **52.0** (+12.2) & **86.8** (+11.0) & **78.0** (+17.9) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: Chain-of-thought prompting 대비 Self-consistency에 의한 산술 추론 정확도(Wei et al., 2022). 이전의 SoTA 기준선은 다음과 같다 : \\(a\\): 적합성 및 LCA 동작 분류기 (Roy and Roth, 2015), \\(b\\): Lan et al. (2021), \\(c\\): Amini et al. (2019), \\(d\\): Pi et al. (2022), \\(e\\): GPT-3 175B finetuned with 7.5k 예시 (Cobbe et al., 2021), \\(g\\): GPT-3 175B finetuned plus a additional 175B verifier (Cobbe et al., 2021). 각 작업에 대한 최상의 성능은 굵게 표시됩니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c l l l l l l l l} \\hline \\hline  & Method & CSQA & StrategyQA & ARC-e & ARC-c & Letter (4) & Coinflip (4) \\\\ \\hline \\multirow{3}{*}{UL2-20B} & Previous SoTA & **91.2\\({}^{a}\\)** & 73.9\\({}^{b}\\) & 86.4\\({}^{c}\\) & 75.0\\({}^{c}\\) & N/A & N/A \\\\ \\cline{2-9}  & CoT-prompting & 51.4 & 53.3 & 61.6 & 42.9 & 0.0 & 50.4 \\\\  & Self-consistency & 55.7 (+4.3) & 54.9 (+1.6) & 69.8 (+8.2) & 49.5 (+6.8) & 0.0 (+0.0) & 50.5 (+0.1) \\\\ \\hline \\multirow{3}{*}{LaMDA-137B} & CoT-prompting & 57.9 & 65.4 & 75.3 & 55.1 & 8.2 & 72.4 \\\\  & Self-consistency & 63.1 (+5.2) & 67.8 (+2.4) & 79.3 (+4.0) & 59.8 (+4.7) & 8.2 (+0.0) & 73.5 (+1.1) \\\\ \\hline \\multirow{3}{*}{PaLM-540B} & CoT-prompting & 79.0 & 75.3 & 95.3 & 85.2 & 65.8 & 88.2 \\\\  & Self-consistency & 80.7 (+1.7) & **81.6** (+6.3) & **96.4** (+1.1) & **88.7** (+3.5) & 70.8 (+5.0) & 91.2 (+3.0) \\\\ \\hline \\multirow{3}{*}{GPT-3} & CoT-prompting & 46.6 & 56.7 & 63.1 & 43.1 & 7.8 & 71.4 \\\\  & Self-consistency & 54.9 (+8.3) & 61.7 (+5.0) & 72.1 (+9.0) & 53.7 (+10.6) & 10.0 (+2.2) & 75.9 (+4.5) \\\\ \\hline \\multirow{3}{*}{GPT-3} & CoT-prompting & 79.0 & 73.4 & 94.0 & 83.6 & 70.4 & 99.0 \\\\  & Self-consistency & 81.5 (+2.5) & 79.8 (+6.4) & 96.0 (+2.0) & 87.5 (+3.9) & **73.4** (+3.0) & **99.5** (+0.5) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: Chain-of-thought prompting 대비 Self-consistency에 의한 상식 및 상징적 추론 정확도(Wei et al., 2022). 기존의 SoTA 기준선은 다음과 같다. \\(a\\): DeBERTaV3-large + KEAR (Xu et al., 2021), \\(b\\): Chowdhery et al.(2022), \\(c\\): UnifiedQA-FT (Khashabi et al., 2020). 각 작업에 대한 최상의 성능은 굵게 표시됩니다.\n' +
+      '\n' +
+      '상식 및 상징적 추론 과제에 대한 결과는 <표 3>과 같다. 마찬가지로, 자기 일관성은 4가지 언어 모델 모두에 걸쳐 큰 이득을 산출하고 6가지 작업 중 5가지 작업에 대해 SoTA 결과를 얻었다. 기호추론을 위해 입력 프롬프트가 2-let 또는 2-flips의 예를 포함하는 OOD(out-of-distribution) 설정을 테스트하지만 4-let 및 4-flips의 예를 테스트한다(PaLM-540B 또는 GPT-3은 이미 완벽한 in-distribution 정확도를 달성할 수 있기 때문에 이 설정은 더 어렵다). 이 어려운 OOD 설정에서 자기 일관성의 이득은 충분한 모델 크기를 가진 CoT 프롬프팅에 비해 여전히 상당히 중요하다.\n' +
+      '\n' +
+      '샘플링된 추론 경로 수의 영향을 보여주기 위해 그림 2에서 샘플링된 경로(1, 5, 10, 20, 40개)의 다양한 수에 대한 정확도(평균 및 표준편차 10런 이상)를 플로팅한다. 결과는 더 많은 수의 추론 경로(예: 40개)를 샘플링하는 것이 일관되게 더 나은 성능으로 이어지며 추론 경로에서 다양성 도입의 중요성을 더욱 강조한다. 표 4에서 우리는 자기 일관성이 두 태스크의 몇 가지 예제 질문을 사용하여 그리디 디코딩에 비해 더 풍부한 추론 경로 집합을 생성한다는 것을 보여준다.\n' +
+      '\n' +
+      '### Self-Consistency는 Chain-of-Thought Hurts Performance에 도움이 됩니다.\n' +
+      '\n' +
+      'Ye와 Durrett(2022)은 몇 번의 샷 내 맥락 학습에서 표준 프롬프트에 비해 때때로 연쇄 생각 프롬프트가 성능을 손상시킬 수 있음을 보여준다. 여기서, (1) Closed-Book Question Answering: BoolQ(Clark et al., 2019), HotpotQA(Yang et al., 2018), 및 (2) Natural Language Inference: e-SNLI(Camburu et al., 2018), ANLI(Nie et al., 2020) 및 RTE(Dagan et al., 2005; Bar-Haim et al., 2006; Giampiccolo et al., 2007; Bentivogli et al., 2009)를 포함하는 공통 NLP 태스크 세트에 대해 갭을 채우는 데 도움이 될 수 있는지 자기 일관성을 사용하여 연구를 수행한다.\n' +
+      '\n' +
+      'PaLM-540B에 대한 결과는 표 5에 나와 있다. 일부 태스크(예: ANLI-R1, e-SNLI, RTE)의 경우 체인-생각을 추가하면 표준 프롬프트에 비해 성능이 손상되지만(Brown et al., 2020), 자기 일관성은 성능을 견고하게 향상시키고 표준 프롬프트를 능가하여 일반적인 NLP 태스크에 대한 소수의 샷 인 컨텍스트 학습에서 근거를 추가하는 신뢰할 수 있는 방법이다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l|l} \\hline \\hline  & GSMR & StrategyQA \\\\ \\hline\n' +
+      '**Question** & _Henry made two steps during his 60 mile like trip. He first stopped after 20_ & _Yes or no: Is Allowing, Georgia the most populous_ \\\\  & _miles. His second step was 15 miles before the end of the trip. How many miles_ & _US Allowing?_ \\\\ \\hline\n' +
+      '탐욕과 그는 총 60마일을 여행했다. 그는 20마일 후에 멈췄고, 그래서 그는 60-20 & 앨버니를 여행했고, 조지아는 가장 인구가 많은 미국 알룬데이입니다. 따라서 대답은 예입니다. \\\\\n' +
+      '**Decode** & \\(=40\\) miles between the first and second stops. The answer is 40. & The most populous US Alunday is Albany, New \\\\ \\hline\n' +
+      '**샘플링** & Henry는 총 60마일을 이동했습니다. 그의 첫 번째 정류장은 20마일 안에 있었고, 그의 \\\\\n' +
+      '**Path 1** & second stop was 15 miles before the end. So between his first and second stops \\\\  & he travelled 60 - 20 - 15 25 miles. The answer is 25. & The most populous US Alunday, So the answer is no. \\\\ \\hline\n' +
+      '**샘플링** 및 60 마일 여행 중에 두 단계를 거쳤습니다. 첫 번째는 20마일 떨어진 곳이었어요 조지아주 앨버니의 인구는 약 \\\\\n' +
+      '**Path 2** & The second was 15 miles before the end of the trip. This means the second stop was 60 - 15 45 miles into the trip. Since he made the stops in order, the second stop must have been 45 - 20 = 25 miles after the first stop. The answer is 25. & Albany, Georgia is not the most populous US Alunday. So the answer is no. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 자기-일관성이 PaLM-540B 상에서 그리디 디코딩에 대한 에러들을 복구하는 것을 돕는 예들. 지상 진리와 일치하는 두 개의 샘플링된 추론 경로가 표시된다.\n' +
+      '\n' +
+      '도 2: 자기 일관성(파란색)은 산술 및 상식 추론 태스크에 걸쳐 그리디 디코딩(오렌지)을 갖는 CoT 프롬프팅에 비해, LaMDA-137B에 비해 정확도를 상당히 향상시킨다. 더 많은 수의 다양한 추론 경로를 샘플링하면 추론 정확도가 일관되게 향상된다.\n' +
+      '\n' +
+      '### 다른 기존 접근 방식 비교\n' +
+      '\n' +
+      '추가 연구를 수행하고, 샘플 및 순위, 빔 탐색 및 앙상블 기반 접근법을 포함한 기존 방법보다 자기 일관성이 훨씬 더 우수함을 보여준다.\n' +
+      '\n' +
+      '생성 품질을 개선하기 위해 일반적으로 사용되는 샘플-및-랭크원과의 비교는 샘플-및-랭크이며, 여기서 다수의 시퀀스는 디코더로부터 샘플링된 다음 각 시퀀스의 로그 확률에 따라 순위가 매겨진다(Adiwardana et al., 2020). 우리는 GPT-3 _code-davinici-001_에서 자체 일관성과 샘플 및 순위를 비교하여 디코더에서 자체 일관성과 동일한 수의 시퀀스를 샘플링하고 상위 순위의 시퀀스에서 최종 답변을 취한다. 결과는 그림 3에 나와 있다. 샘플 및 순위는 추가로 샘플링된 시퀀스와 순위로 정확도를 향상시키는 반면, 이득은 자기 일관성에 비해 훨씬 작다.\n' +
+      '\n' +
+      'Beam Search와 비교 표 6에서는 UL2-20B 모델에서 빔 탐색 디코딩과 자기 일관성을 비교한다. 공정한 비교를 위해 동일한 수의 빔과 추론 경로에서 정확도를 보고한다. 두 작업 모두에서 자기 일관성이 빔 탐색보다 훨씬 더 우수하다. 참고 자기 일관성은 또한 각각의 추론 경로를 디코딩하기 위해 빔 탐색을 채택할 수 있지만(결과는 "빔 탐색을 사용하는 자기 일관성"으로 표시됨), 그 성능은 샘플링을 사용하는 자기 일관성에 비해 더 나쁘다. 그 이유는 빔 탐색이 출력에서 더 낮은 다양성을 산출하는 반면(Li & Jurafsky, 2016), 자기 일관성에서는 추론 경로의 다양성이 더 나은 성능의 열쇠이기 때문이다.\n' +
+      '\n' +
+      '앙상블 기반 접근법과의 비교 소수의 샷 학습을 위한 앙상블 기반 방법과 자기 일관성을 추가로 비교한다. 특히, (1) 프롬프트 순서 순열: 프롬프트 순서에 대한 모델의 민감도를 완화하기 위해 프롬프트에서 예시들을 무작위로 40번 순열하는 것(Zhao et al., 2021; Lu et al., 2021); 및 (2) 프롬프트의 여러 세트(Gao et al., 2021): \\(3\\) 서로 다른 프롬프트 세트를 수동으로 작성한다. 우리는 앙상블로서 두 접근법 모두에서 탐욕스러운 디코딩의 답변에 대한 과반수를 차지했다. 표 7은 자기-일관성에 비해, 기존의 앙상블 기반 접근법이 훨씬 더 작은 이득을 달성한다는 것을 보여준다. 8. 또한, 자기-일관성은 _다중_ 모델이 훈련되고 그들의 출력이 집계되는 전형적인 모델-앙상블 접근법과 다르다는 것에 유의한다. 자기 일관성은 _단일_ 언어 모델 위에 "자기 유사"와 같은 역할을 합니다. 또한 모델 앙상블이 자기 일관성에 비해 훨씬 더 나쁜 성능을 보이는 부록 A.1.3에서 여러 모델을 앙상블한 결과를 보여준다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l c c c c c} \\hline \\hline  & Beam size / Self-consistency paths & 1 & 5 & 10 & 20 & 40 \\\\ \\hline \\multirow{3}{*}{AQuA} & Beam search decoding (top beam) & 23.6 & 19.3 & 16.1 & 15.0 & 10.2 \\\\  & Self-consistency using beam search & 23.6 & 19.8 \\(\\pm\\) 0.3 & 21.2 \\(\\pm\\) 0.7 & 24.6 \\(\\pm\\) 0.4 & 24.2 \\(\\pm\\) 0.5 \\\\  & Self-consistency using sampling & 19.7 \\(\\pm\\) 2.5 & **24.9 \\(\\pm\\) 2.6** & **25.3 \\(\\pm\\) 1.8** & **26.7 \\(\\pm\\) 1.0** & **26.9 \\(\\pm\\) 0.5** \\\\ \\hline \\multirow{3}{*}{MultiArith} & Beam search decoding (top beam) & 10.7 & 12.0 & 11.3 & 11.0 & 10.5 \\\\  & Self-consistency using beam search & 10.7 & 11.8 \\(\\pm\\) 0.0 & 11.4 \\(\\pm\\) 0.1 & 12.3 \\(\\pm\\) 0.1 & 10.8 \\(\\pm\\) 0.1 \\\\ \\cline{1-1}  & Self-consistency using sampling & 9.5 \\(\\pm\\) 1.2 & 11.3 \\(\\pm\\) 1.2 & **12.3 \\(\\pm\\) 0.8** & **13.7 \\(\\pm\\) 0.9** & **14.7 \\(\\pm\\) 0.3** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: UL2-20B 모델 상의 빔 탐색 디코딩과 자기-일관성을 비교한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c} \\hline \\hline  & GSM8K & MultiArith & SVAMP & ARC-e & ARC-c \\\\ \\hline CoT (Wei et al., 2022) & 17.1 & 51.8 & 38.9 & 75.3 & 55.1 \\\\ Ensemble (3 sets of prompts) & 18.6 \\(\\pm\\) 0.5 & 57.1 \\(\\pm\\) 0.7 & 42.1 \\(\\pm\\) 0.6 & 76.6 \\(\\pm\\) 0.1 & 57.0 \\(\\pm\\) 0.2 \\\\ Ensemble (40 prompt permutations) & 19.2 \\(\\pm\\) 0.1 & 60.9 \\(\\pm\\) 0.2 & 42.7 \\(\\pm\\) 0.1 & 76.9 \\(\\pm\\) 0.1 & 57.0 \\(\\pm\\) 0.1 \\\\ Self-Consistency (40 sampled paths) & **27.7 \\(\\pm\\) 0.2** & **75.7 \\(\\pm\\) 0.3** & **53.3 \\(\\pm\\) 0.2** & **79.3 \\(\\pm\\) 0.3** & **59.8 \\(\\pm\\) 0.2** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 7: Self-consistency는 LaMDA-137B 상에서 프롬프트-오더 및 멀티 프롬프트 앙상블보다 우수하다.\n' +
+      '\n' +
+      '도 3: 자기-일관성은 동일한 #의 샘플들을 갖는 샘플-및-순위보다 상당히 우수하다.\n' +
+      '\n' +
+      '### Additional Studies\n' +
+      '\n' +
+      '샘플링 전략 및 매개변수에 대한 견고성, 불완전한 프롬프트 및 비자연어 추론 경로와 함께 작동하는 방식을 포함하여 자기 일관성 방법의 다양한 측면을 분석하기 위해 여러 추가 실험을 수행했다.\n' +
+      '\n' +
+      '자기 일관성은 Robust to Sampling Strategies and ScalingWe show self-consistency is robust to sampling strategies and parameters, by varying \\(T\\) in temperature sampling (Ackley et al., 1985; Ficler and Goldberg, 2017), \\(k\\) in top-\\(k\\) sampling (Fan et al., 2018; Holtzman et al., 2018; Radford et al., 2019), and \\(p\\ in nucleus sampling (Holtzman et al., 2020), over PaLM-540B over Figure 4 (left). 그림 4(오른쪽)은 자기 일관성이 LaMDA-137B 모델 시리즈에 대해 모든 척도에 걸쳐 강건하게 성능을 향상시킨다는 것을 보여준다. 특정 능력(예를 들어, 산술)으로 인해 더 작은 모델에 대해서는 모델이 충분한 스케일에 도달할 때만 이득이 상대적으로 더 낮다(Brown et al., 2020).\n' +
+      '\n' +
+      '자기 일관성은 수동으로 구성된 프롬프트를 사용한 소수의 샷 학습에 대해 불완전한 프롬프트에 대한 강인성을 향상시킨다. 인간 주석자는 프롬프트를 생성할 때 때때로 사소한 실수를 한다. 본 연구는 자기일관성이 불완전한 프롬프트에 대한 언어 모델의 견고성을 향상시키는 데 도움이 될 수 있는지 더 연구한다. 9. 표 8의 결과를 보여준다: 불완전한 프롬프트는 그리디 디코딩(17.1 \\(\\rightarrow\\) 14.9)으로 정확도를 감소시키지만, 자기일관성은 갭을 채우고 결과를 강력하게 개선할 수 있다.\n' +
+      '\n' +
+      '각주 9: 우리는 이전과 동일한 프롬프트를 사용하지만, 추론 경로 내의 모든 숫자를 최종 답변을 제외한 임의의 숫자로 스왑한다. 예를 들어, “주차장에 이미 3대의 자동차가 있다. 2대가 더 도착한다. 이제 3+2=5대의 자동차가 있다._” to “_주차장에 이미 7대의 차량이 있다. 6대가 더 도착한다. 이제 7+6=5대의 차량이 있다._”\n' +
+      '\n' +
+      '또한, 일관성(최종 집계된 답변에 동의하는 디코딩의 % 측면에서)이 정확도와 높은 상관 관계가 있음을 발견했다(그림 5, GSM8K를 통해). 이것은 생성된 솔루션에서 모델의 _불확실성 추정치_를 제공하기 위해 자기 일관성을 사용할 수 있음을 시사한다. 즉, 낮은 일관성을 모델이 신뢰도가 낮다는 지표로 사용할 수 있다. 즉, 자기 일관성은 모델이 "모르는 때를 알 수 있다"는 일부 능력을 부여한다.\n' +
+      '\n' +
+      'Non-Natural-Language Reasoning Paths와 Zero-shot CoT에 대한 Self-Consistency Works for Non-Natural-Language Reasoning Paths와 Zero-shot CoT에 대한 Self-consistency 개념의 일반성을 방정식(예를 들어, "주차장에 이미 3대의 자동차가 있다. 2대가 더 도착한다. 이제 3 + 2 = 5대의 자동차가 있다._"에서 "_3 + 2 = 5")._ 결과는 표 8("방정식들과 함께 프롬프트")에 나타나 있다: 자기-일관성은 여전히 중간 방정식들을 생성함으로써 정확도를 향상시킨다; 그러나, 자연 언어 추론 경로들을 생성하는 것에 비해, 방정식이 훨씬 더 짧고 디코딩 프로세스에서 다이버시티를 생성하기 위한 기회가 더 적기 때문에 이득은 더 작다. 또한, 제로-샷 체인-of-thought(Kojima et al., 2022)와 함께 자기-일관성을 테스트하였고, 자기-일관성이 제로-샷 CoT에도 작용한다는 것을 보여주며, 표 8의 결과(+26.2%)를 상당히 개선하였다.\n' +
+      '\n' +
+      '도 4: GSM8K 정확도. (왼쪽) 자기 일관성은 다양한 샘플링 전략과 매개변수에 견고하다. (오른쪽) 자기 일관성은 언어 모델 척도에 걸쳐 성능을 향상시킵니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l c} \\hline \\hline  & Prompt with correct chain-of-thought & 17.1 \\\\ \\cline{2-3} LaMDA-137B & Prompt with imperfect chain-of-thought & 14.9 \\\\  & + Self-consistency (40 paths) & **23.4** \\\\ \\cline{2-3}  & Prompt with equations & 5.0 \\\\  & + Self-consistency (40 paths) & **6.5** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 8: 자기-일관성은 GSM8K에 대한 불완전한 프롬프트, 방정식 프롬프트 및 제로 샷 체인-오브-사상 하에서 작동한다.\n' +
+      '\n' +
+      '## 4 관련 작업\n' +
+      '\n' +
+      '언어 모델에서 추론.언어 모델은 산술, 논리 및 상식 추론(Evans, 2010)과 같은 유형 2 작업에서 어려움을 겪는 것으로 알려져 있다. 이전 작업은 주로 추론을 개선하기 위한 _전문화된_ 접근법들에 초점을 맞추었다(Andor et al., 2019; Ran et al., 2019; Geva et al., 2020; Piekos et al., 2021). 이전 작업과 비교하여, 자기 일관성은 추가적인 감독 또는 미세 조정 없이 광범위한 추론 작업에 적용가능한 반면, Wei 등(2022)에서 제안된 연쇄-생각 프롬프트 접근법의 성능은 여전히 실질적으로 개선된다.\n' +
+      '\n' +
+      '언어 모델들에서 샘플링 및 재-랭킹.언어 모델들에 대한 다수의 디코딩 전략들이 문헌들에서 제안되었다, 예를 들어, 온도 샘플링(Ackley et al., 1985; Ficler and Goldberg, 2017), 탑-\\(k\\) 샘플링(Fan et al., 2018; Holtzman et al., 2018; Radford et al., 2019), 핵 샘플링(Holtzman et al., 2020), 최소 베이즈 위험 디코딩(Eikema and Aziz, 2020; Shi et al., 2022), 및 전형적인 디코딩(Meister et al., 2022). 다른 작업은 디코딩 프로세스에서 다양성을 명시적으로 촉진하고자 했다(Batra et al., 2012; Li et al., 2016; Vijayakumar et al., 2018).\n' +
+      '\n' +
+      '리-랭킹은 언어 모델에서 생성 품질을 개선하기 위한 또 다른 일반적인 접근법이다(Adiwardana et al., 2020; Shen et al., 2021). Thoppilan 등(2022)은 응답 필터링을 위한 재순위자를 훈련시키기 위해 추가적인 인간 주석을 수집한다. Cobbe 등(2021)은 "검증기"를 훈련시켜 생성된 솔루션의 순위를 재조정하는데, 이는 언어 모델을 미세 조정하는 것에 비해 수학 과제에 대한 해결률을 실질적으로 향상시킨다. Elazar 등(2021)은 추가적인 일관성 손실과 함께 사전 훈련을 확장함으로써 사실적 지식 추출의 일관성을 향상시킨다. 이러한 모든 방법은 추가 재순위자를 훈련하거나 추가 인간 주석을 수집해야 하는 반면, 자기 일관성은 추가 훈련, 미세 조정 또는 추가 데이터 수집이 필요하지 않다.\n' +
+      '\n' +
+      '추론 경로들을 추출한다. 일부 이전 작업은 의미 그래프를 구성하는 것(Xu 등, 2021), 위키피디아 그래프를 통해 추론 경로들을 검색하기 위해 RNN을 학습하는 것(Asai 등, 2020), 수학 문제들 상에서 인간 주석이 달린 추론 경로들로 미세 조정하는 것(Cobbe 등, 2021), 또는 휴리스틱 기반 의사 추론 경로들로 추출기를 트레이닝하는 것(Chen 등, 2019)과 같은 추론 경로들을 식별하기 위한 태스크-특정 접근법들을 고려했다. 최근에는 추론 과정에서 다양성의 중요성이 주목받고 있지만 추출된 추론 경로에 대한 추가 QA 모델을 통해 또는 상식 지식 그래프에 잠재 변수를 도입함으로써 태스크별 훈련을 통해만 활용된다(Chen et al., 2019). 이러한 접근법에 비해 자아일관성은 훨씬 간단하고 추가적인 훈련이 필요하지 않다. 제안하는 방법은 추가 모듈 없이 가장 일관된 답변을 복구하기 위해 집계를 사용하여 디코더에서 샘플링하여 추론 경로 생성과 최종 답변을 간단히 결합한다.\n' +
+      '\n' +
+      '언어 모델의 일관성.일부 선행 연구는 언어 모델이 대화에서의 불일치(Adiwardana et al., 2020), 설명 생성(Camburu et al., 2020), 및 사실적 지식 추출(Elazar et al., 2021)에 시달릴 수 있다는 것을 보여주었다. Welleck 등(2020)은 반복 언어 모델에서 무한-길이 시퀀스를 생성하는 것을 지칭하기 위해 "일관성"을 사용한다. Nye 등(2021)은 시스템 2-영감 논리 추론 모듈을 추가함으로써 시스템 1 모델로부터의 샘플들의 논리적 일관성을 개선한다. 본 논문에서는 정확성 향상을 위해 다양한 추론 경로들 간의 답변 일관성을 활용하는 "일관성"이라는 약간 다른 개념에 초점을 맞춘다.\n' +
+      '\n' +
+      '## 5 결론 및 논의\n' +
+      '\n' +
+      '우리는 자기 일관성이라는 간단하면서도 효과적인 방법을 도입했고, 다양한 척도를 가진 4개의 큰 언어 모델에 걸쳐 산술 및 상식 추론 과제의 범위에서 정확도를 크게 향상시키는 것을 관찰했다. 정확도 이득을 넘어, 자기 일관성은 또한 언어 모델로 추론 작업을 수행할 때 근거를 수집하고, 불확실성 추정 및 언어 모델 출력의 개선된 교정을 제공하는 데 유용하다.\n' +
+      '\n' +
+      '자기 일관성의 한 가지 한계는 더 많은 계산 비용을 발생시킨다는 것이다. 실제로 사람들은 대부분의 경우 성능이 빠르게 포화되는 것처럼 너무 많은 비용을 발생시키지 않으면서 대부분의 이득을 실현하기 위한 시작점으로서 소수의 경로(예를 들어, 5 또는 10)를 시도할 수 있다(도 2). 미래 작업의 일환으로 자기 일관성을 사용하여 모델을 미세 조정하기 위해 더 나은 감독 데이터를 생성하여 모델이 미세 조정 후 단일 추론 실행에서 더 정확한 예측을 제공할 수 있다. 또한 언어 모델이 간혹 부정확하거나 비논리적 추론 경로를 생성할 수 있음을 관찰했으며(예: 표 4의 StrategyQA 예제, 두 모집단 수가 정확하게 정확하지 않음), 더 나은 지면 모델의 근거 생성을 위해서는 추가 작업이 필요하다.\n' +
+      '\n' +
+      '## Reproducibility Statement\n' +
+      '\n' +
+      '실험에서 우리는 다양한 척도를 가진 4개의 다른 언어 모델을 포함했다. 그 중 두 개는 공용 모델입니다. UL2는 [https://github.com/google-research/google-research/tree/master/ul2](https://github.com/google-research/google-research/tree/master/ul2)에서 사용할 수 있는 모델 검사점이 있는 완전히 공개 된 모델입니다. GPT-3도 [https://openai.com/api/](https://openai.com/api/)에서 사용할 수 있는 공용 API를 사용 하는 공용 모델입니다. GPT-3의 경우 코덱스가 현재 무료이기 때문에 누구나 결과를 재현할 수 있기 때문에 재현성을 더 돕기 위해 두 개의 공개 엔진("code-davinel-001" 및 "code-davinel-002")을 포함했다. 또한, 공개되지 않은 LaMDA-137B 및 PaLM-540B를 사용하여 부록 A.3의 모든 작업에 대한 정확한 입력 프롬프트를 제공한다.\n' +
+      '\n' +
+      '## Ethics Statement\n' +
+      '\n' +
+      '논의에서 언급했듯이 언어 모델은 때때로 비현실적 또는 비사실적 추론 경로를 생성할 수 있으므로 각별한 주의를 기울여 언어 모델의 출력을 사용해야 한다. 추론 작업을 주로 다루며 생성된 합리성은 모델이 응답에 도달하는 방법을 검사하는 데만 사용된다. 잠재적으로 생성된 합리성을 사용하여 모델이 특정 오류를 범하는지 또는 특정 작업을 수행할 때 모델이 편향성을 포함하는지 여부를 추가로 확인할 수 있다. 실제 사용에서 언어 모델을 사용하려면 모델의 예측을 개선하고 모델의 사실성과 안전성을 개선하기 위해 모델이 사용자에게 해를 끼치지 않도록 추가 작업이 필요하다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* A. Amini, S. 가브리엘 린래 곤셀케지레스키 Choi, and H. Hajishirzi (2019-06)MathQA: towards interpretedable math word problem solving with operation-based formalisms. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long and Short Papers), pp. 2357-2367. External Links: Link, Document Cited by: SS1, SS2.\n' +
+      '*D. Andor, L. 허경 Lee, and E. Pitler (2019)Giving BERT a calculator: finding operations and arguments with reading comprehension. The Proceedings of 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP), External Links: Link, Document Cited by: SS1, SS2.\n' +
+      '*A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '*R. 바하임 Ferro, D. Giampiccolo, B. Magnini, and I. Szpektor (2006) the second pascal recognising textual entailment challenge. 두 번째 PASCAL의 회보에서, SS1, SS2에 의해 인용된 텍스트 수반성 인식에 관한 워크숍에 도전한다.\n' +
+      '* Volume Part V, ECCV\'12, Berlin, Heidelberg, pp. 1-16. External Links: Link, Document Cited by: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '*R. 바하임 Ferro, D. Giampiccolo, B. Magnini, and I. Szpektor (2006) the second pascal recognising textual entailment challenge. 두 번째 PASCAL의 회보에서, SS1, SS2에 의해 인용된 텍스트 수반성 인식에 관한 워크숍에 도전한다.\n' +
+      '* Volume Part V, ECCV\'12, Berlin, Heidelberg, pp. 1-16. External Links: Link, Document Cited by: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. 국제 학습 표현 회의에서는 외부 링크: 링크, 문서 인용: SS1, SS2.\n' +
+      '* D. A. Asai, K. 하시모토 하지시르지 Socher, and C. Xiong (2020)Learning to retrieve reasoning path over wikipedia graph for question answer. In International Conference on Learning Representations, External Links: Link, Document Cited by: SS1* Bentivogli et al. (2009) Luisa Bentivogli, Peter Clark, Ido Dagan, and Danilo Giampiccolo. 다섯 번째 패스칼은 텍스트 수반 도전을 인식한다. In _TAC_, 2009.\n' +
+      '* BIG-bench 협업(2021) BIG-bench 협업. 모방 게임을 넘어 언어 모델의 기능을 측정하고 추론합니다. _ 준비_에서 2021. URL [https://github.com/google/BIG-bench/](https://github.com/google/BIG-bench/)입니다.\n' +
+      '* Brown et al. (2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbia, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel Ziegler, Jeffrey Wu, Clemens Winter, Chris Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. 언어 모델은 적은 수의 학습자입니다. _신경 정보 처리 시스템의 발전_에서 2020. URL [https://proceedings.neurips.cc/paper/2020/file/1457c0d6bfcb4967418bfb8ac142f64a-Paper.pdf](https://proceedings.neurips.cc/paper/2020/file/1457c0d6bfcb4967418bfb8ac142f64a-Paper.pdf)\n' +
+      '* Camburu et al. (2018) Oana-Maria Camburu, Tim Rocktaschel, Thomas Lukasiewicz, and Phil Blunsom. e-snli: 자연어 설명과 함께 자연어 추론. (P<0.05). 벵지오, H. 월락, H. 라로셸, K. 그라우만 Cesa-Bianchi, R. Garnett(eds.), _Advances in Neural Information Processing Systems 31_, pp.9539-9549. Curran Associates, Inc., 2018. URL [http://papers.nips.cc/paper/8163-e-snli-natural-language-inference-with-natural-language-explanations.pdf](http://papers.nips.cc/paper/8163-e-snli-natural-language-inference-with-natural-language-explanations.pdf).\n' +
+      '* Camburu 등(2020) Oana-Maria Camburu, Brendan Shillingford, Pasquale Minervini, Thomas Lukasiewicz, and Phil Blunsom. 결정해! 일관되지 않는 자연어 설명의 적대적 생성. _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pp. 4157-4165, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.382. URL [https://aclanthology.org/2020.acl-main.382](https://aclanthology.org/2020.acl-main.382)\n' +
+      '* Chen 등(2019) Jifan Chen, Shih-Ting Lin, and Greg Durrett. 추론 체인을 통한 다중 홉 질문 응답 _ CoRR_, abs/1910.02610, 2019. URL [http://arxiv.org/abs/1910.02610](http://arxiv.org/abs/1910.02610).\n' +
+      '* Chen et al.(2021) Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. Evaluating large language models trained on code. _ arXiv preprint arXiv:2107.03374_, 2021.\n' +
+      '* Chowdhery et al. (2022) Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunjay Ghemawat, Sunjay Dev, Henry Michalewski, Xavier Garcia, Vedant Misra, Kevin Robinson, Liam Fedus, Denmy Zhou, Daphne Ipolito, David Luan, 현택 다이, 타누말리안 산카라나리아나 필라이, 마리 펠랏, 아이토르 르코위츠, 에리카 모레이라, 르원 차일드, 올렉산드르 폴로조프, 캐서린 리, 종웨이저우, 수에지 왕, 브레넌 사에타, 마크 디아즈, 오르한 피라트, 미셸 카타스타, 제이슨 웨이, 캐시 마이어-헬스턴, 더글러스 엑, 제프 딘, 슬라브 페트로프, 노아 피델 등이다. Palm: 경로를 사용한 언어 모델링, 2022. URL [https://arxiv.org/abs/2204.02311](https://arxiv.org/abs/2204.02311)\n' +
+      '* Clark 등(2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. Boolq: 자연스러운 예/아니오 질문의 놀라운 어려움을 탐구한다. 2019년 _NAACL_ 에 있습니다.\n' +
+      '* Clark 등(2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문에 대한 답을 풀었다고 생각해? try arc, the ai2 reasoning challenge. _ ArXiv_, abs/1803.05457, 2018.\n' +
+      '* Cobbe et al.(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 수학 단어 문제 해결을 위한 검증자 훈련, 2021.\n' +
+      '\n' +
+      '* Dagan 등(2005) Ido Dagan, Oren Glickman, and Bernardo Magnini. 패스칼은 텍스트적 수반 문제를 인식합니다. _Machine Learning Challenges Workshop_, pp. 177-190. Springer, 2005.\n' +
+      '* Eikema and Aziz (2020) Bryan Eikema and Wilker Aziz. MAP 디코딩만 하면 되나요? 신경 기계 번역에서 모드의 부적절함 _Proceedings of the 28th International Conference on Computational Linguistics_, pp. 4506-4520, Barcelona, Spain(Online), December 2020. International Committee on Computational Linguistics. URL [https://aclanthology.org/2020.coling-main.398](https://aclanthology.org/2020.coling-main.398).\n' +
+      '* Elazar 등(2021) Yanai Elazar, Nora Kassner, Shauli Ravfogel, Abhilsha Ravichander, Eduard Hovy, Hinrich Schutze, and Yoav Goldberg. 사전 훈련된 언어 모델의 일관성을 측정하고 개선합니다. _ Transactions of the Association for Computational Linguistics_, 9:1012-1031, 2021. doi: 10.1162/tacl_a_00410. URL [https://aclanthology.org/2021.tacl-1.60](https://aclanthology.org/2021.tacl-1.60).\n' +
+      '* Evans(2010) Jonathan St BT Evans. 직관과 추론: 이중 프로세스 관점입니다. _ Psychological Inquiry_, 21(4):313-326, 2010).\n' +
+      '* Fan et al. (2018) Angela Fan, Mike Lewis, and Yann Dauphin. 계층적 신경 스토리 생성 방법. _Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pp. 889-898, Melbourne, Australia, July 2018. Association for Computational Linguistics. doi: 10.18653/v1/P18-1082. URL [https://aclanthology.org/P18-1082](https://aclanthology.org/P18-1082).\n' +
+      '* Ficler and Goldberg (2017) Jessica Ficler and Yoav Goldberg. 신경 언어 생성에서 언어 스타일 측면을 제어하는 단계를 포함하는 방법. _Proceedings of the Workshop on Stylistic Variation_, pp. 94-104, Copenhagen, Denmark, September 2017. Association for Computational Linguistics. doi: 10.18653/v1/W17-4912. URL [https://aclanthology.org/W17-4912](https://aclanthology.org/W17-4912)\n' +
+      '* Gao 등(2021) Tianyu Gao, Adam Fisch, and Danqi Chen. 사전 훈련된 언어 모델을 적은 수의 학습자에게 더 잘 만들 수 있다. _Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)_, pp. 3816-3830, Online, August 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.acl-long.295. URL [https://aclanthology.org/2021.acl-long.295](https://aclanthology.org/2021.acl-long.295)\n' +
+      '* Geva 등(2020) Mor Geva, Ankit Gupta, and Jonathan Berant. 언어 모델에 수치적 추론 기술을 주입합니다. _Computational Linguistics Association of 58th Annual Meeting의 Proceedings_, 2020. doi: 10.18653/v1/2020.acl-main.89. URL [https://aclanthology.org/2020.acl-main.89](https://aclanthology.org/2020.acl-main.89)\n' +
+      '* Geva 등(2021) Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot, Dan Roth, and Jonathan Berant. 아리스토텔레스가 노트북을 사용했나요? 암묵적 추론 전략을 사용 하는 질문 응답 벤치마크입니다. _ Computational Linguistics Association의 트랜잭션, 2021. URL [https://aclanthology.org/2021.tacl-1.21](https://aclanthology.org/2021.tacl-1.21).\n' +
+      '* Giampiccolo et al. (2007) Danilo Giampiccolo, Bernardo Magnini, Ido Dagan, and Bill Dolan. 세 번째 패스칼은 텍스트 수반 도전을 인식한다. _Proceedings of the ACL-PASCAL workshop on textual entailment and paraphrasing_, pp. 1-9. Association for Computational Linguistics, 2007.\n' +
+      '* Holtzman 등(2018) Ari Holtzman, Jan Buys, Maxwell Forbes, Antoine Bosselt, David Golub, and Yejin Choi. 협동적 판별기로 글을 쓰는 법을 배웁니다. _Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pp. 1638-1649, Melbourne, Australia, July 2018. Association for Computational Linguistics. doi: 10.18653/v1/P18-1152. URL [https://aclanthology.org/P18-1152](https://aclanthology.org/P18-1152).\n' +
+      '* Holtzman 등(2020) Ari Holtzman, Jan Buys, Li Du, Maxwell Forbes, and Yejin Choi. 신경 텍스트 변성의 특이한 사례. _학습 표현에 대 한 국제 회의_에서 2020. URL [https://openreview.net/forum?id=rygGQyrFvH](https://openreview.net/forum?id=rygGQyrFvH)입니다.\n' +
+      '* Hosseini 등(2014) Mohammad Javad Hosseini, Hannaneh Hajishirzi, Oren Etzioni, and Nate Kushman. 동사 범주화를 통한 산술 단어 문제 해결 학습 _Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, 2014. doi: 10.3115/v1/D14-1058. URL [https://aclanthology.org/D14-1058](https://aclanthology.org/D14-1058).\n' +
+      '\n' +
+      '* Khashabi 등(2020) Daniel Khashabi, Sewon Min, Tushar Khot, Ashish Sabharwal, Oyvind Tafjord, Peter Clark, and Hannaneh Hajishirzi. UNIFIEDQA: 단일 QA 시스템으로 형식 경계를 교차합니다. _Findings of the Association for Computational Linguistics: EMNLP 2020_, pp. 1896-1907, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.findings-emnlp.171. URL [https://aclanthology.org/2020.findings-emnlp.171](https://aclanthology.org/2020.findings-emnlp.171)\n' +
+      '* Kojima 등(2022) Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. 대형 언어 모델은 제로 샷 추론기입니다. Alice H. Oh, Alekh Agarwal, Danielle Belgrave 및 Cho경현 (eds.), _신경 정보 처리 시스템의 Advances_, 2022. URL [https://openreview.net/forum?id=e2TBb5V0yFFf](https://openreview.net/forum?id=e2TBb5V0yFFf).\n' +
+      '* Koncel-Kedziorski 등(2016) Rik Koncel-Kedziorski, Subhro Roy, Aida Amini, Nate Kushman, and Hannaneh Hajishirzi. MAWPS: 수학 단어 문제 저장소. _Proceedings of the 2016 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, 2016. doi: 10.18653/v1/N16-1136. URL [https://aclanthology.org/N16-1136](https://aclanthology.org/N16-1136).\n' +
+      '* Lan 등(2021) Yihuai Lan, Lei Wang, Qiyuan Zhang, Yunshi Lan, Bing Tian Dai, Yan Wang, Dongxiang Zhang, and Ee-Peng Lim. MWPToolkit: 딥러닝 기반 수학 단어 문제 해결자를 위한 오픈 소스 프레임워크입니다. _ arXiv preprint arXiv:2109.00799_, 2021. URL [https://arxiv.org/abs/2109.00799](https://arxiv.org/abs/2109.00799).\n' +
+      '* Li & Jurafsky (2016) Jiwei Li and Dan Jurafsky. 상호 정보 및 다양한 디코딩은 신경망 기계 번역을 개선합니다. 2016. URL [https://arxiv.org/abs/1601.00372](https://arxiv.org/abs/1601.00372).\n' +
+      '* Li 등(2016) Jiwei Li, Will Monroe, and Dan Jurafsky. 신경 생성을 위한 간단하고, 빠른 다양한 디코딩 알고리즘. _ CoRR_, abs/1611.08562, 2016. URL [http://arxiv.org/abs/1611.08562](http://arxiv.org/abs/1611.08562).\n' +
+      '* Ling 등(2017) Wang Ling, Dani Yogatama, Chris Dyer, and Phil Blunsom. 이론 생성에 의한 프로그램 귀납: 대수적 단어 문제를 풀고 설명하는 학습 _Computational Linguistics Association of the 55th Annual Meeting(Volume 1: Long Papers)_, 2017. doi: 10.18653/v1/P17-1015. URL [https://aclanthology.org/P17-1015](https://aclanthology.org/P17-1015).\n' +
+      '* Lu 등(2021) Yao Lu, Max Bartolo, Alastair Moore, Sebastian Riedel, and Pontus Stenetorp. 환상적으로 주문 된 프롬프트 및 찾을 위치: 몇 번의 샷 프롬프트 주문 감도를 극복 합니다. _ ArXiv_, abs/2104.08786, 2021.\n' +
+      '* Meister 등(2022) Clara Meister, Tiago Pimentel, Gian Wiher, and Ryan Cotterell. 자연어 생성을 위한 일반적인 디코딩. _ arXiv preprint arXiv:2202.00666_, 2022.\n' +
+      '* Miao 등(2020) Shen Yun Miao, Chao Chun Liang, and Keh Yih Su. 영어 수학 단어 문제 해결사를 평가하고 개발하기 위한 다양한 말뭉치. _Computational Linguistics Association의 58번째 연례 회의 진행률_에서 2020. URL [https://aclanthology.org/2020.acl-main.92](https://aclanthology.org/2020.acl-main.92)입니다.\n' +
+      '*Nie 등(2020) Yixin Nie, Adina Williams, Emily Dinan, Mohit Bansal, Jason Weston, and Douwe Kiela. 적대적 NLI: 자연어 이해를 위한 새로운 벤치마크입니다. _Computational Linguistics Association의 제58차 연례 회의의 절차_에서. 2020년 계산 언어학 협회\n' +
+      '* Nye 등(2021) Maxwell Nye, Michael Henry Tessler, Joshua B. Tenenbaum, and Brenden M. 레이크 이중 시스템, 신경-상징 추론으로 신경망 시퀀스 모델의 일관성과 일관성을 개선한다. A. Beygelzimer, Y. Dauphin, P. Liang 및 J. Wortman Vaughan (eds.), _Advances in Neural Information Processing Systems_, 2021. URL [https://openreview.net/forum?id=uyKK_avJ-p4](https://openreview.net/forum?id=uyKK_avJ-p4).\n' +
+      '* Patel 등(2021) Arkil Patel, Satwik Bhattamishra, and Navin Goyal. NLP 모델들이 정말 간단한 수학 단어 문제를 풀 수 있을까요? _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pp. 2080-2094, Online, June 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.naacl-main.168. URL [https://aclanthology.org/2021.naacl-main.168](https://aclanthology.org/2021.naacl-main.168)\n' +
+      '* Pi 등(2022) Xinyu Pi, Qian Liu, Bei Chen, Morteza Ziyadi, Zeqi Lin, Yan Gao, Qiang Fu, Jian-Guang Lou, and Weizhu Chen. 2022년 프로그램 실행자와 같은 추론입니다.\n' +
+      '\n' +
+      '* Piekos 등(2021) Piotr Piekos, Mateusz Malinowski, and Henryk Michalewski. 추론의 순서를 예측하여 BERT의 수학적 능력을 측정하고 개선한다. _Computational Linguistics Association of the 59th Annual Meeting and the 11th International Joint Conference on Natural Language Processing (Volume 2: Short Papers)_, 2021. doi: 10.18653/v1/2021.acl-short.49. URL [https://aclanthology.org/2021.acl-short.49](https://aclanthology.org/2021.acl-short.49)\n' +
+      '* Radford 등(2019) Alec Radford, Jeff Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. 언어 모델은 감독되지 않은 다중 작업 학습자입니다. 2019.\n' +
+      '* Rae et al. (2021) Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susannah Young, et al. Scaling language models: Methods, analysis & insights from training gopher. _ arXiv preprint arXiv:2112.11446_, 2021.\n' +
+      '* Ran 등(2019) Qiu Ran, Yankai Lin, Peng Li, Jie Zhou, Zhiyuan Liu. NumNet: 수치 추론을 이용한 기계 독해력. _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, 2019. doi: 10.18653/v1/D19-1251. URL [https://aclanthology.org/D19-1251](https://aclanthology.org/D19-1251).\n' +
+      '* Roy & Roth (2015) Subhro Roy and Dan Roth. 일반적인 산술 단어 문제 풀이 [Azure Portal](https://portal.azure.com)에서 [Azure Portal](https://portal.azure.com)에서 [Azure Portal](https://portal.azure.com)에 로그인합니다.\n' +
+      '* Shen 등(2021) Jianhao Shen, Yichun Yin, Lin Li, Lifeng Shang, Xin Jiang, Ming Zhang, and Qun Liu. 생성 및 순위: 수학 단어 문제를 위한 다중 작업 프레임워크입니다. _Findings of the Association for Computational Linguistics: EMNLP 2021_, pp. 2269-2279, Punta Cana, Dominican Republic, November 2021. Association for Computational Linguistics. URL [https://aclanthology.org/2021.findings-emnlp.195](https://aclanthology.org/2021.findings-emnlp.195).\n' +
+      '* Shi et al.(2022) Freda Shi, Daniel Fried, Marjan Ghazvininejad, Luke Zettlemoyer, and Sida I. Wang. 실행과 함께 번역을 코드화하는 자연어. _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pp. 3533-3546, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational Linguistics. URL [https://aclanthology.org/2022.emnlp-main.231](https://aclanthology.org/2022.emnlp-main.231)\n' +
+      '* Stanovich & West (2000) Keith E Stanovich and Richard F West. 추론의 개인차이: 합리성 논쟁에 대한 함의? _ Behavioral and brain sciences_, 23(5):645-665, 2000. URL [https://pubmed.ncbi.nlm.nih.gov/11301544/](https://pubmed.ncbi.nlm.nih.gov/11301544/)\n' +
+      '* Talmor 등(2019) Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. 상식 QA: 상식 지식을 대상으로 하는 질문 응답 도전 _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long and Short Papers)_, 2019. URL [https://aclanthology.org/N19-1421](https://aclanthology.org/N19-1421).\n' +
+      '* Tay 등(2022) Yi Tay, Mostafa Dehghani, Vinh Q. 트란, 사비에르 가르시아, 제이슨 웨이, 수에지 왕, 형원 정, 다라 바리, 탈 슈스터, 스티븐 정, 데니 저우, 닐 홀스비, 도날드 메츨러 등이다. 언어 학습 패러다임 통합, 2022. URL [https://arxiv.org/abs/2205.05131](https://arxiv.org/abs/2205.05131).\n' +
+      '* Thoppilan et al.(2022) Romal Thoppilan, Daniel De Freitas, Jamie Hall, Noam Shazeer, Apoorv Kulshreshtha, Heng-Tze Cheng, Alicia Jin, Taylor Bos, Leslie Baker, Yu Du, et al. Lamda: Language models for dialog applications. _ arXiv preprint arXiv:2201.08239_, 2022. URL [https://arxiv.org/abs/2201.08239](https://arxiv.org/abs/2201.08239)\n' +
+      '* Vijayakumar 등(2018) Ashwin Vijayakumar, Michael Cogswell, Ramprasaath Selvaraju, Qing Sun, Stefan Lee, David Crandall, and Dhruv Batra. 복잡한 장면들에 대한 개선된 설명을 위한 다양한 빔 탐색. _ 4월 32일 인공지능에 관한 AAAI 회의의 진행. 2018. URL [https://ojs.aaai.org/index.php/AAAI/article/view/12340](https://ojs.aaai.org/index.php/AAAI/article/view/12340).\n' +
+      '* Wei 등(2022) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. 생각의 사슬 프롬프트는 대규모 언어 모델에서 추론을 이끌어냅니다. _ NeurIPS(신경 정보 처리 시스템)_, 2022. URL [https://arxiv.org/pdf/2201.11903](https://arxiv.org/pdf/2201.11903)\n' +
+      '\n' +
+      '* Welleck 등(2020) Sean Welleck, Ilia Kulikov, Jaeedeok Kim, Richard Yuanzhe Pang, and Kyung현 Cho. 불완전한 디코딩에 대한 반복 언어 모델의 일관성. _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pp. 5553-5568, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020. emlp-main.448. URL [https://aclanthology.org/2020.emnlp-main.448](https://aclanthology.org/2020.emnlp-main.448)\n' +
+      '* Xu 등(2021a) Weiwen Xu, Yang Deng, Huihui Zhang, Deng Cai, and Wai Lam. 멀티 홉 과학 질문 응답을 위한 추론 체인 활용 _Findings of the Association for Computational Linguistics: EMNLP 2021_, pp. 1143-1156, Punta Cana, Dominican Republic, November 2021a. 계산 언어학을 위한 연관성. URL [https://aclanthology.org/2021.findings-emnlp.99](https://aclanthology.org/2021.findings-emnlp.99).\n' +
+      '* Xu 등(2021b) Yichong Xu, Chenguang Zhu, Shuohang Wang, Siqi Sun, Hao Cheng, Xiaodong Liu, Jianfeng Gao, Pengcheng He, Michael Zeng, and Xuedong Huang. 커먼센스카에 대한 인간 평등: 외부 주의로 자기 주의를 강화, 2021b. URL [https://arxiv.org/abs/2112.03254](https://arxiv.org/abs/2112.03254).\n' +
+      '* Yang et al. (2018) Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D. Manning. 핫팟QA: 다양하고 설명 가능한 멀티홉 질문 답변을 위한 데이터 세트입니다. _Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing_, pp. 2369-2380, Brussels, Belgium, October-November 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-1259. URL [https://aclanthology.org/D18-1259](https://aclanthology.org/D18-1259).\n' +
+      '* Ye & Durrett (2022) Xi Ye and Greg Durrett. 텍스트 추론을 촉구하는 소수의 설명에 대한 비신뢰성. Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho(eds.), _Advances in Neural Information Processing Systems_, 2022. URL [https://openreview.net/forum?id=Bct2f8fRd8S](https://openreview.net/forum?id=Bct2f8fRd8S).\n' +
+      '* Yu 등(2022) Wenhao Yu, Chenguang Zhu, Lianhui Qin, Zhihan Zhang, Tong Zhao, and Meng Jiang. 지식 그래프 전문가의 혼합으로 상식 추론을 위한 내용 생성의 다양화 _Findings of Annual Meeting of the Association for Computational Linguistics (ACL)_, 2022.\n' +
+      '* Zhao 등(2021) Zihao Zhao, Eric Wallace, Shi Feng, Dan Klein, and Sameer Singh. 사용 전에 보정: 언어 모델의 적은 샷 성능 개선입니다. Marina Meila and Tong Zhang(eds.)에서, _제38회 Machine Learning에 관한 국제회의의 진행문_, _Machine Learning Research의 진행문_의 139권. PMLR, 2021. URL [https://proceedings.mlr.press/v139/zhao21c.html](https://proceedings.mlr.press/v139/zhao21c.html)\n' +
+      '\n' +
+      'Appendix\n' +
+      '\n' +
+      '### 추가 실험 결과\n' +
+      '\n' +
+      '#### a.1.1 샘플링 전략 및 매개 변수에 대한 견고성\n' +
+      '\n' +
+      '그림 6에서는 LaMDA-137B에서 온도 샘플링에서 \\(T\\) 및 Top-\\(k\\) 샘플링에서 \\(k\\)을 변경하여 다른 샘플링 전략과 매개변수에 대한 결과를 제거한다. 우리는 자기 일관성이 다양한 샘플링 전략과 매개변수에 강력하다는 것을 보여준다.\n' +
+      '\n' +
+      '그림 7과 그림 8에서 각각 LaMDA-137B와 PaLM-540B에 대한 단일 경로에 대한 그리디 디코딩과 비교한 자기 일관성 결과를 보여준다. 자기 일관성은 모델 크기를 확장함으로써 이미 달성된 높은 정확도에 더하여 두 모델 모두에서 그리디 디코딩보다 상당히 상당한 마진만큼 개선된다.\n' +
+      '\n' +
+      '우리는 표 12의 LaMDA-137B 모델에서 추가 샘플링된 추론 경로와 표 13의 PaLM-540B 모델에서 샘플링된 추론 경로를 추가로 보여준다. 추가 샘플링된 추론 경로의 다양성이 모델이 집계 후 더 정확한 최종 답변에 도달하는 데 실제로 도움이 된다는 것을 알 수 있다.\n' +
+      '\n' +
+      '#### a.1.2 프롬프트 집합에 대한 견고성\n' +
+      '\n' +
+      '표 9에서 우리는 또한 자기 일관성이 다양한 입력 프롬프트 세트에 매우 강력하다는 것을 보여준다. 우리는 모델에 대한 프롬프트로 3개의 서로 다른 생각 사슬 세트를 수동으로 작성했다. 모든 프롬프트 세트에 걸쳐 자기 일관성은 원래 CoT 접근법에 비해 일관된 이득을 산출한다.\n' +
+      '\n' +
+      '#### a.1.3 모델 앙상블과 비교\n' +
+      '\n' +
+      '또한 **다중 언어 모델** 에서 출력을 직접 조립한 결과를 제공합니다. 결과는 3개의 언어 모델로부터 시퀀스를 탐욕스럽게 디코딩하여 표 10에 나와 있다.\n' +
+      '\n' +
+      '도 6: LaMDA-137B에 대한 GSM8K 정확도. 자기일관성은 다양한 샘플링 전략과 샘플링 매개변수에서 작동한다.\n' +
+      '\n' +
+      '그림 7: 자기 일관성(파란색)은 LaMDA-137B를 통해 다양한 산술 및 상식 추론 작업에 걸쳐 정확도를 크게 향상시킨다. 더 많은 수의 다양한 추론 경로를 샘플링하면 추론 정확도가 일관되게 향상된다.\n' +
+      '\n' +
+      '다수결(평균 10점 이상)을 얻다. 이것은 전형적인 앙상블 접근법(여러 모델에 대한 예측을 평균화함)이고, 저용량 모델이 고용량 모델의 성능을 끌어내리기 때문에 자기 일관성보다 상당히 더 나쁜 성능을 달성한다(PaLM-540B에 대한 자기 일관성은 74.4%의 정확도를 얻음). 또한, 이 접근법은 두 가지 방식으로 제한된다: 1) 항상 이용가능하지 않을 수 있는 앙상블을 위해 여러 모델을 필요로 하는 반면, 자기 일관성은 "자기-유사"를 위해 하나의 단일 모델만을 필요로 한다; 2) 모델 중 하나가 훨씬 약하면 실제로 최종 성능에 타격을 줄 수 있습니다.\n' +
+      '\n' +
+      '#### a.1.4 다른 앙상블 전략과의 자체 일관성 결합\n' +
+      '\n' +
+      '자기-일관성은 다른 앙상블 전략들과 완전히 호환되지만, 자기-일관성에 의해 달성되는 이득들은 다른 앙상블 전략들보다 상당히 높다(그리고 다른 앙상블 전략들에 의해 달성되는 성능 이득들을 "오버라이드"할 수 있다). 우리는 실험을 추가로 수행하고 결과를 표 11에 포함했다(공정한 비교를 위해 40개의 프롬프트 세트 또는 40개의 프롬프트 순열을 사용하여 40개의 경로와 자기 일관성과 비교하며 모든 실험은 PaLM-540B를 기반으로 한다).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l c} \\hline \\hline  & Method & GSM8K accuracy \\\\ \\hline \\hline Single model & PaLM-540B, greedy / self-consistency & 56.5 / 74.4 \\\\ \\hline \\multirow{2}{*}{Ensemble of models} & LaMDA-137B + PaLM-540B & 36.9 \\(\\pm\\) 0.5 \\\\  & PaLM-540B + GPT-3 (code-davinci-001, 175B) & 36.6 \\(\\pm\\) 0.4 \\\\  & LaMDA-137B + GPT-3 (code-davinci-001, 175B) & 16.0 \\(\\pm\\) 0.8 \\\\  & LaMDA-137B + PaLM-540B + GPT-3 (code-davinci-001, 175B) & 33.3 \\(\\pm\\) 0.7 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 10: 다중 모델 앙상블에 대한 GSM8K 정확도의 비교.\n' +
+      '\n' +
+      '그림 8: 자기 일관성(파란색)은 PaLM-540B에 비해 다양한 산술 및 상식 추론 작업에 걸쳐 정확도를 크게 향상시킨다. 더 많은 수의 다양한 추론 경로를 샘플링하는 것은 일관되게 추론 정확도에 도움이 된다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c|c|c} \\hline \\hline  & Prompt set 1 (used in the main text) & Prompt set 2 & Prompt set 3 \\\\ \\hline CoT (Wei et al., 2022) & 56.5 & 54.6 & 54.0 \\\\ Self-consistency & 74.4 (+17.9) & 72.1 (+17.5) & 70.4 (+16.4) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 9: PaLM-540B에 대한 GSM8K 정확도. 결과는 입력에서 서로 다른 프롬프트에 대한 자기 일관성의 견고성을 보여준다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:18]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:19]\n' +
+      '\n' +
+      '추가 정보로서, 우리는 또한 Wei 등(2022)에 소개된 프롬프트들의 다수의 세트들이 존재하기 때문에, 표 17의 모든 산술 추론 태스크들에 사용되는 프롬프트들의 정확한 세트를 나열한다. CommonsenseQA 및 StrategyQA에 대한 프롬프트는 Wei 등(2022)에서 사용된 것과 동일하다.\n' +
+      '\n' +
+      '우리는 NLI(표 18, 표 19, 표 20) 및 폐쇄-책 질문-응답 태스크(표 16, 표 21)를 포함하여 다음 표에서 공통 NLP 태스크에 사용되는 정확한 프롬프트를 제공한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{227.6pt}} \\hline \\hline\n' +
+      '**Q:**: Arthur\'s Magazine 또는 First for Women 중 어떤 잡지가 처음 시작 되었습니까? \\\\\n' +
+      '**A:** 아서의 잡지는 1844년에 시작되었습니다. 여성을 위한 첫 번째는 1989년에 시작되었습니다. 그래서 아서의 잡지가 먼저 시작되었습니다. 답은 아서의 잡지입니다. \\\\\n' +
+      '**Q:**: Oberoi 가족은 어떤 도시에 본사가 있는 호텔 회사의 일부입니까? \\\\\n' +
+      '**A:**: Oberoi 가족은 The Oberoi Group이라는 호텔 회사의 일부입니다. 오베로이 그룹은 델리에 본사를 두고 있다. 답은 델리입니다 \\\\\n' +
+      '**Q:**: 제임스 헨리 밀러의 아내는 국적이 어떻게 됩니까? \\\\\n' +
+      '**A:**: 제임스 헨리 밀러의 아내는 준 밀러입니다. 준 밀러는 미국인이다. 답은 미국인입니다. \\\\\n' +
+      '**Q:**: "Anubis의 집"이 몇 년에 처음 방영된 것을 기반으로 한 네덜란드-벨기에 텔레비전 시리즈입니다. \\\\\n' +
+      '**A:**: “House of Anubis” is based on the Dutch-Belgian television series Het Huis Anubis. Het Huis Anubis is first aired in September 2006. The answer is 2006. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 16: HotpotQA(폐쇄-북 설정)에 대한 적은 샷 예시.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{227.6pt}} \\hline \\hline\n' +
+      '**Q:**: 조지는 손을 문질러 빨리 데우고 싶어 합니다. 어떤 피부 표면이 가장 열을 낼까요? (a) 건야자. (b) 젖은 손바닥. (c) 손바닥을 기름으로 덮는 단계. (d) 로션으로 덮은 손바닥. \\\\\n' +
+      '**A:** 건조한 표면은 다른 매끄러운 표면보다 마찰을 통해 더 많은 마찰을 일으킬 가능성이 높기 때문에 건조한 손바닥은 가장 많은 열을 생성합니다. 답은 (a)입니다. \\\\\n' +
+      '**Q:**: 열이 발생할 가능성이 가장 높은 요인은 무엇입니까? (a) 운동 후 이완되는 다리 근육. (b) 혈류의 박테리아 집단. (c) 피부의 여러 바이러스 입자. (d) 탄수화물이 위에서 소화되는 단계 \\\\\n' +
+      '**A:**: 옵션 (b) 박테리아 개체군은 열이 발생하는 가장 가능성 있는 원인입니다. 답은 (b)입니다. \\\\\n' +
+      '**Q:**: 물 입자의 상태가 변경 되 면 입자가 고정 위치에 배치 됩니다. (a) 끓는 단계. (b) 녹는 단계. (c) 동결하는 단계. (d) 증발. \\\\\n' +
+      '**A:**: 물이 동결 되 면 입자가 고정 위치에 배치 됩니다. 입자는 다른 모든 옵션에 대해 여전히 이동 합니다. 답은 (c) \\\\\n' +
+      '**Q:**: 스위치가 전기 회로에 사용 되는 경우 스위치는 (a) 전하를 빌드할 수 있습니다. (b) 전압을 증가 및 감소시킨다. (c) 전류가 방향을 변경하게 한다. (d) 전류의 흐름을 멈추고 시작한다. \\\\\n' +
+      '**A:**: 스위치의 기능은 전류의 흐름을 시작하고 중지하는 것입니다. 답은 (d)이다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{227.6pt}} \\hline \\hline\n' +
+      '**Q:**: 이전에는 손을 문질러 빠르게 데우고 싶습니다. 어떤 피부 표면이 가장 열을 낼까요? (a) 건야자. (b) 젖은 손바닥. (c) 손바닥을 기름으로 덮는 단계. (d) 로션으로 덮은 손바닥. \\\\\n' +
+      '**A:** 건조한 표면은 다른 매끄러운 표면보다 마찰을 통해 더 많은 마찰을 일으킬 가능성이 높기 때문에 건조한 손바닥은 가장 많은 열을 생성합니다. 답은 (a)입니다. \\\\\n' +
+      '**Q:**: 열이 발생할 가능성이 가장 높은 요인은 무엇입니까? (a) 운동 후 이완되는 다리 근육. (b) 혈류의 박테리아 집단. (c) 피부의 여러 바이러스 입자. (d) 탄수화물이 위에서 소화되는 단계 \\\\\n' +
+      '**A:**: 옵션 (b) 박테리아 개체군은 열이 발생하는 가장 가능성 있는 원인입니다. 답은 (b)입니다. \\\\\n' +
+      '**Q:**: 물 입자의 상태가 변경 되 면 입자가 고정 위치에 배치 됩니다. (a) 끓는 단계. (b) 녹는 단계. (c) 동결하는 단계. (d) 증발. \\\\\n' +
+      '**A:**: 물이 동결 되 면 입자가 고정 위치에 배치 됩니다. 입자는 다른 모든 옵션에 대해 여전히 이동 합니다. 답은 (c) \\\\\n' +
+      '**Q:**: 스위치가 전기 회로에 사용 되는 경우 스위치는 (a) 전하를 빌드할 수 있습니다. (b) 전압을 증가 및 감소시킨다. (c) 전류가 방향을 변경하게 한다. (d) 전류의 흐름을 멈추고 시작한다. \\\\\n' +
+      '**A:**: The function of a switch is to start and stop the flow of a current. The answer is (d). \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 15: ARC 이지/도전에 대한 적은 샷 예시.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**Q:** 숲에는 15개의 나무가 있습니다. 그루브 일꾼들은 오늘 그루브에 나무를 심을 것이다. 그들이 끝나면, 21그루의 나무가 있을 것입니다. 그 숲의 일꾼들은 오늘 몇 그루의 나무를 심었습니까?\n' +
+      '**A:** 15개의 트리로 시작합니다. 나중에 우리는 21그루의 나무를 가지고 있다. 차이점은 그들이 심은 나무의 수여야 합니다. 그래서, 그들은 21-15 = 6개의 나무를 심었을 것입니다. 답은 6입니다. \\\\\n' +
+      '**Q:** 주차장에 3대의 차량이 있고 2대의 차량이 더 도착하는 경우 주차장에 몇 대의 차량이 있습니까? \\\\\n' +
+      '**A:** 이미 주차장에 3대의 차량이 있습니다. 2개 더 도착합니다. 이제 3 + 2 = 5대의 자동차가 있다. 답은 5입니다. \\\\\n' +
+      '**Q:** Leah에는 32개의 초콜릿이 있고 그녀의 여동생에는 42개가 있습니다. 35개이면 총 몇 개의 조각이 남아 있습니까? \\\\\n' +
+      '**A:** Leah에는 32개의 초콜릿이 있었고 Leah의 자매에는 42개의 초콜릿이 있었습니다. 즉 원래 32 + 42 = 74개의 초콜릿이 있었습니다. 35마리가 먹혔다. 그래서 그들은 여전히 74 - 35 = 39개의 초콜릿을 가지고 있다. 응답은 39입니다. \\\\\n' +
+      '**Q:** 제이슨에는 20개의 막대사탕이 있습니다. 데니에게 막대 사탕을 줬어요 이제 제이슨은 12개의 막대 사탕을 가지고 있다. 제이슨이 데니에게 얼마나 많은 막대 사탕을 줬지?\n' +
+      '**A:** 제이슨에는 20개의 막대 사탕이 있습니다. 지금 12살밖에 안 됐으니 나머진 데니에게 줬을 거예요 그가 데니에게 준 막대 사탕의 수는 20개 - 12개 = 8개였을 것이다. 답은 8입니다. \\\\\n' +
+      '**Q:** 숀은 5개의 장난감을 가지고 있습니다. 크리스마스에, 그는 엄마와 아빠에게 각각 두 개의 장난감을 받았습니다. 지금 장난감이 몇 개나 있죠?\n' +
+      '**A:** 그는 5 개의 장난감을 가지고 있습니다. 그는 엄마로부터 2개를 받았고, 그 후 그는 5+2=7개의 장난감을 가지고 있습니다. 그리고 나서 그는 아버지로부터 2개를 더 받았고, 그래서 총 7+2=9개의 장난감을 가지고 있습니다. 응답은 9입니다. \\\\\n' +
+      '**Q:** 서버 룸에는 9개의 컴퓨터가 있었습니다. 월요일부터 목요일까지 매일 5대의 컴퓨터가 더 설치되었다. 지금 서버실에 컴퓨터가 몇 대나 있나요? \\\\\n' +
+      '**A:** 월요일부터 목요일까지 4일이 있습니다. 매일 5대의 컴퓨터가 추가되었다. 즉, 총 4 + 5 = 20 대의 컴퓨터가 추가되었습니다. 초반에는 9대의 컴퓨터가 있었기 때문에 지금은 9+20=29대의 컴퓨터가 있다. \\\\ 응답은 29입니다. \\\\\n' +
+      '**Q:** Michael은 58개의 골프공을 가지고 있습니다. 화요일, 그는 23개의 골프공을 잃었다. 수요일, 그는 2개를 더 잃었다. 수요일 말에 골프공이 몇 개 있었나요?\n' +
+      '**A:** Michael은 처음에 58개의 공을 가졌습니다. 그는 화요일 23개를 잃었고, 그 후 58 - 23 = 35개의 공을 가졌다. 수요일에 그는 2개를 더 잃었고, 이제 그는 35 - 2 = 33개의 공을 가지고 있다. 응답은 33입니다. \\\\\n' +
+      '**Q:** 올리비아는 23달러를 가지고 있습니다. 그녀는 베이글 5개를 개당 3달러에 구입했습니다. 그녀가 얼마 남았어요?\n' +
+      '**A:** She bought 5 bagels for $3 each. This means she spent 5 * $3 = $15 on the bagels. She had $23 in beginning, so now she has $23 - $15 = $8. The answer is 8. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 17: Wei 등(2022)으로부터의 모든 산술 추론 태스크에 대한 적은 샷 예시.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline Premise: \\\\ "Conceptually cream skimming has two basic dimensions - product and geography." \\\\ Based on this premise, can we conclude the hypothesis "Product and geography are what make cream skimming work." is true? \\\\ OPTIONS: \\\\ - yes \\\\ - no \\\\ - it is not possible to tell \\\\\n' +
+      '**A:** "크림 스키밍에는 두 가지 기본 차원이 있습니다."를 기반으로 이 두 차원이 크림 스키밍을 작동 하는 것이라고 추론할 수 없습니다. 답은 말할 수 없다는 것이다. \\\\ 전제: \\\\ "우리 팀원 중 한 명이 당신의 지시를 세밀하게 수행할 것입니다." \\\\ 이 전제를 바탕으로 "우리 팀의 한 명이 당신의 명령을 엄청나게 정밀하게 수행할 것입니다."라는 가설을 결론을 내릴 수 있습니까? \\\\ OPTIONS: \\\\ - yes \\\\ - no \\\\ - tell \\\\\n' +
+      '**A:** "중 하나"는 "의 구성원"과 동일함을 의미하고, "캐리 아웃"은 "실행"과 동일함을 의미하고, "분 단위로"는 "강력 정밀도"와 동일함을 의미한다. 답은 예입니다. \\\\ Premise: \\\\ "성인과 어린이를 위한 재미" \\\\ 이러한 전제 하에 "어린이를 위한 재미"라는 가설을 결론을 내릴 수 있습니까? \\\\ OPTIONS: \\\\ - yes \\\\ - no \\\\ - tell \\\\\n' +
+      '**A:** "성인과 어린이"는 "외동 어린이"와 모순됩니다. 답은 아니오이다. \\\\ 전제: \\\\ "그는 Vrenna에게 돌아서 미소를 지었다." \\\\ 이러한 전제를 바탕으로 "그녀 어머니와 함께 그의 뒤에서 천천히 걷고 있던 Vrenna에게 미소 지었다."라는 가설을 결론 지을 수 있을까? \\\\ OPTIONS: \\\\ - yes \\\\ - no \\\\ - tell \\\\\n' +
+      '**A:** 전제는 "Vrenna가 걷고 있었다"에 대해 아무 말도 하지 않습니다. 답은 말할 수 없다는 것이다. \\\\ 전제: \\\\ "텔레비전에서도 볼 수 있습니다." \\\\ 이러한 전제를 기반으로 "텔레비전에서도 볼 수 있습니다."라는 가설을 결론을 내릴 수 있습니까? \\\\ OPTIONS: \\\\ - yes \\\\ - no \\\\ - tell \\\\\n' +
+      '**A:** "마찬가지" 및 "마찬가지"는 동일한 의미입니다. 답은 예입니다. \\\\ 전제: \\\\ "Vrenna와 나는 둘 다 그와 싸웠고 그는 우리를 거의 데려갔다." \\\\ 이 전제하에, 우리는 "Vrenna와 나 모두 그와 싸운 적이 없다."라는 가설을 사실로 결론지을 수 있을까? \\\\ OPTIONS: \\\\ - yes \\\\ - no \\\\ - tell \\\\\n' +
+      '**A:** “Vrenna and I both” contradicts “neither Vrenna nor myself”. The answer is no. \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 18: ANLI에 대한 적은 샷 예시.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline Premise: \\\\ "A person on a horse jumps over a broken down airplane." \\\\ Based on this premise, can we conclude the hypothesis ”A person is training his horse for a competition.” is true? OPTIONS: \\\\ - yes \\\\ - no \\\\ - it is not possible to tell \\\\ **A:** The person is not necessarily training his horse. The answer is it is not possible to tell. \\\\ Premise: \\\\ "A person on a horse jumps over a broken down airplane." \\\\ Based on this premise, can we conclude the hypothesis ”A person is at a diner, ordering an omelette." is true? OPTIONS: \\\\ - yes \\\\ - no \\\\ - it is not possible to tell \\\\ **A:** One jumping horse cannot be in a diner ordering food. The answer is no. \\\\ Premise: \\\\ "A person on a horse jumps over a broken down airplane." \\\\ Based on this premise, can we conclude the hypothesis ”A person is outdoors, on a horse.” is true? OPTIONS: \\\\ - yes \\\\ - no \\\\ - it is not possible to tell \\\\ **A:** A broken down airplane is outdoors. The answer is yes. \\\\ Premise: \\\\ "Children smiling and waving at camera." \\\\ Based on this premise, can we conclude the hypothesis ”They are smiling at their parents.” is true? OPTIONS: \\\\ - yes \\\\ - no \\\\ - it is not possible to tell \\\\ **A:** Just because they are smiling and waving at a camera does not imply their parents or anyone is anyone behind it. The answer is it is not possible to tell. \\\\ Premise: \\\\ "Children smiling and waving at camera." \\\\ Based on this premise, can we conclude the hypothesis ”The kids are frowning.” is true? OPTIONS: \\\\ - yes \\\\ - no \\\\ **A:** It is not possible to tell \\\\ **A:** One cannot be smiling and frowning at the same time. The answer is no. \\\\ Premise: \\\\ "Children smiling and waving at camera." \\\\ Based on this premise, can we conclude the hypothesis ”There are children present.” is true? OPTIONS: \\\\ - yes \\\\ - no \\\\ - it is not possible to tell \\\\ **A:** The children must be present to see them smiling and waving. The answer is yes. \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 19: e-SNLI에 대한 적은 샷 예시들(이유는 원래 데이터세트로부터의 크라우드 소스된 주석들임).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline Premise: \\\\ “No Weapons of Mass Destruction Found in Iraq Yet." \\\\ Based on this premise, can we conclude the hypothesis “Weapons of Mass Destruction Found in Iraq.” is true? \\\\\n' +
+      '**A:** "대량 파괴 무기 없음 발견"은 "대량 파괴 무기 발견"과 모순됩니다. 답은 아니오이다. \\\\ 전제: \\\\ "교황 요한 바오로 2세가 죽은 후, 로마 가톨릭 신자들이 새로운 교황 베네딕토 16세의 설치를 기념하기 위해 시카고 시내에 모여들었기 때문에 슬픔의 장소가 축하의 장소가 되었다." \\\\ 이러한 전제를 바탕으로 "교황 베네딕토 16세는 로마 가톨릭 교회의 새로운 지도자"라는 가설을 결론을 내릴 수 있을까? \\\\\n' +
+      '**A:** “새 교황 베네딕토 16세 설치”는 “교황 베네딕토 16세가 새 지도자”를 의미합니다. 답은 예입니다. \\\\ 전제: \\"한 남자는 26년 전 BBC One\'s Crimewatch에 첫 출연한 10대의 살인 혐의로 나중에 법정에 출두할 예정이다. 콜레트 아람(16세)은 1983년 10월 30일 노팅엄셔주 키워스에 있는 남자친구 집으로 걸어가던 중 실종되었다. 그녀의 시신은 나중에 그녀의 집 근처 들판에서 발견되었다. 폴 스튜어트 허친슨(50세)은 살인죄로 기소되었고 나중에 노팅햄 치안판사보다 먼저 기소될 예정이다."\\\\ 이 전제하에, 우리는 "폴 스튜어트 허친슨이 소녀를 찔렀다는 혐의를 받고 있다."라는 가설을 결론을 내릴 수 있을까?\\\\\n' +
+      '**A:** 전제는 Paul Stewart Hutchinson이 이 소녀를 "찔렀다"고 말하지 않습니다. "허셉틴은 이미 가장 아픈 유방암 환자를 치료하기 위해 승인되었으며, 회사는 월요일에 연방 규제 기관과 더 많은 유방암 환자를 위한 약을 처방할 가능성에 대해 논의할 것이다." \\\\ 이러한 전제하에 우리는 "허셉틴이 유방암 치료에 사용될 수 있다."라는 가설을 결론을 내릴 수 있을까? \\\\\n' +
+      '**A:** “Herceptin was approved to treat breast cancer” implies that “Herceptin can be used to treat breast cancer”. \\\\ The answer is yes. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 21: BoolQ에 대한 적은 샷 예시들(폐쇄-북 설정).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**Q:** 다운 시스템에 가수 2명이 있습니까? \\\\\n' +
+      '**A:** 다운의 시스템은 현재 Serj Tankian, Daron Malakian, Shavo Odadjian 및 John Dolmayan으로 구성됩니다. 세르주와 다론은 보컬을 하기 때문에, 그 밴드에는 두 명의 가수가 있다. 답은 예입니다. \\\\\n' +
+      '**Q:** 이란과 아프가니스탄이 같은 언어를 사용하나요? \\\\\n' +
+      '**A:** 이란과 아프가니스탄은 인도 유럽 언어 페르시아어를 사용합니다. 답은 예입니다. \\\\\n' +
+      '**Q:** 첼로와 베이스가 같은 것입니까? \\\\\n' +
+      '**A:** 첼로는 악기를 무릎 사이에 두고 앉아서 연주되는 반면, 더블 베이스는 서 있거나 의자에 앉아 연주됩니다. 대답은 아니오 \\\\\n' +
+      '**Q:** 엡솜 스테이션에서 굴 카드를 사용할 수 있습니까? \\\\\n' +
+      '**A:** Epsom railway station serves the town of Epsom in Surrey and is not in the London Oyster card zone. The answer is no. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 20: RTE에 대한 적은 샷 예시.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
