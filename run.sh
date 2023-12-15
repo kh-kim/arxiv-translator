@@ -6,16 +6,16 @@ if [ -z "$ARXIV_ID" ]; then
 fi
 
 # Ready the directory
-rm -rf $ARXIV_ID
-mkdir -p $ARXIV_ID
+rm -rf papers/$ARXIV_ID
+mkdir -p papers/$ARXIV_ID
 
 # Download the paper
-paper $ARXIV_ID -p -d $ARXIV_ID
-PDF_FN=$(ls -1 $ARXIV_ID/*.pdf | head -n 1)
+paper $ARXIV_ID -p -d papers/$ARXIV_ID
+PDF_FN=$(ls -1 papers/$ARXIV_ID/*.pdf | head -n 1)
 echo $PDF_FN
 
 # Extract the text
-nougat $PDF_FN -o $ARXIV_ID
+nougat $PDF_FN -o papers/$ARXIV_ID
 MMD_FN=$(echo $PDF_FN | sed 's/pdf/mmd/g')
 echo $MMD_FN
 
@@ -26,7 +26,7 @@ python translate_mmd.py $MMD_FN
 python ready_templates.py $MMD_FN
 
 # Git add
-git add $ARXIV_ID
+git add papers/$ARXIV_ID
 git add README.md
 
 # Git commit

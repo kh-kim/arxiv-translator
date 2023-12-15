@@ -2,6 +2,7 @@ import sys
 import os
 
 
+PAPER_DIR = "papers"
 MAIN_README_TEMPLATE_FN = "assets/main_readme_template.md"
 HTML_TEMPLATE_FN = "assets/html_template.html"
 README_TEMPLATE_FN = "assets/readme_template.md"
@@ -34,7 +35,7 @@ def update_main_readme():
         for arxiv_id in arxiv_id_list
     ]
     en_html_url_list = [
-        "https://raw.githack.com/{github_id}/{repo_name}/master/{arxiv_id}/paper.en.html".format(
+        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.en.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
@@ -42,7 +43,7 @@ def update_main_readme():
         for arxiv_id in arxiv_id_list
     ]
     ko_html_url_list = [
-        "https://raw.githack.com/{github_id}/{repo_name}/master/{arxiv_id}/paper.ko.html".format(
+        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ko.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
@@ -107,32 +108,32 @@ def main(en_mmd_fn):
     en_result_html_lines = html_lines[:6] + [wrap(line) for line in en_mmd_lines] + html_lines[6:]
     en_result_html = "\n".join(en_result_html_lines)
 
-    with open(os.path.join(arxiv_id, "paper.en.html"), "w") as f:
+    with open(os.path.join(PAPER_DIR, arxiv_id, "paper.en.html"), "w") as f:
         f.write(en_result_html)
 
     ko_result_html_lines = html_lines[:6] + [wrap(line) for line in ko_mmd_lines] + html_lines[6:]
     ko_result_html = "\n".join(ko_result_html_lines)
 
-    with open(os.path.join(arxiv_id, "paper.ko.html"), "w") as f:
+    with open(os.path.join(PAPER_DIR, arxiv_id, "paper.ko.html"), "w") as f:
         f.write(ko_result_html)
 
     result_readme = "\n".join(readme_lines).format(
         title=".".join(en_mmd_fn.split("/")[-1].split(".")[:-1]).replace("_", " "),
         arxiv_url="https://arxiv.org/abs/{arxiv_id}".format(arxiv_id=arxiv_id),
         ar5iv_url="https://ar5iv.org/abs/{arxiv_id}".format(arxiv_id=arxiv_id),
-        en_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/{arxiv_id}/paper.en.html".format(
+        en_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.en.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
         ),
-        ko_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/{arxiv_id}/paper.ko.html".format(
+        ko_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ko.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
         ),
     )
 
-    with open(os.path.join(arxiv_id, "README.md"), "w") as f:
+    with open(os.path.join(PAPER_DIR, arxiv_id, "README.md"), "w") as f:
         f.write(result_readme)
 
 
