@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# AgentVerse: Facilitating Multi-Agent Collaborative Controling Emergent Behaviors\n' +
+      '\n' +
+      'Weize Chen\\({}^{1}\\)1, Yusheng Su\\({}^{1}\\)1, Jingwei Zuo\\({}^{1}\\), Cheng Yang\\({}^{3}\\)2, Chenfei Yuan\\({}^{1}\\),\n' +
+      '\n' +
+      '**Chi-Min Chan\\({}^{1}\\)**, Heyang Yu\\({}^{1}\\), Yaxi Lu\\({}^{1}\\), Yi-Hsin Hung\\({}^{2}\\), Chen Qian\\({}^{1}\\), Yujia Qin\\({}^{1}\\),\n' +
+      '\n' +
+      '**Xin Cong\\({}^{1}\\)**, **Ruobing Xie\\({}^{4}\\)**, **Zhiyuan Liu\\({}^{1}\\)**, **Maosong Sun\\({}^{1}\\)**, **Jie Zhou\\({}^{4}\\)**\n' +
+      '\n' +
+      '\\({}^{1}\\) Department of Computer Science and Technology, Tsinghua University\n' +
+      '\n' +
+      '\\({}^{2}\\) School of Economics and Management, Tsinghua University\n' +
+      '\n' +
+      '\\({}^{3}\\) School of Computer Science, Beijing University of Posts and Telecommunications\n' +
+      '\n' +
+      '\\({}^{4}\\) Pattern Recognition Center, WeChat AI, Tencent Inc.\n' +
+      '\n' +
+      'chenwz21@mails.tsinghua.edu.cn, yushengsu.thu@gmail.com\n' +
+      '\n' +
+      'Footnote 1: The first two authors contributed equally.\n' +
+      '\n' +
+      'Footnote 2: footnotemark:\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Autonomous agents empowered by Large Language Models (LLMs) have undergone significant improvements, enabling them to generalize across a broad spectrum of tasks. However, in real-world scenarios, cooperation among individuals is often required to enhance the efficiency and effectiveness of task accomplishment. Hence, inspired by human group dynamics, we propose a multi-agent framework AgentVerse that can effectively orchestrate a collaborative group of expert agents as a greater-than-the-sum-of-its-parts system. Our experiments demonstrate that AgentVerse can proficiently deploy multi-agent groups that outperform a single agent. Extensive experiments on text understanding, reasoning, coding, tool utilization, and embodied AI confirm the effectiveness of AgentVerse. Moreover, our analysis of agent interactions within AgentVerse reveals the emergence of specific collaborative behaviors, contributing to heightened group efficiency. Our code has been released at [https://github.com/OpenBMB/AgentVerse/](https://github.com/OpenBMB/AgentVerse/).\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'The pursuit of creating intelligent and autonomous agents that can seamlessly assist humans and operate in real-world settings has been a foundational goal in artificial intelligence (Wooldridge and Jennings, 1995; Minsky, 1988; Bubeck et al., 2023). The recent advance of Large Language Models (LLMs) (OpenAI, 2023a; Anil et al., 2023; Touvron et al., 2023b) has created newfound avenues in this domain. These LLMs, especially GPT-4 (OpenAI, 2023a), are particularly adept in comprehending human intent and executing commands. They have demonstrated remarkable proficiency in domains such as language understanding, vision (OpenAI, 2023b), and coding (Bubeck et al., 2023). By harnessing the power of LLMs, autonomous agents can make more nuanced decisions and perform actions with an unprecedented degree of autonomy (Zhou et al., 2023), Agents like AutoGPT (Richards and et al., 2023), BabyAGI (Nakajima, 2023), and AgentGPT (Reworkd, 2023), are inspiring examples. Furthermore, recent research has endowed autonomous agents with more human-analogous cognitive mechanisms, spanning from reflection (Yao et al., 2023b; Shinn et al., 2023), task decomposition (Wei et al., 2022b; Yao et al., 2023a), and tool utilization (Schick et al., 2023b; Qin et al., 2023a;b; Qian et al., 2023b). These advancements edge us closer to realizing the concept of artificial general intelligence (AGI) (Goertzel and Pennachin, 2007; Clune, 2019) that can generalize across a broader range of tasks.\n' +
+      '\n' +
+      'However, complex real-world tasks often require cooperation among individuals to achieve better effectiveness. Throughout history, numerous studies have delved into methods for enhancing collaboration among humans to improve work efficiency and effectiveness (Woolley et al., 2010; Fehr and Gachter, 2000). More recently, with the evolution of autonomous agents towards AGI, extensive research conceptualizes the assemblies of agents as a society or group (Li et al., 2023), and focuses on exploring the potential of their cooperation. For example, Park et al. (2023) found emergentsocial behaviors in multi-agent life simulation. Du et al. (2023); Wang et al. (2023b); Zhang et al. (2023a); Qian et al. (2023a); Chan et al. (2023) also underscored the enhanced decision-making of collaborating agents during collaborative problem-solving. However, a limitation in these studies is their narrow focus on specific and limited tasks, leaving the generalizability of their findings uncertain. An additional constraint is their static approach to agent collaboration, where agents\' roles and capabilities remain rigid, hindering adaptability.\n' +
+      '\n' +
+      'To address this problem, we introduce AgentVerse. This general multi-agent framework simulates the problem-solving procedures of human groups, and allows for dynamic adjustment of group members based on current progress. Specifically, AgentVerse splits the problem-solving process into four pivotal stages as shown in Figure 1: (1) _Expert Recruitment_: Determine and adjust the agent group\'s composition based on the ongoing problem-solving progression. (2) _Collaborative Decision-Making_: Engage the selected agents in joint discussions to devise problem-solving strategies. (3) _Action Execution_: Agents interact with their environment to implement the devised actions. (4) _Evaluation_ - Assess the differences between the current state and desired outcomes. If the current state is unsatisfactory, feedback is given to the next iteration for further refinement.\n' +
+      '\n' +
+      'We conduct extensive experiments and case studies in diverse aspects including text understanding, reasoning, coding, tool utilization and embodied AI to show the effectiveness of AgentVerse. Additionally, we highlight the social behaviors that emerge from the multi-agent collaboration, and discuss their advantages and potential risks. In summary, our contributions are:\n' +
+      '\n' +
+      '* Inspired by the collaborative process of a human team, we propose AgentVerse as _an effective framework for promoting collaboration among multiple agents_ in problem-solving.\n' +
+      '* We conduct extensive experiments to show that AgentVerse effectively improve the agents\' understanding, reasoning, coding, tool utilizing capabilities and their potential in embodied AI.\n' +
+      '* In the multi-agent collaboration, especially within tool utilization and Minecraft game playing, agents manifest certain emergent behaviors. For example, (1) _volunteer behaviors_, characterized by agents offering assistance to peers, thus improving team efficiency; (2) _conformity behaviors_, where agents adjust their deviated behaviors to align with the common goal under the critics from others; (3) _destructive behaviors_, occasionally leading to undesired and detrimental outcomes.\n' +
+      '\n' +
+      '## 2 AgentVerse Framework\n' +
+      '\n' +
+      'A problem-solving process is a sequence of iterative stages within a human group (Bransford & Stein, 1993). Initially, the group assesses the difference between the current state and the desired goal, dynamically adjusting its composition to enhance collaboration in decision-making, and subsequently\n' +
+      '\n' +
+      'Figure 1: An illustration of the AgentVerse.\n' +
+      '\n' +
+      'executing well-informed actions. In order to enhance the effectiveness of an autonomous multi-agent group in achieving their goals, we simulate the problem-solving processes of a human group to propose the AgentVersE framework, which is composed of four crucial stages: **Expert Recruitment**, **Collaborative Decision-Making**, **Action Execution**, and **Evaluation**, as shown in Figure 1.\n' +
+      '\n' +
+      'The entire process can be modeled as a Markov decision process (MDP), characterized as a tuple \\((\\mathcal{S},\\mathcal{A},\\mathcal{T},\\mathcal{R},\\mathcal{G})\\). This encompasses the autonomous agent and environment state space \\(\\mathcal{S}\\), solution and action space \\(\\mathcal{A}\\), transition function \\(\\mathcal{T}:\\mathcal{S}\\times\\mathcal{A}\\rightarrow\\mathcal{S}\\), reward function \\(\\mathcal{R}\\), and goal space \\(\\mathcal{G}\\).\n' +
+      '\n' +
+      '### Expert Recruitment\n' +
+      '\n' +
+      'Expert Recruitment stage determines the composition of a multi-agent group, playing an important role in deciding the upper bounds of the group\'s capabilities. Empirical evidence suggests that diversity within human groups introduces varied viewpoints, enhancing the group\'s performance across different tasks (Woolley et al., 2015; Phillips and O\'Reilly, 1998). Parallel findings from recent research suggest that designating specific roles for autonomous agents, similar to recruiting experts to form a group, can augment their efficacy (Li et al., 2023; Salewski et al., 2023; Qian et al., 2023a). Current methodologies for assigning role descriptions to autonomous agents predominantly involve manual assignment, necessitating prior knowledge and understanding of the task. Consequently, the scalability remains ambiguous, especially in the face of diverse and intricate problem contexts.\n' +
+      '\n' +
+      'In view of this, AgentVersE automates expert recruitment to make agent configuration more scalable. For a given goal \\(g\\in\\mathcal{G}\\), a particular agent \\(M_{r}\\) is prompted as the "recruiter", similar to a human resource manager. Instead of relying on pre-defined expert descriptions, \\(M_{r}\\) dynamically generates a set of expert descriptions based on \\(g\\). The different agents prompted with these different expert descriptions then form an expert group \\(\\mathcal{M}=M_{r}(g)\\) on the given goal \\(g\\). Notably, the composition of a multi-agent group will be dynamically adjusted based on feedback from the evaluation stage (Section 2.4). This allows AgentVersE to employ the most suitable group based on the current state to make better decisions in future rounds.\n' +
+      '\n' +
+      '### Collaborative Decision-making\n' +
+      '\n' +
+      'This stage engages expert agents in collaborative decision-making. To facilitate effective decision-making, previous research has investigated the impact of different communication structures among agents (Chan et al., 2023; Zhang et al., 2023b; Wu et al., 2023). We focus on two typical communication structures: _horizontal structure_ and _vertical structure_, respectively.\n' +
+      '\n' +
+      '**Horizontal Structure**[r,r] In this democratic structure, each agent, denoted as \\(m_{i}\\in\\mathcal{M}\\), shares and refines its decision \\(a_{m_{i}}\\). The group\'s collective decision, \\(A=f\\left(\\{a_{m_{i}}\\}_{i}\\right)\\in\\mathcal{A}\\), emerges as an integration of individual agents\' decisions using a function \\(f\\), which might involve techniques like summarization or ensemble. This structure is especially effective in scenarios like consulting and tool using.\n' +
+      '\n' +
+      '**Vertical Structure**[r,r] Conversely, vertical structure has a clear division of roles. An agent, termed the solver \\(m^{*}\\), proposes an initial decision \\(a_{0}^{*}\\). Other agents, as reviewers, provide feedback on this proposal, prompting iterative refinements by the solver until a consensus is reached among reviewers or a set number of iterations is exhausted. The final decision \\(A\\) is given as \\(A=a_{k}^{*}\\in\\mathcal{A}\\), with \\(k\\) indicating the number of refinements. Vertical structure is preferable for tasks like math problem-solving and software development, where only one refined decision is required.\n' +
+      '\n' +
+      '### Action Execution\n' +
+      '\n' +
+      'In the decision-making stage, agents collaboratively contribute to a group decision \\(A\\) containing actions that need to be executed in the current environment. Within the action execution stage, agents then execute the collectively-decided actions in the environment. Depending on the implementation, some agents might not perform any execution. As a result of these actions, the state of the environment transitions from \\(s_{\\text{old}}\\) to \\(s_{\\text{new}}=\\mathcal{T}(s_{\\text{old}},A)\\).\n' +
+      '\n' +
+      '### Evaluation\n' +
+      '\n' +
+      'The evaluation stage is vital for AgentVerse, guiding improvements for subsequent rounds. At this stage, the feedback mechanism \\(\\mathcal{R}\\) assesses the difference between the current state \\(s_{\\text{new}}\\) and the desired goal \\(g\\in G\\). It then offers verbal feedback \\(r=\\mathcal{R}(s_{\\text{new}},g)\\), detailing areas of shortcoming and suggesting ways to enhance performance. \\(\\mathcal{R}\\) can either be defined by humans (in a human-in-the-loop (Amershi et al., 2014) setting) or an agent for automatic feedback, depending on the implementation.\n' +
+      '\n' +
+      'If the goal \\(g\\) remains unmet, the feedback \\(r\\) returns to the initial expert recruitment stage. In the next round, the expert recruitment stage will consider both feedback \\(r\\) and the goal \\(g\\) to adjust the group\'s composition, aiming to evolve a more effective multi-agent group according to the current progress.\n' +
+      '\n' +
+      '## 3 Experiments\n' +
+      '\n' +
+      'To validate the superiority of AgentVerse in facilitating agent collaboration over standalone agents, we design four experimental tasks. Each task is designed to assess distinct aspects of an agent group: general understanding and reasoning capabilities, coding capabilities, tool utilization capabilities, and their potential in Embodied AI. Our findings, which are detailed in this section, consistently highlight the superior performance of AgentVerse across these varied and multi-faceted tasks. Of particular interest is the emergence of unique collaborative behaviors within agent groups. While this section focuses on the advantages of multi-agent setups, a deeper exploration of these emergent behaviors will be presented in Section 4.\n' +
+      '\n' +
+      '**Setups.** In all the experiments, we evaluate the performance of agents driven by GPT-3.5-Turbo-0613 and GPT-4-0613 across various tasks. All the experiments are done in **zero-shot** setting. For all the quantitative experiments in this section, we compare three settings: (1) **CoT**: The CoT(chain-of-thought) agent; (2) **Solo**: Using AgentVerse with a single agent in the decision-making stage. Compared with CoT, Solo additionally incorporates the expert recruitment, action execution, and evaluation modules; (3) **Group**: Implementing AgentVerse with multiple agents collaborating during the decision-making. More detailed experimental setups for each task can be found in Appendix A.\n' +
+      '\n' +
+      '### General Understanding and Reasoning Capabilities\n' +
+      '\n' +
+      'To assess the agents\' general understanding and reasoning capabilities, we use four datasets: FED (Mehri and Eskenazi, 2020), Commongen Challenge (Madaan et al., 2023), MGSM (Shi et al., 2023), and Logic Grid Puzzles (Srivastava et al., 2022). Detailed descriptions of these datasets and metrics can be found in Appendix A. The first two datasets are used to measure the agents\' text understanding and creative writing abilities, while the latter two focus on examining the agents\' reasoning abilities, including mathematical and logical reasoning.\n' +
+      '\n' +
+      '**Experimental Results.** The results in Table 1 show that agents assembled by AgentVerse (Solo and Group setups) consistently outperform the standalone CoT agent, irrespective of the LLM used. In our preliminary evaluations, GPT-3.5-Turbo struggles with accurately handling the logic grid puzzles dataset; therefore, we omit the result of GPT-3.5-Turbo on logical reasoning.\n' +
+      '\n' +
+      'Interestingly, for GPT-3.5-Turbo, the Group setup underperforms the Solo setup in two of three tasks, indicating that the discussion in decision-making might adversely impact performance for agents based on GPT-3.5-Turbo in certain contexts. Delving deeper into this observation, one predominant factor surfaces: the susceptibility to erroneous feedback. A recurring pattern observed in the Group\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline  & \\multicolumn{3}{c}{**GPT-3.5-Turbo**} & \\multicolumn{3}{c}{**GPT-4**} \\\\ \\cline{2-7}\n' +
+      '**Task** & CoT & Solo & Group & CoT & Solo & Group \\\\ \\hline Conversation (FED) & 81.6 & 81.1 & **85.1** & 95.4 & 95.8 & **96.8** \\\\ Creative Writing (Commongen-Challenge) & 76.6 & **93.6** & 92.3 & 95.9 & 99.0 & **99.1** \\\\ Mathematical Reasoning (MGSM) & 80.4 & **82.4** & 80.8 & 95.2 & **96.0** & 95.2 \\\\ Logical Reasoning (Logic Grid Puzzles) & - & - & - & 59.5 & 64.0 & **66.5** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: The results on different tasks that evaluate the agents’ general capabilities.\n' +
+      '\n' +
+      'setup is that: sometimes Agent A, despite starting with a correct answer, would be easily swayed Agent B\'s incorrect feedback. Roughly 10% of errors in the MGSM dataset can be traced to this dynamic. Notably, this phenomenon is absent in GPT-4-based agents, highlighting the importance of agents\' resilience to conflicting information during collaborative discussions.\n' +
+      '\n' +
+      'Overall, the results show that AgentVerse effectively enhances the general understanding and reasoning capabilities of agents. Moreover, agents driven by advanced LLMs demonstrate better performance when engaged in collaborative decision-making. The nuanced challenges observed with GPT-3.5-Turbo indicate the need to improve LLMs\' robustness on incorrect information so that the collaboration can amplify individual strengths without introducing new vulnerabilities.\n' +
+      '\n' +
+      'Case Study: Consulting.In Table 1, the Group setup does not show a clear advantage over the Solo setup for both LLMs. This is mainly because the evaluation metrics for each benchmark have a limited scope. In the following case, we highlight the benefits of the group formed by GPT-4 agents by focusing on a consulting scenario where the group acts as a consultancy, responding to inquiries as shown in Figure 2. The goal is to offer suggestions for a hydrogen storage station in Ohio.\n' +
+      '\n' +
+      'At first glance, the Solo setup seems to cover a broader scope than the Group setup at round 0. However, the Group setup offers more depth thanks to the recruited experts. For instance, while the Solo setup might suggest something basic like "Find an optimal location", the Group setup provides detailed advice, such as "evaluating site soil properties to ensure storage tank stability." By the second round, different experts offer new insights in the Group setup. As a result, the Group setup not only covers a broader range (highlighted in red in the referenced figure) but also gives more detailed advice. For a detailed look at agent interactions, see Appendix F.\n' +
+      '\n' +
+      '### Coding Capabilities\n' +
+      '\n' +
+      'In this section, we first assess the agents\' coding capabilities using the Humaneval code completion dataset. Next, through a case study, we illustrate how collaboration among multiple agents improves output quality, highlighting its superiority over software development by just one agent.\n' +
+      '\n' +
+      'Experimental Results.In Table 2, we see a clear performance improvement moving from CoT to Solo and then to Group setup. This trend is especially pronounced with GPT-4, which sees a performance boost from 83.5 to 89.0. These results highlight AgentVerse\'s effectiveness in managing a skilled group of agents for coding. For GPT-3.5-Turbo, although we have observed a drop\n' +
+      '\n' +
+      'Figure 2: The illustration of an example process of consulting. The task is to _give some suggestions on building a compressed hydrogen storage station in Ohio_.\n' +
+      '\n' +
+      'in performance with Group setup in Section 3.1 due to incorrect agent feedback in math reasoning, the coding evaluations show benefits. We posit that this might be attributed to LLMs\' extensive pre-training on codes, potentially rendering them more adept at coding than mathematical reasoning and, consequently, more resilient to erroneous information in coding.\n' +
+      '\n' +
+      'Case Study: Software Development.Our examination of the code generated for Humaneval by the Group setup in AgentVerse offers benefits beyond mere correctness. The agent group refines solutions, yielding more efficient, robust, and secure algorithms that are not covered by simple pass@1 metric. To better elucidate these advantages, we present a case study with GPT-4 on software development, a domain requiring multifaceted collaboration and refinement.\n' +
+      '\n' +
+      'We present an example where AgentVerse creates a Python-based calculator GUI by bringing together diverse expert agents. A concise development process overview is visualized in Figure 3. Comparing the applications from the Group and Solo setups reveals notable distinctions. Both achieve core functionality, but the Group-created calculator boasts a user-friendly interface with features like color distinctions and keyboard input. This improved design resulted from the diverse feedback of the multi-agent group. Suggestions from UI designer and evaluators enhance the user experience, while software tester enhances code robustness. A deeper examination of the code confirms that the multi-agent group\'s output excels in exception handling compared to that of a solo agent. The codes generated by the two setups and the complete progress can be seen at Appendix F.\n' +
+      '\n' +
+      '### Tool Utilization Capabilities\n' +
+      '\n' +
+      'The capability of LLMs to use real-world tools has been emphasized in many recent studies (Schick et al., 2023; Qin et al., 2023). By equipping the LLMs with different tools such as a calculator, a web browser, and a code interpreter, the capabilities of LLMs can be significantly improved. In this section, we demonstrate that AgentVerse enables a group of agents to address intricate and multi-faceted tasks that require interaction with multiple tools, thereby enhancing work efficiency.\n' +
+      '\n' +
+      'Experimental Results.We design a set of 10 intricate tasks, each requiring the use of at least two distinct tools to accomplish. By providing agents access to several tools, including Bing search API, a web browser, a code interpreter, and task-related APIs, we explore how AgentVerse facilitates agent collaboration, dissects the overarching task into manageable sub-tasks, and effectively deploys the available tools to address realistic user queries. Of the **10** challenging tasks provided, an agent group orchestrated by AgentVerse adeptly accomplishes **9** tasks. On the other hand, a standalone ReAct agent (Yao et al., 2023), which is a prevalent agent designed for tool using, can only fulfill **3** tasks. In 6 out of 7 tasks where the single ReAct agent fails, the agent does not adhere to one or more criteria detailed in the task, and exit earlier than expected. We refer interested readers to Appendix B for a comprehensive comparison of the solutions given by AgentVerse and a single ReAct agent.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline\n' +
+      '**Setting** & **GPT-3.5-Turbo** & **GPT-4** \\\\ \\hline CoT & 73.8 & 83.5 \\\\ Solo & 74.4 & 87.2 \\\\ Group & **75.6** & **89.0** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: The pass@1 on Humaneval.\n' +
+      '\n' +
+      'Figure 3: The illustration of an example process of developing a calculator with GUI in Python.\n' +
+      '\n' +
+      'Case Study: Solving 24-Point Game and Providing Similar Games.Here, we present an example in Figure 4, illustrating how AgentVerse searches for the rules of 24-point game, implements the code along with test cases, and explores similar games. The task is multifaceted; thus, during decision-making stage, the agents split the task into two sub-tasks in their discussion, and each assigned to a certain agent. While agent Charlie overlooks the sub-task of identifying games similar to the 24-point game in round 0, feedback from the evaluation module rectifies this in the subsequent iteration. Ultimately, the agent group provides not only the 24-point game rules and a solving code with test cases, but also a summary of a similar game. In contrast, a standalone ReAct agent merely provides the game\'s definition along with a code and omits the query for similar games.\n' +
+      '\n' +
+      '## 4 Emergent Behaviors within a Multi-agent Group\n' +
+      '\n' +
+      'In the preceding section, the efficacy of AgentVerse has been illustrated across a spectrum of tasks that necessitate multi-agent decision-making, especially for GPT-4-based agents. Our endeavor, however, surpasses just improvements on benchmark datasets. We delve deeper into emergent collaborative behaviors exhibited by agents within realistic, embodied AI contexts. Minecraft, a sandbox game, serves as an ideal platform for such exploration due to its intricate parallelisms with real-world dynamics. In the game, agents must not just execute tasks but also plan, coordinate, and adjust to evolving situations. We task agents with collaboratively crafting a variety of items, spanning from paper and paintings to books and bookshelves. A succinct figure showcasing three agents adeptly crafting a bookshelf can be viewed in Figure 5. An elaborate visualization is placed at Appendix F, and details of the setups can be found in Appendix C.\n' +
+      '\n' +
+      'By examining the decision-making process, we identify several emergent behaviors and categorize them into three aspects: _volunteer_, _conformity_, and _destructive_ behaviors. Note that these behaviors not necessarily only appear in Minecraft but also in previous experiments such as tool utilization.\n' +
+      '\n' +
+      'Figure 4: An example process of multi-agent solving user query with three different tools.\n' +
+      '\n' +
+      'Figure 5: An illustration of the collaborative process involving three agents crafting a bookshelf. The process begins with the decision-making and breaking down the goal into several sub-tasks, with each agent receiving an assignment. The execution results and the current environmental state are then passed to the evaluator. This process repeats until the goal of crafting a bookshelf is achieved.\n' +
+      '\n' +
+      '### Volunteer Behaviors\n' +
+      '\n' +
+      'Volunteer behaviors refer to actions intended to enhance the benefits of others in human society [11, 12]. We observe similar behaviors emerging in a multi-agent group as follows:\n' +
+      '\n' +
+      '**Time Contribution.** The agents are willing to contribute their unallocated time to enhance collaboration efficiency. As shown in the examples in Figure 6 (1a), Alice and Bob need to collaboratively craft 2 paper, which necessitates three sugar canes as the raw material. Initially, Alice proposes that she will collect the sugar canes while Bob waits until the materials are ready. However, this plan is suboptimal, as it offers Bob spare time. Recognizing inefficiency, Bob suggests that both gather sugar canes concurrently, leading to expedited task completion.\n' +
+      '\n' +
+      '**Resource Contribution.** Our analysis reveals that the agents are willing to contribute the possessed materials. As illustrated in Figure 6 (1b), at the end of the task crafting 2 paper, Alice has collected all the raw materials (sugar canes), whereas Bob possesses the crafting table essential for the paper\'s creation. In the decision-making stage, Alice suggests transferring her materials to Bob by dropping them on the ground. This enables Bob to utilize them for the intended crafting process.\n' +
+      '\n' +
+      '**Assistance Contribution.** In the process of accomplishing tasks, we observe that agents, upon completing their individual assignments, actively extend support to their peers, thereby expediting the overall task resolution. As shown in Figure 6 (1c), Alice and Bob have successfully completed their assigned sub-tasks, while Charlie is still struggling to gather three leathers. During the collaborative decision-making phase, Alice and Bob propose to assist Charlie in gathering.\n' +
+      '\n' +
+      'Figure 6: Examples of the properties emerge in the agent interactions in Minecraft.\n' +
+      '\n' +
+      'These behaviors highlight how agents willingly contribute their capabilities and efforts to assist other agents, culminating in an accelerated achievement of their mutual goal.\n' +
+      '\n' +
+      '### Conformity Behavior\n' +
+      '\n' +
+      'In human society, individuals tend to adjust their behavior to align with the norms or goals of a group (Cialdini & Goldstein, 2004; Cialdini & Trost, 1998), which we refer to as _conformity behavior_. We also observe similar behaviors within multi-agent groups. As shown in Figure 6 (2), all agents are asked to gather three pieces of leather. However, Charlie gets sidetracked and begins crafting items that do not contribute directly to the task. In the subsequent decision-making stage, Alice and Bob critique Charlie\'s actions. Charlie acknowledges his mistake and re-focuses on the mutual tasks. The conformity behavior enables agents to align with mutual goals as work progresses.\n' +
+      '\n' +
+      '### Destructive behavior\n' +
+      '\n' +
+      'Additionally, we have also observed that agents may exhibit behaviors aimed at achieving greater efficiency, which could raise safety concerns. As depicted in Figure 6 (3a) and Figure 6 (3b), an agent occasionally bypasses the procedure of gathering raw materials and resorts to harming other agents or destroying an entire village library to acquire the necessary materials.\n' +
+      '\n' +
+      'With advancements in autonomous agents, deploying them in real-world scenarios has become increasingly plausible. However, the emergence of hazardous behaviors could pose risks, especially when humans are involved in collaborative processes. Thus, designing strategies to prevent agents from adopting such hazardous behaviors is a critical area for future research.\n' +
+      '\n' +
+      '## 5 Related Work\n' +
+      '\n' +
+      '**Autonomous Agents.** The pursuit of creating autonomous agents that can operate intelligently in real-world environments without human involvement has been a persistent goal throughout the history of AI (Wodbridge & Jennings, 1995; Minsky, 1988; Bubeck et al., 2023). Recently LLMs (Touvron et al., 2023a; OpenAI, 2023a) have opened up new opportunities to achieve this goal. These LLMs possess remarkable understanding, reasoning, and generation capabilities, allowing autonomous agents to utilize them as a backbone for handling increasingly complex scenarios (Richards & et al., 2023; Nakajima, 2023; Reworkd, 2023; Liu et al., 2023). However, even though these autonomous agents already demonstrate considerable power, they still lack certain essential human-analogous cognitive capabilities. Hence, some research designs external mechanisms that endow agents with reflection (Yao et al., 2023b; Shinn et al., 2023), task decomposition (Wei et al., 2022b; Yao et al., 2023a), and tool utilization/creation (Schick et al., 2023b; Qin et al., 2023a; Qian et al., 2023b) capabilities, which bring autonomous agents closer to achieving artificial general intelligence.\n' +
+      '\n' +
+      '**Multi-agent System.** In human society, a well-organized group composed of individual humans can often collaboratively handle a greater workload and accomplish complex tasks with higher efficiency and effectiveness. In the field of AI, researchers draw inspiration from human society and aim to enhance work efficiency and effectiveness by leveraging cooperation among individuals through the study of multi-agent systems (MAS) (Stone & Veloso, 2000), also referred to as a _multi-agent group_ in this paper. The multi-agent group collaboratively makes decisions and executes corresponding actions in a distributed and parallel manner to achieve the common goal, which significantly improves work efficiency and effectiveness. Previous works have leveraged multi-agent joint training to achieve this goal. Recently, some studies have attempted to leverage the intelligence and capabilities of agents for autonomous collaboration. Li et al. (2023) have conceptualized assemblies of agents as a group, and focused on exploring the potential of their cooperation. Park et al. (2023) found social behaviors autonomously emerge within a group of agents, and Du et al. (2023); Wang et al. (2023b); Zhang et al. (2023a); Qian et al. (2023a); Chan et al. (2023) further leverage multi-agent cooperation to achieve better performance on reasoning tasks. Based on these findings, we introduce a framework, denoted as AgentVerse, capable of leveraging group cooperation to manage more intricate scenarios. This framework can dynamically adjust its composition according to the current state, aiming to facilitate optimal decision-making and execution.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      'In this study, we present AgentVerse, a novel and general multi-agent framework designed to emulate human group problem-solving processes. Our comprehensive experimental results highlight the efficacy of AgentVerse, demonstrating its enhanced performance in comparison to individual agents across a myriad of tasks. These tasks encompass general understanding, reasoning, coding, and tool utilization. Notably, AgentVerse consistently delivers remarkable results in addressing intricate user queries when fortified with the appropriate tools. In our investigations within the Minecraft environment, we identify both positive and negative emergent social behaviors among agents. As advancements in artificial general intelligence progress, understanding multi-agent interactions should become increasingly crucial. AgentVerse serves as a valuable step toward this endeavor, and we are optimistic about its potential adaptability and refinement for a wider array of tasks and contexts in the future.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Ahn et al. (2022) Michael Ahn, Anthony Brohan, Noah Brown, Yevgen Chebotar, Omar Cortes, Byron David, Chelsea Finn, Keerthana Gopalakrishnan, Karol Hausman, Alexander Herzog, Daniel Ho, Jagmire Hsu, Julian Ibarz, Brian Ichter, Alex Irpan, Eric Jang, Rosario Jauregui Ruano, Kyle Jeffrey, Sally Jesmonth, Nikhil J. Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Kuang-Huei Lee, Sergey Levine, Yao Lu, Linda Lu, Carolina Parada, Peter Pastor, Jornell Quaimbao, Kanishka Rao, Jarek Rettinghouse, Diego Reyes, Pierre Sermanet, Nicolas Sievers, Clayton Tan, Alexander Toshev, Vincent Vanhoucke, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, and Mengyuan Yan. Do as I can, not as I say: Grounding language in robotic affordances. _CoRR_, abs/2204.01691, 2022. doi: 10.48550/arXiv.2204.01691. URL [https://doi.org/10.48550/arXiv.2204.01691](https://doi.org/10.48550/arXiv.2204.01691).\n' +
+      '* Amershi et al. (2014) Saleema Amershi, Maya Cakmak, William Bradley Knox, and Todd Kulesza. Power to the people: The role of humans in interactive machine learning. _AI Magazine_, 35(4):105-120, Dec. 2014. doi: 10.1609/aimag.v35i4.2513. URL [https://ojs.aaai.org/aimagazine/index.php/aimagazine/article/view/2513](https://ojs.aaai.org/aimagazine/index.php/aimagazine/article/view/2513).\n' +
+      '* Anil et al. (2023) Rohan Anil, Andrew M. Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, Eric Chu, Jonathan H. Clark, Laurent El Shafey, Yanping Huang, Kathy Meier-Hellstern, Gaurav Mishra, Erica Moreira, Mark Omernick, Kevin Robinson, Sebastian Ruder, Yi Tay, Kefan Xiao, Yuanzhong Xu, Yujing Zhang, Gustavo Hernandez Abrego, Junwhan Ahn, Jacob Austin, Paul Barham, Jan A. Botha, James Bradbury, Siddhartha Brahma, Kevin Brooks, Michele Catasta, Yong Cheng, Colin Cherry, Christopher A. Choquette-Choo, Akanksha Chowdhory, Clement Crepy, Shachi Dave, Mostafa Dehghani, Sunipa Dev, Jacob Devlin, Mark Diaz, Nan Du, Ethan Dyer, Vladimir Feinberg, Fangxiaoyu Feng, Vlad Fienber, Markus Freitag, Xavier Garcia, Sebastian Gehrmann, Lucas Gonzalez, and et al. Palm 2 technical report. _CoRR_, abs/2305.10403, 2023. doi: 10.48550/arXiv.2305.10403. URL [https://doi.org/10.48550/arXiv.2305.10403](https://doi.org/10.48550/arXiv.2305.10403).\n' +
+      '* Bransford and Stein (1993) J.D. Bransford and B.S. Stein. _The Ideal Problem Solver: A Guide for Improving Thinking, Learning, and Creativity_. W.H. Freeman, 1993. ISBN 978-0-7167-2205-2. URL [https://books.google.com.tw/books?id=nnRxQgAACAAJ](https://books.google.com.tw/books?id=nnRxQgAACAAJ).\n' +
+      '* Bubeck et al. (2023) Sebastien Bubeck, Varun Chandrasekaran, Ronen Eldan, Johannes Gehrke, Eric Horvitz, Ece Kamar, Peter Lee, Yin Tat Lee, Yuanzhi Li, Scott M. Lundberg, Harsha Nori, Hamid Palangi, Marco Tulio Ribeiro, and Yi Zhang. Sparks of artificial general intelligence: Early experiments with GPT-4. _CoRR_, abs/2303.12712, 2023. doi: 10.48550/arXiv.2303.12712. URL [https://doi.org/10.48550/arXiv.2303.12712](https://doi.org/10.48550/arXiv.2303.12712).\n' +
+      '* Chan et al. (2023) Chi-Min Chan, Weize Chen, Yusheng Su, Jianxuan Yu, Wei Xue, Shanghang Zhang, Jie Fu, and Zhiyuan Liu. Chateval: Towards better llm-based evaluators through multi-agent debate, 2023. URL [https://doi.org/10.48550/arXiv.2308.07201](https://doi.org/10.48550/arXiv.2308.07201).\n' +
+      '* Chen et al. (2021) Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harrison Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan,Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Joshua Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code. _CoRR_, abs/2107.03374, 2021. URL [https://arxiv.org/abs/2107.03374](https://arxiv.org/abs/2107.03374).\n' +
+      '* Cialdini and Goldstein (2004) Robert B Cialdini and Noah J Goldstein. Social influence: Compliance and conformity. _Annu. Rev. Psychol._, 55:591-621, 2004. URL [https://www.annualreviews.org/doi/abs/10.1146/annurev.psych.55.090902.142015](https://www.annualreviews.org/doi/abs/10.1146/annurev.psych.55.090902.142015).\n' +
+      '* Cialdini and Trost (1998) Robert B Cialdini and Melanie R Trost. Social influence: Social norms, conformity and compliance. 1998. URL [https://psycnet.apa.org/RECORD/1998-07091-021](https://psycnet.apa.org/RECORD/1998-07091-021).\n' +
+      '* Clune (2019) Jeff Clune. Ai-gas: Ai-generating algorithms, an alternate paradigm for producing general artificial intelligence. _CoRR_, abs/1905.10985, 2019. URL [http://arxiv.org/abs/1905.10985](http://arxiv.org/abs/1905.10985).\n' +
+      '* Cobbe et al. (2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. _CoRR_, abs/2110.14168, 2021. URL [https://arxiv.org/abs/2110.14168](https://arxiv.org/abs/2110.14168).\n' +
+      '* Driess et al. (2021) Danny Driess, Fei Xia, Mehdi S. M. Sajjadi, Corey Lynch, Aakanksha Chowdhery, Brian Ichter, Ayzaan Wahid, Jonathan Tompson, Quan Vuong, Tianhe Yu, Wenlong Huang, Yeygen Chebotar, Pierre Sermanet, Daniel Duckworth, Sergey Levine, Vincent Vanhoucke, Karol Hausman, Marc Toussaint, Klaus Greff, Andy Zeng, Igor Mordatch, and Pete Florence. Palm-e: An embodied multimodal language model. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett (eds.), _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pp. 8469-8488. PMLR, 2023. URL [https://proceedings.mlr.press/v202/driess23a.html](https://proceedings.mlr.press/v202/driess23a.html).\n' +
+      '* Du et al. (2023) Yilun Du, Shuang Li, Antonio Torralba, Joshua B. Tenenbaum, and Igor Mordatch. Improving factuality and reasoning in language models through multiagent debate. _CoRR_, abs/2305.14325, 2023. doi: 10.48550/arXiv.2305.14325. URL [https://doi.org/10.48550/arXiv.2305.14325](https://doi.org/10.48550/arXiv.2305.14325).\n' +
+      '* Fehr and Gachter (2000) Ernst Fehr and Simon Gachter. Cooperation and punishment in public goods experiments. _American Economic Review_, 90(4):980-994, 2000. URL [https://pubs.aeaweb.org/doi/pdf/10.1257/aer.90.4.980](https://pubs.aeaweb.org/doi/pdf/10.1257/aer.90.4.980).\n' +
+      '* Goertzel and Pennachin (2007) Ben Goertzel and Cassio Pennachin. _Artificial general intelligence_, volume 2. Springer, 2007. URL [https://link.springer.com/book/10.1007/978-3-540-68677-4](https://link.springer.com/book/10.1007/978-3-540-68677-4).\n' +
+      '* Li et al. (2023) Guohao Li, Hasan Abed Al Kader Hammoud, Hani Irani, Dmitrii Khizbulilin, and Bernard Ghanem. CAMEL: communicative agents for "mind" exploration of large scale language model society. _CoRR_, abs/2303.17760, 2023. doi: 10.48550/arXiv.2303.17760. URL [https://doi.org/10.48550/arXiv.2303.17760](https://doi.org/10.48550/arXiv.2303.17760).\n' +
+      '* Liu et al. (2023) Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Aohan Zeng, Zhengxiao Du, Chenhui Zhang, Sheng Shen, Tianjun Zhang, Yu Su, Huan Sun, Minlie Huang, Yuxiao Dong, and Jie Tang. Agentbench: Evaluating llms as agents, 2023.\n' +
+      '* Madaan et al. (2023) Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Sean Welleck, Bodhisattwa Prasad Majumder, Shashank Gupta, Amir Yazdanbakhsh, and Peter Clark. Self-refine: Iterative refinement with self-feedback. _CoRR_, abs/2303.17651, 2023. doi: 10.48550/arXiv.2303.17651. URL [https://doi.org/10.48550/arXiv.2303.17651](https://doi.org/10.48550/arXiv.2303.17651).\n' +
+      '* M. C. et al. (2018)* Mehri and Eskenazi (2020) Shikib Mehri and Maxine Eskenazi. Unsupervised evaluation of interactive dialog with dialogpt. In Olivier Pietquin, Smaranda Muresan, Vivian Chen, Casey Kennington, David Vandyke, Nina Dethlefs, Koji Inoue, Erik Ekstedt, and Stefan Ultes (eds.), _Proceedings of the 21th Annual Meeting of the Special Interest Group on Discourse and Dialogue, SIGdial 2020, 1st virtual meeting, July 1-3, 2020_, pp. 225-235. Association for Computational Linguistics, 2020. URL [https://aclanthology.org/2020.sigdial-1.28/](https://aclanthology.org/2020.sigdial-1.28/).\n' +
+      '* Minsky (1988) Marvin Minsky. _The Society of Mind_. Simon & Schuster, 1988. ISBN 0671657135. URL [https://jmvidal.cse.sc.edu/lib/minsky88a.html](https://jmvidal.cse.sc.edu/lib/minsky88a.html).\n' +
+      '* Mowen and Sujan (2005) John C Mowen and Harish Sujan. Volunteer behavior: A hierarchical model approach for investigating its trait and functional motive antecedents. _Journal of consumer psychology_, 15(2):170-182, 2005. URL [https://myscp.onlinelibrary.wiley.com/doi/abs/10.1207/s15327663jcp1502_9](https://myscp.onlinelibrary.wiley.com/doi/abs/10.1207/s15327663jcp1502_9).\n' +
+      '* Nakajima (2023) Yohei Nakajima. Babyagi. 2023. URL [https://github.com/yoheinakajima/babyagi](https://github.com/yoheinakajima/babyagi). [Software].\n' +
+      '* Omoto and Snyder (1995) Allen M Omoto and Mark Snyder. Sustained helping without obligation: motivation, longevity of service, and perceived attitude change among aids volunteers. _Journal of personality and social psychology_, 68(4):671, 1995. URL [https://psycnet.apa.org/record/1995-26640-001](https://psycnet.apa.org/record/1995-26640-001).\n' +
+      '* OpenAI (2023a) OpenAI. GPT-4 technical report. _CoRR_, abs/2303.08774, 2023a. doi: 10.48550/arXiv.2303.08774. URL [https://doi.org/10.48550/arXiv.2303.08774](https://doi.org/10.48550/arXiv.2303.08774).\n' +
+      '* OpenAI (2023b) OpenAI. Chatgpt can now see, hear, and speak, 2023b. URL [https://openai.com/blog/chatgpt-can-now-see-hear-and-speak](https://openai.com/blog/chatgpt-can-now-see-hear-and-speak).\n' +
+      '* Park et al. (2023) Joon Sung Park, Joseph C. O\'Brien, Carrie J. Cai, Meredith Ringel Morris, Percy Liang, and Michael S. Bernstein. Generative agents: Interactive simulacra of human behavior. _CoRR_, abs/2304.03442, 2023. doi: 10.48550/arXiv.2304.03442. URL [https://doi.org/10.48550/arXiv.2304.03442](https://doi.org/10.48550/arXiv.2304.03442).\n' +
+      '* Phillips and O\'Reilly (1998) Katherine Phillips and Charles O\'Reilly. Demography and diversity in organizations: A review of 40 years of research. _Research in Organizational Behavior_, 20:77-140, 01 1998. URL [https://www.researchgate.net/publication/234022034_Demography_and_Diversity_in_Organizations_A_Review_of_40_Years_of_Research](https://www.researchgate.net/publication/234022034_Demography_and_Diversity_in_Organizations_A_Review_of_40_Years_of_Research).\n' +
+      '* Qian et al. (2023a) Chen Qian, Xin Cong, Cheng Yang, Weize Chen, Yusheng Su, Juyuan Xu, Zhiyuan Liu, and Maosong Sun. Communicative agents for software development. _CoRR_, abs/2307.07924, 2023a. doi: 10.48550/arXiv.2307.07924. URL [https://doi.org/10.48550/arXiv.2307.07924](https://doi.org/10.48550/arXiv.2307.07924).\n' +
+      '* Qian et al. (2023b) Cheng Qian, Chi Han, Yi R. Fung, Yujia Qin, Zhiyuan Liu, and Heng Ji. CREATOR: disentangling abstract and concrete reasonings of large language models through tool creation. _CoRR_, abs/2305.14318, 2023b. doi: 10.48550/arXiv.2305.14318. URL [https://doi.org/10.48550/arXiv.2305.14318](https://doi.org/10.48550/arXiv.2305.14318).\n' +
+      '* Qin et al. (2023) Yujia Qin, Shengding Hu, Yankai Lin, Weize Chen, Ning Ding, Ganqu Cui, Zheni Zeng, Yufei Huang, Chaojun Xiao, Chi Han, Yi Ren Fung, Yusheng Su, Huadong Wang, Cheng Qian, Runchu Tian, Kunlun Zhu, Shihao Liang, Xingyu Shen, Bokai Xu, Zhen Zhang, Yining Ye, Bowen Li, Ziwei Tang, Jing Yi, Yuzhang Zhu, Zhenning Dai, Lan Yan, Xin Cong, Yaxi Lu, Weilin Zhao, Yuxiang Huang, Junxi Yan, Xu Han, Xian Sun, Dahai Li, Jason Phang, Cheng Yang, Tongshuang Wu, Heng Ji, Zhiyuan Liu, and Maosong Sun. Tool learning with foundation models. _CoRR_, abs/2304.08354, 2023a. doi: 10.48550/arXiv.2304.08354. URL [https://doi.org/10.48550/arXiv.2304.08354](https://doi.org/10.48550/arXiv.2304.08354).\n' +
+      '* Qin et al. (2023b) Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, et al. Toolllm: Facilitating large language models to master 16000+ real-world apis. _arXiv preprint arXiv:2307.16789_, 2023b. URL [https://arxiv.org/abs/2307.16789](https://arxiv.org/abs/2307.16789).\n' +
+      '* Reworkd (2023) Reworkd. Agentgpt, 2023. URL [https://github.com/reworkd/AgentGPT](https://github.com/reworkd/AgentGPT). [Software].\n' +
+      '* Raghavan et al. (2014)* Richards et al. (2023) Toran Bruce Richards and et al. Auto-gpt: An autonomous gpt-4 experiment, 2023. URL [https://github.com/Significant-Gravitas/Auto-GPT](https://github.com/Significant-Gravitas/Auto-GPT). [Software].\n' +
+      '* Salewski et al. (2023) Leonard Salewski, Stephan Alaniz, Isabel Rio-Torto, Eric Schulz, and Zeynep Akata. In-context impersonation reveals large language models\' strengths and biases. _CoRR_, abs/2305.14930, 2023. doi: 10.48550/arXiv.2305.14930. URL [https://doi.org/10.48550/arXiv.2305.14930](https://doi.org/10.48550/arXiv.2305.14930).\n' +
+      '* Schick et al. (2023a) Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to use tools. _CoRR_, abs/2302.04761, 2023a. doi: 10.48550/arXiv.2302.04761. URL [https://doi.org/10.48550/arXiv.2302.04761](https://doi.org/10.48550/arXiv.2302.04761).\n' +
+      '* Schick et al. (2023b) Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to use tools. _CoRR_, abs/2302.04761, 2023b. doi: 10.48550/arXiv.2302.04761. URL [https://doi.org/10.48550/arXiv.2302.04761](https://doi.org/10.48550/arXiv.2302.04761).\n' +
+      '* Shi et al. (2023) Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das, and Jason Wei. Language models are multilingual chain-of-thought reasoners. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023. URL [https://openreview.net/pdf?id=fR3wGCK-IXp](https://openreview.net/pdf?id=fR3wGCK-IXp).\n' +
+      '* Shinn et al. (2023) Noah Shinn, Federico Cassano, Beck Labash, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning, 2023. URL [https://doi.org/10.48550/arXiv.2303.11366](https://doi.org/10.48550/arXiv.2303.11366).\n' +
+      '* Srivastava et al. (2022) Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abuwal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R. Brown, Adam Santoro, Aditya Gupta, Adria Garriga-Alonso, Agnieszka Kluska, Aitor Lewkowycz, Akshat Agarwal, Alethea Power, Alex Ray, Alex Warstadt, Alexander W. Kocurek, Ali Safaya, Ali Tazarv, Alice Xiang, Alicia Parrish, Allen Nie, Aman Hussain, Amanda Askell, Amanda Dsouza, Ameet Rahane, Anantharaman S. Iyer, Anders Andreassen, Andrea Santilli, Andreas Stuhnuller, Andrew M. Dai, Andrew La, Andrew K. Lampinen, Andy Zou, Angela Jiang, Angelica Chen, Anh Vuong, Animesh Gupta, Anna Gottardi, Antonio Morelli, Anu Venkatesh, Arash Gholamidavoodi, Arfa Tabassum, Arul Menezes, Arun Kirubarajan, Asher Mullokandov, Ashish Sabharwal, Austin Herrick, Avia Efrat, Aykut Erdem, Ayla Karakas, and et al. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _CoRR_, abs/2206.04615, 2022. doi: 10.48550/arXiv.2206.04615. URL [https://doi.org/10.48550/arXiv.2206.04615](https://doi.org/10.48550/arXiv.2206.04615).\n' +
+      '* Stiennon et al. (2020) Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel M. Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F. Christiano. Learning to summarize with human feedback. In Hugo Larochelle, Marc\'Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin (eds.), _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020. URL [https://proceedings.neurips.cc/paper/2020/hash/1f89885d556929e98d3ef9b86448f951-Abstract.html](https://proceedings.neurips.cc/paper/2020/hash/1f89885d556929e98d3ef9b86448f951-Abstract.html).\n' +
+      '* Stone and Veloso (2000) Peter Stone and Manuela Veloso. Multiagent systems: A survey from a machine learning perspective. _Auton. Robots_, 8(3):345-383, jun 2000. ISSN 0929-5593. doi: 10.1023/A:1008942012299. URL [https://doi.org/10.1023/A:1008942012299](https://doi.org/10.1023/A:1008942012299).\n' +
+      '* Touvron et al. (2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Rozziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models. _CoRR_, abs/2302.13971, 2023a. doi: 10.48550/arXiv.2302.13971. URL [https://doi.org/10.48550/arXiv.2302.13971](https://doi.org/10.48550/arXiv.2302.13971).\n' +
+      '* Touvron et al. (2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton-Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony Hartshorn, SagharHosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihaylov, Pushkar Mishra, Igor Molybog, Yixin Nie, Andrew Poulton, Jeremy Reizenstein, Rashi Rungta, Kalyan Saladi, Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subramanian, Xiaoting Ellen Tan, Binh Tang, Ross Taylor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng Yan, DiJyan Zarov, Yuchen Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurelien Rodriguez, Robert Stojnic, Sergey Edunov, and Thomas Scialom. Llama 2: Open foundation and fine-tuned chat models. _CoRR_, abs/2307.09288, 2023b. doi: 10.48550/arXiv.2307.09288. URL [https://doi.org/10.48550/arXiv.2307.09288](https://doi.org/10.48550/arXiv.2307.09288).\n' +
+      '* Wang et al. (2023a) Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models. _CoRR_, abs/2305.16291, 2023a. doi: 10.48550/arXiv.2305.16291. URL [https://doi.org/10.48550/arXiv.2305.16291](https://doi.org/10.48550/arXiv.2305.16291).\n' +
+      '* Wang et al. (2023b) Zhenhailong Wang, Shaoguang Mao, Wenshan Wu, Tao Ge, Furu Wei, and Heng Ji. Unleashing cognitive synergy in large language models: A task-solving agent through multi-persona self-collaboration. _CoRR_, abs/2307.05300, 2023b. doi: 10.48550/arXiv.2307.05300. URL [https://doi.org/10.48550/arXiv.2307.05300](https://doi.org/10.48550/arXiv.2307.05300).\n' +
+      '* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Y. Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. Dai, and Quoc V. Le. Finetuned language models are zero-shot learners. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022a. URL [https://openreview.net/forum?id=gEZrGCozdqR](https://openreview.net/forum?id=gEZrGCozdqR).\n' +
+      '* Wei et al. (2022) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models. In _NeurIPS_, 2022b. URL [http://papers.nips.cc/paper_files/paper/2022/hash/9d5609613524ecf4f15af0f7b3labca4-Abstract-Conference.html](http://papers.nips.cc/paper_files/paper/2022/hash/9d5609613524ecf4f15af0f7b3labca4-Abstract-Conference.html).\n' +
+      '* Wei et al. (2023) Jimmy Wei, Kurt Shuster, Arthur Szlam, Jason Weston, Jack Urbanek, and Mojtaba Komeili. Multi-party chat: Conversational agents in group settings with humans and models. _CoRR_, abs/2304.13835, 2023. doi: 10.48550/arXiv.2304.13835. URL [https://doi.org/10.48550/arXiv.2304.13835](https://doi.org/10.48550/arXiv.2304.13835).\n' +
+      '* Wooldridge and Jennings (1995) Michael J. Wooldridge and Nicholas R. Jennings. Intelligent agents: theory and practice. _Knowl. Eng. Rev._, 10(2):115-152, 1995. doi: 10.1017/S0269888900008122. URL [https://doi.org/10.1017/S0269888900008122](https://doi.org/10.1017/S0269888900008122).\n' +
+      '* Woolley et al. (2010) Anita Williams Woolley, Christopher F. Chabris, Alex Pentland, Nada Hashmi, and Thomas W. Malone. Evidence for a collective intelligence factor in the performance of human groups. _Science_, 330(6004):686-688, 2010. doi: 10.1126/science.1193147. URL [https://www.science.org/doi/abs/10.1126/science.1193147](https://www.science.org/doi/abs/10.1126/science.1193147).\n' +
+      '* Woolley et al. (2015) Anita Williams Woolley, Ishani Aggarwal, and Thomas W. Malone. Collective intelligence and group performance. _Current Directions in Psychological Science_, 24(6):420-424, 2015. doi: 10.1177/0963721415599543. URL [https://doi.org/10.1177/0963721415599543](https://doi.org/10.1177/0963721415599543).\n' +
+      '* Wu et al. (2023) Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Shaokun Zhang, Erkang Zhu, Beibin Li, Li Jiang, Xiaoyun Zhang, and Chi Wang. Autogen: Enabling next-gen llm applications via multi-agent conversation framework, 2023. URL [https://doi.org/10.48550/arXiv.2308.08155](https://doi.org/10.48550/arXiv.2308.08155).\n' +
+      '* Yao et al. (2023) Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. _CoRR_, abs/2305.10601, 2023a. doi: 10.48550/arXiv.2305.10601. URL [https://doi.org/10.48550/arXiv.2305.10601](https://doi.org/10.48550/arXiv.2305.10601).\n' +
+      '\n' +
+      '* Yao et al. (2023) Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R. Narasimhan, and Yuan Cao. React: Synergizing reasoning and acting in language models. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023b. URL [https://openreview.net/pdf?id=WE_vluYUL-X](https://openreview.net/pdf?id=WE_vluYUL-X).\n' +
+      '* Zhang et al. (2023a) Hongxin Zhang, Weihua Du, Jiaming Shan, Qinhong Zhou, Yilun Du, Joshua B. Tenenbaum, Tianmin Shu, and Chuang Gan. Building cooperative embodied agents modularly with large language models. _CoRR_, abs/2307.02485, 2023a. doi: 10.48550/arXiv.2307.02485. URL [https://doi.org/10.48550/arXiv.2307.02485](https://doi.org/10.48550/arXiv.2307.02485).\n' +
+      '* Zhang et al. (2023b) Xinghua Zhang, Bowen Yu, Haiyang Yu, Yangyu Lv, Tingwen Liu, Fei Huang, Hongbo Xu, and Yongbin Li. Wider and deeper llm networks are fairer llm evaluators. _arXiv preprint arXiv:2308.01862_, 2023b. URL [https://doi.org/10.48550/arXiv.2308.01862](https://doi.org/10.48550/arXiv.2308.01862).\n' +
+      '* Zhou et al. (2023) Shuyan Zhou, Frank F. Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Yonatan Bisk, Daniel Fried, Uri Alon, and Graham Neubig. Webarena: A realistic web environment for building autonomous agents. _CoRR_, abs/2307.13854, 2023. doi: 10.48550/arXiv.2307.13854. URL [https://doi.org/10.48550/arXiv.2307.13854](https://doi.org/10.48550/arXiv.2307.13854).\n' +
+      '\n' +
+      '## Appendix A Configurations of the Experiments\n' +
+      '\n' +
+      'Datasets and Evaluation MetricsOur evaluation assesses different aspects of agents, including general understanding and reasoning capabilities, coding capabilities and tool utilization capabilities.\n' +
+      '\n' +
+      '* **General Understanding Capabilities**: We utilize two datasets. The first one is a Dialogue response dataset, FED (Mehri and Eskenazi, 2020), where given a multi-round chat history, the agent or agent group is required to generate the next chat. Following previous work (Madaan et al., 2023), we utilize GPT-4 as the evaluator to score the agent-generated response against the human-written ones, and report the agent\'s win rate. The second dataset is Commongen-Challenge (Madaan et al., 2023), which is a constrained generation dataset where given 20 concepts, the agent is required to generate a coherent and grammatically correct paragraph containing as many concepts as possible. We report the average percentage of the covered concepts.\n' +
+      '* **General Reasoning Capabilities**: We utilize the English subset of MGSM (Shi et al., 2023), which is a subset of GSM-8k (Cobbe et al., 2021), to evaluate the agents\' mathematical reasoning capabilities. It is a dataset containing grade school math problems. We report the percentage of the correct answers. And we use the logic grid puzzles task from BigBench (Srivastava et al., 2022), which contains logic problems that requires multi-step logic reasoning, to assess the agents\' logical reasoning capabilities. We report the accuracy.\n' +
+      '* **Coding Capabilities**: We utilize Humaneval (Chen et al., 2021), which is a code completion dataset, and report Pass@1 metric1 Footnote 1: The method for calculating Pass@1 differs from the approach in Chen et al. (2021). Instead of generating multiple responses and calculating an unbiased estimator, we directly employ the first response to compute the Pass@1.\n' +
+      '* **Tool Utilization Capabilities**: Since automatic evaluation on the performance of tool utilization is difficult, and there is currently no relevant benchmark, we craft 10 complex instructions and manually assess the performance. The instructions are listed in Appendix B.\n' +
+      '\n' +
+      'Expert RecruitmentFor tasks including dialogue response, code completion, and constrained generation, four agents is recruited into the system. For the task of mathematical reasoning, we limited the number to two agents. This decision was based on our observation that an increase in the number of reviewers for mathematical reasoning tasks correlates with a higher likelihood of them giving erroneous critiques, leading to incorrect solutions by the solver. We have a discussion on this topic in Section 3.1. For tool utilization, we recruit two or three agents to engage in collaborative decision-making and action execution depending on the specific task. The detailed setups are listed at Appendix B. Currently the number of experts is pre-defined by us for each task. We are seeking a way to automate this decision as well.\n' +
+      '\n' +
+      'Collaborative Decision-MakingFor tasks in coding and general understanding and reasoning, we use the vertical structure because all these tasks require only one response as the answer, and the solver in the vertical structure can be responsible for answering. For tool utilization, we use the horizontal structure because the agents should clarify their own sub-tasks in the discussion.\n' +
+      '\n' +
+      'Action ExecutionFor the Humaneval code completion dataset benchmarked with GPT-4, we incorporate an additional agent during the action execution stage to craft unit testing code (in an zero-shot manner). Subsequently, the generated code is subjected to unit testing, and the testing results are conveyed as the environment state to the evaluation module.\n' +
+      '\n' +
+      'Regarding the constrained generation dataset, Commongen-Challenge, the agent-generated response undergoes a concept coverage check. Any missing concepts are then passed to the evaluation module as the environment state.\n' +
+      '\n' +
+      'In the context of tool utilization, each agent iteratively calls the tool in the ReAct manner, up to a maximum of 10 iterations. Upon reaching the final iteration, the agent is forced to draw a conclusion regarding the result, labeling the task\'s status as either "pending" or "finished". These conclusions are then forwarded to the evaluator for assessment.\n' +
+      '\n' +
+      'EvaluationTo facilitate a feedback loop, an agent was tasked with the role of evaluator. This agent, provided with the initial problem \\(p\\) and the decisions \\(A\\) made during the collaborative decision-making stage, is charged with determining the correctness of those decisions. In cases where the decision is identified as erroneous, feedback is channeled back to the expert recruitment stage. If the decision meets the accuracy criteria, it is determined as the final answer to \\(p\\). While our current configuration employs an agent for evaluation, we acknowledge the potential of human evaluators and intend to incorporate such experiments in future endeavors.\n' +
+      '\n' +
+      '## Appendix B Experiment Details for Multi-Agent Tool Using\n' +
+      '\n' +
+      '### Setups\n' +
+      '\n' +
+      'This section provides specific implementation details for enabling multiple agents in AgentVerse to collaboratively utilize tools to accomplish user\'s query. Unless specified herein, the implementation adheres to the standard procedures defined in the other experiments.\n' +
+      '\n' +
+      'Collaborative Decision-MakingAgents recruited during the Expert Recruitment stage engage in collaborative discussions regarding the assigned task using a horizontal communication structure. In this configuration, agents communicate in a predetermined sequential order. At the conclusion of their discussions, an additional agent is designated as the "summarizer" and is responsible for consolidating the discussed sub-tasks for each participant.\n' +
+      '\n' +
+      'Action ExecutionDuring action execution, we follow the ReAct prompting technique to let the agents write down their thought, and then call the tool, and we return the tool response to the agent. The agent again write down the thought and call the tools. The process iterates until the agent decide to submit its conclusion, or a maximum iteration number, which we set to be 10, is reached. In practice, we use OpenAI\'s function call to handle the tools.\n' +
+      '\n' +
+      '### Results\n' +
+      '\n' +
+      'For action execution, the ReAct prompting technique is employed. Agents articulate their thought process, invoke the respective tool, and subsequently receive feedback from the tool. This cycle of reflection and tool interaction continues iteratively. The process concludes either when the agent finalizes its execution with its conclusion or after a pre-set maximum number of iterations--set (10 in our experiments). We utilize OpenAI\'s function call to handle the tool calls.\n' +
+      '\n' +
+      'Instruction 1Recently, it has become popular in the AI field to verify the mathematical reasoning abilities of large language models by observing if they can solve the "24-Point Game." What is this game? Does it have a code-based solution? If it does, provide a Python code along with test cases and test its functionality. What are some other similar games that can be used to test the models\' mathematical reasoning abilities?\n' +
+      '\n' +
+      'Single ReAct Agent: (The generated code is omitted) The \'24-Point Game\' is a mathematical game where four numbers must be used with the basic arithmetic operations (addition, subtraction, multiplication, and division) to make the number 24. The Python code I developed generates all possible combinations of the four numbers and operations to find a solution that equals 24. The code was tested with different sets of numbers, and it correctly identified whether a solution existed and what it was. This task tested my ability to understand the rules of a game and to develop and test a program that solves it. (game rule, code, similar games )\n' +
+      '\n' +
+      'AgentVerse (2 agents): (The generated code is omitted) The "24-Point Game" is a mathematical game where four numbers must be used with the basic arithmetic operations (addition, subtraction, multiplication, and division) to make the number 24. A Python code was developed and tested that generates all possible combinations of the four numbers and operations to find a solution that equals 24. The code was tested with different sets of numbers, and it correctly identified whether a solution existed and what it was. Similar games to the \'24-Point Game\' that can be used to test mathematical reasoning abilities include \'Make a Number\' and \'Math Safe\'. \'Make a Number\' is a game where players are given 4 numbers and 4 operations and they have to use these to create a target number. \'Math Safe\' is a game where players use four given single-digit numbers and any of the four operations to reach a target number and open a safe. Both these games require the use of operations and logical thinking to reach a target number, similar to the \'24-Point Game\'. (game rule, code, similar games )\n' +
+      '\n' +
+      'Instruction 2 (Additional API: Weather)I want to hold a party at somewhere around Tsinghua University tomorrow. I need you to look for some best places for holding a party nearby, and tell me whether the weather is good for holding a party tomorrow. Also, I want to know what activities can be considered in my party. Help me search the web.\n' +
+      '\n' +
+      'Single ReAct Agent: There are several restaurants near Tsinghua University that could be good places for a party, including Lan Yang ShuFang, YiLan ShaoKao, Guan Shi JiChi, Dong Lai Shun, and Xibu Mahua Beef Noodle. The weather in Beijing tomorrow is expected to be overcast with a temperature of 26 degrees Celsius, which might be suitable for a party. Some activities that can be considered for the party include the Saran Wrap Game, Post It Note Game, Most Likely To, Never Have I Ever, Would You Rather, and many more. ()\n' +
+      '\n' +
+      'AgentVerse (3 agents): The weather in the Tsinghua University area tomorrow is expected to be overcast with a temperature of 26 degrees Celsius, which is suitable for holding a party. The best places for a party near Tsinghua University include the Summer Palace, Wudaokou, Zhongguancun, and Pekinge University, as well as several restaurants nearby. For party activities, you could consider games such as the Saran Wrap Game, the Post It Note Game, How\'s Yours?, Most Likely To, Never Have I Ever, Would You Rather?, Heads Up!, I\'m Hosting a Party..., Two Truths and a Lie, Sticker Stalker, Great Minds Think Alike, murder mystery games, Who Am I?, the Newlyped Game, Truth or Dare, Spoons, Pictionary, Kiss Marry Kill, the Don\'t Say Yes game, Cards Against Humanity, What Do You Meme, Drawing Without Dignity, and That\'s What She Said. These games are suitable for various party occasions and there are also suggestions for icebreakers for guests who don\'t know each other well. (provide more details)\n' +
+      '\n' +
+      'Instruction 3 (Additional API: Billboard)I\'m currently analyzing what is popular on the website. Can you help me find the recent trending stuff. It could be anything, like trending news, products, books, movies, music, etc. Give a summarization for me.\n' +
+      '\n' +
+      'Single ReAct Agent: The recent trending products on the web include Apple AirPods Pro, Diamond Dazzle Cleaner Pen, Ugg Slippers, Squishmallows, Winix Air Purifier, ThisWorx Car Vacuum Cleaner, All-Clad Cookware, Eufy Robot Vacuum, Renpho Eye Massager, Crocs, Throw blankets, Chuckit! Sport Dog Ball Launcher, Apple AirTags, Revolon Hair Dryer Brush, Lego Sets, KitchenAid Stand Mixer, Winc Wine Subscription, Saata Mattress, Home Chef Subscription, and MasterClass Subscription. Unfortunately, we were unable to find specific information on recent trending books. (trending product )\n' +
+      '\n' +
+      'AgentVerse (3 agents): Here is a summary of the trending topics on the website:\n' +
+      '\n' +
+      'Music:\n' +
+      '\n' +
+      '1. \'Heat Waves\' by Glass Animals\n' +
+      '2. \'We Don\'t Talk About Bruno\' by Carolina Gaitan, Mauro Castillo, Adassa, Rhenzy Feliz, Diane Guerrero, Stephanie Beatriz & Encanto Cast\n' +
+      '3. \'Super Gremlin\' by Kodak Black\n' +
+      '4. \'Slime You Out\' by Drake Featuring SZA\n' +
+      '5. \'Paint The Town Red\' by Doja Cat\n' +
+      '6. \'Snooze\' by SZA\n' +
+      '\n' +
+      'Movies:\n' +
+      '\n' +
+      '1. \'No One Will Save You\'\n' +
+      '2. \'A Haunting in Venice\'\n' +
+      '3. \'Expend4bles\'\n' +
+      '\n' +
+      'Books:\n' +
+      '\n' +
+      '1. \'The Midnight Library\'\n' +
+      '2. \'The Invisible Life of Addie LaRue\'\n' +
+      '3. \'The Seven Husbands of Evelyn Hugo\'Products:\n' +
+      '\n' +
+      '1. Laser hair removal\n' +
+      '2. Head scarfs\n' +
+      '3. Detangling hair brushes\n' +
+      '4. Hair wigs\n' +
+      '5. Straight-leg jeans\n' +
+      '6. Shapewear\n' +
+      '7. Athleticsure\n' +
+      '8. Abdominal crunch straps\n' +
+      '9. swimsuits\n' +
+      '10. Power tool accessories\n' +
+      '11. Dog toys\n' +
+      '12. Shot glasses\n' +
+      '13. Costume shoes\n' +
+      '14. Slicpovers\n' +
+      '15. Wall plates and covers\n' +
+      '16. Baby shirts\n' +
+      '17. Curtain and drape rings\n' +
+      '18. Cabinet knobs and handles\n' +
+      '19. Watch accessories\n' +
+      '20. Tumblers\n' +
+      '21. Model train sets\n' +
+      '22. Signage\n' +
+      '23. Wedding dresses\n' +
+      '24. Table runners\n' +
+      '\n' +
+      'Please note that the popularity of these items can vary based on the region and demographic of the consumers. (music, movie, books, products )\n' +
+      '\n' +
+      'Instruction 4I\'m planning a two-week vacation to Japan next month. Help me plan my itinerary. I want to visit Tokyo, Kyoto, and Osaka. Look for the top tourist attractions in each city, and also suggest the best mode of travel between these cities. Additionally, find out the weather forecast for the month I\'ll be visiting.\n' +
+      '\n' +
+      'Single ReAct Agent: The top tourist attractions in Tokyo are the Tokyo Skytree, Senso-ji Temple, Meiji Shrine, Tokyo Disneyland, Ueno Park, and Odaiba. In Kyoto, the top attractions are Nijo Castle, Fushimi-Inari Taisha Shrine, Kinkaku-ji: The Golden Pavilion, Kiyomizu-dera Temple, Sanjusangen-do Temple, and Kyoto Imperial Palace. In Osaka, tourists can visit Osaka Castle, Shitenko-ji Temple, Osaka Aquarium Kaiyukan, Tempozan Ferris Wheel and Harbor Village, and Universal Studios Japan. These attractions offer a mix of historical, cultural, and modern experiences for visitors. (tourist attractions, best mode of travel between cities, weather forecast )\n' +
+      '\n' +
+      'AgentVerse (3 agents): Your two-week vacation to Japan is shaping up to be quite exciting. In Tokyo, you can visit the Tokyo Skytree, Senso-ji Temple, Meiji Shrine, Tokyo Disneyland and DisneySea, and the Odaiba area. In Kyoto, the top attractions are Nijo Castle, Fushimi-Inari Taisha Shrine, Kinkaku-ji (Golden Pavilion), Kiyomizu-dera Temple, and Sanjusangen-do Temple. While in Osaka, you should visit Osaka Castle, Shitenko-ji Temple, Osaka Aquarium Kaiyukan, and Universal Studios Japan.\n' +
+      '\n' +
+      'As for transportation, the best way to travel between these cities is by train, specifically the Shinkansen bullet train. You can also consider flights with ANA or JAL, or if you\'re on a budget, the night bus or LCC flights by Jetstar and Peach.\n' +
+      '\n' +
+      'Regarding the weather, it\'s difficult to provide an exact forecast for the next month, but we\'ve gathered the average weather data for these cities based on previous years. Please remember to check the weather forecast closer to your departure date for a more accurate prediction. Enjoy your trip! (tourist attractions, best mode of travel between cities, weather forecast )\n' +
+      '\n' +
+      '**Instruction 5**: I am planning a date with my girlfriend this week, please search for a good movie theater and a restaurant near Tsinghua University in Beijing and recommend a good movie to watch. Please search the web.\n' +
+      '\n' +
+      'Single ReAct Agent: Your date near Tsinghua University in Beijing is all set. For dining, you can choose from Lan Yang ShuFang, YiLan ShaoKao, Guan Shi JiChi (Zhongguancun), or Dong Lai Shun (Zhongguancun HaiTu). As for the movie, there are several highly-rated ones showing in 2023. Some of these include M3GAN, Plane, Missing, Infinity Pool, John Wick: Chapter 4, Creed III, Scream VI, Air, Suzume, Rise, Are You There God? It\'s Me, Margaret, Showing Up, and The Covenant. Enjoy your date! (restaurant, movie, theater )\n' +
+      '\n' +
+      'AgentVerse (3 agents): Your date is all set? For dining, we recommend either Jiasuo Restaurant or Zijingyuan, both located conveniently on the Tsinghua University campus. For your movie, we suggest \'No Bears\', which is currently popular and highly rated. You can watch it at the Maple Garden Drive-In Cinema, one of the top-rated movie theaters near Tsinghua University. Enjoy your date! (restaurant, movie, theater )\n' +
+      '\n' +
+      '**Instruction 6**: I want to kick off a book club with my friends. Can you tell me the top 5 bestselling books this month, gather the content summary for each, and find online platforms where we can buy or borrow them?\n' +
+      '\n' +
+      'Single ReAct Agent: I was unable to find the top 5 bestselling books for October 2023. The websites I visited did not provide the required information. Therefore, I am unable to provide the content summary for each of the top 5 bestselling books and find online platforms where they can be bought or borrowed. ()\n' +
+      '\n' +
+      'AgentVerse (2 agents):The top 5 bestsellers this month can be bought or borrowed from several online platforms. These include OverDrive, which allows you to borrow books for free through your local library or school. Other platforms include the Amazon Kindle Store, Barnes & Noble\'s Nook Book Store, Fictionwise, eBooks.com, eReader.com, Google Play Book Store, Powell\'s Books, as well as eBook lending and borrowing services like eBookFling, Lendle, and BookLending.com. (online platforms, top 5 bestselling books, content summary )\n' +
+      '\n' +
+      '**Instruction 7**: I am planning to buy a new car. Could you help me compare the features and prices of the latest models of Tesla, Ford, and Toyota? Include details about range, charging time, safety features, and after-sales service. Also, provide a brief analysis of the pros and cons of each car.\n' +
+      '\n' +
+      'Single ReAct Agent: The 2023 Tesla Model 3 starts at $41,880 and goes up to $54,880. It comes with standard features such as heated front seats, navigation, and Tesla\'s Autopilot semi-autonomous driving system. In terms of safety features, the Model 3 includes standard automated emergency braking, lane-departure warning, and adaptive cruise control. Tesla\'s after-sales service is characterized by a vertically integrated format that eliminates third-party intermediaries and relies on over-the-air (OTA) update capabilities and a mobile service fleet. The company\'s OTA update capabilities will open up new subscription-based aftersales revenue streams, while its closed-loop system allows access to vehicle data for driving-related feedback loops and predictive maintenance. (Tesla, Other brands )\n' +
+      '\n' +
+      'AgentVerse (3 agents): The starting price for the 2023 Ford Mustang Mach-E is around $43,895 and it takes approximately 38 hours to fully charge using a 120V outlet, 14 hours using a 240V outlet, and around 45 minutes to 80% capacity with DC fast charging. The starting price for the 2023 Toyota bZ4X is approximately $42,000. The charging time varies depending on the method: 52 hours for Level 1 charging, 26 hours or 18.75 hours for Level 2 charging, and 30-45 minutes to 80% capacity for Level 3 DC fast charging. Unfortunately, the price for the 2023 Tesla Model 3 was not found, but the charging time can be as quick as 15 minutes with a 250 kW Tesla Supercharger. At home, using a standard 120-volt outlet takes around three to four days for a full charge, while a 240-volt outlet with a NEMA 14-50 adapter reduces charging time to 10 or 11 hours. A Tesla Wall Connector can fully charge the car in about five hours.\n' +
+      '\n' +
+      'In terms of safety, all three models come equipped with a variety of features such as anti-lock brakes, stability control, front-impact airbags, side impact airbags, overhead airbags, knee airbags, pretensioners, and a security system. The Tesla Model 3 also includes autopilot and collision warning features.\n' +
+      '\n' +
+      'Regarding after-sales service, Tesla offers a comprehensive warranty and roadside assistance with service centers across the globe and mobile service. Toyota\'s after-sales service is known for being top-notch and continually improving with expert technicians and quality genuine parts. However, Ford\'s after-sales service has received negative reviews, with customers reporting poor customer support and inefficient handling of issues.\n' +
+      '\n' +
+      'Please consider these factors when making your decision. (Prices, charging time, safety features, after-sales service)\n' +
+      '\n' +
+      'Instruction 8I\'ve recently taken an interest in DIY home projects. Search for beginner-friendly DIY projects that can be completed over the weekend. Also, provide a list of materials required and a step-by-step guide for each project.\n' +
+      '\n' +
+      'Single ReAct Agent: I found a variety of beginner-friendly DIY home projects from three different websites. These projects include painting a room, replacing cabinet pulls, repairing torn window screens, fixing interior doors, balancing furnace dampers, repairing leaky faucets, refreshing caulk in the bathroom, building garage storage shelves, constructing a fire pit, hanging a ceiling fan, installing a wall-mounted television, and cleaning out sink traps. These projects are suitable for beginners and can help improve DIY skills while boosting confidence. (DIY projects, list of materials )\n' +
+      '\n' +
+      'AgentVerse (2 agents): The team has successfully found a variety of beginner-friendly DIY home projects that can be completed over the weekend. These projects range from painting a room, replacing cabinet pulls, installing a wall-mounted television, building a fire pit, to more complex tasks like kitchen remodels and furniture updates. The materials required for these projects are basic and easy to source, including tools like a roller and pan for painting, a cordless drill for replacing cabinet pulls, a stud finder for installing a wall-mounted television, and concrete work tools for building a fire pit. Detailed, step-by-step guides for each project have been provided to ensure a smooth DIY experience. Happy DIY-ing! (DIY projects, list of materials )\n' +
+      '\n' +
+      'Instruction 9Winter is coming, and I want to update my wardrobe. Search for the latest winter fashion trends for men and women. Also, suggest some online stores where I can buy trendy winter clothing.\n' +
+      '\n' +
+      'Single ReAct Agent: The latest winter fashion trends for both men and women this year include suiting, bold shoulders, western touches, maxis, electric hues, bombers, mismatched maximalism, corseeting, cut-outs, Y2K fashion, and chunky boots. You can purchase these trendy winter clothes at online stores like PrettyLittleThing and Windsor. (fashion trends, online stores )\n' +
+      '\n' +
+      'AgentVerse (3 agents): The latest winter fashion trends for men include a reinvention of classic staples, misery chic, pops of pink, throwback jackets, showstopping trousers, and Mac coats. For women, the trends include corseeting, cowboy boots, Y2K styles, oversized outerwear, pleated skirts, and balaclavas. You can shop for these trendy winter clothes at popular online stores such as Uniqlo, Everlane, and Target. (fashion trends, online stores )\n' +
+      '\n' +
+      'Instruction 10I want to lose 5kg in the next 2 months. I weigh 70kg, am 170cm tall, and my age is 25. Calculate my BMI and based on that, suggest a workout routine and daily calorie intake to help me achieve my goal.\n' +
+      '\n' +
+      'Single ReAct Agent: Your BMI is 24.22, which is within the normal range. To lose 5kg in 2 months, you should aim for a daily calorie deficit of 500-1000 calories. This can be achieved through a combination of a balanced diet and regular exercise. Your diet should focus on whole foods, lean proteins, fruits, and vegetables. For exercise, a combination of cardio and strength training is recommended. Cardio exercises like running, cycling, swimming can help burn calories, while strength training exercises like weight lifting can help build muscle, which can increase your metabolic rate and aid in weight loss. Don\'t forget to get enough sleep and stay hydrated. (bmi, workout routine, daily calorie intake )\n' +
+      '\n' +
+      'AgentVerse (2 agents): Your Body Mass Index (BMI) is approximately 24.22, which is within the healthy weight range. To achieve your weight loss goal, you should aim to consume between 1400 and 1600 calories per day. This will create a calorie deficit necessary for weight loss. In terms of physical activity, you should start with a 4-week program that includes upper and lower body strength training, interval training/conditioning, and low intensity cardio exercises. After completingthis, transition to a 12-week program that includes cardio, strength training, and flexibility workouts. Each workout should take approximately 20-22 minutes. Remember to maintain healthy habits such as eating a nutritious diet, staying hydrated, getting enough sleep, and managing stress. (bmi \\(\\mathbf{\\bigvee}\\), workout routine \\(\\mathbf{\\bigvee}\\), daily calorie intake \\(\\mathbf{\\bigvee}\\))\n' +
+      '\n' +
+      '## Appendix C Details of the Experiments on Minecraft\n' +
+      '\n' +
+      'In this section, we explain some implementation details of the experiments that we conduct on Minecraft (Section 4).\n' +
+      '\n' +
+      'Expert RecruitmentAs noted in Section 4, real-world gaming scenarios requires intricate communication and coordination across multiple rounds, there is often a consistent set of team members. Therefore when using AgentVerse to simulate the game playing, we bypass the automated expert recruitment stage, and manually assign each agent as _"an experienced Minecraft player"_.\n' +
+      '\n' +
+      'Collaborative Decision-MakingFor multi-player gameplay, the horizontal communication paradigm is favored. It lends itself to an environment where each agent independently formulates plans, diverging from traditional benchmark tasks which demand a singular solution. Agents are set to communicate in a predetermined sequential order, continuing until consensus is perceived. We let the agent to append a special token "[END]" at the end of its response if it finds that the group have reached consensus on the task assignment.\n' +
+      '\n' +
+      'Subsequent to achieving consensus, an auxiliary agent is tasked to deduce the specific assignment for each agent from the entire communication record. This distilled information is then given as the input to the Voyager agent to inform it the assigned task.\n' +
+      '\n' +
+      'Action ExecutionWe instantiate several Voyager agents within a shared Minecraft environment. A brief introduction of the Voyager agent is provided here, and we refer the interested readers to Wang et al. (2023a) for a more detailed exposition.\n' +
+      '\n' +
+      'A Voyager agent is adept at navigating Minecraft. On receiving a task, it first decomposes it into a set of manageable sub-tasks. For instance, if assigned the task "Kill 3 cows", the agent might decompose it into sequential sub-goals like: [punch 2 trees, Craft 4 wooden planks, Craft 1 stick, Craft 1 crafting table, Craft 1 wooden sword, Kill 3 cows]. The agent then sequentially attempt to complete each sub-task.\n' +
+      '\n' +
+      'We employ the checkpoint available in the official repository2, and use GPT-4-0314 as the backbone LLM for Voyager agent to be consistent with Wang et al. (2023a). Once an agent accomplish its own task, or all agents hit the cap of five attempts, the task execution stage terminates and evaluation stage starts.\n' +
+      '\n' +
+      'Footnote 2: [https://github.com/MineDojo/Voyager/tree/main/skill_library/trial1/skill](https://github.com/MineDojo/Voyager/tree/main/skill_library/trial1/skill)\n' +
+      '\n' +
+      'EvaluationWe directly exploit the inventory and the completed or failed sub-tasks of each agent as the feedback.\n' +
+      '\n' +
+      '## Appendix D Prompts\n' +
+      '\n' +
+      'We list the prompts used in Section 3 at Figures 7 to 11.\n' +
+      '\n' +
+      '* **FED**: Figure 7\n' +
+      '* **MGSM**: Figure 8\n' +
+      '* **Humaneval**: Figure 9\n' +
+      '* **Commongen-Challenge**: Figure 10\n' +
+      '* **Tool**: Figure 11Limitation and Future Work\n' +
+      '\n' +
+      'In this work, we introduce AgentVerse that facilitates multiple autonomous agents to simulate human groups to accomplish tasks, and discuss the emergent social behaviors of agents during this process. AgentVerse is an advanced attempt; thus, there are some techniques within AgentVerse that still have room for improvement and are worthy of exploration. In this section, we delve into these aspects for further illustration.\n' +
+      '\n' +
+      '**More Capable Agents and More Challenging Scenarios.** The AgentVerse is designed to enable various multiple LLM-based agents to collaboratively accomplish tasks. In the current research, we have utilized state-of-the-art agents based on GPT-4. With the advancements in LLMs, such as the newly released version of ChatGPT that incorporates voice and image capabilities (OpenAI, 2023b), LLM-based agents have more perceptual capabilities, including seeing, hearing, and speaking. These enhancements may increase the potential of agents and allow them to accomplish more complex real-world tasks based on the AgentVerse framework.\n' +
+      '\n' +
+      '**Multi-party Communication Among Agents.** The currently proposed autonomous agents (Richards and others, 2023; Nakajima, 2023; Reworkd, 2023; Wang et al., 2023a) LLMs possess excellent instruction comprehension capabilities (Wei et al., 2022a; Stiennon et al., 2020). This enables them to follow given human instructions and accomplish tasks within a one-on-one (human-to-AI) scenario. However, multi-agent collaboration involves a _multi-party communication_(Wei et al., 2023) scenario that requires the capability to autonomously determine _when to speak_ and _whom to speak_. This leads to difficulties in communication among the agents during the collaborative decision-making step within the AgentVerse framework. Hence, there are two directions worth exploring. Firstly, akin to the aforementioned, we can explore more effective mechanisms for managing agent communication. Additionally, we can design more advanced perceptual-aware LLMs (OpenAI, 2023b) that can autonomously interact with their environments3, including other agents.\n' +
+      '\n' +
+      'Footnote 3: This kind of perceptual-aware agent has long been a goal of embodied AI (Ahn et al., 2022; Driess et al., 2023), which is a promising direction to explore.\n' +
+      '\n' +
+      '**Leverage Emergent Behaviors and Mitigate Safety Issues.** In Section 4, we identified both emergent positive and harmful behaviors. Exploring ways to leverage positive behaviors for improving work efficiency and effectiveness, as well as mitigating harmful behaviors, are promising directions.\n' +
+      '\n' +
+      '## Appendix F Examples of the Case Studies\n' +
+      '\n' +
+      'In this section, we delve into specific examples to illustrate the experimental processes discussed in our paper. For each instance, we juxtapose the single-agent approach with the multi-agent method. Specifically:\n' +
+      '\n' +
+      '* **Software Development**: Figure 12 depicts the process for developing a calculator. Figures 13 and 14 show the code generated by single agent and multi-agent group respectively.\n' +
+      '* **Consulting in Horizontal Structure**: For consulting, we present single-agent and multi-agent approaches using horizontal structure. These can be seen in Figures 15 and 16.\n' +
+      '* **Consulting in Vertical Structure** Similarly, Figures 17 and 18 showcase single-agent and multi-agent project consulting, but employing a vertical structure structure for multi-agent.\n' +
+      '* **Tool Utilization**: Figure 19 presents how two agents effectively decompose the given query into different sub-tasks, and use different tools to collaboratively resolve the query.\n' +
+      '* **Minecraft**: Lastly, Figure 20 provides an insight into a process where three agents collaborate to craft a bookshelf in Minecraft.\n' +
+      '\n' +
+      'Figure 7: Prompt of FED dataset.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:25]\n' +
+      '\n' +
+      'Figure 9: Prompt for Humaneval dataset.\n' +
+      '\n' +
+      '## Appendix A\n' +
+      '\n' +
+      'Figure 10: Prompt for Commonen-Challenge dataset.\n' +
+      '\n' +
+      '## Appendix B\n' +
+      '\n' +
+      'Figure 11: Prompt of Tool utilization.\n' +
+      '\n' +
+      'Figure 12: An example of the process of software development.\n' +
+      '\n' +
+      'Figure 13: The code generated by single agent.\n' +
+      '\n' +
+      'Figure 14: The code generated by the multi-agent group.\n' +
+      '\n' +
+      'Figure 15: (Page 1) An example process of project consulting with Group setup in horizontal decision-making structure. The agents are providing suggestions on the problem ”Give me some suggestions if I want to build a compressed hydrogen storage station in Ohio”\n' +
+      '\n' +
+      'Figure 15: (Page 2) An example process of project consulting with Group setup in horizontal decision-making structure. The agents are providing suggestions on the problem ”Give me some suggestions if I want to build a compressed hydrogen storage station in Ohio”\n' +
+      '\n' +
+      '## Appendix C\n' +
+      '\n' +
+      'Figure 16: An example process of project consulting in Solo setup. The agent is required to provide suggestions on the problem ”Give me some suggestions if I want to build a compressed hydrogen storage station in Ohio”.\n' +
+      '\n' +
+      'Figure 17: (Page 1) An example process of project consulting with Group setup in vertical decision-making structure. The agents are providing suggestions on the problem ”Generate a proposal about 3-day employee orientation for newly hired engineers at AgentVerse. AgentVerse is a open-source team devoted to developing a LLM multi-agent platform for accomplishing”.\n' +
+      '\n' +
+      'Figure 17: (Page 2) An example process of project consulting with Group setup in vertical decision-making structure. The agents are providing suggestions on the problem “Generate a proposal about 3-day employee orientation for newly hired engineers at AgentVerse. AgentVerse is a open-source team devoted to developing a LLM multi-agent platform for accomplishing”.\n' +
+      '\n' +
+      'Figure 18: An example process of project consulting with Solo setup. The agent is required to provide suggestions on the problem “Generate a proposal about 3-day employee orientation for newly hired engineers at AgentVerse. AgentVerse is a open-source team devoted to developing a LLM multi-agent platform for accomplishing”.\n' +
+      '\n' +
+      'Figure 19: An example process of AgentVerse with Group setup solving user query with three different tools.\n' +
+      '\n' +
+      'Figure 20: An example process of three agents crafting a bookshelf in Minecraft.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

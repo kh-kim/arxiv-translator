@@ -1,0 +1,477 @@
+# AgentVerse: Multi-Agent Collaborative Controling Emergent Behavior 촉진
+
+Weize Chen\({}^{1}\)1, Yusheng Su\({}^{1}\)1, Jingwei Zuo\({}^{1}\), Cheng Yang\({}^{3}\)2, Chenfei Yuan\({}^{1}\)
+
+**Chi-Min Chan\({}^{1}\)**, Heyang Yu\({}^{1}\), Yaxi Lu\({}^{1}\), YiHsin Hung\({}^{2}\), Chen Qian\({}^{1}\), Yujia Qin\({}^{1}\),
+
+**Xin Cong\({}^{1}\)**, **Ruobing Xie\({}^{4}\)**, **Zhiyuan Liu\({}^{1}\)**, **Maosong Sun\({}^{1}\)**, **Jie Zhou\({}^{4}\)**
+
+칭화대학교 컴퓨터공학과
+
+칭화대학교 경제경영학부
+
+\({}^{3}\) Beijing Posts and Telecommunications 대학교 컴퓨터과학부
+
+(주)텐센트 위챗 AI 패턴인식센터
+
+chenwz21@mails.tsinghua.edu.cn, yushengsu.thu@gmail.com
+
+각주 1: 처음 두 저자는 동등하게 기여했다.
+
+각주 2: 각주
+
+###### Abstract
+
+대규모 언어 모델(LLM)에 의해 권한을 부여받은 자율 에이전트는 광범위한 작업에 걸쳐 일반화할 수 있도록 상당한 개선을 겪었다. 그러나 실제 시나리오에서는 작업 수행의 효율성과 효율성을 높이기 위해 개인 간의 협력이 필요한 경우가 많다. 따라서, 본 논문에서는 인간 그룹 다이내믹스에서 영감을 받아, 전문가 에이전트의 협력 그룹을 더 많은 부분 시스템으로서 효과적으로 조정할 수 있는 다중 에이전트 프레임워크 에이전트Verse를 제안한다. 실험 결과 AgentVerse는 단일 에이전트보다 성능이 우수한 다중 에이전트 그룹을 효율적으로 배치할 수 있음을 확인하였다. 텍스트 이해, 추론, 코딩, 도구 활용 및 구현된 AI에 대한 광범위한 실험은 에이전트버스의 효과를 확인한다. 또한 에이전트Verse 내에서 에이전트 상호 작용에 대한 분석을 통해 특정 협력 행동의 출현이 밝혀져 그룹 효율성을 높이는 데 기여한다. 우리 코드는 [https://github.com/OpenBMB/AgentVerse/](https://github.com/OpenBMB/AgentVerse/)에서 릴리스되었습니다.
+
+## 1 Introduction
+
+인간을 원활하게 보조하고 실제 환경에서 동작할 수 있는 지능적이고 자율적인 에이전트를 생성하려는 추구는 인공 지능에서의 기초 목표였다(Wooldridge and Jennings, 1995; Minsky, 1988; Bubeck et al., 2023). 최근 LMM(Large Language Models)의 진보(OpenAI, 2023a; Anil et al., 2023; Touvron et al., 2023b)는 이 도메인에서 새로운 발견된 길을 만들었다. 이러한 LLMs, 특히 GPT-4(OpenAI, 2023a)는 인간의 의도를 이해하고 명령을 실행하는 데 특히 능숙하다. 이들은 언어 이해, 비전(OpenAI, 2023b), 코딩(Bubeck 등, 2023) 등의 영역에서 괄목할 만한 숙련도를 보여주었다. LLM의 힘을 활용함으로써, 자율 에이전트는 보다 미묘한 결정을 내리고 전례 없는 정도의 자율성을 갖는 동작을 수행할 수 있다(Zhou et al., 2023), AutoGPT(Richards and et al., 2023), BabyAGI(Nakajima, 2023), AgentGPT(Reworkd, 2023)와 같은 에이전트가 영감을 주는 예이다. 나아가, 최근의 연구는 자율 에이전트가 반사로부터 스패닝되는 더 인간-유사 인지 메커니즘을 부여하였다(Yao et al., 2023b; Shinn et al., 2023), 태스크 분해(Wei et al., 2022b; Yao et al., 2023a), 및 툴 활용(Schick et al., 2023b; Qin et al., 2023a;b; Qian et al., 2023b). 이러한 발전은 더 넓은 범위의 작업에 걸쳐 일반화할 수 있는 인공 지능(AGI)(고어첼과 펜나친, 2007; 클룬, 2019) 개념을 실현하는 데 더 가깝다.
+
+그러나 복잡한 실제 작업은 더 나은 효과를 얻기 위해 개인 간의 협력이 필요한 경우가 많다. 역사를 통틀어, 많은 연구들이 작업 효율성과 효율성을 향상시키기 위해 인간들 간의 협업을 증진시키기 위한 방법들을 파헤쳤다(Woolley et al., 2010; Fehr and Gachter, 2000). 보다 최근에, AGI를 향한 자율적 에이전트의 진화에 따라, 광범위한 연구는 에이전트들의 어셈블리를 사회 또는 그룹으로서 개념화하고(Li 등, 2023), 그들의 협력의 가능성을 탐색하는 데 초점을 맞춘다. 예를 들어, Park et al.(2023)은 다중 에이전트 생활 시뮬레이션에서 응급 사회적 행동을 발견했다. Du 등(2023); Wang 등(2023b); Zhang 등(2023a); Qian 등(2023a); Chan 등(2023)도 협업 문제 해결 동안 협업 에이전트의 향상된 의사 결정을 강조했다. 그러나 이러한 연구의 한계는 특정 및 제한된 작업에 대한 좁은 초점으로 인해 연구 결과의 일반화 가능성이 불확실하다는 것이다. 추가 제약은 에이전트의 역할과 기능이 경직되어 적응성을 방해하는 에이전트 협업에 대한 정적 접근법이다.
+
+이 문제를 해결하기 위해 AgentVerse를 소개한다. 이 일반적인 다중 에이전트 프레임워크는 인간 그룹의 문제 해결 절차를 시뮬레이션하고 현재 진행 상황에 따라 그룹 구성원을 동적으로 조정할 수 있다. 구체적으로 AgentVerse는 그림 1과 같이 문제 해결 과정을 4개의 중추적 단계로 분할한다. (1) _전문가 채용_: 진행 중인 문제 해결 진행을 바탕으로 에이전트 그룹의 구성을 결정하고 조정한다. (2) _협력적 의사 결정_: 선택된 에이전트를 공동 토론에 참여시켜 문제 해결 전략을 고안한다. (3) _Action Execution_: 에이전트가 자신의 환경과 상호작용하여 고안된 동작을 구현한다. (4) _평가_ - 현재 상태와 원하는 결과 간의 차이를 평가한다. 현재 상태가 불만족스러운 경우, 추가 개선을 위해 다음 반복에 피드백이 주어진다.
+
+에이전트버스의 효용성을 보이기 위해 텍스트 이해, 추론, 코딩, 도구 활용, 구현된 AI 등 다양한 측면에서 광범위한 실험과 사례 연구를 수행한다. 또한 다중 에이전트 협업에서 나타나는 사회적 행동을 강조하고, 이들의 장점과 잠재적 위험에 대해 논의한다. 요약하면, 우리의 기여는 다음과 같다:
+
+* 인간 팀의 협업 프로세스에서 영감을 받아 문제 해결에서 여러 에이전트 간의 협업을 촉진하는 효과적인 프레임워크로 AgentVerse를 제안합니다.
+* 에이전트Verse가 구현된 AI에서 에이전트의 이해, 추론, 코딩, 도구 활용 능력 및 잠재력을 효과적으로 향상시킨다는 것을 보여주기 위해 광범위한 실험을 수행합니다.
+* 다중 에이전트 협업, 특히 도구 활용 및 마인크래프트 게임 플레이 내에서 에이전트는 특정 비상 행동을 나타냅니다. 예를 들어, (1) 에이전트들이 동료들에게 도움을 제공하여 팀 효율성을 향상시키는 것을 특징으로 하는, 자원 봉사 행동들; (2) 에이전트들이 다른 비평가들로부터의 공통 목표에 부합하도록 그들의 일탈된 행동들을 조정하는, 순응 행동들; (3) 때때로 바람직하지 않고 해로운 결과들을 초래하는, 파괴 행동들; 을 포함한다.
+
+## 2 AgentVerse Framework
+
+문제 해결 과정은 인간 그룹 내의 반복 단계의 시퀀스이다(Bransford & Stein, 1993). 처음에 그룹은 현재 상태와 원하는 목표 사이의 차이를 평가하고, 의사 결정에서 협력을 강화하기 위해 구성을 동적으로 조정하고, 이후에
+
+도 1: AgentVerse의 예시.
+
+잘 알고 있는 작업을 실행합니다. 자율적 다중 에이전트 그룹의 목표를 달성하는 효과를 높이기 위해 인간 그룹의 문제 해결 프로세스를 시뮬레이션하여 그림 1과 같이 **전문가 채용**, **협력적 의사 결정**, **작업 실행** 및 **평가**의 4가지 중요한 단계로 구성된 에이전트VersE 프레임워크를 제안한다.
+
+전체 프로세스는 튜플 \((\mathcal{S},\mathcal{A},\mathcal{T},\mathcal{R},\mathcal{G})\)으로 특징지어지는 마르코프 결정 프로세스(MDP)로 모델링될 수 있다. 이는 자율 에이전트와 환경 상태 공간 \(\mathcal{S}\), 솔루션과 액션 공간 \(\mathcal{A}\), 전이 함수 \(\mathcal{T}:\mathcal{S}\times\mathcal{A}\rightarrow\mathcal{S}\), 보상 함수 \(\mathcal{R}\), 목표 공간 \(\mathcal{G}\)을 포함한다.
+
+### Expert Recruitment
+
+전문가 채용 단계는 다중 에이전트 그룹의 구성을 결정하며, 그룹의 능력 상한을 결정하는 데 중요한 역할을 한다. 경험적 증거에 따르면 인간 그룹 내의 다양성은 다양한 관점을 도입하여 다양한 작업에 걸쳐 그룹의 성능을 향상시킨다(Woolley et al., 2015; Phillips and O'Reilly, 1998). 최근 연구의 병렬 연구 결과는 그룹을 형성할 전문가를 모집하는 것과 유사하게 자율 에이전트에 대한 특정 역할을 지정하는 것이 그들의 효능을 증가시킬 수 있음을 시사한다(Li et al., 2023; Salewski et al., 2023; Qian et al., 2023a). 현재 자율 에이전트에 역할 설명을 할당하는 방법론은 주로 수동 할당을 포함하므로 작업에 대한 사전 지식과 이해가 필요하다. 결과적으로 확장성은 특히 다양하고 복잡한 문제 상황에 직면하여 모호하다.
+
+이러한 점을 고려하여 AgentVersE는 전문가 모집을 자동화하여 에이전트 구성을 보다 확장성 있게 만든다. 주어진 목표 \(g\in\mathcal{G}\)에 대해, 특정 에이전트 \(M_{r}\)은 인적 자원 관리자와 유사하게 "채용자"로 프롬프트된다. 미리 정의된 전문가 설명에 의존하는 대신, \(M_{r}\)은 \(g\)을 기반으로 한 전문가 설명 집합을 동적으로 생성한다. 서로 다른 에이전트는 이러한 서로 다른 전문가 설명으로 촉발된 다음 주어진 목표 \(g\)에 대해 전문가 그룹 \(\mathcal{M}=M_{r}(g)\)을 형성한다. 특히, 멀티 에이전트 그룹의 구성은 평가 단계(섹션 2.4)로부터의 피드백에 기초하여 동적으로 조정될 것이다. 이를 통해 AgentVersE는 현재 상태를 기반으로 가장 적합한 그룹을 사용하여 향후 라운드에서 더 나은 결정을 내릴 수 있습니다.
+
+### Collaborative Decision-making
+
+이 단계는 전문가 에이전트를 협업 의사 결정에 참여시킵니다. 효과적인 의사 결정을 용이하게 하기 위해, 이전 연구는 에이전트들 간의 상이한 통신 구조들의 영향을 조사하였다(Chan et al., 2023; Zhang et al., 2023b; Wu et al., 2023). 우리는 각각 _수평 구조_ 및 _수직 구조_라는 두 가지 전형적인 통신 구조에 초점을 맞춘다.
+
+**수평 구조**[r,r] 이 민주적 구조에서 각 에이전트는 \(m_{i}\in\mathcal{M}\)로 표시 되 고 결정 \(a_{m_{i}}\)을 공유 하 고 정제 합니다. 이 그룹의 집합적 결정인 \(A=f\left(\{a_{m_{i}}\}_{i}\right)\in\mathcal{A}\)은 함수 \(f\)를 사용하여 개별 에이전트의 결정을 통합하는 것으로 나타나며, 이는 요약이나 앙상블과 같은 기술을 포함할 수 있다. 이 구조는 컨설팅 및 도구 사용과 같은 시나리오에서 특히 효과적입니다.
+
+**수직 구조**[r,r] 반대로 수직 구조는 역할의 명확한 구분이 있습니다. 솔버 \(m^{*}\)이라 불리는 에이전트는 초기 결정 \(a_{0}^{*}\)을 제안한다. 검토자로서 다른 에이전트는 이 제안에 대한 피드백을 제공하여 검토자 간에 합의에 도달하거나 설정된 반복 횟수가 소진될 때까지 해결사에 의해 반복적인 개선을 촉구한다. 최종 결정 \(A\)은 \(A=a_{k}^{*}\in\mathcal{A}\)으로 주어지며, \(k\)은 정제 횟수를 나타낸다. 세련된 결정 하나만 필요한 수학 문제 해결 및 소프트웨어 개발과 같은 과제에는 수직 구조가 바람직하다.
+
+### Action Execution
+
+의사결정 단계에서 에이전트는 현재 환경에서 실행되어야 하는 액션이 포함된 그룹 의사결정 \(A\)에 협력적으로 기여한다. 액션 실행 단계에서 에이전트는 환경에서 집합적으로 결정된 액션을 실행한다. 구현에 따라 일부 에이전트는 실행을 수행하지 않을 수 있습니다. 이러한 작업의 결과로 환경의 상태는 \(s_{\text{old}}\)에서 \(s_{\text{new}}=\mathcal{T}(s_{\text{old}},A)\)로 전환됩니다.
+
+### Evaluation
+
+평가 단계는 에이전트버스에 필수적이며, 후속 라운드에 대한 개선을 안내한다. 이 단계에서 피드백 메커니즘 \(\mathcal{R}\)은 현재 상태 \(s_{\text{new}}\)과 원하는 목표 \(g\in G\)의 차이를 평가한다. 그리고 언어적 피드백 \(r=\mathcal{R}(s_{\text{new}},g)\), 부족한 부분을 자세히 설명하고 성능을 향상시킬 수 있는 방안을 제시한다. \ (\mathcal{R}\)는 구현에 따라 인간(인간-인-더-루프(Amershi et al., 2014) 설정에서) 또는 자동 피드백을 위한 에이전트에 의해 정의될 수 있다.
+
+목표 \(g\)가 충족되지 않은 상태로 유지되면 피드백 \(r\)은 초기 전문가 모집 단계로 돌아갑니다. 다음 라운드에서는 전문가 모집 단계에서 피드백 \(r\)과 목표 \(g\)을 모두 고려하여 그룹의 구성을 조정하여 현재 진행 상황에 따라 보다 효과적인 멀티 에이전트 그룹을 진화시키는 것을 목표로 한다.
+
+## 3 Experiments
+
+독립형 에이전트에 비해 에이전트 협업 촉진에 있어서 AgentVerse의 우수성을 검증하기 위해 네 가지 실험 과제를 설계한다. 각 작업은 에이전트 그룹의 고유한 측면, 즉 일반적인 이해 및 추론 능력, 코딩 능력, 도구 활용 능력 및 구현 AI에서의 잠재력을 평가하도록 설계되었다. 이 섹션에 자세히 설명된 우리의 연구 결과는 이러한 다양하고 다면적인 작업에 걸쳐 에이전트Verse의 우수한 성능을 일관되게 강조한다. 특히 흥미로운 것은 에이전트 그룹 내에서 고유한 협력 행동의 출현이다. 이 섹션에서는 다중 에이전트 설정의 장점에 초점을 맞추지만 이러한 비상 행동에 대한 더 깊은 탐구는 섹션 4에서 제시될 것이다.
+
+**설정.** 모든 실험에서 다양한 작업에서 GPT-3.5-Turbo-0613 및 GPT-4-0613에 의해 구동되는 에이전트의 성능을 평가합니다. 모든 실험은 **제로 샷** 설정에서 수행 됩니다. 이 섹션의 모든 정량적 실험에 대해 (1) **CoT**: CoT(사슬-of-thought) 에이전트; (2) **솔로**: 의사 결정 단계에서 단일 에이전트와 함께 AgentVerse를 사용 하는 세 가지 설정을 비교 합니다. CoT와 비교하여 Solo는 전문가 모집, 작업 실행 및 평가 모듈을 추가로 통합합니다. (3) **그룹**: 의사 결정 중에 여러 에이전트가 협력하는 AgentVerse를 구현합니다. 각 과제에 대한 보다 자세한 실험 설정은 부록 A에서 확인할 수 있다.
+
+### 일반적인 이해 및 추론 기능
+
+에이전트의 일반적인 이해 및 추론 능력을 평가하기 위해 FED(Mehri and Eskenazi, 2020), Commongen Challenge(Madaan et al., 2023), MGSM(Shi et al., 2023), Logic Grid Puzzles(Srivastava et al., 2022)의 4가지 데이터 세트를 사용한다. 이러한 데이터 세트 및 메트릭에 대한 자세한 설명은 부록 A에서 찾을 수 있다. 처음 두 데이터 세트는 에이전트의 텍스트 이해 및 창의적 쓰기 능력을 측정하는 데 사용되는 반면, 후자는 수학적 및 논리적 추론을 포함한 에이전트의 추론 능력을 조사하는 데 중점을 둔다.
+
+**실험 결과.** 표 1의 결과는 AgentVerse(솔로 및 그룹 설정)에 의해 조립된 에이전트가 사용된 LLM에 관계없이 독립 실행형 CoT 에이전트보다 일관되게 성능이 우수함을 보여줍니다. 예비 평가에서 GPT-3.5-터보는 논리 그리드 퍼즐 데이터 세트를 정확하게 처리하는 데 어려움을 겪으므로 논리 추론에 대한 GPT-3.5-터보의 결과를 생략한다.
+
+흥미롭게도 GPT-3.5-터보의 경우 그룹 설정은 세 가지 작업 중 두 가지 작업에서 솔로 설정을 수행하지 않으며, 이는 의사 결정에서의 논의가 특정 상황에서 GPT-3.5-터보를 기반으로 하는 에이전트의 성능에 부정적인 영향을 미칠 수 있음을 나타낸다. 이 관찰을 더 깊이 파고들면서 한 가지 주요 요인 표면: 잘못된 피드백에 대한 민감도. 그룹에서 관찰된 반복 패턴
+
+\begin{table}
+\begin{tabular}{l c c c c c c} \hline \hline  & \multicolumn{3}{c}{**GPT-3.5-Turbo**} & \multicolumn{3}{c}{**GPT-4**} \\ \cline{2-7}
+**Task** & CoT & Solo & Group & CoT & Solo & Group \\ \hline Conversation (FED) & 81.6 & 81.1 & **85.1** & 95.4 & 95.8 & **96.8** \\ Creative Writing (Commongen-Challenge) & 76.6 & **93.6** & 92.3 & 95.9 & 99.0 & **99.1** \\ Mathematical Reasoning (MGSM) & 80.4 & **82.4** & 80.8 & 95.2 & **96.0** & 95.2 \\ Logical Reasoning (Logic Grid Puzzles) & - & - & - & 59.5 & 64.0 & **66.5** \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 에이전트의 일반적인 능력을 평가하는 다양한 작업에 대한 결과.
+
+설정은: 때때로 A 에이전트가 정답으로 시작했음에도 불구하고 B 에이전트의 잘못된 피드백을 쉽게 흔들릴 수 있다는 것이다. MGSM 데이터세트에서 대략 10%의 에러가 이 동적까지 추적될 수 있다. 특히, GPT-4 기반 에이전트에는 이러한 현상이 없으며, 이는 협력 토론 중 충돌하는 정보에 대한 에이전트의 회복력의 중요성을 강조한다.
+
+그 결과, 에이전트버스는 에이전트의 일반적인 이해와 추론 능력을 효과적으로 향상시키는 것으로 나타났다. 또한, 고급 LLM에 의해 구동되는 에이전트는 협력 의사 결정에 참여할 때 더 나은 성능을 보여준다. GPT-3.5-Turbo에서 관찰된 미묘한 문제는 협업이 새로운 취약점을 도입하지 않고 개별 강점을 증폭할 수 있도록 잘못된 정보에 대한 LLM의 견고성을 개선할 필요성을 나타낸다.
+
+사례 연구: 컨설팅.표 1에서 그룹 설정은 두 LLM 모두에 대한 솔로 설정보다 명확한 이점을 보여주지 않는다. 이는 주로 벤치마크별 평가지표의 범위가 제한적이기 때문이다. 다음의 경우 GPT-4 에이전트가 구성한 그룹의 이점은 그림 2와 같이 그룹이 컨설턴트 역할을 하는 컨설팅 시나리오에 초점을 맞추어 문의에 응답한다. 오하이오의 수소 저장소에 대한 제안을 제공하는 것을 목표로 한다.
+
+솔로 셋업은 0라운드에서 그룹 셋업보다 넓은 범위를 아우르는 것으로 보인다. 그러나 그룹 셋업은 모집된 전문가들 덕분에 더 깊은 깊이를 제공한다. 예를 들어, Solo 설정은 "최적의 위치를 찾기"와 같은 기본적인 것을 제안할 수 있지만 그룹 설정은 "저장 탱크 안정성을 보장하기 위해 부지 토양 특성을 평가"와 같은 자세한 조언을 제공한다. 두 번째 라운드에 의해 다른 전문가가 그룹 설정에 대한 새로운 통찰력을 제공한다. 결과적으로, 그룹 설정은 더 넓은 범위(참조된 도면에서 빨간색으로 강조됨)를 커버할 뿐만 아니라 더 상세한 조언을 제공한다. 에이전트 상호 작용에 대한 자세한 내용은 부록 F를 참조하십시오.
+
+### Coding Capabilities
+
+이 섹션에서는 먼저 Humaneval 코드 완료 데이터 세트를 사용하여 에이전트의 코딩 기능을 평가합니다. 다음으로, 사례 연구를 통해 여러 에이전트 간의 협업이 출력 품질을 어떻게 향상시키는지 보여줌으로써 하나의 에이전트에 의한 소프트웨어 개발보다 우월함을 강조한다.
+
+실험 결과. 표 2에서 CoT에서 Solo로 이동한 다음 그룹 설정으로 이동하는 뚜렷한 성능 향상을 볼 수 있다. 이러한 경향은 GPT-4에서 특히 두드러지며, 이는 83.5에서 89.0으로의 성능 향상을 보여준다. 이러한 결과는 코딩을 위한 숙련된 에이전트 그룹을 관리하는 데 있어 AgentVerse의 효율성을 강조한다. GPT-3.5-터보의 경우 한 방울을 관찰했지만
+
+도 2: 컨설팅의 예시적인 프로세스의 예시. 작업은 _Ohio에 압축 수소 저장소를 만드는 데 몇 가지 제안을 제공_ 하는 것입니다.
+
+수학 추론에서 잘못된 에이전트 피드백으로 인해 섹션 3.1의 그룹 설정과 함께 성능에서 코딩 평가는 이점을 보여준다. 우리는 이것이 LLM이 코드에 대한 광범위한 사전 훈련에 기인할 수 있다고 가정하며, 잠재적으로 수학적 추론보다 코딩에 더 능숙하고 결과적으로 코딩의 잘못된 정보에 더 탄력적이다.
+
+사례 연구: 소프트웨어 개발.AgentVerse의 그룹 설정에 의해 인간에 대해 생성된 코드에 대한 우리의 조사는 단순한 정확성 이상의 이점을 제공한다. 에이전트 그룹은 솔루션을 세분화하여 간단한 pass@1 메트릭으로 다루지 않는 보다 효율적이고 강력하며 안전한 알고리즘을 생성합니다. 이러한 장점을 더 잘 설명하기 위해 우리는 다면적인 협력과 개선이 필요한 도메인인 소프트웨어 개발에 대한 GPT-4를 사용한 사례 연구를 제시한다.
+
+본 논문에서는 에이전트버스가 다양한 전문가 에이전트를 결합하여 파이썬 기반의 계산기 GUI를 생성하는 예를 제시한다. 간결한 개발 프로세스 개요는 그림 3에서 시각화된다. 그룹 및 솔로 설정의 응용 프로그램을 비교하면 눈에 띄는 차이가 드러난다. 둘 다 핵심 기능을 달성하지만 그룹 생성 계산기는 색상 구분 및 키보드 입력과 같은 기능을 갖춘 사용자 친화적인 인터페이스를 자랑합니다. 이러한 개선된 설계는 다중 에이전트 그룹의 다양한 피드백에서 비롯되었다. UI 설계자와 평가자의 제안은 사용자 경험을 향상시키는 반면 소프트웨어 테스터는 코드 견고성을 향상시킨다. 코드에 대한 더 깊은 조사는 다중 에이전트 그룹의 출력이 단독 에이전트에 비해 예외 처리에서 우수하다는 것을 확인한다. 두 설정과 완전한 진행에 의해 생성된 코드는 부록 F에서 볼 수 있다.
+
+### 도구 사용 능력
+
+LLM들이 실세계 툴들을 사용하는 능력은 최근의 많은 연구들에서 강조되어 왔다(Schick et al., 2023; Qin et al., 2023). LLM들에 계산기, 웹 브라우저, 및 코드 해석기와 같은 상이한 툴들을 구비함으로써, LLM들의 능력들이 상당히 향상될 수 있다. 이 섹션에서는 에이전트Verse가 여러 도구와의 상호 작용이 필요한 복잡하고 다면적인 작업을 에이전트 그룹이 처리할 수 있도록 하여 작업 효율성을 향상시킨다는 것을 보여준다.
+
+실험 결과, 우리는 10개의 복잡한 작업 세트를 설계했으며, 각각을 달성하기 위해 적어도 두 개의 별개의 도구를 사용해야 한다. Bing 검색 API, 웹 브라우저, 코드 해석기 및 작업 관련 Api를 비롯 한 여러 도구에 대 한 에이전트 액세스를 제공 하 여 AgentVerse가 에이전트 협업을 용이하게 하는 방법을 탐색 하 고, 중요 한 작업을 관리 가능한 하위 작업으로 해부 하 고, 사용 가능한 도구를 효과적으로 배포 하 여 실제 사용자 쿼리를 처리 합니다. 제공 되는 **10** 도전 작업 중 AgentVerse에서 오케스트레이션 된 에이전트 그룹은 **9** 작업을 능숙 하 게 수행 합니다. 반면에 도구를 사용하도록 설계된 일반적인 에이전트인 독립 실행형 ReAct 에이전트(Yao 등, 2023)는 **3** 작업만 수행할 수 있습니다. 단일 ReAct 에이전트가 실패한 7개 작업 중 6개에서 에이전트는 작업에 자세히 설명된 하나 이상의 기준을 준수하지 않고 예상보다 빨리 종료된다. 우리는 에이전트Verse와 단일 ReAct 에이전트가 제공한 솔루션의 포괄적인 비교를 위해 관심 있는 독자를 부록 B에 참조한다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline
+**Setting** & **GPT-3.5-Turbo** & **GPT-4** \\ \hline CoT & 73.8 & 83.5 \\ Solo & 74.4 & 87.2 \\ Group & **75.6** & **89.0** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: The pass@1 on Humaneval.
+
+그림 3: Python에서 GUI로 계산기를 개발하는 예제 프로세스의 그림.
+
+사례 연구: 24점 게임 해결 및 유사 게임 제공.여기에서는 에이전트버스가 24점 게임의 규칙을 검색하고 테스트 케이스와 함께 코드를 구현하고 유사한 게임을 탐색하는 방법을 보여주는 예를 그림 4에 제시한다. 작업은 다면적이므로 의사 결정 단계에서 에이전트는 작업을 토론에서 두 개의 하위 작업으로 분할하고 각각 특정 에이전트에 할당한다. 에이전트 찰리는 라운드 0에서 24점 게임과 유사한 게임을 식별하는 서브 태스크를 간과하지만, 평가 모듈로부터의 피드백은 후속 반복에서 이를 수정한다. 궁극적으로 에이전트 그룹은 24점 게임 규칙과 테스트 케이스가 있는 풀이 코드뿐만 아니라 유사한 게임의 요약도 제공한다. 대조적으로, 독립형 ReAct 에이전트는 단지 코드와 함께 게임의 정의를 제공하고 유사한 게임에 대한 질의를 생략한다.
+
+## 다중 에이전트 그룹 내의 4 가지 최신 동작
+
+이전 섹션에서 에이전트Verse의 효능은 특히 GPT-4 기반 에이전트의 경우 다중 에이전트 의사 결정을 필요로 하는 다양한 작업에 걸쳐 설명되었다. 그러나 우리의 노력은 벤치마크 데이터 세트의 개선만을 능가합니다. 우리는 현실적이고 구현된 AI 컨텍스트 내에서 에이전트가 나타내는 새로운 협력 행동을 더 깊이 탐구한다. 샌드박스 게임인 마인크래프트는 실세계 역학과의 복잡한 병렬성으로 인해 이러한 탐사에 이상적인 플랫폼 역할을 한다. 게임에서 에이전트는 작업을 실행할 뿐만 아니라 진화하는 상황에 계획, 조정 및 조정해야 합니다. 우리는 종이와 그림에서 책과 책장에 이르기까지 다양한 아이템을 협업적으로 만드는 작업을 수행합니다. 책장을 능숙하게 만드는 세 가지 에이전트를 보여주는 간결한 그림은 그림 5에서 볼 수 있다. 정교한 시각화는 부록 F에 배치되며 설정에 대한 자세한 내용은 부록 C에서 찾을 수 있다.
+
+의사 결정 과정을 조사하여 몇 가지 비상 행동을 식별하고 _자원봉사자_, _합치성_ 및 _파괴성_ 행동의 세 가지 측면으로 분류한다. 이러한 행동은 반드시 마인크래프트뿐만 아니라 도구 활용과 같은 이전 실험에서도 나타난다.
+
+도 4: 세 가지 상이한 툴들로 사용자 질의를 해결하는 멀티-에이전트의 예시적인 프로세스.
+
+그림 5: 책장을 만드는 세 명의 에이전트가 참여하는 협력 프로세스의 그림. 과정은 의사 결정과 목표를 여러 하위 과제로 분해하는 것으로 시작되며, 각 에이전트는 과제를 받는다. 실행 결과 및 현재 환경 상태는 그 후 평가자에게 전달된다. 이 과정은 책장을 만드는 목표가 달성될 때까지 반복된다.
+
+### Volunteer Behaviors
+
+자원봉사 행동은 인간 사회에서 타인의 이익을 증진시키기 위한 행동을 의미한다[11, 12]. 우리는 다음과 같이 다중 에이전트 그룹에서 나타나는 유사한 행동을 관찰한다.
+
+**시간 기여** 에이전트는 할당되지 않은 시간을 기꺼이 기여하여 협업 효율성을 향상시킵니다. 그림 6(1a)의 예시와 같이 Alice와 Bob은 2종이를 공동으로 제작해야 하는데, 이를 위해서는 3개의 사탕수수를 원료로 해야 한다. 처음에 앨리스는 밥이 재료가 준비될 때까지 기다리는 동안 사탕수수를 수거할 것이라고 제안한다. 그러나 이 계획은 밥의 여가 시간을 제공하기 때문에 차선책입니다. 비효율을 인식하고 밥은 둘 다 사탕수수를 동시에 수집하여 신속한 작업 완료로 이어지도록 제안한다.
+
+**리소스 기여.** 분석을 통해 에이전트가 보유 자료를 기꺼이 기여한다는 것을 알 수 있습니다. 도 6의 (1b)에 예시된 바와 같이, 태스크 크래프팅 2 용지의 마지막에, 앨리스는 모든 원료(당지팡이)를 수집한 반면, 밥은 용지의 생성에 필수적인 크래프팅 테이블을 보유한다. 의사 결정 단계에서 앨리스는 자신의 자료를 땅에 떨어뜨려 밥에게 이전할 것을 제안한다. 이를 통해 밥은 의도된 크래프팅 프로세스에 사용할 수 있습니다.
+
+**지원 기여.** 작업을 완료 하는 과정에서 에이전트가 개별 할당을 완료 하 고 피어에게 지원을 적극적으로 확장 하 여 전체 작업 해결을 신속하게 수행 하는 것을 관찰 합니다. 도 6(1c)에 도시된 바와 같이, 앨리스와 밥은 할당된 서브-작업들을 성공적으로 완료한 반면, 찰리는 여전히 세 개의 가죽들을 모으기 위해 고군분투하고 있다. 협업적 의사 결정 단계에서 앨리스와 밥은 찰리가 모이는 것을 도울 것을 제안한다.
+
+그림 6: 마인크래프트의 에이전트 상호 작용에서 특성의 예가 나타난다.
+
+이러한 행동은 에이전트가 다른 에이전트를 지원하기 위한 능력과 노력에 기꺼이 기여하는 방법을 강조하여 상호 목표의 가속화된 달성으로 정점에 이른다.
+
+### Conformity Behavior
+
+인간 사회에서 개인은 그룹의 규범이나 목표에 맞추기 위해 행동을 조정하는 경향이 있다(Cialdini & Goldstein, 2004; Cialdini & Trost, 1998). 또한 다중 에이전트 그룹 내에서 유사한 행동을 관찰한다. 도 6의 (2)에 도시된 바와 같이, 모든 에이전트는 세 개의 가죽 조각을 수집하도록 요청받는다. 그러나 찰리는 옆길로 새서 작업에 직접적으로 기여하지 않는 아이템을 만들기 시작한다. 이후의 의사결정 단계에서 앨리스와 밥은 찰리의 행동을 비판한다. 찰리는 자신의 실수를 인정하고 상호 과제에 다시 초점을 맞춘다. 적합 행동은 에이전트가 작업이 진행됨에 따라 상호 목표와 일치할 수 있도록 한다.
+
+### Destructive behavior
+
+또한 에이전트가 더 큰 효율성을 달성하기 위한 행동을 보여 안전 문제가 발생할 수 있음을 관찰했다. 도 6(3a) 및 도 6(3b)에 도시된 바와 같이, 에이전트는 때때로 필요한 재료를 획득하기 위해 다른 에이전트들을 해치거나 마을 도서관 전체를 파괴하기 위해 원료 및 리조트를 수집하는 절차를 우회한다.
+
+자율 에이전트의 발전으로 실제 시나리오에 배포하는 것이 점점 더 그럴듯해졌다. 그러나 위험한 행동의 출현은 특히 인간이 협력 과정에 참여할 때 위험을 초래할 수 있다. 따라서 에이전트가 이러한 위험 행동을 채택하지 않도록 전략을 설계하는 것은 향후 연구에 중요한 영역이다.
+
+## 5 관련 작업
+
+**Autonomous Agent.** 인간의 개입 없이 실제 환경에서 지능적으로 작동할 수 있는 자율 에이전트를 만드는 추구는 AI의 역사 전반에 걸쳐 지속적인 목표였습니다 (Wodbridge & Jennings, 1995; Minsky, 1988; Bubeck et al., 2023). 최근 LLMs(Touvron et al., 2023a; OpenAI, 2023a)는 이러한 목표를 달성하기 위한 새로운 기회를 열었다. 이러한 LLM은 현저한 이해, 추론 및 생성 능력을 보유하여, 자율 에이전트가 점점 더 복잡한 시나리오를 처리하기 위한 백본으로서 이들을 활용할 수 있게 한다(Richards & et al., 2023; Nakajima, 2023; Reworkd, 2023; Liu et al., 2023). 그러나 이러한 자율 에이전트는 이미 상당한 힘을 발휘하지만 여전히 인간과 유사한 특정 인지 능력이 부족하다. 따라서, 일부 연구는 에이전트에 반사(Yao et al., 2023b; Shinn et al., 2023), 태스크 분해(Wei et al., 2022b; Yao et al., 2023a), 및 도구 활용/생성(Schick et al., 2023b; Qin et al., 2023a; Qian et al., 2023b) 능력을 부여하는 외부 메커니즘을 설계하여 자율 에이전트가 인공 일반 지능을 달성하는 데 더 가까워지도록 한다.
+
+**다중 에이전트 시스템.** 인간 사회에서 개별 인간으로 구성된 잘 조직된 그룹은 종종 더 많은 워크로드를 협력적으로 처리하고 더 높은 효율성과 효율성으로 복잡한 작업을 수행할 수 있습니다. 인공지능 분야에서 연구자들은 인간 사회에서 영감을 이끌어내고, 본 논문에서 _멀티 에이전트 그룹_이라고도 하는 멀티 에이전트 시스템(MAS)(Stone & Veloso, 2000)의 연구를 통해 개인 간의 협력을 활용하여 작업의 효율성과 효율성을 높이는 것을 목표로 한다. 다중 에이전트 그룹은 공동 목표를 달성하기 위해 분산 및 병렬 방식으로 의사 결정을 내리고 해당 작업을 실행하여 작업 효율성과 효율성을 크게 향상시킨다. 이전 연구에서는 이러한 목표를 달성하기 위해 다중 에이전트 합동 훈련을 활용했다. 최근에는 에이전트의 지능과 역량을 자율적 협업을 위해 활용하려는 연구도 있다. Li 등(2023)은 에이전트의 어셈블리를 그룹으로 개념화하고, 이들의 협력의 잠재력을 탐구하는 데 초점을 맞추었다. Park et al.(2023), Du et al.(2023); Wang et al.(2023b); Zhang et al.(2023a); Qian et al.(2023a); Chan et al.(2023)은 추론 태스크에서 더 나은 성능을 달성하기 위해 다중 에이전트 협력을 추가로 활용한다. 이러한 결과를 바탕으로 보다 복잡한 시나리오를 관리하기 위해 그룹 협력을 활용할 수 있는 에이전트버스로 명명된 프레임워크를 소개한다. 이 프레임워크는 현재 상태에 따라 동적으로 구성을 조정할 수 있으며, 최적의 의사 결정 및 실행을 용이하게 하는 것을 목표로 한다.
+
+## 6 Conclusion
+
+본 연구에서는 인간 집단 문제 해결 과정을 모방하기 위해 고안된 새롭고 일반적인 다중 에이전트 프레임워크인 AgentVerse를 제시한다. 우리의 포괄적인 실험 결과는 AgentVerse의 효능을 강조하여 무수한 작업에 걸쳐 개별 에이전트와 비교하여 향상된 성능을 보여준다. 이러한 과제는 일반적인 이해, 추론, 코딩 및 도구 활용을 포함한다. 특히 AgentVerse는 적절한 도구로 강화될 때 복잡한 사용자 쿼리를 처리하는 데 있어 지속적으로 놀라운 결과를 제공한다. 마인크래프트 환경 내 조사에서 에이전트 간의 긍정적인 사회적 행동과 부정적인 사회적 행동을 모두 식별한다. 인공 지능의 발전이 진행됨에 따라 다중 에이전트 상호 작용에 대한 이해가 점점 더 중요해져야 한다. AgentVerse는 이러한 노력을 위한 귀중한 단계이며, 우리는 향후 더 광범위한 작업과 컨텍스트에 대한 잠재적인 적응성과 개선 가능성에 대해 낙관적이다.
+
+## References
+
+* Ahn 등(2022)은 Michael Ahn, Anthony Brohan, Noah Brown, Yevgen Chebotar, Omar Cortes, Byron David, Chelsea Finn, Keerthana Gopalakrishnan, Karol Hausman, Alexander Herzog, Daniel Ho, Jagmire Hsu, Julian Ibarz, Brian Ichter, Alex Irpan, Eric Jang, Rosario Jauregui Ruano, Kyle Jeffrey, Sally Jesmonth, Nikhil J. Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Kuang-Huei Lee, Sergey Levine, Yao Lu, Linda Lu, Carolina Parada, Peter Pastor, Jornell Quaimbao, Kanishka Rao, Jarek Rettinghouse, Diego Reyes, Pierre Sermanet, Nicolas Sievers, Clayton Tan, Alexander Toshev, Vincent Vanhoucke, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, and Mengyuan 내가 말한 대로가 아니라 내가 할 수 있는 한 해라: 로봇 어포던스에서의 언어 접지. _ CoRR_, abs/2204.01691, 2022. doi: 10.48550/arXiv.2204.01691. URL [https://doi.org/10.48550/arXiv.2204.01691](https://doi.org/10.48550/arXiv.2204.01691)
+* Amershi et al. (2014) Saleema Amershi, Maya Cakmak, William Bradley Knox, and Todd Kulesza. 사람에 대한 힘: 상호 작용 기계 학습에서 인간의 역할입니다. _ AI Magazine_, 35(4):105-120, 12월. 2014. doi: 10.1609/aimag.v35i4.2513. URL [https://ojs.aaai.org/aimagazine/index.php/aimagazine/article/view/2513](https://ojs.aaai.org/aimagazine/index.php/aimagazine/article/view/2513).
+* Anil et al. (2023) Rohan Anil, Andrew M. Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, Eric Chu, Jonathan H. Clark, Laurent El Shafey, Yanping Huang, Kathy Meier-Hellstern, Gaurav Mishra, Erica Moreira, Mark Omernick, Kevin Robinson, Sebastian Ruder, Yi Tay, Kefan Xiao, Yuanzhong Xu, Yujing Zhang, Gustavo Hernandez Abrego, Junwhan Ahn, Jacob Austin, Paul Barham, Jan A. Botha, James Bradbury, Siddhartha Brahma, Kevin Brooks, Michele Catasta, Yong Cheng, Colin Cherry, Christopher A. Choquette-Choo, Akanksha Chowdhory, Clement Crepy, Shachi Dave, Mostafa Dehghani, Sunipa Dev, Jacob Devlin, Mark Diaz, Nan Du, CoRR_, abs/2305.10403, 2023. doi: 10.48550/arXiv.2305.10403. URL [https://doi.org/10.48550/arXiv.2305.10403](https://doi.org/10.48550/arXiv.2305.10403)
+* Bransford and Stein (1993) J.D. Bransford and B.S. Stein. _ Ideal Problem Solver: A Guide for Improving Thinking, Learning and Creativity_. W.H. Freeman, 1993. ISBN 978-0-7167-2205-2. URL [https://books.google.com.tw/books?id=nnRxQgAACAAJ](https://books.google.com.tw/books?id=nnRxQgAACAAJ)
+* Bubeck 등(2023) Sebastien Bubeck, Varun Chandrasekaran, Ronen Eldan, Johannes Gehrke, Eric Horvitz, Ece Kamar, Peter Lee, Yin Tat Lee, Yuanzhi Li, Scott M. 런드버그, 하르샤 노리, 하미드 팔랑기, 마르코 툴리오 리베이로, 그리고 이장. 인공지능의 Spark: GPT-4를 사용한 초기 실험. _CoRR_, abs/2303.12712, 2023. doi: 10.48550/arXiv.2303.12712. URL [https://doi.org/10.48550/arXiv.2303.12712](https://doi.org/10.48550/arXiv.2303.12712)
+* Chan 등(2023) Chi-Min Chan, Weize Chen, Yusheng Su, Jianxuan Yu, Wei Xue, Shanghang Zhang, Jie Fu, and Zhiyuan Liu. Chateval: Multi-agent debate, 2023. URL [https://doi.org/10.48550/arXiv.2308.07201](https://doi.org/10.48550/arXiv.2308.07201)
+* Chen et al. (2021) Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harrison Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan,Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saund 카, 얀 라이케, 조슈아 아치암, 베단트 미스라, 에반 모리카와, 알렉 래드포드, 매튜 나이트, 마일스 브룬디지, 미라 무라티, 케이티 메이어, 피터 웰린더, 밥 맥그루, 다리오 아모데이, 샘 맥칸드리시, 일야 서츠케버, 우지크 자렘바. 코드에 대해 학습 된 대규모 언어 모델을 평가 합니다. _ CoRR_, abs/2107.03374, 2021. URL [https://arxiv.org/abs/2107.03374](https://arxiv.org/abs/2107.03374).
+* Cialdini and Goldstein (2004) Robert B Cialdini and Noah J Goldstein. 사회적 영향: 준수 및 준수 _ 안누 Rev. Psychol._ , 55:591-621, 2004. URL [https://www.annualreviews.org/doi/abs/10.1146/annurev.psych.55.090902.142015](https://www.annualreviews.org/doi/abs/10.1146/annurev.psych.55.090902.142015).
+* Cialdini and Trost (1998) Robert B Cialdini and Melanie R Trost. 사회적 영향: 사회적 규범, 순응 및 준수. 1998. URL [https://psycnet.apa.org/RECORD/1998-07091-021](https://psycnet.apa.org/RECORD/1998-07091-021).
+* Clune (2019) Jeff Clune. Ai-gas: Ai-생성 알고리즘, 일반적인 인공 지능을 생산하기 위한 대체 패러다임. _ CoRR_, abs/1905.10985, 2019. URL [http://arxiv.org/abs/1905.10985](http://arxiv.org/abs/1905.10985).
+* Cobbe et al.(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 검증자를 학습하여 수학 단어 문제를 해결합니다. _ CoRR_, abs/2110.14168, 2021. URL [https://arxiv.org/abs/2110.14168](https://arxiv.org/abs/2110.14168).
+* Driess 등(2021) 대니 Driess, Fei Xia, Mehdi S. M. Sajjadi, Corey Lynch, Aakanksha Chowdhery, Brian Ichter, Ayzaan Wahid, Jonathan Tompson, Quan Vuong, Tianhe Yu, Wenlong Huang, Yeygen Chebotar, Pierre Sermanet, Daniel Duckworth, Sergey Levine, Vincent Vanhoucke, Karol Hausman, Marc Toussaint, Klaus Greff, Andy Zeng, Igor Mordatch, and Pete Florence. Palm-e: 구체화된 멀티모달 언어 모델. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett (eds.), _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, Volume 202 of _Proceedings of Machine Learning Research_, pp. 8469-8488. PMLR, 2023. URL [https://proceedings.mlr.press/v202/driess23a.html](https://proceedings.mlr.press/v202/driess23a.html)
+* Du 등(2023) Yilun Du, Shuang Li, Antonio Torralba, Joshua B. Tenenbaum, and Igor Mordatch. 다중 에이전트 토론을 통해 언어 모델에서 사실성과 추론을 향상시킵니다. _ CoRR_, abs/2305.14325, 2023. doi: 10.48550/arXiv.2305.14325. URL [https://doi.org/10.48550/arXiv.2305.14325](https://doi.org/10.48550/arXiv.2305.14325)
+* Fehr and Gachter (2000) Ernst Fehr and Simon Gachter. 공공재 실험에서의 협력과 처벌 American Economic Review_, 90(4):980-994, 2000. URL [https://pubs.aeaweb.org/doi/pdf/10.1257/aer.90.4.980](https://pubs.aeaweb.org/doi/pdf/10.1257/aer.90.4.980).
+* Goertzel and Pennachin (2007) Ben Goertzel and Cassio Pennachin. _ Artificial general intelligence_, volume 2. Springer, 2007. URL [https://link.springer.com/book/10.1007/978-3-540-68677-4](https://link.springer.com/book/10.1007/978-3-540-68677-4)
+* Li 등(2023) Guohao Li, Hasan Abed Al Kader Hammoud, Hani Irani, Dmitrii Khizbulilin, and Bernard Ghanem. CAMEL: 대규모 언어 모델 사회의 "마음" 탐구를 위한 커뮤니케이션 에이전트입니다. _ CoRR_, abs/2303.17760, 2023. doi: 10.48550/arXiv.2303.17760. URL [https://doi.org/10.48550/arXiv.2303.17760](https://doi.org/10.48550/arXiv.2303.17760)
+* Liu 등(2023) Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Aohan Zeng, Zhengxiao Du, Chenhui Zhang, Sheng Shen, Tianjun Zhang, Yu Su, Huan Sun, Minlie Huang, Yuxiao Dong, and Jie Tang. 에이전트 벤치: 2023년 에이전트로 평가합니다.
+* Madaan 등(2023) Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Sean Welleck, Bodhiswa Prasad Majumder, Shashank Gupta, Amir Yazdanbakhsh, and Peter Clark. Self-refine: Self-feedback을 이용한 반복적 정제. _ CoRR_, abs/2303.17651, 2023. doi: 10.48550/arXiv.2303.17651. URL [https://doi.org/10.48550/arXiv.2303.17651](https://doi.org/10.48550/arXiv.2303.17651)
+* M. C. et al. (2018)* Mehri and Eskenazi (2020) Shikib Mehri and Maxine Eskenazi. 대화형 대화 상자의 감독되지 않은 평가 대화 상자 In Olivier Pietquin, Smaranda Muresan, Vivian Chen, Casey Kennington, David Vandyke, Nina Dethlefs, Koji Inoue, Erik Ekstedt, and Stefan Ultes(eds.), _Proceedings of the 21th Annual Meeting of the Special Interest Group on Discourse and Dialogue, SIGdial 2020, 1st virtual meeting, July 1-3, 2020_, pp. 225-235. Association for Computational Linguistics, 2020. URL [https://aclanthology.org/2020.sigdial-1.28/](https://aclanthology.org/2020.sigdial-1.28/).
+* Minsky(1988) Marvin Minsky. _ 마음의 모임. Simon & Schuster, 1988. ISBN 0671657135. URL [https://jmvidal.cse.sc.edu/lib/minsky88a.html](https://jmvidal.cse.sc.edu/lib/minsky88a.html)
+* Mowen and Sujan (2005) John C Mowen and Harish Sujan. 자원봉사 행동: 그들의 특성과 기능적 동기를 조사하기 위한 계층적 모델 접근법 _ Journal of consumer psychology_, 15(2):170-182, 2005. URL [https://myscp.onlinelibrary.wiley.com/doi/abs/10.1207/s15327663jcp1502_9](https://myscp.onlinelibrary.wiley.com/doi/abs/10.1207/s15327663jcp1502_9)
+* Nakajima (2023) Yohei Nakajima. 베이비기 2023. URL [https://github.com/yoheinakajima/babyagi](https://github.com/yoheinakajima/babyagi)입니다. [소프트웨어].
+* Omoto and Snyder (1995) Allen M Omoto and Mark Snyder. 의무 없는 지속적인 도움: 지원 봉사자들 간의 동기 부여, 서비스 수명, 인지된 태도 변화. Journal of personality and social psychology_, 68(4):671, 1995. URL [https://psycnet.apa.org/record/1995-26640-001](https://psycnet.apa.org/record/1995-26640-001).
+* OpenAI(2023a) OpenAI. GPT-4 기술 보고서. _ CoRR_, abs/2303.08774, 2023a. doi: 10.48550/arXiv.2303.08774. URL [https://doi.org/10.48550/arXiv.2303.08774](https://doi.org/10.48550/arXiv.2303.08774)
+* OpenAI(2023b) OpenAI. 챗봇은 이제 2023b에 보고 듣고 말할 수 있습니다. URL [https://openai.com/blog/chatgpt-can-now-see-hear-and-speak](https://openai.com/blog/chatgpt-can-now-see-hear-and-speak).
+* Park et al.(2023) Joon Sung Park, Joseph C. O'Brien, Carrie J. Cai, Meredith Ringel Morris, Percy Liang, and Michael S. 번스틴 생성 에이전트: 인간 행동의 상호 작용 시뮬라크라. _ CoRR_, abs/2304.03442, 2023. doi: 10.48550/arXiv.2304.03442. URL [https://doi.org/10.48550/arXiv.2304.03442](https://doi.org/10.48550/arXiv.2304.03442)
+* Phillips and O'Reilly (1998) Katherine Phillips and Charles O'Reilly. 조직의 인구통계와 다양성: 40년간의 연구에 대한 검토. _ 조직 행동 연구_, 20:77-140, 01 1998. URL [https://www.researchgate.net/publication/234022034_Demography_and_Diversity_in_Organizations_A_Review_of_40_Years_of_Research](https://www.researchgate.net/publication/234022034_Demography_and_Diversity_in_Organizations_A_Review_of_40_Years_of_Research)
+* Qian 등(2023a) Chen Qian, Xin Cong, Cheng Yang, Weize Chen, Yusheng Su, Juyuan Xu, Zhiyuan Liu, and Maosong Sun. 소프트웨어 개발을 위한 통신 에이전트. _ CoRR_, abs/2307.07924, 2023a. doi: 10.48550/arXiv.2307.07924. URL [https://doi.org/10.48550/arXiv.2307.07924](https://doi.org/10.48550/arXiv.2307.07924)
+* Qian 등(2023b) Cheng Qian, Chi Han, Yi R. 풍, 유자진, 지위안 류, 행지. CREATOR: 도구 만들기를 통해 대규모 언어 모델의 추상적이고 구체적인 추론들을 분리합니다. _ CoRR_, abs/2305.14318, 2023b. doi: 10.48550/arXiv.2305.14318. URL [https://doi.org/10.48550/arXiv.2305.14318](https://doi.org/10.48550/arXiv.2305.14318)
+*진 등(2023) 유자진, 성딩후, 옌카이린, 위제천, 닝딩, 간쿠추이, 쩌쥔, 유페이황, 차오쥔샤오, 치한, 이렌풍, 유성수, 화동왕, 청치안, 런추천, 쿤룬주, 시하오량, 싱유선, 보카이슈, 젠장, 예인예, 보웬리, 지웨이탕, 징이, 유장주, 젠닝다이, 란옌, 신콩, 옌옌, 웨일린쟌, 유창황, 준시옌, 쉬한, 시안순, 다하이리, 제이슨팡, 청양, 통솽우, 헝지, 지위안리우, 마오송순. 기초 모델을 사용한 도구 학습 _ CoRR_, abs/2304.08354, 2023a. doi: 10.48550/arXiv.2304.08354. URL [https://doi.org/10.48550/arXiv.2304.08354](https://doi.org/10.48550/arXiv.2304.08354)
+* Qin 등(2023b) Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, et al. Toolllm: Facilitating large language models to master 16000+ real-world apis. _ arXiv preprint arXiv:2307.16789_, 2023b. URL [https://arxiv.org/abs/2307.16789](https://arxiv.org/abs/2307.16789)
+* 재가공(2023) 재가공. Agentgpt, 2023. URL [https://github.com/reworkd/AgentGPT](https://github.com/reworkd/AgentGPT). [소프트웨어].
+* Raghavan et al.(2014)* Richards et al.(2023) Toran Bruce Richards and et al. Auto-gpt: An autonomous gpt-4 experiment, 2023. URL [https://github.com/Significant-Gravitas/Auto-GPT](https://github.com/Significant-Gravitas/Auto-GPT). [소프트웨어].
+* Salewski 등(2023) Leonard Salewski, Stephan Alaniz, Isabel Rio-Torto, Eric Schulz, and Zeynep Akata. 맥락 속 사칭은 큰 언어 모델의 강점과 편견을 드러낸다. _ CoRR_, abs/2305.14930, 2023. doi: 10.48550/arXiv.2305.14930. URL [https://doi.org/10.48550/arXiv.2305.14930](https://doi.org/10.48550/arXiv.2305.14930)
+* Schick 등(2023a) Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 도구 형식자: 언어 모델은 도구를 사용하는 방법을 스스로 가르칠 수 있습니다. _ CoRR_, abs/2302.04761, 2023a. doi: 10.48550/arXiv.2302.04761. URL [https://doi.org/10.48550/arXiv.2302.04761](https://doi.org/10.48550/arXiv.2302.04761)
+* Schick 등(2023b) Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 도구 형식자: 언어 모델은 도구를 사용하는 방법을 스스로 가르칠 수 있습니다. _ CoRR_, abs/2302.04761, 2023b. doi: 10.48550/arXiv.2302.04761. URL [https://doi.org/10.48550/arXiv.2302.04761](https://doi.org/10.48550/arXiv.2302.04761)
+* Shi et al.(2023) Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das, and Jason Wei. 언어 모델은 다국어 사상 사슬 추론기입니다. _The 11번째 International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023. URL [https://openreview.net/pdf?id=fR3wGCK-IXp](https://openreview.net/pdf?id=fR3wGCK-IXp)
+*Shinn 등(2023) Noah Shinn, Federico Cassano, Beck Labash, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. 반사: 언어 강화 학습이 있는 언어 에이전트, 2023. URL [https://doi.org/10.48550/arXiv.2303.11366](https://doi.org/10.48550/arXiv.2303.11366)
+* Srivastava 등(2022) Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abuwal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R. Brown, Adam Santoro, Aditya Gupta, Adria Garriga-Alonso, Agnieszka Kluska, Aitor Lewkowycz, Akshat Agarwal, Alethea Power, Alex Ray, Alex Warstadt, Alexander W. Kocurek, Ali Safaya, Ali Tazarv, Alice Xiang, Alicia Parrish, Allen Nie, Aman Hussain, Amanda Askell, Amanda Dsouza, Ameet Rahane, Anantharaman S. Iyer, Anders Andreassen, Andrea Santilli, Andreas Stuhnuller, Andrew M. 다이 앤드루 라 앤드루 케이 Lampinen, Andy Zou, Angela Jiang, Angelica Chen, Anh Vuong, Animesh Gupta, Anna Gottardi, Antonio Morelli, Anu Venkatesh, Arash Gholamidavoodi, Arfa Tabassum, Arul Menezes, Arun Kirubarajan, Asher Mullokandov, Ashish Sabharwal, Austin Herrick, Avia Efrat, Aykut Erdem, Ayla Karakas, and et al. Beyond the mimitation game: 언어 모델의 능력을 정량화하고 외삽한다. _ CoRR_, abs/2206.04615, 2022. doi: 10.48550/arXiv.2206.04615. URL [https://doi.org/10.48550/arXiv.2206.04615](https://doi.org/10.48550/arXiv.2206.04615)
+* Stiennon et al. (2020) Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel M. 지글러, 라이언 로우, 첼시 보스, 알렉 래드포드, 다리오 아모데이, 폴 F 크리스티아노 인간의 피드백으로 요약하는 것을 배우는 것. 휴고 Larochelle, Marc'Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin (eds.), _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020. URL [https://proceedings.neurips.cc/paper/2020/hash/1f89885d556929e98d3ef9b86448f951-Abstract.html](https://proceedings.neurips.cc/paper/2020/hash/1f89885d556929e98d3ef9b86448f951-Abstract.html)
+* Stone and Veloso (2000) Peter Stone and Manuela Veloso. 멀티에이전트 시스템: 기계 학습 관점에서의 설문조사. _ 오토톤 Robots_, 8(3):345-383, jun 2000. ISSN 0929-5593. doi: 10.1023/A:1008942012299. URL [https://doi.org/10.1023/A:1008942012299](https://doi.org/10.1023/A:1008942012299)
+* Touvron 등(2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Rozziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: 오픈하고 효율적인 기초 언어 모델입니다. _ CoRR_, abs/2302.13971, 2023a. doi: 10.48550/arXiv.2302.13971. URL [https://doi.org/10.48550/arXiv.2302.13971](https://doi.org/10.48550/arXiv.2302.13971)
+* Touvron et al.(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton-Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony Hartshorn, SagharHosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel Kloumann, Thibaut Lavril, Jenya Lee, Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihaylov, Pushkar Mishra, Igor Molybog, Yixin Nie, Andrew Poulton, Jeremy 라마 2: 기반 및 미세 조정 채팅 모델을 엽니다. _ CoRR_, abs/2307.09288, 2023b. doi: 10.48550/arXiv.2307.09288. URL [https://doi.org/10.48550/arXiv.2307.09288](https://doi.org/10.48550/arXiv.2307.09288)
+* Wang 등(2023a) Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: 큰 언어 모델을 사용 하는 개방형 구현 에이전트입니다. _ CoRR_, abs/2305.16291, 2023a. doi: 10.48550/arXiv.2305.16291. URL [https://doi.org/10.48550/arXiv.2305.16291](https://doi.org/10.48550/arXiv.2305.16291)
+* Wang 등(2023b) Zhenhailong Wang, Shaoguang Mao, Wenshan Wu, Tao Ge, Furu Wei, and Heng Ji. 대형 언어 모델에서 인지 시너지 효과를 발휘합니다. 다중 개인 자기 협력을 통한 작업 해결 에이전트 _ CoRR_, abs/2307.05300, 2023b. doi: 10.48550/arXiv.2307.05300. URL [https://doi.org/10.48550/arXiv.2307.05300](https://doi.org/10.48550/arXiv.2307.05300)
+* Wei 등(2022) Jason Wei, Maarten Bosma, Vincent Y. 자오, 켈빈 구, 아담스 위, 브라이언 레스터, 난 두, 앤드류 M. Dai, Quoc V. 레 피니튜닝된 언어 모델은 제로 샷 학습자입니다. _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022a. URL [https://openreview.net/forum?id=gEZrGCozdqR](https://openreview.net/forum?id=gEZrGCozdqR)입니다.
+* Wei 등(2022) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. 르와 데니 저우 생각의 사슬은 큰 언어 모델에서 추론을 이끌어낸다. _NeurIPS_, 2022b. URL [http://papers.nips.cc/paper_files/paper/2022/hash/9d5609613524ecf4f15af0f7b3labca4-Abstract-Conference.html](http://papers.nips.cc/paper_files/paper/2022/hash/9d5609613524ecf4f15af0f7b3labca4-Abstract-Conference.html)
+* Wei 등(2023) Jimmy Wei, Kurt Shuster, Arthur Szlam, Jason Weston, Jack Urbanek, and Mojtaba Komeili. 다자간 채팅: 인간 및 모델과 그룹 설정의 대화 에이전트입니다. _ CoRR_, abs/2304.13835, 2023. doi: 10.48550/arXiv.2304.13835. URL [https://doi.org/10.48550/arXiv.2304.13835](https://doi.org/10.48550/arXiv.2304.13835)
+* 울드리지 및 제닝스(1995) Michael J. Wooldridge and Nicholas R. 제닝스 지능형 에이전트: 이론과 실행 _ 알 Eng. Rev._, 10(2):115-152, 1995. doi: 10.1017/S0269888900008122. URL [https://doi.org/10.1017/S0269888900008122](https://doi.org/10.1017/S0269888900008122)
+* Woolley 등(2010) Anita Williams Woolley, Christopher F. Chabris, Alex Pentland, Nada Hashmi, and Thomas W. 말론 인간 집단의 수행에서 집단 지성 요소에 대한 증거 _ Science_, 330(6004):686-688, 2010. doi: 10.1126/science.1193147. URL [https://www.science.org/doi/abs/10.1126/science.1193147](https://www.science.org/doi/abs/10.1126/science.1193147)
+* Woolley 등(2015) Anita Williams Woolley, Ishani Aggarwal, and Thomas W. 말론 collective intelligence and group performance. _ Current Directions in Psychological Science_, 24(6):420-424, 2015. doi: 10.1177/0963721415599543. URL [https://doi.org/10.1177/0963721415599543](https://doi.org/10.1177/0963721415599543)
+* Wu 등(2023) Qingyun Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Shaokun Zhang, Erkang Zhu, Beibin Li, Li Jiang, Xiaoyun Zhang, and Chi Wang. Autogen: Multi-agent 대화 프레임워크를 통해 차세대 llm 애플리케이션을 사용하도록 설정, 2023. URL [https://doi.org/10.48550/arXiv.2308.08155](https://doi.org/10.48550/arXiv.2308.08155)
+*Yao 등(2023) Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L. 그리피스, 위안 카오, 카르틱 나라심한. 생각의 나무: 큰 언어 모델을 사용 하 여 문제 해결을 검토 합니다. _ CoRR_, abs/2305.10601, 2023a. doi: 10.48550/arXiv.2305.10601. URL [https://doi.org/10.48550/arXiv.2305.10601](https://doi.org/10.48550/arXiv.2305.10601)
+
+*Yao 등(2023) Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R. 나라심한과 위안 조 반응: 언어 모델에서 추론과 행동을 동기화합니다. _The 11번째 International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023b. URL [https://openreview.net/pdf?id=WE_vluYUL-X](https://openreview.net/pdf?id=WE_vluYUL-X)입니다.
+* Zhang 등(2023a) Hongxin Zhang, Weihua Du, Jiaming Shan, Qinhong Zhou, Yilun Du, Joshua B. Tenenbaum, Tianmin Shu, and Chuang Gan. 대용량 언어 모델을 사용하여 모듈식으로 협동 구현 에이전트를 빌드합니다. _ CoRR_, abs/2307.02485, 2023a. doi: 10.48550/arXiv.2307.02485. URL [https://doi.org/10.48550/arXiv.2307.02485](https://doi.org/10.48550/arXiv.2307.02485)
+* Zhang 등(2023b) Xinghua Zhang, Bowen Yu, Haiyang Yu, Yangyu Lv, Tingwen Liu, Fei Huang, Hongbo Xu, and Yongbin Li. 더 넓고 더 깊은 llm 네트워크는 더 공정한 llm 평가자입니다. _ arXiv preprint arXiv:2308.01862_, 2023b. URL [https://doi.org/10.48550/arXiv.2308.01862](https://doi.org/10.48550/arXiv.2308.01862)
+* Zhou et al.(2023) Shuyan Zhou, Frank F. Xu, Hao Zhu, Xuhui Zhou, Robert Lo, Abishek Sridhar, Xianyi Cheng, Yonatan Bisk, Daniel Fried, Uri Alon, and Graham Neubig. Webarena: 자율 에이전트를 구축하기 위한 현실적인 웹 환경. _ CoRR_, abs/2307.13854, 2023. doi: 10.48550/arXiv.2307.13854. URL [https://doi.org/10.48550/arXiv.2307.13854](https://doi.org/10.48550/arXiv.2307.13854)
+
+## 부록 실험 구성
+
+데이터 세트 및 평가 메트릭 우리의 평가는 일반적인 이해 및 추론 능력, 코딩 능력 및 도구 활용 능력을 포함하여 에이전트의 다양한 측면을 평가한다.
+
+* **일반적인 이해 능력**: 두 데이터 집합을 활용합니다. 첫 번째는 Dialogue response dataset, FED(Mehri and Eskenazi, 2020)이며, 여기서 다라운드 채팅 이력이 주어지면 에이전트 또는 에이전트 그룹은 다음 채팅을 생성하기 위해 필요하다. 이전 작업(Madaan et al., 2023)에 이어 GPT-4를 평가자로 사용하여 사람이 작성한 응답에 대해 에이전트 생성 응답을 기록하고 에이전트의 승률을 보고한다. 두 번째 데이터세트는 Commongen-Challenge(Madaan et al., 2023)로, 20개의 개념이 주어진 제약된 생성 데이터세트로서, 에이전트는 가능한 많은 개념을 포함하는 일관성 있고 문법적으로 올바른 단락을 생성하도록 요구된다. 우리는 다루는 개념의 평균 비율을 보고한다.
+* **일반 추론 기능**: GSM-8k(Cobbe et al., 2021)의 하위 집합인 MGSM(Shi et al., 2023)의 영어 하위 집합을 사용하여 에이전트의 수학적 추론 기능을 평가합니다. 초등학교 수학 문제를 포함하는 데이터 세트입니다. 정답률을 보고합니다. 그리고 다단계 논리 추론이 필요한 논리 문제를 포함하는 BigBench(Srivastava et al., 2022)의 논리 그리드 퍼즐 작업을 사용하여 에이전트의 논리적 추론 기능을 평가합니다. 정확성을 보고합니다.
+* **코딩 기능**: 코드 완료 데이터 세트인 Humaneval(Chen 등, 2021)을 활용하고 Pass@1 metric1 각주 1: Pass@1을 계산하는 방법은 Chen 등(2021)의 접근 방식과 다릅니다. 다중 응답을 생성하고 편향되지 않은 추정량을 계산하는 대신 첫 번째 응답을 직접 사용하여 Pass@1을 계산한다.
+* **도구 활용 능력**: 도구 활용의 성능에 대한 자동 평가가 어렵고 현재 관련 벤치마크가 없기 때문에 10개의 복잡한 지침을 만들고 성능을 수동으로 평가합니다. 설명서는 부록 B에 나열되어 있습니다.
+
+전문가 모집 대화 응답, 코드 완료 및 제약된 생성을 포함한 작업에 대해 4개의 에이전트가 시스템에 모집된다. 수학적 추론의 과제를 위해 우리는 수를 두 개의 에이전트로 제한했다. 이 결정은 수학적 추론 과제에 대한 검토자 수의 증가가 잘못된 비판을 할 가능성이 더 높다는 우리의 관찰에 기초했다. 3.1절에서 이 주제에 대해 논의한다. 도구 활용을 위해 특정 작업에 따라 협력 의사 결정 및 행동 실행에 참여할 2~3명의 에이전트를 모집한다. 세부 설정은 부록 B에 나열되어 있습니다. 현재 전문가 수는 각 작업에 대해 미리 정의되어 있습니다. 우리는 또한 이 결정을 자동화할 방법을 찾고 있다.
+
+협력적 의사 결정 코딩과 일반적인 이해 및 추론에서 작업의 경우 이러한 모든 작업은 하나의 응답만 응답으로 요구하며 수직 구조의 해결자는 응답을 담당할 수 있기 때문에 수직 구조를 사용한다. 도구 활용을 위해서는 에이전트가 토론에서 자신의 하위 작업을 명확히 해야 하기 때문에 수평 구조를 사용한다.
+
+GPT-4로 벤치마킹된 휴먼밸 코드 완료 데이터셋을 위해, 우리는 액션 실행 단계 동안 추가 에이전트를 통합하여 단위 테스트 코드를 제작한다(제로 샷 방식으로). 이어서, 생성된 코드를 단위 테스팅하고, 테스팅 결과를 환경 상태로서 평가 모듈로 전달한다.
+
+제약된 생성 데이터 세트인 Commongen-Challenge와 관련하여 에이전트 생성 응답은 개념 적용 범위 검사를 거친다. 그런 다음 누락된 개념은 환경 상태로서 평가 모듈로 전달된다.
+
+도구 활용의 맥락에서 각 에이전트는 ReAct 방식으로 도구를 반복적으로 호출하여 최대 10회 반복합니다. 최종 반복에 도달하면 에이전트는 결과에 대한 결론을 도출해야 하며 작업의 상태를 "보류 중" 또는 "완료"로 표시한다. 이러한 결론은 평가를 위해 평가자에게 전달된다.
+
+평가 피드백 루프를 용이하게 하기 위해 에이전트는 평가자의 역할을 맡았다. 이 에이전트는 초기 문제 \(p\)와 협력 의사 결정 단계에서 이루어진 결정 \(A\)을 제공받아 이러한 결정의 정확성을 결정하는 책임이 있다. 결정이 잘못된 것으로 확인된 경우 피드백은 전문가 채용 단계로 다시 전달된다. 결정이 정확성 기준을 충족하면 \(p\)에 대한 최종 답안으로 결정된다. 현재 구성은 평가를 위해 에이전트를 사용하지만 인간 평가자의 잠재력을 인정하고 향후 노력에 이러한 실험을 통합하려고 한다.
+
+## Appendix B Experiment Details for Multi-Agent Tool Using
+
+### Setups
+
+이 섹션에서는 AgentVerse의 여러 에이전트가 사용자의 쿼리를 수행하기 위해 도구를 공동으로 활용할 수 있도록 하는 특정 구현 세부 정보를 제공합니다. 여기에 명시되지 않는 한 구현은 다른 실험에서 정의된 표준 절차를 준수한다.
+
+전문가 모집 단계에서 모집된 협력적 의사 결정 에이전트는 수평적 커뮤니케이션 구조를 사용하여 할당된 작업에 대한 협력적 토론에 참여한다. 일 실시예에서, 에이전트들은 미리 결정된 순차적인 순서로 통신한다. 그들의 토론이 끝나면 추가 에이전트가 "요약자"로 지정되고 각 참가자에 대해 논의된 하위 작업을 통합할 책임이 있다.
+
+액션 실행 중에 ReAct 프롬프트 기법을 따라 에이전트가 자신의 생각을 적도록 한 다음 도구를 호출하고, 도구 응답을 에이전트에 반환합니다. 에이전트는 다시 생각을 적고 도구를 호출합니다. 이 과정은 에이전트가 결론을 제출하기로 결정할 때까지 반복되거나 우리가 10으로 설정한 최대 반복 횟수에 도달한다. 실제로 OpenAI의 기능 호출을 사용하여 도구를 처리합니다.
+
+### Results
+
+작업 실행을 위해 ReAct 프롬프트 기법이 사용됩니다. 에이전트는 사고 과정을 명확히 하고 각각의 도구를 호출한 다음 도구에서 피드백을 받는다. 이러한 반사 및 도구 상호 작용의 주기는 반복적으로 계속된다. 프로세스는 에이전트가 결론으로 실행을 완료할 때 또는 미리 설정된 최대 반복 횟수-세트(우리 실험에서 10) 후에 종료된다. 우리는 OpenAI의 기능 호출을 활용하여 도구 호출을 처리합니다.
+
+최근 AI 분야에서 '24포인트 게임'을 풀 수 있는지 관찰해 대형 언어 모델의 수학적 추론 능력을 검증하는 것이 인기를 끌고 있는데, 이 게임은 무엇일까. 코드 기반 솔루션이 있나요? 이 경우 테스트 케이스와 함께 파이썬 코드를 제공하고 기능을 테스트합니다. 모델의 수학적 추론 능력을 테스트하는 데 사용할 수 있는 다른 유사한 게임에는 어떤 것이 있나요?
+
+단일 ReAct Agent: (생성된 코드는 생략) '24점 게임'은 4개의 숫자를 기본 산술 연산(덧셈, 뺄셈, 곱셈, 나눗셈)과 함께 사용하여 24를 만드는 수학적 게임이다. 내가 개발한 파이썬 코드는 4개의 숫자와 연산의 가능한 모든 조합을 생성하여 24와 같은 해를 구한다. 코드를 서로 다른 수의 집합으로 테스트하여 해의 존재 여부와 그 해를 정확하게 식별하였다. 이 과제는 게임의 규칙을 이해하고 그것을 해결하는 프로그램을 개발하고 테스트하는 나의 능력을 시험했다. (게임 규칙, 코드, 유사 게임)
+
+AgentVerse (2 에이전트): (생성된 코드는 생략) "24점 게임"은 4개의 숫자를 24로 만들기 위해 기본적인 산술 연산(덧셈, 뺄셈, 곱셈, 나눗셈)과 함께 사용해야 하는 수학 게임이다. 24와 같은 해를 찾기 위해 4개의 숫자와 연산의 가능한 모든 조합을 생성하는 파이썬 코드를 개발하고 테스트하였다. 코드는 서로 다른 수의 집합으로 테스트되었으며 솔루션의 존재 여부와 그것이 무엇인지 정확하게 식별했다. 수학적 추론 능력을 시험할 수 있는 '24점 게임'과 유사한 게임으로는 '숫자 만들기'와 '수학 안전'이 있다. '메이크 어 넘버'는 플레이어에게 4개의 숫자와 4개의 조작이 주어지고 이를 이용해 목표 숫자를 만들어야 하는 게임이다. '수학 안전'은 주어진 네 자리 숫자와 네 가지 조작 중 어느 하나를 이용해 목표 숫자에 도달해 금고를 여는 게임이다. 이 두 게임 모두 '24점 게임'과 유사하게 목표 숫자에 도달하기 위해서는 연산과 논리적 사고의 활용이 필요하다. (게임 규칙, 코드, 유사 게임)
+
+지침 2(추가 API: 날씨) 내일 칭화대학교 근처 어딘가에서 파티를 열고 싶어요. 가까운 곳에서 파티를 열기에 가장 좋은 장소를 찾고 내일 파티를 열기에 날씨가 좋은지 알려주세요. 또한 당사에서 어떤 활동을 고려할 수 있는지 알고 싶습니다. 웹 검색을 도와주세요.
+
+싱글 리액션 에이전트: 칭화대 근처에는 란양 슈팡, 이란 샤오카오, 관시지치, 동라이순, 시부 마화 소고기 국수 등 파티에 좋은 장소가 될 수 있는 식당들이 몇 군데 있다. 내일 베이징의 날씨는 26도로 흐려져 파티에 적합할 것으로 보인다. 파티를 위해 고려될 수 있는 일부 활동에는 사란 랩 게임, 포스트잇 노트 게임, 가장 가능성 있는 것, 내가 해본 적이 없는 것, 그보다는 더 많은 것 등이 포함된다. ()
+
+에이전트버스(에이전트 3) : 내일 칭화대 지역의 날씨는 26도로 흐려져 파티를 열기에 적합할 것으로 보인다. 칭화대 인근에서 파티를 할 수 있는 최적의 장소로는 서머팰리스, 우다오쿠, 중관쿤, 북경대 등이 있으며, 인근의 여러 식당도 있다. 파티 활동을 위해, 여러분은 사란 랩 게임, 포스트잇 노트 게임, 당신의 게임과 같은 게임을 고려할 수 있습니다. 가장 가능성이 높은 것은, 내가 한 번도 해본 적이 없는, 그렇지 않은가? 고개를 들어보세요! 저는 파티를 주최합니다... 두 가지 진실과 거짓말, 스티커 스토커, 위대한 마음 같은 생각, 살인 미스터리 게임, 내가 누구인가? 뉴플라이드 게임, 진실 또는 대머리, 스푼, 사전, 키스 메리 킬, 말하지 않는 예스 게임, 인류에 대항하는 카드, 당신 메모, 품위 없는 그림 그리기, 그리고 그것이 그녀가 말한 것입니다. 이 게임은 다양한 파티 행사에 적합하며 서로를 잘 모르는 손님을 위한 쇄빙선 제안도 있습니다. (보다 상세한 내용을 제공함)
+
+지침 3(추가 API: 빌보드) 나는 현재 웹사이트에서 인기 있는 것을 분석하고 있다. 최근에 유행하는 물건을 찾는 것을 도와주실 수 있나요? 유행하는 뉴스, 제품, 책, 영화, 음악 등 무엇이든 될 수 있습니다. 요약해 주세요.
+
+싱글 리액션 에이전트: 최근 웹에서 유행하는 제품으로는 애플 에어팟 프로, 다이아몬드 데즐 클리너 펜, 어그 슬리퍼, 스퀴시멜로우, 위닉스 공기청정기, 이워크스 자동차 진공청소기, 올클래드 조리도구, 유피 로봇 진공, 렌포 아이 마사지기, 크록스, 던지 담요, 척잇 등이 있습니다! 스포츠 도그볼 런처, 애플 에어태그, 레볼론 헤어 드라이어 브러시, 레고 세트, 키친에이드 스탠드 믹서, 윈크 와인 서브스크립션, 사타 매트리스, 홈 셰프 서브스크립션, 마스터클래스 서브스크립션. 안타깝게도 최근 유행하는 책에 대한 구체적인 정보를 찾을 수 없었습니다. (트렌딩 제품)
+
+AgentVerse(3 에이전트): 웹사이트의 트렌드 토픽에 대한 요약은 다음과 같다:
+
+Music:
+
+1. 유리동물의 '열파'
+2. 'We don't talk about Bruno' by Carolina Gaitan, Mauro Castillo, Adassa, Rhenzy Feliz, Diane Guerrero, Stephanie Beatriz & Encanto Cast
+3. 'Super Gremlin' by Kodak Black
+4. SZA를 특징으로 하는 Drake의 'Slime You Out'
+5. 도자 캣의 'Paint The Town Red'
+6. SZA의 'Snooze'
+
+Movies:
+
+1. '아무도 당신을 구하지 않을 것이다.'
+2. 'A Haunting in Venice'
+3. 'Expend4bles'
+
+Books:
+
+1. '한밤중 도서관'
+2. 'Addie LaRue의 보이지 않는 삶'
+3. '에블린 휴고의 일곱 남편들'
+
+1. 레이저 제모
+2. 머리 스카프
+3. 엉킴 제거용 헤어 브러쉬
+4. 헤어 가발
+5. 직립다리 청바지
+6. Shapewear
+7. Athleticsure
+8. 복부 크런치 스트랩
+9. swimsuits
+10. 전동 공구 부속품
+11. 개 장난감
+12. 샷 안경
+13. 복식화
+14. Slicpovers
+15. 벽판 및 커버
+16. 베이비셔츠
+17. 커튼 및 드레이프링
+18. 캐비닛 손잡이 및 손잡이
+19. 시계 액세서리
+20. Tumblers
+21. 모형열차세트
+22. Signage
+23. 웨딩드레스
+24. 테이블 러너
+
+이러한 품목의 인기는 소비자의 지역과 인구 통계에 따라 다를 수 있습니다. (음악, 영화, 책, 제품)
+
+4I 지침은 다음 달에 일본으로 2주간의 휴가를 계획하고 있습니다. 일정 계획을 세우는 것을 도와주세요. 나는 도쿄, 교토, 오사카를 방문하고 싶다. 각 도시의 최고의 관광 명소를 찾고 이러한 도시 간의 최고의 여행 방식을 제안합니다. 또한 제가 방문할 달의 일기 예보를 알아보세요.
+
+싱글 리액션 에이전트: 도쿄의 최고의 관광 명소는 도쿄 스카이트리, 센소지 사원, 메이지 신사, 도쿄 디즈니랜드, 우에노 공원, 오다이바이다. 교토에서는 니조성, 푸시미-이나리 타이샤 신사, 킨카쿠지: 황금정, 기요미즈-데라 사원, 산주산겐도 사원, 교토 황궁 등이 주요 명소다. 오사카에서는 오사카성, 시텐코지 사원, 오사카 아쿠아리움 카이유칸, 템포잔 페리스 휠과 하버 빌리지, 유니버설 스튜디오 재팬 등을 관광객들이 방문할 수 있다. 이 명소들은 방문객들을 위한 역사, 문화, 그리고 현대적 경험의 혼합을 제공합니다. (관광명소, 도시 간 최고의 이동수단, 일기예보)
+
+에이전트버스(3명의 에이전트): 일본으로의 2주간의 휴가는 꽤 흥미진진하게 진행되고 있습니다. 도쿄에서는 도쿄스카이트리, 센소지 사원, 메이지 신사, 도쿄 디즈니랜드와 디즈니시, 오다이바 일대를 둘러볼 수 있다. 교토에서는 니조성, 푸시미-이나리 타이샤 신사, 킨카쿠지(황금정), 기요미즈데라사, 산주산겐도 등이 주요 명소다. 오사카에 있는 동안, 여러분은 오사카 성, 시텐코지 사원, 오사카 수족관 카이유칸, 유니버설 스튜디오 재팬을 방문해야 합니다.
+
+교통은 기차, 특히 신칸센 고속 열차가 이러한 도시 사이를 여행하는 가장 좋은 방법입니다. 또한 ANA나 JAL 항공편을 고려할 수도 있고, 예산이 많은 경우 제트스타와 피치의 야간 버스나 LCC 항공편을 고려할 수도 있습니다.
+
+날씨와 관련해서는 다음 달 정확한 예보를 제공하기 어렵지만, 이들 도시의 평균 기상 자료를 예년을 기준으로 집계했다. 보다 정확한 예측을 위해 출발일에 가까운 일기예보를 확인하는 것을 잊지 마십시오. 즐거운 여행 되세요! (관광명소, 도시 간 최고의 이동수단, 일기예보)
+
+**지침 5**: 이번 주에 여자친구와 데이트를 계획하고 있습니다. 베이징 칭화대 근처에 있는 좋은 영화관과 레스토랑을 검색하여 보기 좋은 영화를 추천해 주십시오. 웹을 검색하십시오.
+
+싱글 리액션 에이전트: 베이징 칭화대 근처 날짜가 모두 준비되었습니다. 식사는 란양수팡, 이란샤오카오, 관시지치(중관춘), 동라이순(중관춘하이투) 중에서 선택할 수 있다. 영화로는 2023년에 상영되는 높은 평점을 받은 영화들이 몇 편 있다. 이것들 중 일부는 M3GAN, Plane, Missing, Infinity Pool, John Wick: Chapter 4, Creed III, Scream VI, Air, Suzume, Rise, You There God? 나, 마가렛, 쇼업 커버넌트야 즐거운 데이트 되세요! (식당, 영화, 극장)
+
+에이전트버스(3명의 에이전트): 당신의 날짜는 모두 정해졌나요? 식사는 칭화대학교 캠퍼스에 편리하게 위치한 자스오 레스토랑이나 Zijingyuan을 추천합니다. 당신의 영화는 현재 인기 있고 높은 평가를 받고 있는 'No Bears'를 추천합니다. 칭화대학교 근처의 최고 등급의 영화관 중 하나인 메이플 가든 드라이브 인 시네마에서 볼 수 있습니다. 즐거운 데이트 되세요! (식당, 영화, 극장)
+
+**지침 6**: 친구들과 함께 북 클럽을 시작하고 싶습니다. 이번 달 베스트셀러 상위 5권 책을 알려주시고, 각각의 내용 요약을 모아 구매하거나 빌릴 수 있는 온라인 플랫폼을 찾아주실 수 있나요?
+
+단일 리액션 에이전트: 2023년 10월 베스트셀러 상위 5권을 찾을 수 없었습니다. 제가 방문한 웹사이트는 필요한 정보를 제공하지 않았습니다. 따라서, 베스트셀러 상위 5권 각각에 대한 컨텐츠 요약을 제공할 수 없고, 구매 또는 대여가 가능한 온라인 플랫폼을 찾을 수 없다. ()
+
+AgentVerse(2명의 에이전트): 이번 달 베스트셀러 상위 5개는 여러 온라인 플랫폼에서 구매하거나 빌릴 수 있습니다. 여기에는 지역 도서관이나 학교를 통해 무료로 책을 빌릴 수 있는 오버드라이브가 포함됩니다. 다른 플랫폼으로는 Amazon Kindle Store, Barnes & Noble's Nook Book Store, Fictionwise, eBooks.com, eReader.com, Google Play Book Store, Powell's Books뿐만 아니라 eBookFling, Lendle, BookLending.com과 같은 eBook 대출 및 대출 서비스(온라인 플랫폼, 상위 5개의 베스트셀러 책, 컨텐츠 요약)가 있다.
+
+**지침 7**: 새 차를 구입할 계획입니다. 테슬라, 포드, 도요타의 최신 모델의 기능과 가격을 비교하는 것을 도와주실 수 있나요? 범위, 충전 시간, 안전 기능 및 애프터 서비스에 대한 세부 정보를 포함합니다. 또한 각 자동차의 장단점에 대한 간략한 분석을 제공합니다.
+
+단일 ReAct 에이전트: 2023 Tesla 모델 3은 $41,880에서 시작하여 $54,880까지 올라갑니다. 가열된 앞 좌석, 내비게이션 및 Tesla의 자동 조종 반자율 주행 시스템과 같은 표준 기능이 제공됩니다. 안전 특성 측면에서 모델 3은 표준 자동 긴급 제동, 차선 이탈 경고 및 적응형 순항 제어를 포함한다. 테슬라의 애프터서비스는 제3자 중개자를 없애고 OTA(Over-the-Air) 업데이트 기능과 모바일 서비스 선단에 의존하는 수직 통합형식이 특징이다. 회사의 OTA 업데이트 기능은 새로운 구독 기반 애프터세일즈 수익 흐름을 개방하는 반면, 폐쇄 루프 시스템은 운전 관련 피드백 루프 및 예측 유지를 위한 차량 데이터에 액세스할 수 있다. (테슬라, 기타 브랜드)
+
+AgentVerse(3 Agent): 2023 포드 머스탱 마하-E의 시작 가격은 약 43,895달러이며 120V 콘센트를 사용하여 완전 충전하는 데 약 38시간, 240V 콘센트를 사용하는 데 14시간, DC 고속 충전으로 약 45분에서 80% 용량이 소요된다. 2023 Toyota bZ4X의 시작 가격은 약 $42,000입니다. 충전 시간은 방법에 따라 달라집니다. 1단계 충전의 경우 52시간, 2단계 충전의 경우 26시간 또는 18.75시간, 3단계 DC 고속 충전의 경우 30-45분 ~ 80% 용량입니다. 안타깝게도 2023년형 테슬라 모델 3의 가격은 찾지 못했지만 250㎾ 테슬라 슈퍼차저로 충전 시간은 15분 정도로 빠를 수 있다. 가정에서는 표준 120볼트 콘센트를 사용하면 완전 충전이 3~4일 정도 걸리는 반면 NEMA 14~50 어댑터가 있는 240볼트 콘센트는 충전 시간을 10~11시간으로 줄인다. 테슬라 월 커넥터는 약 5시간 안에 차를 완전히 충전할 수 있습니다.
+
+안전성 측면에서 세 모델 모두 안티락 브레이크, 안정성 제어, 전면 충격 에어백, 측면 충격 에어백, 오버헤드 에어백, 무릎 에어백, 프리텐셔너, 보안 시스템 등 다양한 기능이 탑재됐다. 테슬라 모델 3에는 자동 조종 및 충돌 경고 기능도 포함되어 있습니다.
+
+애프터 서비스와 관련하여 테슬라는 전 세계 서비스 센터 및 모바일 서비스에 대한 포괄적인 보증 및 노변 지원을 제공합니다. 도요타의 애프터 서비스는 최고 수준이며 전문 기술자와 양질의 정품 부품으로 지속적으로 개선되는 것으로 알려져 있습니다. 그러나 포드의 애프터 서비스는 고객이 고객 지원 부실과 비효율적인 문제 처리를 보고하는 등 부정적인 평가를 받았다.
+
+결정을 내릴 때 이러한 요소를 고려하십시오. (가격, 충전시간, 안전기능, 애프터서비스)
+
+지침 8I는 최근 DIY 홈 프로젝트에 관심을 가지고 있다. 주말에 완료할 수 있는 초보자 친화적인 DIY 프로젝트를 검색합니다. 또한 필요한 자재 목록과 프로젝트별 단계별 가이드를 제공합니다.
+
+싱글 리액션 에이전트: 저는 세 개의 다른 웹사이트에서 초보자 친화적인 다양한 DIY 홈 프로젝트를 발견했습니다. 이러한 프로젝트에는 방 페인트칠, 캐비닛 당기기 교체, 찢어진 창문 수리, 내부 도어 고정, 퍼니스 댐퍼 균형 조정, 누출된 수도꼭지 수리, 욕실의 상쾌한 코르크, 차고 보관 선반 구축, 방화구덩이 건설, 천장 선풍기 걸기, 벽걸이 텔레비전 설치, 싱크대 트랩 청소 등이 포함된다. 이 프로젝트는 초보자에게 적합하며 DIY 기술을 향상시키는 동시에 자신감을 높일 수 있습니다. (DIY 프로젝트, 재료 리스트)
+
+에이전트버스(2명의 에이전트): 그 팀은 주말에 완료될 수 있는 초보자 친화적인 다양한 DIY 홈 프로젝트를 성공적으로 발견했다. 이러한 프로젝트는 방 페인트칠, 캐비닛 당기기 교체, 벽걸이 텔레비전 설치, 화재 구덩이 건설, 주방 리모델링 및 가구 업데이트와 같은 더 복잡한 작업에 이르기까지 다양합니다. 이러한 프로젝트에 필요한 재료는 도장을 위한 롤러와 팬과 같은 도구, 캐비닛 당김을 교체하기 위한 무선 드릴, 벽걸이 텔레비전을 설치하기 위한 스터드 파인더, 방화구덩이를 구축하기 위한 콘크리트 작업 도구 등 기본적이고 출처가 쉽다. 원활한 DIY 경험을 보장하기 위해 프로젝트별 세부 단계별 가이드가 제공되었습니다. 해피 다이잉! (DIY 프로젝트, 재료 리스트)
+
+9월 겨울 수업이 다가오고 있으며 옷장을 업데이트하고 싶습니다. 남성과 여성을 위한 최신 겨울 패션 트렌드를 검색하세요. 또한, 트렌디한 겨울 옷을 살 수 있는 온라인 상점을 제안하세요.
+
+싱글 리액션 에이전트: 올해 남성과 여성 모두를 위한 최신 겨울 패션 트렌드는 슈팅, 대담한 어깨, 웨스턴 터치, 맥시스, 전기 색상, 폭격기, 불일치 맥시즘, 코시팅, 컷아웃, Y2K 패션, 청키 부츠를 포함합니다. 프리티리틀씽과 윈저 같은 온라인 상점에서 이 트렌디한 겨울옷을 구입할 수 있습니다. (패션 트렌드, 온라인 상점)
+
+AgentVerse(3 에이전트): 남성들을 위한 최신 겨울 패션 트렌드는 클래식 스테이플의 재창조, 비참한 시크, 핑크색의 팝, 스로백 재킷, 쇼스토핑 바지, 맥 코트를 포함한다. 여성의 트렌드에는 코시팅, 카우보이 부츠, Y2K 스타일, 오버사이즈 아우터, 주름 스커트, 발라클라바 등이 있습니다. 유니클로, 에버레인, 타겟과 같은 인기 온라인 상점에서 이러한 트렌디한 겨울옷을 쇼핑할 수 있습니다. (패션 트렌드, 온라인 상점)
+
+지침 10I는 앞으로 2개월 안에 5kg을 감량하고 싶습니다. 몸무게는 70kg, 키는 170cm, 나이는 25살이다. BMI를 계산하고 이를 바탕으로 목표 달성을 위해 운동 루틴과 일일 칼로리 섭취량을 제안한다.
+
+단일 재행위 에이전트: BMI는 24.22로 정상 범위 내에 있습니다. 2개월 만에 5kg을 빼려면 500∼1000칼로리의 하루 칼로리 적자를 노려야 한다. 이것은 균형 잡힌 식단과 규칙적인 운동의 조합을 통해 달성될 수 있다. 식단은 전체 음식, 마른 단백질, 과일 및 채소에 중점을 두어야 합니다. 운동은 유산소 운동과 근력 운동을 병행하는 것이 좋습니다. 달리기, 사이클링, 수영과 같은 심장 운동은 칼로리를 소모하는 데 도움이 될 수 있고, 역도 운동과 같은 근력 운동은 근육을 만드는 데 도움이 되어 신진대사율을 높이고 체중 감량을 도울 수 있다. 충분한 잠을 자고 수분을 유지하는 것을 잊지 마세요. (bmi, 운동 루틴, 일일 칼로리 섭취량)
+
+AgentVerse(2 agents): 당신의 체질량 지수(BMI)는 대략 24.22로서, 건강한 체중 범위 내에 있다. 체중 감량 목표를 달성하기 위해서는 하루에 1400에서 1600 칼로리 사이의 섭취를 목표로 해야 합니다. 이것은 체중 감량에 필요한 칼로리 적자를 만들 것입니다. 신체 활동 측면에서는 상·하체 근력 훈련, 간격 훈련/컨디셔닝, 저강도 유산소 운동 등이 포함된 4주간의 프로그램으로 시작해야 한다. 이를 완료한 후 유산소 운동, 근력 훈련 및 유연성 운동을 포함하는 12주 프로그램으로 전환한다. 각 운동에는 약 20-22분이 소요됩니다. 영양가 있는 식단을 먹고, 수분을 유지하고, 충분한 수면을 취하고, 스트레스를 관리하는 것과 같은 건강한 습관을 유지하는 것을 기억하세요. (bmi \(\mathbf{\bigvee}\), 운동 routine \(\mathbf{\bigvee}\), 일일 칼로리 섭취 \(\mathbf{\bigvee}\))
+
+## Appendix C Details of the Experiment on Minecraft
+
+이 절에서는 마인크래프트에 대해 수행한 실험의 몇 가지 구현 세부 사항을 설명한다(섹션 4).
+
+전문가 채용 섹션 4에서 언급했듯이 실제 게임 시나리오에는 여러 라운드에 걸쳐 복잡한 의사 소통과 조정이 필요하며 종종 일관된 팀 구성원이 있다. 따라서 에이전트버스를 사용하여 게임 플레이를 시뮬레이션할 때 자동화된 전문가 모집 단계를 우회하고 각 에이전트를 숙련된 마인크래프트 플레이어로 수동으로 할당한다.
+
+멀티플레이어 게임플레이를 위한 협력적 의사결정(Collaborative Decision-Making)은 수평적 커뮤니케이션 패러다임이 선호되고 있다. 그것은 각 에이전트가 독립적으로 계획을 수립하는 환경에 빌려주며, 단일 솔루션을 요구하는 전통적인 벤치마크 작업과는 다르다. 에이전트들은 미리 결정된 순차적인 순서로 통신하도록 설정되고, 합의가 인지될 때까지 계속된다. 우리는 그룹이 작업 할당에 대해 합의에 도달했다는 것을 발견하면 에이전트가 응답 끝에 특별한 토큰 "[END]"를 추가하도록 허용했다.
+
+컨센서스를 달성한 후에, 보조 에이전트는 전체 통신 기록으로부터 각각의 에이전트에 대한 특정 할당을 추론하도록 태스크화된다. 이 증류된 정보는 할당된 작업을 알리기 위해 보이저 에이전트에 대한 입력으로서 주어진다.
+
+작업 실행 공유 마인크래프트 환경 내에서 여러 Voyager 에이전트를 인스턴스화 합니다. 여기에 보이저 에이전트의 간략한 소개가 제공되며 더 자세한 설명은 Wang 등(2023a)에 관심 있는 독자를 참조한다.
+
+보이저 요원은 마인크래프트를 항해하는 데 능숙하다. 태스크를 받으면 먼저 관리 가능한 하위 태스크 집합으로 분해합니다. 예를 들어, "소 3마리를 죽이다"라는 작업을 할당받은 경우 에이전트는 [두 그루 나무, 공예 4 나무 판자, 공예 1 막대, 공예 1 공예 테이블, 공예 1 나무 검, 암소 3마리를 죽이다]와 같은 순차적 하위 목표로 분해할 수 있다. 그런 다음 에이전트는 각 하위 작업을 순차적으로 완료하려고 시도합니다.
+
+우리는 공식 저장소 2에서 사용할 수 있는 체크포인트를 사용하고 왕 등(2023a)과 일치하도록 보이저 에이전트의 백본 LLM으로 GPT-4-0314를 사용한다. 에이전트가 자신의 작업을 수행하거나 모든 에이전트가 5번의 시도 상한을 맞추면 작업 수행 단계가 종료되고 평가 단계가 시작된다.
+
+각주 2: [https://github.com/MineDojo/Voyager/tree/main/skill_library/trial1/skill](https://github.com/MineDojo/Voyager/tree/main/skill_library/trial1/skill)
+
+평가 각 에이전트의 인벤토리 및 완료 되거나 실패 한 하위 작업을 피드백으로 직접 활용 합니다.
+
+## Appendix D Prompts
+
+우리는 그림 7에서 11까지의 섹션 3에 사용된 프롬프트를 나열한다.
+
+* **FED**: 그림 7
+* **MGSM**: 그림 8
+* **Humaneval**: 그림 9
+* **Commongen-Challenge**: 그림 10
+* **도구**: 그림 11 제한 사항 및 향후 작업
+
+본 연구에서는 여러 자율 에이전트가 인간 그룹을 시뮬레이션하여 작업을 수행할 수 있도록 하는 AgentVerse를 소개하고, 이 과정에서 에이전트의 새로운 사회적 행동에 대해 논의한다. AgentVerse는 진보된 시도이며, 따라서 AgentVerse 내에는 여전히 개선의 여지가 있고 탐색할 가치가 있는 몇 가지 기술이 있다. 이 섹션에서는 추가 설명을 위해 이러한 측면을 조사합니다.
+
+**더 많은 기능 에이전트 및 더 많은 도전 시나리오.** AgentVerse는 여러 LLM 기반 에이전트가 공동으로 작업을 수행할 수 있도록 설계되었습니다. 본 연구에서는 GPT-4를 기반으로 한 최신 에이전트를 활용했다. 음성 및 이미지 기능을 통합한 새로운 버전의 ChatGPT(OpenAI, 2023b)와 같은 LLM의 발전으로 LLM 기반 에이전트는 보기, 듣기, 말하기 등 지각 능력이 더 높아졌다. 이러한 향상은 에이전트의 잠재력을 증가시키고 에이전트Verse 프레임워크를 기반으로 보다 복잡한 실제 작업을 수행할 수 있도록 할 수 있다.
+
+**에이전트 간의 다자간 통신** 현재 제안된 자율 에이전트(Richards and others, 2023; Nakajima, 2023; Reworkd, 2023; Wang et al., 2023a) LLM은 우수한 교육 이해 능력을 보유하고 있습니다(Wei et al., 2022a; Stiennon et al., 2020). 이를 통해 주어진 인간의 지시를 따르고 일대일(인간 대 AI) 시나리오 내에서 작업을 수행할 수 있습니다. 그러나, 멀티-에이전트 협업은 _언제 말할지_ 및 _누구 말할지_ 를 자율적으로 결정할 수 있는 능력을 요구하는 _멀티-파티 통신_(Wei 등, 2023) 시나리오를 수반한다. 이는 에이전트Verse 프레임워크 내에서 협력 의사 결정 단계 동안 에이전트 간의 의사 소통에 어려움을 초래한다. 따라서 탐색할 가치가 있는 두 가지 방향이 있습니다. 첫째, 앞서 언급한 것과 유사하게 에이전트 통신을 관리하기 위한 보다 효과적인 메커니즘을 탐색할 수 있다. 또한, 다른 에이전트를 포함하여 환경 3과 자율적으로 상호 작용할 수 있는 보다 진보된 지각 인식 LLM(OpenAI, 2023b)을 설계할 수 있습니다.
+
+각주 3: 이러한 종류의 지각-인식 에이전트는 오랫동안 구체화된 AI(Ahn et al., 2022; Driess et al., 2023)의 목표였으며, 이는 탐구가 유망한 방향이다.
+
+**응급 행동을 활용 하 고 안전 문제를 완화 합니다.* * 섹션 4에서 응급 양성 및 유해 행동을 모두 식별 했습니다. 유해 행위 완화뿐만 아니라 업무 효율성 및 효과성 향상을 위해 긍정적인 행동을 활용하는 방법을 탐색하는 것이 유망한 방향이다.
+
+## 사례 연구 부록 F 예제
+
+이 섹션에서는 논문에서 논의된 실험 과정을 설명하기 위해 특정 예를 조사한다. 각 인스턴스에 대해 단일 에이전트 접근법과 다중 에이전트 방법을 병치한다. 구체적으로:
+
+* **소프트웨어 개발**: 그림 12는 계산기를 개발하는 프로세스를 보여줍니다. 도 13 및 도 14는 각각 단일 에이전트 및 다중 에이전트 그룹에 의해 생성된 코드를 도시한다.
+* **수평 구조에서 상담**: 컨설팅을 위해 수평 구조를 사용 하는 단일 에이전트 및 다중 에이전트 접근 방식을 제시 합니다. 이들은 도 15 및 도 16에서 볼 수 있다.
+* **수직 구조에서 상담** 유사하게 그림 17 및 18에서는 단일 에이전트 및 다중 에이전트 프로젝트 컨설팅을 표시하지만 다중 에이전트에 수직 구조 구조를 사용합니다.
+* **도구 사용률**: 그림 19는 두 에이전트가 주어진 쿼리를 다른 하위 작업으로 효과적으로 분해하고 다른 도구를 사용하여 쿼리를 협력적으로 해결하는 방법을 보여줍니다.
+* **Minecraft**: 마지막으로 그림 20은 세 에이전트가 협력하여 Minecraft에서 책장을 만드는 프로세스에 대한 통찰력을 제공합니다.
+
+도 7: FED 데이터세트의 프롬프트.
+
+[MISSING_PAGE_EMPTY:25]
+
+도 9: Humaneval dataset에 대한 프롬프트.
+
+## Appendix A
+
+도 10: Commonen-Challenge 데이터세트에 대한 프롬프트.
+
+## Appendix B
+
+도 11: 툴 활용의 프롬프트.
+
+도 12: 소프트웨어 개발 프로세스의 일례.
+
+도 13: 단일 에이전트에 의해 생성된 코드.
+
+도 14: 멀티 에이전트 그룹에 의해 생성된 코드.
+
+그림 15: (페이지 1) 수평적 의사결정 구조에서 그룹 설정과 프로젝트 컨설팅의 예시 프로세스. 에이전트들은 “오하이오에 압축 수소 저장소를 짓고 싶다면 몇 가지 제안을 해달라”는 문제에 대한 제안을 하고 있다.
+
+그림 15: (페이지 2) 수평적 의사결정 구조에서 그룹 설정과 프로젝트 컨설팅의 예시 프로세스. 에이전트들은 “오하이오에 압축 수소 저장소를 짓고 싶다면 몇 가지 제안을 해달라”는 문제에 대한 제안을 하고 있다.
+
+## Appendix C
+
+도 16: 솔로 설정에서의 프로젝트 컨설팅의 예시적인 프로세스. 에이전트는 “오하이오에 압축 수소 저장소를 짓고 싶다면 몇 가지 제안을 해달라”는 문제에 대한 제안을 해야 한다.
+
+그림 17: (페이지 1) 수직적 의사결정 구조에서 그룹 설정과 프로젝트 컨설팅의 예시 프로세스. 에이전트들은 ‘에이전트버스에서 신규 채용된 엔지니어를 대상으로 3일 직원 오리엔테이션에 대한 제안서 생성’ 문제에 대해 건의하고 있다. AgentVerse는 LLM 멀티 에이전트 플랫폼 개발에 전념하는 오픈 소스 팀이다.
+
+그림 17: (페이지 2) 수직적 의사결정 구조에서 그룹 설정과 프로젝트 컨설팅의 예시 프로세스. 에이전트들은 "AgentVerse에서 새로 채용된 엔지니어를 위한 3일 직원 오리엔테이션에 대한 제안서 생성. AgentVerse는 LLM 멀티 에이전트 플랫폼 개발에 전념하는 오픈 소스 팀"이라는 문제에 대한 제안을 제공하고 있다.
+
+도 18: Solo 설정과 함께 프로젝트 컨설팅의 예시적인 프로세스. 에이전트는 "에이전트Verse에서 새로 채용된 엔지니어를 위한 3일 직원 오리엔테이션에 대한 제안 생성" 문제에 대한 제안을 제공해야 한다. 에이전트Verse는 LLM 멀티 에이전트 플랫폼 개발에 전념하는 오픈 소스 팀이다.
+
+도 19: 세 가지 상이한 툴로 사용자 질의를 해결하는 그룹 셋업을 갖는 AgentVerse의 예시적인 프로세스.
+
+도 20: 3명의 에이전트가 마인크래프트에서 책장을 제작하는 예시적인 프로세스.
