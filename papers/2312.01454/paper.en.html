@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '[MISSING_PAGE_FAIL:1]\n' +
+      '\n' +
+      'database modules, which potentially lead to significant financial losses. Thus, _if typical anomalies can be automatically resolved, it will relieve the burden of human DBAs and save resources._\n' +
+      '\n' +
+      'Driven by this motivation, many database products are equipped with semi-automatic diagnosis tools [(20; 22; 29; 30; 32)]. However, they have several limitations. First, they are built by empirical rules [(58; 12)] or small-scale ML models (e.g., classifiers [(34)]), which have poor scenario understanding capability and cannot utilize the diagnosis knowledge. Second, they cannot be flexibly generalized to scenario changes. For empirical methods, it is tedious to manually update and verify rules by newest versions of documents. And learned methods (e.g., XGBoost [(9)], KNN [(17)]) require to redesign the input metrics and labels, and retrain models for a new scenario (Figure 1 (d)). Third, these methods have no inference ability as human DBAs, such as recursively exploring system views based on the initial analysis results to infer the root cause.\n' +
+      '\n' +
+      'To this end, we aim to build an _intelligent diagnosis system_ with three main advantages. _(1) Precise Diagnosis._ First, our system can utilize tools to gather scenario information (e.g., query analysis with flame graph) or derive optimization advice (e.g., index selection), which are necessary for real-world diagnosis. However, that is hardly supported by traditional methods. Second, it can conduct basic logical reasoning (i.e., making diagnosis plans). _(2) Expense and Time Saving._ The system can relieve human DBAs from on-call duties to some extent (e.g., resolving typical anomalies that rules cannot support). _(3) High Generalizability._ The system exhibits flexibility in analyzing unseen anomalies based on both the given documents (e.g., new metrics, views, logs) and past experience.\n' +
+      '\n' +
+      'Recent advances in Large Language Models (LLMs) offer the potential to achieve this goal, which have demonstrated superiority in natural language understanding and programming [(60; 40; 63; 42)]. However, database diagnosis requires extensive domain-specific skills and _even the GPT-4 model cannot directly master the diagnosis knowledge (lower than 50% accuracy)_. This poses three challenges. _(C1) How to enhance LIM\'s understanding of the diagnosis problem?_ Despite pre-trained on extensive corpora, LLMs still struggle in effectively diagnosing without proper prompting2 (e.g., unaware of the database knowledge). The challenges include (_i_) extracting useful knowledge from long documents (e.g., correlations across chapters); (_ii_) matching with suitable knowledge by the given context (e.g., detecting an alert of high node load); (_iii_) retrieving tools that are potentially useful (e.g., database catalogs). _(C2) How to improve LIM\'s diagnosis performance for single-cause anomalies?_ With knowledge-and-tool prompt, LLM needs to judiciously reason about the given anomalies. First, different from many LLM tasks [(13)], database diagnosis is an interactive procedure that generally requires to analyze for many times, while LLM has the early stop problem [(14)]. Second, LLM has a "hallucination" problem [(44)], and it is critical to design strategies that guide LLM to derive in-depth and reasonable analysis.\n' +
+      '\n' +
+      'Footnote 2: Prompting is to add additional information into LLM input. Although LLMs can memorize new knowledge with fine-tuning, it may forget previous knowledge or generate inaccurate or mixed-up responses, which is unacceptable in database diagnosis.\n' +
+      '\n' +
+      '_(C3) How to enhance LIM\'s diagnosis capability for multi-cause anomalies?_ From our observation, within time budget, a single LLM is hard to accurately analyze for complex anomalies (e.g., with multiple root causes and the critical metrics are in finer granularity). Therefore, it is vital to design an efficient diagnosis mechanism where multiple LLMs can collaboratively tackle complex database problems (e.g., with cross reviews) and improve both the diagnosis accuracy and efficiency.\n' +
+      '\n' +
+      'To tackle above challenges, we propose D-Bot, a database diagnosis system using large language models. First, we extract useful knowledge chunks from documents (summary-tree based knowledge extraction) and construct a hierarchy of tools with detailed usage instructions, based on which we initialize the prompt template for LLM diagnosis (see Figure 3). Second, according to the prompt template, we generate new prompt by matching with most relevant knowledge (key metric searching) and tools (fine-tuned SentenceBert), which LLM can utilize to acquire monitoring and optimization results for reasonable diagnosis. Third, we introduce a tree-based search strategy that guides the LLM to reflect over past diagnosis attempts and choose the most promising one, which significantly improves the diagnosis performance. Lastly, for complex anomalies (e.g., with multiple root causes), we propose a collaborative diagnosis mechanism where multiple LLM experts can diagnose in an asynchronous style (e.g., sharing analysis results, conducting cross reviews) to resolve the given anomaly.\n' +
+      '\n' +
+      '**Contributions.** We make the following contributions.\n' +
+      '\n' +
+      '(1) We design an LLM-based database diagnosis framework to achieve precise diagnosis (see Section 3).\n' +
+      '\n' +
+      '(2) We propose a diagnosis prompt generation method that compares LLM to perform diagnosis by (_i_) matching with relevant knowledge extracted from documents and (_ii_) retrieving tools with a fine-tuned embedding model (see Sections 4 and 5).\n' +
+      '\n' +
+      '(3) We propose a root cause analysis method that improves the diagnosis performance using tree-search-based algorithm that guides LLM to conduct multi-step analysis (see Section 6).\n' +
+      '\n' +
+      '(4) We propose a collaborative diagnosis mechanism to improve the diagnosis efficiency, which involves multiple LLMs concurrently analyzing issues by their domain knowledge (see Section 7).\n' +
+      '\n' +
+      '(5) Our experimental results demonstrate that D-Bot can accurately identify typical root causes within acceptable time (see Section 8).\n' +
+      '\n' +
+      '## 2. Preliminaries\n' +
+      '\n' +
+      '### Database Anomalies\n' +
+      '\n' +
+      '_Anomalies_ refer to the irregular or unexpected issues that necessitate the diagnosis procedure [(43)]. Figure 2 show four typical anomalies in databases.\n' +
+      '\n' +
+      '_(1) Slow Query Execution._ The database experiences longer response time than expectancy. For example, the slow query causes significant increase in CPU usage (system load) and query duration time, but the number of active processes remains low.\n' +
+      '\n' +
+      '_(2) Full Resource Usage._ Some system resource is exhausted, preventing it accepting new requests or even causing errors (e.g., insert failures for running out of memory). For example, the high concurrency workload can not only cause great CPU and memory usage, but significantly increases the number of active processes.\n' +
+      '\n' +
+      '_(3) Database Hanging._ The database becomes unresponsive, which is usually caused by long-running queries, deadlocks, or resource contention. For example, abnormal waits in submitted transactionscause great CPU consumption like the _full resource usage_ anomaly, but it also involves frequent process interrupt and switching.\n' +
+      '\n' +
+      '_(4) Database Crashing._ The database unexpectedly shuts down, causing data to become inaccessible. A typical root cause is full disk space, which leads to an inability to write new data or perform necessary operations, ultimately resulting in database failure and releasing the acquired resources.\n' +
+      '\n' +
+      '### Database Diagnosis\n' +
+      '\n' +
+      '_Database diagnosis_ refers to the process of analyzing and resolving above anomalies (usually in the form of a series of alerts) that occur within the database system. The primary objective of database diagnosis is to pinpoint the underlying _root causes_. Here we showcase some example root causes in standalone databases3:\n' +
+      '\n' +
+      'Footnote 3: Anomalies on the application or network side fall outside the scope of this work.\n' +
+      '\n' +
+      '_(1) Concurrency Workloads_: Problems characterized by severe workload contention, where multiple database operations compete for system resources, leading to performance degradation.\n' +
+      '\n' +
+      '_(2) Query Operator Issues_: Problems like inserting large tables, fetching large volumes of data, and executing complex predicates, which can strain the database system\'s processing capabilities.\n' +
+      '\n' +
+      '_(3) Planning and Execution_: Root causes in this category involve abnormal planning times and prolonged database wait times, indicating inefficiencies in query planning and execution processes.\n' +
+      '\n' +
+      '_(4) Data-specific Issues_: Problems like data corruption and dead tuples (rows that are no longer needed but remain in the physical storage) may lead to performance problem.\n' +
+      '\n' +
+      '_(5) Database Schema and Settings_: These issues related to database schema (e.g., indexes) and configuration settings. Examples include missing indexes and small shared buffer sizes, which can impact query optimization and memory management.\n' +
+      '\n' +
+      '_(6) Harmful Background Tasks_: Some database maintenance tasks, like "vacuum" for storage space reclamation, can become problematic when invoked too frequently (these tasks will compete system resources with user queries).\n' +
+      '\n' +
+      'Once the root causes are identified, a set of _optimization actions_ can be proposed to resolve these issues and restore normal database operations. Here we showcase some optimization tools.\n' +
+      '\n' +
+      '_(1) Query Rewrite Tools_. Since most databases are weak in logical transformations (Shen et al., 2016) (e.g., complex predicate simplification), there are external rewrite tools (e.g., around 120 rules in Calcite (Caleit, 2017)) that help to optimize slow queries.\n' +
+      '\n' +
+      '_(2) Knob Tuning Tools_. Improper knob values may cause database failures (e.g., exceeding the maximal connection number) or bad performance (e.g., allocated working memory is too small). Thus, there are tools that utilize rules to provide tuning suggestions (Caleit, 2017; Krizhevsky et al., 2017). For instance, it increases the value of inodb_buffer_pool_size in MySQL by 5% if the memory usage is lower than 60%.\n' +
+      '\n' +
+      '_(3) Index Tuning Tools_. Similarly, there are index tuning rules that generate potentially useful indexes (Caleit, 2017; Krizhevsky et al., 2017; Krizhevsky et al., 2017; Krizhevsky et al., 2017), such as creating composite index with columns in the same predicate.\n' +
+      '\n' +
+      'Example 1 ().: _As shown in Figure 2, given an anomaly alert indicating high memory usage, we first examine the system load (e.g., node_memory_total for memory usage) during the anomaly time. The data confirms an abnormal memory utilization (over 90%). To understand this, we further obtain the relevant memory metrics (e.g., node_memory_inactive_anon_bytes). Analysis of these metrics suggests that the excessive memory usage may be caused by an intensive workload that inserts data into a table. To address this, we investigate if optimization strategies could help with reducing the memory consumption (e.g., dividing table data into partitions)._\n' +
+      '\n' +
+      '### Large Language Models\n' +
+      '\n' +
+      'Next, we introduce the fundamental concepts of Large Language Models (LLMs), including LLM architecture, LLM Prompting, and LLM Fine-tuning, which are pivotal for harnessing their capabilities in database diagnosis.\n' +
+      '\n' +
+      '_Transformer-Based LLMs_. Existing LLMs mainly adopt the Transformer architecture, distinguished by its attention mechanism and feed-forward neural networks. Attention mechanism dynamically weighs elements in the input, allowing the model to focus on different parts of the text, i.e., the attention scores are computed as \\(Attention(Q,K,V)=\\text{softmax}\\left(\\frac{QK^{T}}{\\sqrt{d_{k}}}\\right)V\\), where \\(Q\\) (queries), \\(K\\) (keys), and \\(V\\) (values) represent different aspects of the text, and \\(d_{k}\\) is the dimension of the keys. In addition, LLMs include feed-forward\n' +
+      '\n' +
+      'Figure 2. Example of Database Diagnosis.\n' +
+      '\n' +
+      'neural networks in each layer, which apply position-wise linear transformations to the output of the attention layer. This combination of attention and feed-forward networks facilitate accurate predictions of subsequent text elements.\n' +
+      '\n' +
+      '_LLM Prompting._ To provide LLM with specific instructions for guiding their response generation, we can prepend or append a prompt \\(P\\) to the input \\(X\\) to create a new input, denoted as \\(X^{\\prime}=P\\oplus X\\) or \\(X^{\\prime}=X\\oplus P\\). LLM then generates the output text based on this modified input. Note (\\(i\\)) prompting does not require any additional updates to the model parameters and (\\(ii\\)) prompts can be manually crafted or automatically learned from data (Zhu et al., 2019).\n' +
+      '\n' +
+      '_LLM Fine-tuning_ involves adjusting the model parameters on a small and task-specific dataset (e.g., thousands of samples). Initially, the model parameters, denoted as \\(\\theta\\), are inherited from the pre-training phase. Fine-tuning aims to minimize the loss function \\(\\mathcal{L}\\), tailored to the specific task (e.g., classification or regression), over the task-specific dataset \\(\\mathcal{D}\\). It is represented as \\(\\theta_{\\text{new}}=\\theta_{\\text{old}}-\\alpha\\cdot\\nabla\\mathcal{L}(\\theta_ {\\text{old}};\\mathcal{D})\\), where a small learning rate \\(\\alpha\\) is often used to ensure gradual parameter updates (Zhu et al., 2019).\n' +
+      '\n' +
+      'We rely on LLM prompting to guide close-sourced LLMs like GPT-4 to diagnose (see Section 5), and utilize LLM fine-tuning to prepare localized LLMs (see Section 8.5).\n' +
+      '\n' +
+      '## 3. The Overview of D-Bot\n' +
+      '\n' +
+      '**Architecture.** As shown in Figure 4, we first illustrate the overall architecture of D-Bot. (1) _Anomaly Monitor_ continuously monitors the status of databases using alert rules. (2) When a database turns to abnormal status, _Anomaly Monitor_ sends the triggered alerts to _Anomaly Profiler_. (3) _Anomaly Profiler_ generates an anomaly description based on both the alerts and basic database information (e.g., query statistics during the time period of the alerts). (4) _Database Diagnosis_ exposures one or multiple LLM experts to collaboratively generate an analysis report for the anomaly.\n' +
+      '\n' +
+      'Next, we present the challenges and techniques in the database diagnosis component4 (see Figure 3).\n' +
+      '\n' +
+      'Footnote 4: This paper is an extension of the vision (Zhu et al., 2019)\n' +
+      '\n' +
+      '_(1) Offline Preparation._ Offline Preparation_ equips D-Bot with the knowledge and tools necessary for database diagnosis.\n' +
+      '\n' +
+      '_(i) Document Learning:_ As diagnosis documents are not commonly found in the pre-training corpus and document sections have relations like cross-reference, we conduct knowledge extraction that builds summary trees to represent the document structures and extract knowledge chunks from the trees (e.g., traversing parent-child nodes and nodes with similar summaries).\n' +
+      '\n' +
+      '_(ii) Tool Preparation:_ This step configures the diagnosis tools, such as providing API descriptions (explaining what API does, how it\'s used, and what kind of data it returns) and registering APIs into the system so they can be used by LLM during diagnosis.\n' +
+      '\n' +
+      'We cluster all the extracted knowledge chunks (Figure 6) and, for each cluster, we generate a prompt template (e.g., expert role, task description, basic diagnosis steps, available tools) to represent the characters of an LLM expert. For example, one LLM expert is in charge of analyzing CPU problems (knowledge) and can leverage tools like _cpu_usage_api_ and _index_tuning_api_. In this way, each LLM expert handles a specific area of database problems.\n' +
+      '\n' +
+      '_(2) Diagnosis Prompt Generation._ With all necessary knowledge and tools readily available, _Diagnosis Prompt Generation_ is responsible for creating context-aware prompts that guide the diagnosis process. Following the prompt template, each new prompt in the actual diagnosis requires three essential types of information:\n' +
+      '\n' +
+      'Figure 4. D-Bor Architecture.\n' +
+      '\n' +
+      'Figure 3. Database Diagnosis in D-Bor.\n' +
+      '\n' +
+      '(_i_) _Anomaly Description_. The triggered alerts, including the occurring time, a summary of anomaly, severity level (e.g., warning or critical), additional features (e.g., anomaly status like "resolved").\n' +
+      '\n' +
+      '(_ii_) _Tools_. Due to the variety of tools for different database usage (e.g., monitoring, indexing, query rewrite, query hint), we fine-tune a pre-trained Sentence-BERT model (Wang et al., 2019) to match to the current context (e.g., when LLM is unaware of which metrics is abnormal) with relevant tools (e.g., the _fetch_abnormal_metrics_API).\n' +
+      '\n' +
+      '(_iii_) _Knowledge Chunks_ that instruct LLM on how to diagnose with the obtained abnormal metrics. We identify the most relevant knowledge chunks with keyword search methods (e.g., BM25).\n' +
+      '\n' +
+      '(_iii_) _Historical Messages_ containing valuable information, such as the past tool calling results, which are crucial for tree-search-based diagnosis (e.g., making decisions by previous steps).\n' +
+      '\n' +
+      '_(3) Tree-Search Based Diagnosis_. _Tree-Search Based Diagnosis_ aims to identify the potential root causes and solutions using the generated prompt (calling tools or analyzing by following the knowledge). For database diagnosis, LLM encounters challenges like hallucination and unstable LLM responses (e.g., incorrect API requests, overly general analysis) that can cause diagnosis failures. To solve this problem, we employ the _tree of thought_ strategy, where LLM explores multiple possible reasoning chains and selects the most beneficial chain to explore (based on both the LLM\'s votes and selection frequency). Additionally, through the _reflection_ mechanism, LLM can backtrack to _previous steps_ if the current step fails to detect useful information, which significantly increases the likelihood of arriving at reasonable diagnosis results.\n' +
+      '\n' +
+      '_(4) Collaborative Diagnosis Mechanism_. Since the cost of _Tree-Search Based Diagnosis_ increases significantly with the number of equipped knowledge and tools, _Collaborative Diagnosis Mechanism_ aims to improve the diagnosis performance by leveraging multiple LLM experts. Given an anomaly, we begin by selecting relevant experts based on the triggered alerts and anomaly complexity. Next, the selected experts separately analyze (_Tree-Search Based Diagnosis_) with _a more focused set of tools and knowledge chunks_. Here we adopt an asynchronous strategy: the selected experts share intermediate diagnosis results during diagnosis, facilitating real-time information exchange and reducing the redundant analysis (e.g., the same query issues). After diagnosis, these experts conduct cross-review (e.g., identifying overly general root causes), based on which they iteratively refine the analysis results and ultimately generate a comprehensive report under specific template (e.g., including the background, root causes, solutions, and detailed steps).\n' +
+      '\n' +
+      '## 4. Offline Preparation\n' +
+      '\n' +
+      'In this section, we explain how to prepare necessary knowledge and tools for LLM diagnosis.\n' +
+      '\n' +
+      '### Document Learning\n' +
+      '\n' +
+      'We first decide the knowledge format that is suitable to use in LLM prompting. Next, we introduce the extraction method to obtain such knowledge chunks from given documents. Finally, we showcase the obtained knowledge chunks and their clustering results.\n' +
+      '\n' +
+      '#### 4.1.1. Knowledge Format\n' +
+      '\n' +
+      'Similarly to the diagnosis evidence in Figure 2, given some documents, the desired knowledge chunk is composed of four parts: (_i_) "_Name_" helps LLM to understand the overall function; (_ii_) "_Content_" explains how the root cause can impact the database performance (e.g., performance degradation due to an excessive number of dead tuples); (_iii_) "_Metrics_" is a list of involved metric names, used for knowledge matching in prompt generation (Section 5.1); (_iv_) "_Steps_" provides the detailed procedure of analyzing with the relevant metrics. This allows the LLM to imitate and perform step-by-step analysis.\n' +
+      '\n' +
+      '#### 4.1.2. Knowledge Extraction\n' +
+      '\n' +
+      'Next we explain how to extract such knowledge from documents. In database diagnosis, the relevant documents have two characters, i.e., (_i_) most documents are of long context involved diversified aspects (e.g., both resource and configuration issues are discussed in maintenance guide) and (_ii_) some paragraphs are correlated with each other. For example, the concept of "blouat-table" appearing in "many_dead_tuples" (like Chapter 3.2) is explained in another section (like Chapter 1.1.3).\n' +
+      '\n' +
+      'Although there are already some long-context LLMs (Beng et al., 2019) that support long documents as input, they cannot ensure the quality of answered knowledge (e.g., missing or making up important details (Song et al., 2019; Wang et al., 2019)). Thus, we propose a deterministic knowledge extraction algorithm in three steps.\n' +
+      '\n' +
+      '_Step1: Chapter Splitting_. Instead of directly splitting documents into fixed-length segments, we divide them based on the chapter structures and their content (e.g., applications split by keywords like "tenant examples"). If a block exceeds the maximum block size (e.g., 4k tokens) that the LLM can handle, we further divide it recursively into smaller blocks.\n' +
+      '\n' +
+      '_Step2: Summary Tree Construction_. Next, based on the chapter relations, we initialize a tree structure, where the root node is the document title and other nodes denote split document blocks. For each node \\(i\\), its child node denotes a subsection of chapter \\(i\\) and node \\(i\\) includes two parts: (1) the content of chapter \\(i\\) and (2) the summary of chapter \\(i\\), which is created by feeding the content into LLM with a summarization prompt, i.e., \\(p_{Summarize}\\) = _Summarize the provided chunk briefly \\(\\cdots\\) Your summary will serve as an index for others to find technical details related to database maintenance \\(\\cdots\\) Pay attention to examples even if the chunks cover other topics.\n' +
+      '\n' +
+      'Figure 5. Document Learning.\n' +
+      '\n' +
+      'The generated summary acts as a textual index of the node \\(i\\), enabling the matching of blocks with similar content or relations like cross references.\n' +
+      '\n' +
+      '_Step3: Knowledge Extraction._ After generating the summary tree, LLM parses each document block \\(i\\) (with content from both node \\(i\\) and its child nodes) and compares it with the summaries of other blocks having similar content, which is guided by the extraction prompt, i.e., \\(p_{extract}\\) = "_Given a chunk summary, extract diagnosis experience from the chunk. If uncertain, explore diagnosis experience in chunks from child nodes or chunks with similar summaries._"\n' +
+      '\n' +
+      'This way, knowledge that correlates with the key points from the summaries are detected. For each detected knowledge \\(C_{i}\\), we decide whether to keep \\(C_{i}\\) in a hybrid manner. Specifically, if LLM indicates a low likelihood that \\(C_{i}\\) is redundant (compared with existing knowledge), we will incorporate it. Otherwise, we will conduct a manual examination of \\(C_{i}\\), where \\(C_{i}\\) can be kept if we discover any new insights, even though \\(C_{i}\\) has significant overlap with some existing knowledge. In this way, we can ensure _the inclusion of most diagnosis knowledge and reduce the potential for redundant information._\n' +
+      '\n' +
+      '#### 4.1.3. Clustering Results of Extracted Knowledge\n' +
+      '\n' +
+      'We showcase 188 knowledge chunks extracted from 81 pages of documents, including the general diagnosis guides, cases, and detailed reports5.\n' +
+      '\n' +
+      'Footnote 5: github.com/TsinghuaDatabaseGroup/DB-GPT/tree/main/doc2knowledge/docs\n' +
+      '\n' +
+      'To derive insights from this diverse set of knowledge chunks, we (\\(i\\)) convert the chunks into numerical vectors using a pre-trained embedding model (e.g., Ada-002 (Beng et al., 2015)); and (\\(ii\\)) apply the DBSCAN algorithm (Krishnan et al., 2017) to group knowledge chunks by the similarity of their text embeddings; and (\\(iii\\)) reduce the dimensionality of the text embeddings (to three dimensions) using Principal Component Analysis (PCA). In this way, we can visualize the knowledge extraction results in Figure 6, which illustrates that _the knowledge distribution largely aligns with the types of root causes_ (Section 2.2). Here, we highlight some knowledge topics. _(1) Workloads_ include (\\(i\\)) diagnosing workload contention issues (e.g., excessive connections), (\\(ii\\)) analyzing the impact of database wait events, (\\(iii\\)) addressing abnormal persistent events, (\\(iv\\)) tackling long/short-term performance fluctuations. _(2) Query Operators_ include (\\(i\\)) analyzing inaccurate operator costs that influence query plans, (\\(ii\\)) identifying slow operators (e.g., poor joins, aggregations, index filtering), (\\(iii\\)) analyzing the impact of abnormal SQL structures. _(3) Index Issues_ include (\\(i\\)) identifying unused or redundant indexes, (\\(ii\\)) addressing the performance impact of too many indexes in a table, especially on insert and update operations, (\\(iii\\)) detecting missing indexes, and (\\(iv\\)) analyzing why an index was used in a query plan (e.g., index invalidation, implicit type conversion).\n' +
+      '\n' +
+      'It is evident that a knowledge chunk can be relevant to multiple topics (e.g., slow queries may get involved in both CPU and operator analysis). Thus, effective utilization and communication of these knowledge chunks (e.g., experts from different topics) are vital for the following diagnosis.\n' +
+      '\n' +
+      '### Tool Preparation\n' +
+      '\n' +
+      'Apart from knowledge, human DBAs need to frequently interact with monitoring and optimization tools (e.g., database views, system commands, index tuning tools). To facilitate effective LLM diagnosis, it\'s essential to ensure LLM understand the complex API functions within available tools.\n' +
+      '\n' +
+      'First, we establish a structured hierarchy to classify and organize "categories-tools-APIs", where "APIs" represent the specific functions of a tool. For example, an index selection tool would be categorized under "optimization", with "configuration tool" as its tool type, and "heuristic_index_selection" as an example API (Figure 3). This hierarchy aids in organizing and understanding the diverse range of database tools.\n' +
+      '\n' +
+      'Second, for each tool function, we provide a detailed _utilization specification_ (in the form of function comment). This includes the function\'s explanation, its parameters, and relevant use cases (for Section 5.2). For instance, the function explanation for "heuristic_index_selection" could be _"Automatically select cost-reduction indexes based on query patterns and workload. Arguments include query frequency, data volume, index storage constraints,..."_.\n' +
+      '\n' +
+      'Finally, we dynamically register tool functions by iterating through APIs in the given tool modules, obtaining each API\'s function names along with their _utilization specifications_.\n' +
+      '\n' +
+      '## 5. Diagnosis Prompt Generation\n' +
+      '\n' +
+      'Next we explain how to automatically generate diagnosis prompts by matching with the extracted knowledge and tools.\n' +
+      '\n' +
+      '### Knowledge Retrieval\n' +
+      '\n' +
+      'Apart from knowledge that offers general diagnosis processes (included in the prompt template), most knowledge chunks are only useful under specific context. such as the analysis of abnormal CPU metrics (Figure 7). Thus, for a given context (e.g., with 5 abnormal CPU metrics), we adopt the approximate algorithm BM25 (Zhu et al., 2017) to rank the most relevant knowledge chunks. Specifically, the BM25 algorithm ranks a set of knowledge chunks based on their "metrics" attribute, computed as:\n' +
+      '\n' +
+      '\\[\\text{Score}(D,Q)=\\sum_{i=1}^{n}\\text{IDF}(q_{i})\\cdot\\frac{f(q_{i},D)\\cdot(k_ {1}+1)}{f(q_{i},D)+k_{1}\\cdot(1-b+b\\cdot\\frac{|D|}{\\text{avgDL}})} \\tag{1}\\]\n' +
+      '\n' +
+      'Figure 6. Clustering results of extracted knowledge.\n' +
+      '\n' +
+      'where \\(D\\) is a knowledge block, \\(Q\\) is a set of abnormal metrics (by anomaly detection algorithms like KS-Test (Krishnaman et al., 2017)), \\(f(q_{i},D)\\) is the frequency of the metric \\(q_{i}\\) in \\(D\\), avgDL is the average knowledge block length, \\(k_{1}\\) and \\(b\\) are free hyper-parameters. IDF(\\(q_{i}\\)) is the inverse document frequency of the metric \\(q_{i}\\), computed as:\n' +
+      '\n' +
+      '\\[\\text{IDF}(q_{i})=\\ln\\left(\\frac{N-n(q_{i})+0.5}{n(q_{i})+0.5}+1\\right) \\tag{2}\\]\n' +
+      '\n' +
+      'where \\(N\\) is the total number of extracted knowledge chunks, and \\(n(q_{i})\\) is the number of documents containing metric \\(q_{i}\\).\n' +
+      '\n' +
+      'The advantage of this approach is that we can match knowledge chunks even when the names or meanings of the metrics involved are not exactly the same and easily apply the extract knowledge across different monitoring tools or even systems.\n' +
+      '\n' +
+      '### Tool Matching\n' +
+      '\n' +
+      'Different from _matching knowledge chunks with abnormal metrics_, database tools involve complex APIs and the API names may not be directly relevant to the context (e.g., APIs like _sort_remove_ for slow queries). In this way, the _BM25_ algorithm may have relatively high error rates. Thus, we propose to fine-tune a more powerful pre-trained Sentence-BERT model (Zhu et al., 2018) that accurately matches suitable tools for an diagnosis context. This procedure includes two main steps, i.e., model fine-tuning and tool matching.\n' +
+      '\n' +
+      '\\(\\bullet\\)_Sentence-BERT Fine-tuning:_ Let \\(S=\\{s_{1},s_{2},\\ldots,s_{n}\\}\\) denote the set of diagnosis contexts, and \\(T=\\{t_{1},t_{2},\\ldots,t_{m}\\}\\) denote the set of database tools. We aim to fine-tune a pre-trained Sentence-BERT model to comprehend the relational context between anomalies and database tools. The fine-tuning process is performed with a labeled dataset \\(D=\\{(s_{i},t_{j},y_{ij})\\}_{i=1,j=1}^{n,m}\\), where \\(y_{ij}\\) is the label indicating the relevance of tool \\(t_{j}\\) for a diagnosis context \\(s_{i}\\). The objective function is computed by cross-entropy loss:\n' +
+      '\n' +
+      '\\[\\mathcal{L}=-\\sum_{i=1}^{n}\\sum_{j=1}^{m}y_{ij}\\log(p_{ij})+(1-y_{ij})\\log(1- p_{ij}), \\tag{3}\\]\n' +
+      '\n' +
+      'where \\(p_{ij}\\) is the predicted probability that tool \\(t_{j}\\) is relevant for anomaly \\(s_{i}\\), obtained by passing the concatenated embeddings of \\(s_{i}\\) and \\(t_{j}\\) through a sigmoid function.\n' +
+      '\n' +
+      '\\(\\bullet\\)_Suitable Tool Matching:_ After fine-tuning, the model is employed to match the appropriate database tools for a new diagnosis context \\(s\\). The matching score between diagnosis context \\(s\\) and database tool \\(t_{j}\\) is computed as the cosine similarity between their embeddings, i.e.,\n' +
+      '\n' +
+      '\\[\\text{sim}(s,t_{j})=\\frac{\\text{emb}(s)\\cdot\\text{emb}(t_{j})}{||\\text{emb}( s)||_{2}||\\text{emb}(t_{j})||_{2}}, \\tag{4}\\]\n' +
+      '\n' +
+      'where emb(.) denotes the embedding function of the fine-tuned Sentence-BERT model. The set of recommended database tools \\(\\hat{T}\\) for diagnosis context \\(s\\) is obtained by selecting the top-\\(k\\) tools with the highest matching scores:\n' +
+      '\n' +
+      '\\[\\hat{T}=\\text{arg top}_{k}\\{\\text{sim}(s,t_{j})\\}_{j=1}^{m}. \\tag{5}\\]\n' +
+      '\n' +
+      'Finally, the selected top-\\(k\\) tools are integrated into the prompt, including their names, function descriptions, and argument lists, based on which LLMs can generate calling requests and obtain tool execution results to enhance root cause diagnosis.\n' +
+      '\n' +
+      '## 6. Tree Search for Llm Diagnosis\n' +
+      '\n' +
+      'As shown in Figure 7, LLMs easily make mistakes like (_i_) generating the wrong tool calling request or receiving request failures (e.g., temporarily service unavailable) and (_ii_) stopping diagnosis early without carefully reflecting over the proposed root causes. To solve these problems, we propose to tree-search based algorithm that can guide LLM to go back to previous actions if the current action fails or no valuable root causes can be found (Algorithm 1).\n' +
+      '\n' +
+      '_Step1: Tree Initialization._ We initialize a tree structure where each node represents an action (e.g. tool calling or analysis based on matched knowledge), and the edges represent the flow from one action to another.\n' +
+      '\n' +
+      '_Step2: Simulate Execution._ This step kicks off the execution of simulations starting from the root node to a leaf node (i.e., the end of a complete diagnosis). It involves selecting nodes based on specific standard (e.g., detected abnormal metrics). Here we utilize the UCT (Upper Confidence Bound applied to Trees) function (Zhu et al., 2018) to decide on the traversal path, i.e., \\(UCT(n)=\\frac{W(n)}{N(n)}+C\\sqrt{\\frac{2\\ln N(p)}{N(n)}}\\), where \\(W(n)\\) is the number of wins after the \\(n\\)-th move, \\(N(n)\\) is the= number of simulations after the \\(n\\)-th move, \\(N(p)\\) is the total number of simulations for parent node, and \\(C\\) is the exploration hyper-parameter. During the traversal, nodes with the highest UCT values are selected.\n' +
+      '\n' +
+      'Within the UCT function, \\(W(n)\\) is computed by the voting of several evaluation LLMs (e.g., three). For each leaf nodes, the LLMs are presented with the scenario context and historical actions leading to the node. Based on this information, they cast votes in favor of the promising leaf nodes (e.g., based on the number and accuracy of involved root causes). The node receiving the highest number of votes (\\(W(n)\\)) is determined as the most favorable path.\n' +
+      '\n' +
+      'Figure 7. Example multi-step diagnosis by LLM.\n' +
+      '\n' +
+      '_Step3: Existing Node Reflection._ For each node in the path from the root node to the selected node, we depend on LLM to rethink the benefits of taking the action (e.g., prompting with _"make some reflection to inherit to later trails"_), which are appended to the prompt of child node. It can not only improve the analysis quality of next steps. Besides, if LLM decides there is no useful information, the node will be marked with _"pruned"_ so as to enhance the diagnosis efficiency.\n' +
+      '\n' +
+      '_Step4: Terminal Condition._ If LLM cannot find any more root causes (leaf nodes) for a threshold time (e.g., 20 turns), the algorithm ends by outputting the root causes and solutions of the best node.\n' +
+      '\n' +
+      '## 7. Collaborative Diagnosis for Complex Anomalies\n' +
+      '\n' +
+      'With tool leaning and tree search algorithm, the diagnosis accuracy of single LLM can be greatly improved. Nevertheless, we find single LLMs have trouble in resolving complex anomalies with multiple root causes (e.g., looping over limited causes and struggling to identify additional ones). To address this, we propose a collaborative mechanism where multiple LLMs, each equipped with tools and tree search algorithms, work collectively to tackle complex cases (Beng et al., 2017).\n' +
+      '\n' +
+      '_Step1: Expert Preparation._ We initialize 7 LLM experts by the knowledge clustering results (Section 4). Each expert is equipped with different knowledge and necessary tools in the prompt.\n' +
+      '\n' +
+      '_Step2: Expert Assignment._ Next, to avoid resource waste and improve diagnosis efficiency, we assign appropriate experts to diagnose. That is, given an anomaly, we first generate a description of the anomaly (e.g., time period, alert types, severity level). Next, based on the anomaly description, _Expert Assigner_ utilizes an LLM (e.g., GPT-4) to select a set of most relevant experts. For example, _CPU Expert_ for the _Load_High_ alert and _Memory Expert_ for the _Out_of_Memory_ alert. Note we adopt LLM rather than rules, which is more flexible to plugin new alert rules or expert roles.\n' +
+      '\n' +
+      '_Step3: Asynchronous Diagnosis._ The chosen experts simultaneously diagnose (Section 6). Despite utilizing a common LLM, each expert is uniquely equipped with role-specific settings and domain knowledge. We enhance the diagnosis process with an asynchronous communication mechanism (Zhu et al., 2017), which is built on the publish-subscribe model. That is, experts "publish" their findings or updates, which are then automatically "delivered" to other experts who have "subscribed" to these specific types of updates (e.g., all the reset selected experts).\n' +
+      '\n' +
+      'This mechanism allows for the efficient and non-blocking information exchange (e.g., metric analysis, tool outputs, results) among LLM experts. For instance, the CPU Expert might post a finding about abnormal CPU load patterns of slow queries, triggering an event-driven notification to other experts. This event-driven approach enables the memory expert to promptly detect memory swap activities potentially caused by these slow queries.\n' +
+      '\n' +
+      '_Step4: Cross Review._ Although the experts own different domain knowledge (e.g., _os_resource_contention_ for CPU Expert and _swap_usage_analysis_ for Memory Expert), some common analysis evidence (e.g., operator types, configuration settings) of these experts may inspire each other. Thus, after obtaining the diagnosis results of all the experts, we conduct cross review and there are three main sub-steps:\n' +
+      '\n' +
+      '\\(\\bullet\\)_Diagnosis Summary._ For an expert, it requires dozens of iterations to provide in-depth analysis, resulting in extensive analysis records. Therefore, it is crucial to effectively summarize the key information from these records. To achieve this, we progressively summarize the lines of a record (\\(r_{t}\\)), which includes inputs for specific tools and the corresponding results, or relevant knowledge. Specifically, for each step \\(t\\), we maintain a running summary (\\(s_{t-1}\\)), encapsulating previous actions and outcomes. Upon generating the new record \\(r_{t}\\), an LLM is assigned to incorporate the main idea of \\(r_{t}\\) into \\(s_{t-1}\\), leading to the new summary, \\(s_{t}\\). For a clearer explanation, consider the following example:\n' +
+      '\n' +
+      '``` [Current summary \\(s_{t-1}\\)] - I know the start and end time of the anomaly. [New Record \\(r_{t}\\)] - Thought: Now that I have the start and end time of the anomaly, I need to diagnose the causes of the anomaly Action: is_abnormal_metric Action Input: {"start_time": 1684600070, "end_time": 1684600074, "metric_name": "cpu_usage"} Observation: "The metric is abnormal" [New summary \\(s_{t}\\)] - I know the start and end time of the anomaly. - I searched for is_abnormal_metric, and I now know that the CPU usage is abnormal. \\(\\bullet\\)Review Advice._ Next, each expert gives the improvement advice based on the diagnosis results and summarized procedures of other experts. The review prompt is written like \\(p_{review}=\\)_"Please review the above diagnosis results, and give necessary advice to correct the incorrect analysis or unclear results."_ \\(\\bullet\\)Diagnosis Refinement._ After the cross-review, each expert reevaluates their initial diagnosis and even conducts more inferences (e.g., calling tools to analyze more relevant metrics or settings). In this way, they can incorporate additional evidence, revising hypotheses, or overlooked aspects in the diagnosis results.\n' +
+      '\n' +
+      '_Step5: Report Generation._ Based on both the refined diagnosis results, _Expert Assigner_ generate detailed diagnosis report for the given anomaly, including (_i_) title (summary of the anomaly); (_ii_) anomaly date; (_iii_) detailed anomaly description (from alerts); (_iv_) root causes (within diagnosis results); (_iv_) solutions (within diagnosis results); (_v_) summarized diagnosis process.\n' +
+      '\n' +
+      '## 8. Experiment Results\n' +
+      '\n' +
+      'With the carefully prepared micro benchmark, we conduct extensive experiments to evaluate the proposed techniques in D-Bot\n' +
+      '\n' +
+      '### Environment Setup\n' +
+      '\n' +
+      '**Database.** We implement D-Bot in PostgreSQL 12.5, using (_i_) the pg_stat_statements plugin for tracking frequent queries, and (_ii_) the hypopg plugin for creating hypothetical indexes (Bordes and Goyal, 2017).\n' +
+      '\n' +
+      '**LLMs.** We support prompt-based LLMs including GPT-4-0613 and gpt-3.5-turbo-16k (Goyal, 2017), where the _temperature_ parameter is set to 0 in favor of reproduction. Fine-tuned LLMs include _Llama 2_, _CodeLlama_ and _Baichuan 2_.\n' +
+      '\n' +
+      '**Evaluated Methods.** The evaluated methods include: (1) _HumanDBA_. A human DBA with 2 years working experience analyze the root causes. (2) _D-Bot_ (_GPT-4_) is the version of D-Bot driven by GPT-4-0613 (within a limit of 8,192 tokens for each inference), which serves as 8 expert roles with different domain knowledge (Section 4.1.3). (3) _D-Bot_ (_GPT-3.5_) is the version of D-Bot powered by the GPT-3.5 model. In case of exceeding the token limits, we use _gpt-3.5-turbo-16k_ (a maximum of 16,385 tokens). (4) DNN utilizes a shallow neural network (with two layers and ReLU activation) to classify the input abnormal metric vectors into one or multiple root causes (Goyal, 2017). (5) _DecisionTree_ employs the decision tree algorithmhot label the root causes for the input metric values (Zhu et al., 2018). (6) _GPT-4_ model that does not utilize the techniques in D-Bot, which (_i_) inputs suitable task description and demonstration examples and (_ii_) outputs the root causes. (7) _GPT-3.5_. Similarly, we test the performance of GPT-3.5 model without techniques in D-Bot.\n' +
+      '\n' +
+      '**Ablation Methods.** We offer variants of D-Bot for ablation analysis: (1) _NoKnowledge_ is _D-Bot_ (_GPT-4_) that does not utilize the extracted knowledge. (2) _NoTreeSearch_ is _D-Bot_ (_GPT-4_) that adopts the chain-of-thought reasoning (e.g., LangChain (Bordes and Goyal, 2017)). (3) _SingleLLM_ is _D-Bot_ (_GPT-4_) that utilizes single LLM to diagnose.\n' +
+      '\n' +
+      '### Micro Diagnosis Benchmark\n' +
+      '\n' +
+      'Based on works like (Kang et al., 2018; Goyal, 2017), we design a micro benchmark that offers (_i_) diversified anomaly scenarios (e.g., different applications, workloads, and anomaly types), (_ii_) executable scripts, (_iii_) clear scenario descriptions (e.g., _Tn a database of an e-commerce platform, 91 users simultaneously perform searches \\(\\cdots\\)_), together with (_iv_) evaluation metrics that can reflect the diagnosis performance.\n' +
+      '\n' +
+      '**Anomaly Cases.** As shown in Table 1, we include a diverse set of simulated applications: (_i_) _Internet of Things (IoT)_ applications mainly have the "highly commits" anomalies, caused by handling a lot of incoming data from sensors; (_ii_) _E-commerce_ applications exhibit multiple anomalies (e.g., "highly updates" and "large data fetch"), possibly caused by concurrent updates to product databases and high volume data retrievals during sales; (_iii_) _Financial_ applications involve anomalies like "poor joins", suggesting complex transactional operations; (_iv_) _Business Intelligence_ applications mainly involve "redundant index" and "missing index" anomalies, emphasizing the importance of optimizing data access paths; (_v_) _File Sharing_ applications (e.g., Dropbox, Google Drive) often encounter the "large data fetch" anomaly, caused by data retrievals of multimedia content. (_vi_) _Social Media_ applications (e.g., MySQL originally for Twitter) predominantly face the "highly commits" anomaly when read and write data quickly. Different from _IoT_, they also involve complex queries that cause the "correlated subquery" anomaly.\n' +
+      '\n' +
+      '**Evaluation Metrics.** We adopt two metrics for practical diagnosis evaluation. First, similar to works like (Kang et al., 2018; Goyal, 2017), we use _Result Accuracy_ (Acc) to quantify the precision of recommended root causes, i.e.,\n' +
+      '\n' +
+      '\\[\\text{Acc}=\\begin{cases}\\frac{A_{\\text{c}}-\\sigma\\cdot A_{\\text{w}}}{A_{\\text{ a}}},&\\text{if }A_{a}>0\\wedge A_{\\text{c}}\\geq\\sigma\\cdot A_{\\text{w}}\\\\ 0,&\\text{otherwise}\\end{cases}\\]\n' +
+      '\n' +
+      'where \\(A_{\\text{c}}\\) denotes the number of correct causes, \\(A_{\\text{a}}\\) denotes the total number of causes, \\(A_{\\text{w}}\\) denotes the number of wrongly detected causes, and \\(\\sigma\\) is a hyper-parameter with 0.1 as the default value, because we identify _redundant causes is less harmful than missing causes_ and restrict to at most 4 root causes for an anomaly.\n' +
+      '\n' +
+      'Second, _Human Evaluated Accuracy_ (HEval) shares the same equation as Acc. However, \\(A^{\\prime}_{\\text{c}}\\) in HEval denotes number of causes that (_i_) are correctly detected and (_ii_) the analysis process also makes sense (human evaluation). HEval is _vital to provide reliable diagnosis for online usage_.\n' +
+      '\n' +
+      '### Performance Comparison\n' +
+      '\n' +
+      'We compare D-Bot with three types of baselines, including manual diagnosis (HumanDBA), existing machine learning methods (_DNN_, _DecisionTree_), and origin LLMs (GPT-4, GPT-3.5) across six applications. For each application, we sample ten testing anomalies from the micro benchmark. The remaining anomalies are used as the training samples for _DNN_, _DecisionTree_. The performance results are illustrated in Figures 8-9.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|c|} \\hline\n' +
+      '**Application** & \\begin{tabular}{c} **Sync** \\\\ **Commits** \\\\ \\end{tabular} & \\begin{tabular}{c} **Many** \\\\ **Inserts** \\\\ \\end{tabular} & \\begin{tabular}{c} **High** \\\\ **Updates** \\\\ \\end{tabular} & \\begin{tabular}{c} **Many** \\\\ **Deletes** \\\\ \\end{tabular} & \\begin{tabular}{c} **Index** \\\\ **Missing** \\\\ \\end{tabular} & \\begin{tabular}{c} **Redundant** \\\\ **Massing** \\\\ \\end{tabular} & \\begin{tabular}{c} **Large** \\\\ **Indexes** \\\\ \\end{tabular} & \\begin{tabular}{c} **Large** \\\\ **Data Insert** \\\\ \\end{tabular} & \\begin{tabular}{c} **Zero** \\\\ **Data Feitch** \\\\ \\end{tabular} & \n' +
+      '\\begin{tabular}{c} **Poor** \\\\ **Join** \\\\ \\end{tabular} & **Cases** \\\\ \\hline Internet of Things & ✓ & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & 83 \\\\ \\hline E-Commerce & \\(\\times\\) & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & 211 \\\\ \\hline Financial & ✓ & ✓ & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & ✓ & ✓ & ✓ & ✓ & ✓ & \\(\\times\\) & 31 \\\\ \\hline Business Intel. & \\(\\times\\) & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & \\(\\times\\) & 20 \\\\ \\hline File Sharing & \\(\\times\\) & ✓ & ✓ & \\(\\times\\) & \\(\\times\\) & ✓ & ✓ & ✓ & ✓ & ✓ & ✓ & 47 \\\\ \\hline Social Media & ✓ & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & \\(\\times\\) & ✓ & 147 \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1. Micro Benchmark Statistics. The applications cover ten typical root causes (introduced in Section 2.2).\n' +
+      '\n' +
+      '**Diagnosis Performance.** D-Bot achieves competitive performance as _HumanDBA_, such as outperforming _HumanDBA_ with an accuracy of 80% (_D-Bot (GPT-3.5)_) for the Social Media application. D-Bot also demonstrates significant performance gains over the rest baselines (e.g., accuracy improvements ranging from 8% to 54% against _DNN_ and _DecisionTree_). The reasons are three-fold.\n' +
+      '\n' +
+      'First, D-Bot can judiciously utilize tools and provide informed diagnosis. For instance, It identifies specific problems such as _"high memory usage due to heavy use of UPDATE and INSERT operations over the same tables"_ by querying the _pg_stat_statements_ view. Conversely, the baselines struggle to detect the root causes, often faulting to generic advice such as _"resolve resource contention issues"_, which lack the specificity needed for actionable improvements, rendering them less effective in practical applications.\n' +
+      '\n' +
+      'Second, _D-Bot (GPT-4)_ owns contextual comprehension (LLM) and tree-search reasoning capability. For instance, with the reflection mechanism, _D-Bot (GPT-4)_ can conduct comprehensive analysis and follow the most beneficial chain of actions (e.g., calculating the total cost of a plan and deciding the optimization actions). In contrast, the baselines only input with basic abnormal metric values, perform general analysis, and often overlook underlying causes. For instance, in an _INSERT_LARGE_DATA_ case, _GPT-4_ merely identifies an increased count of running processes using the _node_procs_running_ metric, resulting in an early diagnosis termination. Moreover, _DNN_ and _DecisionTree_ cannot leverage textual data, leading to their inability to resolve complex anomalies such as _Poor Join_.\n' +
+      '\n' +
+      'Third, _D-Bot (GPT-4)_ utilizes the document knowledge to learn the analysis of potential performance bottlenecks like correlated-subquery structure. We find _GPT-4_ and _GPT-3.5_ tend to make unsupported hypotheses, leading to inaccurate diagnostics. For example, upon detecting _SORT_ operations in logged queries, _GPT-3.5_ inaccretely attributes the bottleneck to _"frequent reading and sorting of large data volumes"_, missing query structure problems. Compared to _HumanDBA_, _D-Bot (GPT-4)_ is more careful in capturing important details that help find the root causes. For example, in _Social Media_, _D-Bot (GPT-4)_ does better than _HumanDBA_ by collecting data from various sources (such as multiple system metrics and how query operators consume resources). This helps uncover problems like high I/O issues caused by concurrent inserts, which _HumanDBA_ might ignore when focusing on a few slow queries.\n' +
+      '\n' +
+      '**Diagnosis Overhead.**_(1) Diagnosis Time. HumanDBA_ needs one to two hours to write a diagnosis report even for typical anomalies. This time is mainly consumed in devising solutions like indexing and query rewriting, even when the root cause is relatively straightforward. Instead, D-Bot, takes ten to several minutes to diagnose relatively complex anomalies (e.g., _5.38 minutes_ for a composite anomaly \\(k\\) with two root causes). Because D-Bot can efficiently interact with pre-equipped tools (context embedding) and enhance the efficiency (collaboration of multiple LLMs). Traditional classifiers have lowest diagnosis time, as they simply map limited metrics to predefined causes. (2) _Diagnosis Expense._ Traditional classifiers\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|c|c|c|c|c|} \\hline\n' +
+      '**Diagnosis** & \\multicolumn{2}{c|}{**Single Cause Anomaly**} & \\multicolumn{2}{c|}{**Multi-Cause Anomaly**} \\\\ \\cline{2-5}\n' +
+      '**Method** & **Acc** & **HEval** & **Acc** & **HEval** \\\\ \\hline _HumanDBA_ & 0.955 & 0.720 & 0.487 & 0.806 \\\\ \\hline _D-Bot (GPT-4)_ & 0.754 & 0.500 & 0.655 & 0.669 \\\\ \\hline _D-Bot (GPT-3.5)_ & 0.542 & 0.370 & 0.533 & 0.493 \\\\ \\hline _DNN_ & 0.352 & N/A & 0.036 & N/A \\\\ \\hline _DecisionTree_ & 0.331 & N/A & 0.086 & N/A \\\\ \\hline _GPT-4_ & 0.351 & 0.39 & 0.105 & 0.151 \\\\ \\hline _GPT-3.5_ & 0.266 & 0.2 & 0.144 & 0.130 \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2. Performance on different anomalies.\n' +
+      '\n' +
+      'Figure 8. Performance Comparison (Result Accuracy). Note _Acc_ is a general numerical metric, which cannot fully reflect the diagnosis capacity (e.g., whether the diagnosis process is reasonable)\n' +
+      '\n' +
+      'Figure 9. Performance Comparison (Human Evaluation). We do not include _DNN_ and _DecisionTree_ because they either have the black-box problem or fail to provide root cause analysis that is easy to understand by humans.\n' +
+      '\n' +
+      'and D-Bot are more economical than _HumanDBA_. _DNN_ and _DecisionTree_ require minimal system resources. And D-Bot can save much manpower at a minimal financial cost (e.g., 1.8 dollar for diagnosing the anomaly \\(k\\) with 40k LLM tokens).\n' +
+      '\n' +
+      'Finding 1. _D-Bot achieves a remarkable improvement over baselines (8% to 54%) due to its advanced contextual understanding and knowledge and tool utilization, and even competes closely with human expertise._\n' +
+      '\n' +
+      'Performance for Different Anomalies._\\(D\\)-_Bot (GPT-4)_, while having lower accuracy in single cause anomalies (0.754), shows a remarkable consistency in multi-cause anomalies with an accuracy of 0.655. This consistency is also reflected in the _HEval_ scores (0.500 and 0.669, respectively), suggesting that _D-Bot (GPT-4)_ maintains stable performance across different types of anomalies. _D-Bot (GPT-3.5)_ and other methods like _DNN_, _DecisionTree_, _GPT-4_, and _GPT-3.5_ show a general trend of lower performance in both _Acc_ and _HEval_, especially in multi-cause anomalies, highlighting the complexity of these scenarios that require advanced diagnosis methods like D-Bot. Meanwhile, for _HumanDBA_, the _HEval_ scores are relatively high for both single (0.720) and multi-cause anomalies (0.806), demonstrating the necessity of understanding human experience.\n' +
+      '\n' +
+      'Finding 2. _D-Bot provides a more balanced and reliable performance across diverse and complex anomaly types._\n' +
+      '\n' +
+      'LLM Factors.The performance gap between _D-Bot (GPT-4)_ and _D-Bot (GPT-3.5)_ is significant, with _D-Bot (GPT-4)_ outperforming _D-Bot (GPT-3.5)_ by up to 30% in accuracy and stability in applications. _D-Bot (GPT-4)_ excels in generating precise tool calling commands and comprehensive diagnosis summaries. For instance, it adeptly identifies complex queries involving large table fetches, a task where _D-Bot (GPT-3.5)_ often falls short. In contrast, _D-Bot (GPT-3.5)_ is prone to producing more generalized and sometimes inaccurate action commands, leading to less effective outcomes.\n' +
+      '\n' +
+      'Finding 3. _A powerful LLM can benefit the diagnosis performance of D-Bot, which reflects in the effectiveness of prompt following and the depth of root cause analysis._\n' +
+      '\n' +
+      '### Ablation Study\n' +
+      '\n' +
+      'As shown in Figure 10, we verify the effectiveness of three main components in D-Bot, i.e., document knowledge matching (_NoKnowledge_), tree-search-based reasoning (_NoTreeSearch_), and multi-agent diagnosis (_SingleLLM_).\n' +
+      '\n' +
+      '#### 8.4.1. Document Knowledge Matching\n' +
+      '\n' +
+      'Without the relevant knowledge in the prompt, LLM experts mainly rely on expert settings (i.e., role, task, steps) to call tools and analyze root causes. When comparing _NoKnowledge_ to D-Bot, we observe a decrease in diagnosis accuracy ranging from 19.2% to 64.1%. We have two observations. First, _NoKnowledge_ produces significantly more redundant root causes (e.g., 2.05 times against _D-Bot (GPT-4)_), as it can\'t clearly tell apart relevant root causes using just the context. For instance, root causes like _"many inserts"_ and _"large data insert"_ both involve insert operations, but identifying them correctly requires specific knowledge about details like the number of insert operations and table sizes. Second, like the baselines, _NoKnowledge_ often provides very general diagnoses (e.g., "abnormal patterns in CPU processes") and fails to accurately identify many anomalies. Moreover, we also find that, although LLMs like _GPT-4_ are pre-trained on open corpora, they need external knowledge matching (fine-tuning is limited in updating knowledge) for specialized tasks like database diagnosis.\n' +
+      '\n' +
+      '#### 8.4.2. Tree Search Based Diagnosis\n' +
+      '\n' +
+      '_NoTreeSearch_ diagnoses less effectively than _D-Bot (GPT-4)_, showing a performance decrease by over 35.85%. It verifies that tree search plays an important role in correcting wrong knowledge matching or tool API callings (actions for extending child nodes), which significantly enhances the diagnosis accuracy, particularly for single-cause anomalies that involve various reasoning choices. For instance, in scenarios such as identifying specific query-related issues or optimizing database knobs, tree search enables _D-Bot (GPT-4)_ to navigate through multiple potential solutions and pinpoint the most effective one.\n' +
+      '\n' +
+      '#### 8.4.3. Multi-Agent Diagnosis\n' +
+      '\n' +
+      'Our analysis verifies the effectiveness of multi-agent mode (_D-Bot (GPT-4)_) over single-agent mode (single). For instance, in the IoT application, _D-Bot (GPT-4)_ achieves a 77.27% success rate in identifying root causes, a substantial increase from the 39.09% success rate of _SingleLLM_. Besides, our tests on average diagnosis time revealed that D-Bot (multi-agent mode) is more efficient compared to _SingleLLM_ (single-agent mode). The reasons are two-fold. First, D-Bot employs more than two experts in average (at most three), which utilize different metrics and domain knowledge to explore root causes and derive more root causes than _SingleLLM_. And these root causes are further examined, selected\n' +
+      '\n' +
+      'Figure 10. Ablation Study (Human Evaluation)\n' +
+      '\n' +
+      'and refined during cross-review. Thus, D-Bot achieves higher diagnosis accuracy than _SingleLLM_. Second, although D-Bot takes time to select experts and conduct cross-reviews, the asynchronous mechanism reduces the iteration turns of tree-search algorithm in single experts, which generally take most diagnosis time. And so D-Bot is also more efficient than _SingleLLM_ in diagnosis time.\n' +
+      '\n' +
+      'Finding 4. _Techniques proposed in D-Bot are crucial to boost diagnosis accuracy by reducing redundant root causes and enhancing precise anomaly identification._\n' +
+      '\n' +
+      '### Model Fine-tuning\n' +
+      '\n' +
+      '**Preparation.** We first record the diagnosis processes of _D-Bot (GPT-4)_ consisting of 5 sub-tasks (e.g., tool calling) and 2819 samples in total (see Figure 11(a)). We mix them together as a multi-task fine-tuning dataset. Specifically, the model input includes the prompt and historical messages, and we fine-tune LLMs to simulate the corresponding _D-Bot (GPT-4)_ response (after cleansed). LLMs are implemented using PyTorch and BMTrain (Tran et al., 2019), trained on a machine with 503 GB RAM and 1 NVIDIA A100 GPU.\n' +
+      '\n' +
+      '**Training Procedure.** We fine-tune three localized SOTA LLMs, i.e., _Llama 2-13B_, _CodeLlama-13B_, _Baichuan2-13B_. As shown in Figure 11(b), all LLMs converge within 10 epochs. We then manually select the best epoch checkpoints (i.e., 4th epoch for _Llama 2_, 1st epoch for _CodeLlama_, 10th epoch for _Baichuan 2_). Note the _obvious loss reduction does not mean increasing model performance_. We find many epoch checkpoints with low losses often over-fit the fine-tuning data (e.g., losing the text generation capabilities and tending to generate short confusing responses). Besides, _Llama 2_ cannot generate reasonable diagnosis results (_Acc_ equals 0 for most cases) even in the best epoch.\n' +
+      '\n' +
+      '**Performance Comparison.** As shown in Figure 11(c)-(d), the demonstrated LLMs after fine-tuning achieve comparable performance to _GPT-4_ in 27 test cases. We have several observations. First, _CodeLlama_ performs best in financial, IoT and BI applications, because _CodeLlama_ is specialized for code generation, which is more sensitive to metrics and queries. For instance, it can accurately identify _slow queries involving multiple JONs as root cause_. Second, _Baichuan2_ performs best for file application, which can assign suitable experts (e.g., Memory Expert), and analyze root causes in detail (e.g., pointing out disk I/O under-provisioned in the hardware configuration). However, the _HEval_ performance of _Baichuan2_ in financial application significantly degrades. For example, the model may list many root causes but does not give well-founded analysis. Third, _GPT-4_ performs best for e-commerce and media applications, and shows _balanced performance across all applications_. Moreover, the localized LLMs show less generalizability to unfamiliar anomalies. For instance, the number of samples with _delete operations_ as root causes is much smaller than others, causing the fine-tuned LLMs to often fail in these cases.\n' +
+      '\n' +
+      'Finding 5. _D-Bot using localized SOTA LLMs can achieve comparable diagnosis performance to D-Bot (GPT-4), but their generalizability is greatly affected by the fine-tuning samples._\n' +
+      '\n' +
+      '## 9. Related Work\n' +
+      '\n' +
+      '**Database Diagnosis.** Existing works mainly rely on empirical rules and classification methods to analyze root causes. The ADDM tool (Han et al., 2017) maintains a graph of database resource modules, based on which they estimate the query execution time and infer the bottlenecks. DBSherlock (Wang et al., 2018) utilizes a decision-tree-like method to construct predicates (in the form of \\(Attr>k\\)). ISQUAD (Srivastava et al., 2017) generates root causes by clustering queries with their metric vectors. However, these methods require great human intervention (e.g., designing rules, features, labels). Besides, they lack some critical capabilities (e.g., accepting new contextual information, analyzing query logs) for real-world diagnosis. Although there are some LLM-based methods that incorporate maintenance knowledge (Srivastava et al., 2017), they focus on general chatbot tools (e.g., Q&A exercises) and also fail to conduct scenario-specific diagnosis.\n' +
+      '\n' +
+      '**LLM Agents.** Recent works have shown that LLMs, when coupled with memory mechanisms and tools, can imitate human-like interactions and decision-making in a real-world context (Srivastava et al., 2017). First, the augmentation of LLM agents with a variety of tools -- ranging from web browser (Wang et al., 2018; Wang et al., 2018) and wikipedia search (Wang et al., 2018; Wang et al., 2018), to code interpreter (Han et al., 2017; Wang et al., 2018; Wang et al., 2018) and multifaceted toolsets (Wang et al., 2018; Wang et al., 2018) -- has significantly enhanced LLM\'s adaptability. Besides individual agent skills, there is increasing interest in coordinating multiple LLM agents for collective intelligence (Han et al., 2017; Wang et al., 2018; Wang et al., 2018; Wang et al., 2018; Wang et al., 2018). Notably, AgentVerse (Han et al., 2017) shows that teamwork among multiple LLM agents can perform better single agents in many tasks. D-Bot presents an _LLM-powered diagnosis system in the multi-agent paradigm._\n' +
+      '\n' +
+      '## 10. Conclusion\n' +
+      '\n' +
+      'In this paper, we proposed a database diagnosis system leveraging large language models (LLMs). We conducted offline knowledge extraction from documents and prepared function APIs from existing tools. We matched with suitable knowledge and APIs into LLM prompt for online diagnosis, and we proposed a tree search-based algorithm to accurately and effectively utilize tools and conduct analysis with knowledge. We designed a collaborative diagnosis mechanism that improved the efficiency with the collaboration\n' +
+      '\n' +
+      'Figure 11. Performance of Model Finetuning.\n' +
+      '\n' +
+      'of multiple LLMs. Experimental results showed D-Bot achieved remarkable improvements over baselines and human DBAs.\n' +
+      '\n' +
+      '## Acknowledgments\n' +
+      '\n' +
+      'We thank (1) Dongfeng Li for anomaly simulation support, (2) Wei Zhou for tool plugin assistant, (3) Xiaohui Nie, Dan Pei, Binyuan Hui, Chen Qian, Yu Shen for their valuable advice on this research.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1][https://github.com/openmb/agentverse](https://github.com/openmb/agentverse), Last Accessed In December, 2023.\n' +
+      '* [2][https://openai.com/](https://openai.com/), Last Accessed In December, 2023.\n' +
+      '* [3][https://github.com/hypog/hypog](https://github.com/hypog/hypog), Last Accessed In September, 2023.\n' +
+      '* [4][https://petune.leopard.in./](https://petune.leopard.in./), Last Accessed In September, 2023.\n' +
+      '* [5] Edmon Begoli, Jesus Camacho-Rodriguez, Julian Hyde, Michael Jior, and Daniel Lemire. Apache calcite: A foundational framework for optimized query processing over heterogeneous data sources. In _Proceedings of the 2018 International Conference on Management of Data_, pages 221-230, 2018.\n' +
+      '* [6] Yance W Berger and Yan-Yan Zhou. Kolmogorov-smirnov test: Overview. Wiley &starfest: Statistics refer online. 2014.\n' +
+      '* [7] Harrison Chase. LangChain. [https://github.com/hwchaeae17/langchain](https://github.com/hwchaeae17/langchain), 2022.\n' +
+      '* [8] Surjit Chaudhuri and Vivek R. Narayan. An efficient cost-driven index selection tool for microsecond SQL server. In _VLDB_, pages 146-155, 1997.\n' +
+      '* [9] Tamel Chen and Carlos Guestrin. Xebboost: A scalable tree boosting system. In _SIGKDD_, pages 785-794, 2016.\n' +
+      '* [10] Weize Chen, Yuchange Su, Jingwei Zuo, Cheng Yang, Chenfei Yuan, Chen Qian, Chi-Min Chan, Yujia Qin, Yanxi Lu, Ruobing Xie, Zhiyuan Liu, Maosong Sun, and lie Zhou. Agentverse: Facilitating multi-agent collaboration and exploring emergent behaviors in agents. _CoRR_, abs/2308.10848, 2023.\n' +
+      '* [11] Wenhu Chen, Xueguang Ma, Xinyi Wang, and William W. Cohen. Program of thoughts prompting: Disentangling computation from reasoning for numerical reasoning tasks. _CoRR_, abs/2211.1258, 2022.\n' +
+      '* [12] Karl Dias, Mark Ramacher, Uri Shaft, Venkateshwaran Venkataramani, and Graham Wood. Automatic performance diagnosis and tuning in oracle. In _Second International Conference on Innovative Data Systems Research, CIDR 2005. Asilamar, CA, USA, January 4-7, 2005. Online Proceedings_, pages 84-94. www.cd.uk/h.org, 2005.\n' +
+      '* [13] Ning Ding, Shengling Hu, Weilin Zhao, Yulin Chen, Zhiyuan Liu, Hai-Tao Zheng, and Maosong Sun. Openprompt: An open-source framework for prompt-learning. _arXiv preprint arXiv:1211.01989_, 2021.\n' +
+      '* [14] Jesse Dodge, Gabriel Illnerao, Roy Schwartz, Ali Farhadi, Hannaneh Hajishirzi, and Noah Smith. Fine-tuning pretrained language models: Weight initializations, data orders, and early stopping. _arXiv preprint arXiv:2002.06305_, 2020.\n' +
+      '* [15] Yihu Du, Shuang Li, Antonio Torralillo, Joshua B Tenenbaum, and Igor Mordatch. Improving factuality and reasoning in language models through multiagent debate. _CoRR_, abs/2305.14352, 2023.\n' +
+      '* [16] Luyu Gao, Anam Madan, Shuyan Zhou, Uri Alon, Pengfei Liu, Yiming Yang, Jamie Callan, and Graham Neubig. PAL: program-aided language models. In Andreas Krause, Emura Brunkull, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlettej, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 1076-1079, 1979. PML, 2023.\n' +
+      '* [17] Google Guo, Hui Wang, David Bell, Yuxin Bai, and Kieran Greer. Knn model-based approach in classification. In _CoRR_, pages 986-996. Springer, 2003.\n' +
+      '* [18] Hai-Xiang, Li Xiao-Yan Liu Chang, and et al. Systematic definition and classification of data anomalies in dbms (engils version). _arXiv preprint arXiv:2110.14230_, 2021.\n' +
+      '* [19] Siriu Hong, Xiuxi Zheng, Jonathan Chen, and et al. Metagpt: Meta programming for multi-agent collaborative framework. _CoRR_, abs/2308.00352, 2023.\n' +
+      '* [20] Shiyue Huang, Ziwei Wang, Xinyi Zhang, Yaofeng Tu, Zhongliang Li, and Bin Cui. Dpra: A benchmark for transactional database performance anomalies. _Proc. ACM Manag._, 2017(1):27:1-226, 2023.\n' +
+      '* [21] Lianyan Jin and Gouliang Li. Ai-based database performance diagnosis. _Journal of Software_, 32(3):845-858, 2021.\n' +
+      '* July 5, 2019_, pages 918-935. ACM, 2019.\n' +
+      '* [23] Kamran Khan, Saif Ur Rehman, Kamran Aziz, Simon Fong, and Sababady Sarasvady. Dbscan: Past, present and future. In _ICADIWT 2014_, pages 232-238. IEEE, 2014.\n' +
+      '* [24] Jay Kreps, Neha Narkhede, Jun Rao, et al. Kafka: A distributed messaging system for log processing. In _Proceedings of the NetDB_, volume 11, pages 1-7. Athens, Greece, 2011.\n' +
+      '* [25] Hai Lan, Zhifeng Bao, and Yuwei Peng. An index advisor using deep reinforcement learning. In _CIKM_, pages 2105-2108. ACM, 2020.\n' +
+      '* [26] Guohao Li, Hasan Abel Al Kaler Hannamoudi, Hani Irani, Dmitri Kihzbullin, and Bernard Ghanem. CAMEL: communicative analysis efforts for "mind" exploration of large scale language model society. _CoRR_, abs/2303.17760, 2023.\n' +
+      '* [27] Jiqi Li, Mengheng Wang, Zliong Zheng, and Muhan Zhang. Google: Can long-context language models understand long contexts? _arXiv preprint arXiv:2311.04039_, 2023.\n' +
+      '* [28] Zeyan Li, Nengwen Zhao, Mingjie Li, et al. Actionable and interpretable fault localization for recurring failures in online service systems. In _Proceedings of the 30th ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering_, pages 906-1008, 2022.\n' +
+      '* [29] Ping Liu, Shenglin Zhang, Yongqian Sun, Yuan Meng, Jiahai Yang, and Dan Pei. Fluxinfer: Automatic diagnosis of performance anomaly for online database system. In _39th IEEE International Performance Computing and Communications Conference, TCCC 2020, Austin, TX, USA, November 6-8, 2020_, pages 1-8. IEEE, 2020.\n' +
+      '* [30] Xiaozu Liu, Zheng Yin, Chao Zhao, Congcong Ge, Lu Chen, Yunjun Gao, Dimeing Li, Ziting Wang, Gaozhong Liang, Jian Tan, and Feifei Li. Pinsol: Pimpoint root cause sqla to resolve performance issues in cloud databases. In _38th IEEE International Conference on Data Engineering, ICDE 2022, Kuala Lumpur, Malaysia, May 9-12, 2022_, pages 2549-2561. IEEE, 2022.\n' +
+      '* [31] Yuhe Liu, Changhua Pei, Longlong Xu, Bohan Chen, Mingse Sun, Zhirui Zhang, Yongqian Sun, Shenglin Zhang, Kwan Wang, Haiming Zhang, et al. Openeval: A comprehensive task-oriented alogs benchmark for large language models. _arXiv preprint arXiv:2310.07637_, 2023.\n' +
+      '* [32] Xiangliu Lu, Zhe Xie, Zeyan Li, Mingjie Li, Xiaohui Nie, Nengwen Zhao, Qingyang Yu, Shenglin Zhang, Kaixin Sui, Lin Zhu, and Dan Pei. Generic and robust performance diagnosis via causal inference for OLTP database systems. In _22nd IEEE International Symposium on Cluster, Cloud and Internet Computing, CCGrid 2022, Taormina, Italy, May 16-19, 2022_, pages 655-664. IEEE, 2022.\n' +
+      '* [33] Killan Lucas. Open interpreter. [https://github.com/charlesepwd/project-title](https://github.com/charlesepwd/project-title), 2023.\n' +
+      '* [34] Minghua Ma, Zheng Yin, Shenglin Zhang, and et al. Diagnosing root causes of intermittent slow queries in large-scale cloud databases. _Proc. VLDB Endow._, 13(8):1176-1189, 2020.\n' +
+      '* [35] Reichiro Nakano, Jacob Hilton, Suchir Balaji, and et al. Webgpt: Browser-assisted question-answering with human feedback. _CoRR_, abs/2112.09332, 2021.\n' +
+      '* [36] Branmurett Ottens, Christos Dimitrakakis, and Boi Faltings. Duct: An upper confidence bound approach to distributed constraint optimization problems. _ACM Transactions on Intelligent Systems and Technology (TIST)_, 8(5):1-27, 2017.\n' +
+      '* [37] Joon Sung Park, Joseph C. O\'Brien, Carrie J. Cai, Meredith Ringel Morris, Frey Liang, and Michael S. Bernstein. Generative agents: Interactive simulance and human behavior. _CoRR_, abs/2304.03442, 2023.\n' +
+      '* [38] Chen Qian, Xin Cong, Cheng Yang, Weizen Chen, Yusheng Su, and et al. Communicative agents for software development. _arXiv preprint arXiv:2307.07924_, 2023.\n' +
+      '* [39] Yujia Qin, Ziban Cai, Dian Jin, and et al. Webgpt: Interactive web search for chinese long-form question answering. In Anna Rogers, Jordan L. Boyd-Graber, and Naosoli Okazaki, editors, _ACL_, pages 8968-8988. Association for Computational Linguistics, 2023.\n' +
+      '* [40] Yujia Qin, Shenggling Hu, Yankai Lin, and et al. Tool learning with foundation models. _arXiv preprint arXiv:2304.08354_, 2023.\n' +
+      '* [41] Yujia Qin, Shenggling Hu, Yanxixi Lin, and et al. Tool learning with foundation models. _CoRR_, abs/2304.08354, 2023.\n' +
+      '* [42] Yujia Qin, Shihao Liang, Yining Ye, and et al. Toollim: Facilitating large language models to master 16000 real-world apis. _CoRR_, abs/2307.16789, 2023.\n' +
+      '* [43] Raj Ramachandran, R. Nohdin, and P P Shogdi. Anomaly detection in role administered relational databases-a novel method. In _ICACI_, pages 1017-1021. IEEE, 2018.\n' +
+      '* [44] Vipula Rawte, Amit Sheth, and Amitava Das. A survey of hallucination in large foundation models. _arXiv preprint arXiv:2309.05922_, 2023.\n' +
+      '* [45] Nils Reimers and Iryna Gurevych. Sentence-bert: Sentence embeddings using siamese bert-networks. In Kentara Inui, Jing Jiang, Vincent Ng, and Xiaojun Wan, editors, _EANLIP-IJCNLP_, pages 3980-3990. Association for Computational Linguistics, 2019.\n' +
+      '* [46] Nils Reimers and Iryna Gurevych. Sentence-bert: Sentence embeddings using siamese bert-networks. _arXiv preprint arXiv:1908.10084_, 2019.\n' +
+      '* [47] Stephen Robertson, Hugo Zangza, et al. The probabilistic relevance framework: Bm25 and beyond. _Foundations and Trends in Information Retrieval_, 3(4):338-389, 2009.\n' +
+      '* [48] Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raleanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Sciaolom. Toolformer: Language models can teach themselves to use tools. _CoRR_, abs/2302.04674, 2023.\n' +
+      '* [49] Yan-Yan Song and LIU Ying. Decision tree methods: applications for classification and prediction. _Shanghai archives of psychiatry_, 27(2):130, 2015.\n' +
+      '* [50] HarICDE_, pages 101-110, 2000.\n' +
+      '* Wang et al. [2022] Zhaoguo Wang, Zhou Zhou, Yicun Yang, Haoran Ding, Gansen Hu, Ding Ding, Chuhu Tang, Haibo Chen, and Jinyang Li. Wetime: Automatic discovery and verification of query rewrite rules. In _Proceedings of the 2022 International Conference on Management of Data_, pages 94-107, 2022.\n' +
+      '* Whang [1987] Ryu-Young Whang. Index selection in relational databases. _Foundations of Data Organization_, pages 487-500, 1987.\n' +
+      '* Wu et al. [2023] Qingyu Wu, Gagan Bansal, Jieyu Zhang, Yiran Wu, Shaokun Zhang, Erkang Zhu, Beihin Li Li, Ziaoyun Zhang, and Chi Wang. Autogen: Enabling next-genl LML applications via multi-agent conversation framework. _CoRR_ abs/2308.08155, 2023.\n' +
+      '* Xiong et al. [2023] Wenhan Xiong, Jinyang Liu, Igor Molybgo, et al. Effective long-context scaling of foundation models. _arXiv preprint arXiv:2309.16039_, 2023.\n' +
+      '* Yao et al. [2023] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R. Narasimhan, and Yuan Cao. Rect: Synergizing reasoning and acting in language models. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_ OpenReview.net, 2023.\n' +
+      '* July 01, 2016_, pages 1599-1614. ACM, 2016.\n' +
+      '* Zeng et al. [2023] Guoyang Zeng, Xu Han, Zhengyan Zhang, Zhiyuan Liu, Yankai Lin, and Maosong Sun. Openbank: Big model systems for large-scale representation learning. In _Representation Learning for Natural Language Processing_, pages 463-489. Springer Nature Singapore, 2023.\n' +
+      '* Zheng et al. [2023] Qinkai Zheng, Xiao Xia, Zou, Yuxiao Dong, Shan Wang, Yufei Xue, Zihan Wang, Li Shen, Anolu Wang, Yang Li, et al. Codegevec: A pre-trained model for code generation with multilingual evaluations on human-val. _arXiv preprint arXiv:2303.17568_, 2023.\n' +
+      '* Zhou et al. [2023] Xuanhe Zhou, Guoliang Li, and Zhiyuan Liu. Llm as dba. _arXiv preprint arXiv:2308.05481_, 2023.\n' +
+      '* Zhou et al. [2022] Xuanhe Zhou, Luyang Liu, and et al. Automated: An incremental index management system for dynamic workloads. In _ICDE_, pages 2196-2208. IEEE, 2022.\n' +
+      '* Zhou et al. [2022] Yongchao Zhou, Andrei Iona Muresanu, Ziwen Han, Keiran Paster, Silvin Pitis, Harris Chan, and Jimmy Ba. Large language models are human-level prompt engineers. _arXiv preprint arXiv:2211.01910_, 2022.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
