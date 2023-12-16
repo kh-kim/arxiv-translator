@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# PromptBench: A Unified Library for Evaluation of Large Language Models\n' +
+      '\n' +
+      'Kaijie Zhu\\({}^{1,2}\\), Qinlin Zhao\\({}^{1,3*}\\), Hao Chen\\({}^{4}\\), Jindong Wang\\({}^{1}\\), Xing Xie\\({}^{1}\\)\n' +
+      '\n' +
+      '\\({}^{1}\\)Microsoft Research Asia \\({}^{2}\\)Institute of Automation, Chinese Academy of Sciences\n' +
+      '\n' +
+      '\\({}^{3}\\)University of Science and Technology of China \\({}^{4}\\)Carnegie Mellon University\n' +
+      '\n' +
+      'The first two authors contributed equally. Work done at MSRA.Corresponding author: Jindong Wang (jindong.wang@microsoft.com).\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'The evaluation of large language models (LLMs) is crucial to assess their performance and mitigate potential security risks. In this paper, we introduce PromptBench, a unified library to evaluate LLMs. It consists of several key components that are easily used and extended by researchers: prompt construction, prompt engineering, dataset and model loading, adversarial prompt attack, dynamic evaluation protocols, and analysis tools. PromptBench is designed to be an open, general, and flexible codebase for research purpose that can facilitate original study in creating new benchmarks, deploying downstream applications, and designing new evaluation protocols. The code is available at: [https://github.com/microsoft/promptbench](https://github.com/microsoft/promptbench) and will be continuously supported.\n' +
+      '\n' +
+      '1\n' +
+      'Footnote 1: The first two authors contributed equally. Work done at MSRA.\n' +
+      '\n' +
+      '\\(\\dagger\\). Corresponding author: Jindong Wang (jindong.wang@microsoft.com).\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Large language models (LLMs) have been revolutionizing numerous applications, impacting virtually every aspect of human life and society unprecedentedly. They are trained on a massive scale of carefully curated corpora (Brown et al., 2020; Team, 2023; Computer, 2023), enabling humans to interact with them easily and flexibly through natural language to solve complicated real-world tasks (OpenAI, 2023b) through prompts.\n' +
+      '\n' +
+      'Evaluation is of paramount importance to understand the true capabilities of LLMs, mitigate potential risks, and eventually, benefit society further (Eisenstein, 2023; Chang et al., 2023). Recent efforts have evaluated LLMs from diverse aspects (Liang et al., 2022; Zheng et al., 2023; Li et al., 2023; Huang et al., 2023). Among the findings, one of the most important is that current LLMs are sensitive to prompts (Wang et al., 2023b), vulnerable to adversarial prompt attacks (Zhu et al., 2023b), and exposed to data contamination (Willig et al., 2023; Zhou et al., 2023b; Zhu et al., 2023a), which pose severe security and privacy issues (Wang et al., 2023a; Simmons, 2022). Given the increasing popularity of LLMs, it is indispensable to develop a unified codebase to enable easy, fast, and flexible evaluation.\n' +
+      '\n' +
+      'Existing libraries such as LlamaIndex (Liu, 2022), semantic kernel (Microsoft, 2023), and LangChain (Chase, 2022) offer an entire LLM pipeline for various downstream applications, they are not built inherently for evaluation purpose. LlamaIndex and LangChain enhance LLM applications by incorporating databases and various data sources, enabling advanced,context-aware functionalities. Semantic Kernel aims to merge AI services with programming languages for versatile AI app development. The eval-harness (Gao et al., 2023) library offers a comprehensive framework for evaluating generative language models, but it does not support other evaluations such as adversarial prompt attacks, prompt engineering, and dynamic evaluation. Consequently, there is an urgent need for a unified library dedicated to the comprehensive evaluation of diverse aspects, particularly for research purposes.\n' +
+      '\n' +
+      'This paper introduces **PromptBench**, a unified python library for evaluating LLMs from comprehensive dimensions.1 It consists of a wide range of LLMs and evaluation datasets, covering diverse tasks, evaluation protocols, adversarial prompt attacks, and prompt engineering techniques. As a holistic library, it also supports several analysis tools for interpreting the results. Our library is designed in a modular fashion, allowing researchers to easily build evaluation pipelines for their own projects. We open-source PromptBench with comprehensive documents and tutorials2 to support easy, flexible, and collaborative evaluation. We believe PromptBench could boost our understanding of capabilities of LLMs and facilitate new research from the community.\n' +
+      '\n' +
+      'Footnote 1: The name “PromptBench” is the same as (Zhu et al., 2023b) where we only evaluated the robustness against adversarial prompt attack. We decided to keep the name and heavily extend that project.\n' +
+      '\n' +
+      'Footnote 2: [https://promptbench.readthedocs.io/en/latest/](https://promptbench.readthedocs.io/en/latest/)\n' +
+      '\n' +
+      '## 2 PromptBench\n' +
+      '\n' +
+      'PromptBench can be easily installed either via pip install promptbench or git clone. In this section, we briefly introduce the components of PromptBench and how to use it to build an evaluation pipeline for LLMs. An overview of PromptBench is shown in Figure 1.\n' +
+      '\n' +
+      '### Components\n' +
+      '\n' +
+      '**Models.** PromptBench supports both open-source and proprietary LLMs and it is open to add more. Currently, it supports Flan-T5-large (Chung et al., 2022), Dolly (Databricks, 2023), Vicuna (Chiang et al., 2023), Llama2 (Touvron et al., 2023b), Cerebras-GPT (Dey et al., 2023), GPT-NEOX (Black et al., 2022), Flan-UL2 (Brain, 2023), phi-1.5 (Li et al.,\n' +
+      '\n' +
+      'Figure 1: The components and supported research areas of PromptBench.\n' +
+      '\n' +
+      '2023c), PaLM2 (Anil et al., 2023), ChatGPT (OpenAI, 2023a), and GPT-4 (OpenAI, 2023b). PromptBench provides a unified LLMModel interface to allow easy construction and inference of a model with specified max generating tokens and generating temperature. More details of the supported models are shown in Appendix A.1.\n' +
+      '\n' +
+      '**Datasets and tasks.** Currently, PromptBench consists of 12 diverse tasks with 22 public datasets and naturally supports more. It supports: sentiment analysis (SST-2 (Socher et al., 2013)), grammar correctness (CoLA (Warstadt et al., 2018)), duplicate sentence detection (QQP (Wang et al., 2017) and MRPC (Dolan and Brockett, 2005)), natural language inference (MNLI (Williams et al., 2018), QNLI (Wang et al., 2019), RTE (Wang et al., 2019), and WNLI (Levesque et al., 2012)), multi-task knowledge (MMLU dataset (Hendrycks et al., 2021)), reading comprehension (SQuAD V2 dataset (Rajpurkar et al., 2018)), translation (UN Multi(Eisele and Chen, 2010), IWSLT 2017 (Cettolo et al., 2017)), math problem-solving (Math (Saxton et al., 2019) and GSM8K(Cobbe et al., 2021)), logical reasoning (Boolean Expressions (bench authors, 2023)), commonsense reasoning (Commensense QA (Talmor et al., 2019), QASC (Khot et al., 2020), NummerSense (Lin et al., 2020), Date (bench authors, 2023) and Object Tracking (bench authors, 2023)), symbolic reasoning (LastLetterConcat (Wei et al., 2023)), algorithm (Valid Parentheses dataset (bench authors, 2023)) Through the unified DatasetLoader interface, it supports easy and customizable dataset loading and processing.\n' +
+      '\n' +
+      '**Prompts and prompt engineering.** PromptBench offers a suite of 4 distinct prompt types, and additionally, users have the flexibility to craft custom prompts using the Prompt interface. Task-oriented prompts are structured to clearly delineate the specific task expected of the model, whereas role-oriented prompts position the model in a defined role, such as an expert, advisor, or translator. These prompt categories are adaptable for both zero-shot and few-shot learning contexts, offering diverse application possibilities. Moreover, PromptBench currently includes 6 prominent prompt engineering methods: few-shot Chain-of-Thought (Wei et al., 2023), zero-shot Chain-of-Thought (Kojima et al., 2022), Emotion-Prompt (Li et al., 2023a), Expert Prompting (Xu et al., 2023), Generated Knowledge (Liu et al., 2022), and Least to Most (Zhou et al., 2023a). Our framework is not only equipped for the easy integration of these existing techniques through the prompt_engineering module but is also actively evolving to encompass a broader spectrum of prompt engineering methods, enhancing its adaptability in varied evaluation scenarios.\n' +
+      '\n' +
+      '**Adversarial prompt attacks.** To facilitate the investigation of LLMs\' robustness on prompts, PromptBench integrates 7 types of adversarial prompt attacks (Zhu et al., 2023b): TextBugger (Li et al., 2019), TextFooler (Jin et al., 2019), BertAttack (Li et al., 2020), DeepWordBug (Gao et al., 2018), Checklist (Ribeiro et al., 2020), StressTest (Naik et al., 2018), and semantics (Zhu et al., 2023b). These attacks can be easily called via the prompt_attack interface. It also supports the usage of curated adversarial prompts to efficiently evaluate the robustness of LLMs.\n' +
+      '\n' +
+      '**Different evaluation protocols.** By default, PromptBench supports the standard protocol, i.e., the direct inference. PromptBench further supports dynamic (Zhu et al., 2023a) and semantic (Liu et al., 2023) evaluation protocols by dynamically generating testing data. It is open to integrate more new protocols to avoid data contamination.\n' +
+      '\n' +
+      '**Analysis tools.** Finally, PromptBench offers a series of analysis tools to help researchers analyze their results. Particularly, it support sweep running to get the benchmarkresults. Then, attention visualization analysis can be done through the utils interface. PromptBench also supports word frequency analysis to analyze the words used in attacks as well as defense analysis by integrating word correction tools.\n' +
+      '\n' +
+      '### Evaluation pipeline\n' +
+      '\n' +
+      'PromptBench allows easy construction of an evaluation pipeline via four steps. Firstly, specify task and then load dataset via pb.DatasetLoader. PromptBench offers a streamlined one-line API for loading the desired dataset. Secondly, users can customize LLMs using the pb.LLMModel, which provides integrated inference pipelines compatible with most LLMs implemented in Huggingface. Thirdly, the prompt for the specified dataset and task is defined via pb.Prompt. Users have the option to input a list of prompts for evaluation and performance comparison. In cases where no prompts are supplied, our default prompts for the dataset are utilized. Finally, the pipeline requires the definition of input and output processing functions via class InputProcess and class OutputProcess defined in pb.utils.dataprocess, as well as the evaluation function via pb.metrics. The detailed introduction of the components are shown in Appendix A.\n' +
+      '\n' +
+      '### Supported research topics\n' +
+      '\n' +
+      'PromptBench is designed mainly for research purpose, thus it is easy to customize for different topics. As shown in Figure 1(b), it supports different evaluation topics from the research community including benchmarks, scenarios, and protocols. In benchmarks research, it supports standard natural language understanding, natural language generation, and reasoning tasks. It can also be extended to support research on AI agent and interdisciplinary study. In scenario research, it supports adversarial and out-of-distribution evaluation, and can also support other topics such as hallucination and bias by changing the metrics and DatasetLoader interface. In protocol, it naturally supports standard and dynamic evaluation, and can further be verified by including measurement theory.\n' +
+      '\n' +
+      'PromptBench offers three leaderboards to allow easy comparison: adversarial prompt attack, prompt engineering, and dynamic evaluation, as shown in Appendix B. Researchers are welcome to submit new results to our platform. Extensibility is shown in Appendix C that allows convenient extension of the framework.\n' +
+      '\n' +
+      '## 3 Conclusion\n' +
+      '\n' +
+      'This work presented PromptBench, a unified framework for evaluation of large language models. The library is designed in modular fashion to allow users build evaluation pipeline by composing different models, tasks, and prompts. It also facilitates several research directions such as prompt engineering, adversarial prompt attacks, and dynamic evaluation. We treat PromptBench as the first step towards assessing the true capabilities and exploring the boundaries of current LLMs, and believe the benchmark and analysis results from our library could shed lights on designing more robust and human-aligned models. PromptBench is a long-term project and will be actively updated to fulfill the needs from the research community. We welcome contributions from all potential contributors.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Anil et al. (2023) Rohan Anil, Andrew M Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, et al. Palm 2 technical report. _arXiv preprint arXiv:2305.10403_, 2023.\n' +
+      '* BIG bench authors (2023) BIG bench authors. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _Transactions on Machine Learning Research_, 2023. ISSN 2835-8856. URL [https://openreview.net/forum?id=uyTL5Bvosj](https://openreview.net/forum?id=uyTL5Bvosj).\n' +
+      '* Black et al. (2022) Sid Black, Stella Biderman, Eric Hallahan, Quentin Anthony, Leo Gao, Laurence Golding, Horace He, Connor Leahy, Kyle McDonell, Jason Phang, Michael Pieler, USVSN Sai Prashanth, Shivanshu Purohit, Laria Reynolds, Jonathan Tow, Ben Wang, and Samuel Weinbach. Gpt-neox-20b: An open-source autoregressive language model, 2022. URL [https://arxiv.org/abs/2204.06745](https://arxiv.org/abs/2204.06745).\n' +
+      '* Brain (2023) Google Brain. A new open source flan 20b with ul2, 2023. URL [https://www.gitay.net/blog/flan-ul2-20b](https://www.gitay.net/blog/flan-ul2-20b).\n' +
+      '* Brown et al. (2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.\n' +
+      '* Cettolo et al. (2017) Mauro Cettolo, Marcello Federico, Luisa Bentivogli, Jan Niehues, Sebastian Stuker, Katsuhito Sudoh, Koichiro Yoshino, and Christian Federmann. Overview of the IWSLT 2017 evaluation campaign. In _Proceedings of the 14th International Conference on Spoken Language Translation_, pages 2-14, Tokyo, Japan, December 14-15 2017. International Workshop on Spoken Language Translation. URL [https://aclanthology.org/2017.iwslt-1.1](https://aclanthology.org/2017.iwslt-1.1).\n' +
+      '* Chang et al. (2023) Yupeng Chang, Xu Wang, Jindong Wang, Yuan Wu, Kaijie Zhu, Hao Chen, Linyi Yang, Xiaoyuan Yi, Cunxiang Wang, Yidong Wang, et al. A survey on evaluation of large language models. _arXiv preprint arXiv:2307.03109_, 2023.\n' +
+      '* Chase (2022) Harrison Chase. Langchain. [https://github.com/langchain-ai/langchain](https://github.com/langchain-ai/langchain), 2022. Date released: 2022-10-17.\n' +
+      '* Chiang et al. (2023) Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality, March 2023. URL [https://lmsys.org/blog/2023-03-30-vicuna/](https://lmsys.org/blog/2023-03-30-vicuna/).\n' +
+      '* Chung et al. (2020) Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, Albert Webson, Shixiang Shane Gu, Zhuyun Dai, Mirac Suzgun, Xinyun Chen, Aakanksha Chowdhery, Sharan Narang, Gaurav Mishra, Adams Yu, Vincent Zhao, Yanping Huang, Andrew Dai, Hongkun Yu, Slav Petrov, Ed H. Chi, Jeff Dean, Jacob Devlin, Adam Roberts, Denny Zhou, Quoc V.\n' +
+      '\n' +
+      'Le, and Jason Wei. Scaling instruction-finetuned language models, 2022. URL [https://arxiv.org/abs/2210.11416](https://arxiv.org/abs/2210.11416).\n' +
+      '* Cobbe et al. (2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021.\n' +
+      '* Computer (2023) Together Computer. Redpajama: an open dataset for training large language models, 2023. URL [https://github.com/togethercomputer/RedPajama-Data](https://github.com/togethercomputer/RedPajama-Data).\n' +
+      '* Databricks (2023) Databricks. Hello dolly: Democratizing the magic of chatgpt with open models, 2023. URL [https://www.databricks.com/blog/2023/03/24/hello-dolly-democratizing-magic-chatgpt-open-models.html](https://www.databricks.com/blog/2023/03/24/hello-dolly-democratizing-magic-chatgpt-open-models.html).\n' +
+      '* Dey et al. (2023) Nolan Dey, Gurpreet Gosal, Zhiming, Chen, Hemant Khachane, William Marshall, Ribhu Pathria, Marvin Tom, and Joel Hestness. Cerebras-gpt: Open compute-optimal language models trained on the cerebras wafer-scale cluster, 2023.\n' +
+      '* Dolan and Brockett (2005) William B. Dolan and Chris Brockett. Automatically constructing a corpus of sentential paraphrases. In _Proceedings of the Third International Workshop on Paraphrasing (IWP2005)_, 2005. URL [https://aclanthology.org/I05-5002](https://aclanthology.org/I05-5002).\n' +
+      '* Eisele and Chen (2010) Andreas Eisele and Yu Chen. MultiUN: A multilingual corpus from united nation documents. In _Proceedings of the Seventh International Conference on Language Resources and Evaluation (LREC\'10)_, Valletta, Malta, May 2010. European Language Resources Association (ELRA). URL [http://www.lrec-conf.org/proceedings/lrec2010/pdf/686_Paper.pdf](http://www.lrec-conf.org/proceedings/lrec2010/pdf/686_Paper.pdf).\n' +
+      '* Eisenstein (2023) Michael Eisenstein. A test of artificial intelligence. _Nature Outlook: Robotics and artificial intelligence_, 2023.\n' +
+      '* Gao et al. (2018) J. Gao, J. Lanchantin, M. L. Soffa, and Y. Qi. Black-box generation of adversarial text sequences to evade deep learning classifiers. In _2018 IEEE Security and Privacy Workshops (SPW)_, pages 50-56, May 2018. doi: 10.1109/SPW.2018.00016.\n' +
+      '* Gao et al. (2021) Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac\'h, Haonan Li, Kyle McDonell, Niklas Muennighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. A framework for few-shot language model evaluation, 12 2023. URL [https://zenodo.org/records/10256836](https://zenodo.org/records/10256836).\n' +
+      '* Hendrycks et al. (2021) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. In _International Conference on Learning Representations_, 2021. URL [https://openreview.net/forum?id=d7KBjm13GmQ](https://openreview.net/forum?id=d7KBjm13GmQ).\n' +
+      '* Hoffmann et al. (2022) Jordan Hoffmann et al. Training compute-optimal large language models, 2022.\n' +
+      '\n' +
+      '* Huang et al. (2023) Yuzhen Huang, Yuzhuo Bai, Zhihao Zhu, Junlei Zhang, Jinghan Zhang, Tangjun Su, Junteng Liu, Chuancheng Lv, Yikai Zhang, Jiayi Lei, et al. C-eval: A multi-level multi-discipline chinese evaluation suite for foundation models. _arXiv preprint arXiv:2305.08322_, 2023.\n' +
+      '* Jin et al. (2019) Di Jin, Zhijing Jin, Joey Tianyi Zhou, and Peter Szolovits. Is bert really robust? natural language attack on text classification and entailment. _arXiv preprint arXiv:1907.11932_, 2019.\n' +
+      '* Khot et al. (2020) Tushar Khot, Peter Clark, Michal Guerquin, Peter Jansen, and Ashish Sabharwal. Qasc: A dataset for question answering via sentence composition, 2020.\n' +
+      '* Kojima et al. (2022) Takeshi Kojima, Shixiang Shane Gu, Michel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. In Alice H. Oh, Alekh Agarwal, Danielle Belgrave, and Kyunghyun Cho, editors, _Advances in Neural Information Processing Systems_, 2022. URL [https://openreview.net/forum?id=e2TBb5y0yFf](https://openreview.net/forum?id=e2TBb5y0yFf).\n' +
+      '* Levesque et al. (2012) Hector Levesque, Ernest Davis, and Leora Morgenstern. The winograd schema challenge. In _Thirteenth international conference on the principles of knowledge representation and reasoning_, 2012.\n' +
+      '* Li et al. (2023a) Cheng Li, Jindong Wang, Yixuan Zhang, Kaijie Zhu, Wenxin Hou, Jianxun Lian, Fang Luo, Qiang Yang, and Xing Xie. Large language models understand and can be enhanced by emotional stimuli, 2023a.\n' +
+      '* Li et al. (2019) Jinfeng Li, Shouling Ji, Tianyu Du, Bo Li, and Ting Wang. TextBugger: Generating adversarial text against real-world applications. In _Proceedings 2019 Network and Distributed System Security Symposium_. Internet Society, 2019. doi: 10.14722/ndss.2019.23138. URL [https://doi.org/10.14722%2Fndss.2019.23138](https://doi.org/10.14722%2Fndss.2019.23138).\n' +
+      '* Li et al. (2020) Linyang Li, Ruotian Ma, Qipeng Guo, Xiangyang Xue, and Xipeng Qiu. BERT-ATTACK: Adversarial attack against BERT using BERT. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pages 6193-6202, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020. emnlp-main.500. URL [https://aclanthology.org/2020.emnlp-main.500](https://aclanthology.org/2020.emnlp-main.500).\n' +
+      '* Li et al. (2023b) Xuechen Li, Tianyi Zhang, Yann Dubois, Rohan Taori, Ishaan Gulrajani, Carlos Guestrin, Percy Liang, and Tatsunori B Hashimoto. Alpacaeval: An automatic evaluator of instruction-following models. _Github repository_, 2023b.\n' +
+      '* Li et al. (2023c) Yuanzhi Li, Sebastien Bubeck, Ronen Eldan, Allie Del Giorno, Suriya Gunasekar, and Yin Tat Lee. Textbooks are all you need ii: **phi-1.5** technical report. _arXiv preprint arXiv:2309.05463_, 2023c.\n' +
+      '* Liang et al. (2022) Percy Liang, Rishi Bommasani, Tony Lee, Dimitris Tsipras, Dilara Soylu, Michihiro Yasunaga, Yian Zhang, Deepak Narayanan, Yuhuai Wu, Ananya Kumar, et al. Holistic evaluation of language models. _arXiv preprint arXiv:2211.09110_, 2022.\n' +
+      '\n' +
+      '* Lin et al. (2020) Bill Yuchen Lin, Seyeon Lee, Rahul Khanna, and Xiang Ren. Birds have four legs?! numersense: Probing numerical commonsense knowledge of pre-trained language models, 2020.\n' +
+      '* Liu (2022) Jerry Liu. LlamaIndex, 11 2022. URL [https://github.com/jerrryliu/llama_index](https://github.com/jerrryliu/llama_index).\n' +
+      '* Liu et al. (2022) Jiacheng Liu, Alisa Liu, Ximing Lu, Sean Welleck, Peter West, Ronan Le Bras, Yejin Choi, and Hannaneh Hajishirzi. Generated knowledge prompting for commonsense reasoning, 2022.\n' +
+      '* Liu et al. (2023) Yachuan Liu, Liang Chen, Jindong Wang, Qiaozhu Mei, and Xing Xie. Meta semantic template for evaluation of large language models. _arXiv preprint arXiv:2310.01448_, 2023.\n' +
+      '* Microsoft (2023) Microsoft. Semantic kernel. [https://github.com/microsoft/semantic-kernel](https://github.com/microsoft/semantic-kernel), 2023.\n' +
+      '* Naik et al. (2018) Aakanksha Naik, Abhilasha Ravichander, Norman Sadeh, Carolyn Rose, and Graham Neubig. Stress test evaluation for natural language inference. In _ACL_, pages 2340-2353, Santa Fe, New Mexico, USA, August 2018. Association for Computational Linguistics. URL [https://aclanthology.org/C18-1198](https://aclanthology.org/C18-1198).\n' +
+      '* OpenAI (2023a) OpenAI. [https://chat.openai.com.chat](https://chat.openai.com.chat), 2023a.\n' +
+      '* OpenAI (2023b) OpenAI. Gpt-4 technical report, 2023b.\n' +
+      '* Rajpurkar et al. (2018) Pranav Rajpurkar, Robin Jia, and Percy Liang. Know what you don\'t know: Unanswerable questions for SQuAD. In _ACL_, pages 784-789, Melbourne, Australia, July 2018. Association for Computational Linguistics. doi: 10.18653/v1/P18-2124. URL [https://aclanthology.org/P18-2124](https://aclanthology.org/P18-2124).\n' +
+      '* Ribeiro et al. (2020) Marco Tulio Ribeiro, Tongshuang Wu, Carlos Guestrin, and Sameer Singh. Beyond accuracy: Behavioral testing of NLP models with CheckList. In _ACL_, pages 4902-4912, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.442. URL [https://aclanthology.org/2020.acl-main.442](https://aclanthology.org/2020.acl-main.442).\n' +
+      '* Saxton et al. (2019) David Saxton, Edward Grefenstette, Felix Hill, and Pushmeet Kohli. Analysing mathematical reasoning abilities of neural models. In _ICLR_, 2019. URL [https://openreview.net/forum?id=H1gR5iR5FX](https://openreview.net/forum?id=H1gR5iR5FX).\n' +
+      '* Simmons (2022) Gabriel Simmons. Moral mimicry: Large language models produce moral rationalizations tailored to political identity. _arXiv preprint arXiv:2209.12106_, 2022.\n' +
+      '* Socher et al. (2013) Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D. Manning, Andrew Ng, and Christopher Potts. Recursive deep models for semantic compositionality over a sentiment treebank. In _EMNLP_, pages 1631-1642, Seattle, Washington, USA, October 2013. Association for Computational Linguistics. URL [https://www.aclweb.org/anthology/D13-1170](https://www.aclweb.org/anthology/D13-1170).\n' +
+      '* Talmor et al. (2019) Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. Commonsenseqa: A question answering challenge targeting commonsense knowledge, 2019.\n' +
+      '* Tafafafi et al. (2019)* Taori et al. (2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca](https://github.com/tatsu-lab/stanford_alpaca), 2023.\n' +
+      '* Team (2023) InternLM Team. Internlm: A multilingual language model with progressively enhanced capabilities. [https://github.com/InternLM/InternLM](https://github.com/InternLM/InternLM), 2023.\n' +
+      '* Touvron et al. (2023a) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023a.\n' +
+      '* Touvron et al. (2023b) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023b.\n' +
+      '* Wang et al. (2019) Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. Bowman. GLUE: A multi-task benchmark and analysis platform for natural language understanding. 2019. In the Proceedings of ICLR.\n' +
+      '* Wang and Komatsuzaki (2021) Ben Wang and Aran Komatsuzaki. GPT-J-6B: A 6 Billion Parameter Autoregressive Language Model. [https://github.com/kingoflolz/mesh-transformer-jax](https://github.com/kingoflolz/mesh-transformer-jax), May 2021.\n' +
+      '* Wang et al. (2023a) Boxin Wang, Weixin Chen, Hengzhi Pei, Chulin Xie, Mintong Kang, Chenhui Zhang, Chejian Xu, Zidi Xiong, Ritik Dutta, Rylan Schaeffer, et al. Decodingtrust: A comprehensive assessment of trustworthiness in gpt models. _arXiv preprint arXiv:2306.11698_, 2023a.\n' +
+      '* Wang et al. (2023b) Jindong Wang, Xixu Hu, Wenxin Hou, Hao Chen, Runkai Zheng, Yidong Wang, Linyi Yang, Haojun Huang, Wei Ye, Xiubo Geng, et al. On the robustness of chatgpt: An adversarial and out-of-distribution perspective. In _International conference on learning representations (ICLR) workshop on Trustworthy and Reliable Large-Scale Machine Learning Models_, 2023b.\n' +
+      '* Wang et al. (2017) Zhiguo Wang, Wael Hamza, and Radu Florian. Bilateral multi-perspective matching for natural language sentences, 2017.\n' +
+      '* Warstadt et al. (2018) Alex Warstadt, Amanpreet Singh, and Samuel R Bowman. Neural network acceptability judgments. _arXiv preprint arXiv:1805.12471_, 2018.\n' +
+      '* Wei et al. (2023) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. Chain-of-thought prompting elicits reasoning in large language models, 2023.\n' +
+      '* Williams et al. (2018) Adina Williams, Nikita Nangia, and Samuel Bowman. A broad-coverage challenge corpus for sentence understanding through inference. In _NAACL HLT_, pages 1112-1122. Association for Computational Linguistics, 2018. URL [http://aclweb.org/anthology/N18-1101](http://aclweb.org/anthology/N18-1101).\n' +
+      '\n' +
+      '* Willig et al. (2023) Moritz Willig, Matej Zecevic, Devendra Singh Dhami, and Kristian Kersting. Causal parrots: Large language models may talk causality but are not causal. _Transactions on machine learning research (TMLR)_, 8, 2023.\n' +
+      '* Xu et al. (2023) Benfeng Xu, An Yang, Junyang Lin, Quan Wang, Chang Zhou, Yongdong Zhang, and Zhendong Mao. Expert prompting: Instructing large language models to be distinguished experts, 2023.\n' +
+      '* Zheng et al. (2023) Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. Judging llm-as-a-judge with mt-bench and chatbot arena. _arXiv preprint arXiv:2306.05685_, 2023.\n' +
+      '* Zhou et al. (2023a) Denny Zhou, Nathanael Scharli, Le Hou, Jason Wei, Nathan Scales, Xuezhi Wang, Dale Schuurmans, Claire Cui, Olivier Bousquet, Quoc Le, and Ed Chi. Least-to-most prompting enables complex reasoning in large language models, 2023a.\n' +
+      '* Zhou et al. (2023b) Kun Zhou, Yutao Zhu, Zhipeng Chen, Wentong Chen, Wayne Xin Zhao, Xu Chen, Yankai Lin, Ji-Rong Wen, and Jiawei Han. Don\'t make your llm an evaluation benchmark cheater. _arXiv preprint arXiv:2311.01964_, 2023b.\n' +
+      '* Zhu et al. (2023a) Kaijie Zhu, Jiaoa Chen, Jindong Wang, Neil Zhenqiang Gong, Diyi Yang, and Xing Xie. Dyval: Graph-informed dynamic evaluation of large language models. _arXiv preprint arXiv:2309.17167_, 2023a.\n' +
+      '* Zhu et al. (2023b) Kaijie Zhu, Jindong Wang, Jiaheng Zhou, Zichen Wang, Hao Chen, Yidong Wang, Linyi Yang, Wei Ye, Neil Zhenqiang Gong, Yue Zhang, et al. Promptbench: Towards evaluating the robustness of large language models on adversarial prompts. _arXiv preprint arXiv:2306.04528_, 2023b.\n' +
+      '\n' +
+      '## Appendix A Details of PromptBench\n' +
+      '\n' +
+      '### Models\n' +
+      '\n' +
+      'In this section, we list the LLMs implemented in PromptBench.\n' +
+      '\n' +
+      '* **Flan-T5-large (Chung et al., 2022)**: Google\'s Flan-T5-large, a variation of the Text-to-Text Transfer Transformer (T5).\n' +
+      '* **Dolly-6B (Databricks, 2023)**: The Dolly-6B model, developed by Databricks, is a 6-billion parameter causal language model. It is an extension of EleutherAI\'s GPT-J (Wang and Komatsuzaki, 2021), further refined with Stanford\'s Alpaca (Taori et al., 2023) dataset comprising 52K question/answer pairs.\n' +
+      '* **Vicuna series (Chiang et al., 2023)**: Developed from the LLaMA-13B base model, Vicuna-13B integrates over 70K user-shared conversations from ShareGPT.com, leveraging public APIs for data acquisition.\n' +
+      '* **Cerebras series (Dey et al., 2023)**: Modeled on the GPT-3 architecture, Cerebras-13B is part of the Cerebras-GPT series, trained according to Chinchilla scaling laws (Hoffmann et al., 2022) to optimize computational efficiency.\n' +
+      '* **Llama2 series (Touvron et al., 2023a)**: Engineered by Meta AI\'s FAIR team, the Llama2 model is an autoregressive language model adopting the transformer architecture.\n' +
+      '* **GPT-NEOX-20B (Black et al., 2022)**: This variant, part of the extensive GPT model series, features 20 billion parameters, exemplifying large-scale language model implementation.\n' +
+      '* **Flan-UL2 (Brain, 2023)**: Flan-UL2, an encoder-decoder model, is grounded in the T5 architecture and enhanced with Flan prompt tuning and dataset techniques.\n' +
+      '* **ChatGPT (OpenAI, 2023a) and GPT-4 (OpenAI, 2023b)**: OpenAI\'s ChatGPT and GPT-4 are advanced iterations of the GPT series, with ChatGPT tailored for interactive tasks and GPT-4 being the most proficient in the series.\n' +
+      '* **phi-1.5 (Li et al., 2023c)**: phi-1.5 is a transformer architecture with 1.3 billion parameters, builds upon the dataset used for phi-1 with the addition of diverse NLP synthetic texts.\n' +
+      '* **PaLM 2 (Anil et al., 2023)** PaLM 2 is an advanced language model that excels in multilingual and reasoning capabilities, offering greater computational efficiency than its predecessor, PaLM. This Transformer-based model enhances performance across various model sizes in English, multilingual tasks, and reasoning challenges.\n' +
+      '\n' +
+      '### Tasks and Datasets\n' +
+      '\n' +
+      '* **GLUE (Wang et al., 2019)** The GLUE benchmark (General Language Understanding Evaluation) offers a suite of tasks to evaluate the capability of NLP models in understanding language. For this research, we employed 8 specific tasks: Sentiment Analysis (SST-2 (Socher et al., 2013)), Grammar Correctness (CoLA (Warstadt et al., 2018)), Identifying Duplicate Sentences (QQP (Wang et al., 2017), MRPC (Dolan and Brockett, 2005)), and various Natural Language Inference tasks (MNLI (Williams et al., 2018), QNLI (Wang et al., 2019), RTE (Wang et al., 2019), WNLI (Levesque et al., 2012)).\n' +
+      '\n' +
+      '* **MMLU (Hendrycks et al., 2021)** The MMLU dataset tests the broad knowledge and problem-solving skills of large language models through 57 tasks with multiple-choice questions in fields like mathematics, history, and computer science. It is a comprehensive multitask benchmark.\n' +
+      '* **SQuAD V2 (Rajpurkar et al., 2018)** The SQuAD v2 dataset is pivotal in training and assessing NLP models for reading comprehension. It builds upon the original SQuAD by adding unanswerable questions, making it more challenging. Models must either identify the correct answer in the text or recognize questions as unanswerable.\n' +
+      '* **UN Multi (Eisele and Chen, 2010)** Comprising texts in the six official United Nations languages, the Multi UN dataset is a vast parallel corpus from UN documents. However, its focus on formal texts may restrict its use in informal or conversational language contexts.\n' +
+      '* **IWSLT 2017 (Cettolo et al., 2017)** Designed for spoken language translation system evaluation, the IWSLT 2017 dataset includes multilingual, multi-domain text data, primarily from the TED Talks Open Translation Project. It encompasses numerous language pairs, providing a rich resource for translation tasks.\n' +
+      '* **Math (Saxton et al., 2019)** The DeepMind Mathematics Dataset assesses AI models\' mathematical reasoning by posing a wide array of math problems, from algebra to calculus. It tests the models\' understanding and logical reasoning in mathematics.\n' +
+      '* **BigBench (bench authors, 2023)** The BIG-bench is a collaborative benchmark designed to evaluate the capabilities of large language models and predict their future potential. It consists of over 200 tasks, contributed by 444 authors from 132 institutions, covering a wide range of topics like linguistics, math, common-sense reasoning, and more. These tasks are intended to probe areas believed to be beyond the current capabilities of language models.\n' +
+      '* **GSM8K (Cobbe et al., 2021)** The GSM8K dataset is a collection of 8.5K high-quality, linguistically diverse grade school math word problems. It was created by human problem writers and is divided into 7.5K training problems and 1K test problems. These problems, which require 2 to 8 steps to solve, primarily involve basic arithmetic operations and are designed to be solvable by a bright middle school student.\n' +
+      '* **CommonsenseQA (Talmor et al., 2019)** The CommonsenseQA dataset is a challenging commonsense question-answering dataset. It comprises 12,247 questions with 5 multiple-choice answers each.\n' +
+      '* **QASC (Khot et al., 2020)** QASC (Question Answering via Sentence Composition) is a specialized collection designed for question-answering tasks with a focus on sentence composition. It comprises 9,980 eight-way multiple-choice questions about grade school science, divided into 8,134 for training, 926 for development, and 920 for testing.(In our evaluation, we use development part.) The dataset is notable for its emphasis on multi-hop reasoning, requiring the retrieval and composition of facts from a broad corpus to answer each question.\n' +
+      '* **NummerSense (Lin et al., 2020)** NumerSense is a unique numerical commonsense reasoning probing task, featuring a diagnostic dataset with 3,145 masked-word-predictionprobes. This dataset has applications in tasks such as knowledge base completion and open-domain question answering.\n' +
+      '\n' +
+      '### Evaluation protocols\n' +
+      '\n' +
+      'DyVal (Zhu et al., 2023a) is an approach for _dynamic evaluation_ of LLMs by creating complexity-tailored evaluation samples on-the-fly, as opposed to relying on static benchmarks. DyVal synthesized seven distinct reasoning tasks, including: (1) Mathematics, focusing on arithmetic calculations and linear equation solving; (2) Logical Reasoning, involving boolean, deductive, and abductive logic; and (3) Algorithmic Analysis, covering reachability and the maximum sum path problem. MSTemp (Liu et al., 2023) stands for the semantic evalaution protocol which generate out-of-distribution samples by relying on evaluator LLMs and word replacement.\n' +
+      '\n' +
+      '### Prompts\n' +
+      '\n' +
+      '#### a.4.1 Prompts\n' +
+      '\n' +
+      'Our study examines four prompt categories, differentiated by their intended function and the required number of labeled samples. Task-oriented prompts are designed to clearly define the model\'s task, prompting it to generate outputs relevant to the task using its inherent pre-training knowledge. In contrast, role-oriented prompts position the model as a particular entity, like an expert, advisor, or translator, thereby subtly guiding the expected output format and behavior through the assumed role. Both categories can be adapted for zero-shot and few-shot learning contexts. We randomly choose three training set examples for each task to form the few shot examples. Examples of various prompt types are illustrated in Table 1.\n' +
+      '\n' +
+      '#### a.4.2 Prompt Engineering\n' +
+      '\n' +
+      'Prompt engineering is a process of structuring and optimizing prompts to efficiently use AI models. Methods in prompt engineering, such as chain-of-thought(Wei et al., 2023), gener\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c} \\hline \\hline \\multirow{3}{*}{Zero shot} & Task & Determine if the given pair of statements can be considered the same by \\\\  & oriented & responding with ‘equivalent’ or ‘not_equivalent’. \\\\ \\cline{2-3}  & Role & As an instrument for question comparison evaluation, consider the questions \\\\  & oriented & and determine if their meaning is the same, responding with ‘equivalent’ for \\\\  & similar questions or ‘not_equivalent’ for different questions. \\\\ \\hline \\multirow{4}{*}{Few shot} & Task & Review the sentence below and identify whether its grammar is ‘acceptable’ or ‘Unacceptable’: Here are three examples. Sentence: Our friends won’t \\\\  & oriented & buy this analysis, let alone the next one we propose. Answer: acceptable. Sentence: One more pseudo generalization and I’m giving up. Answer: acceptable. Sentence: They drank the pub. Answer: unacceptable. \\\\ \\cline{2-3}  & & Functioning as a grammar evaluation tool, analyze the given sentence and decide \\\\  & & if it is grammatically correct, responding with ‘acceptable’ or ‘unacceptable’: \\\\  & Role & Here are three examples. Sentence: Our friends won’t buy this analysis, \\\\  & oriented & let alone the next one we propose. Answer: acceptable. Sentence: One more \\\\  & & pseudo generalization and I’m giving up. Answer: acceptable. Sentence: They \\\\  & & drank the pub. Answer: unacceptable. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Examples of 4 types of prompts.\n' +
+      '\n' +
+      'ated knowledge prompting(Liu et al., 2022) and so on, help improve reasoning ability and task performance of AI models. We implement 6 prominent prompt engineering methods:\n' +
+      '\n' +
+      '* **Chain-of-Thought (Wei et al., 2023)**: This method involves breaking down complex, multi-step problems into smaller, intermediate steps, enabling Models to tackle more intricate reasoning tasks. Chain-of-Thought differs from standard few-shot prompting by not just providing questions and answers but prompting the model to produce intermediate reasoning steps before arriving at the final answer.\n' +
+      '* **Zero-Shot Chain-of-Thought (Kojima et al., 2022)**: Zero-Shot Chain of Thought improves Chain of Thought by simplifying the prompting process. The key innovation in Zero-Shot Chain-of-Thought is appending the phrase "Let\'s think step by step" to the end of a question.\n' +
+      '* **EmotionPrompt (Li et al., 2023a)**: Drawing inspiration from psychology and social science theories about human emotional intelligence, this method adds emotional stimuli to origin prompts. For example: "This is very important to my career."\n' +
+      '* **Expert Prompting (Xu et al., 2023)**: The key idea is to let model be an expert in role playing. To generate the expert identity, we first provide several instruction-expert pair exemplars, then the model generates an expert identity of this question. Finally, we ask the model to answer the instruction conditioned on expert identity.\n' +
+      '* **Generated Knowledge (Liu et al., 2022)**: Generated Knowledge Prompting is a method where a model first generates knowledge and then uses this generated information as additional input to answer questions. It enhances commonsense reasoning in AI without requiring task-specific knowledge integration or a structured knowledge base.\n' +
+      '* **Least to Most (Zhou et al., 2023a)**: Least to Most breaks down a complex problem into a series of simpler subproblems and then solves them in sequence. The key idea is to solve each subproblem by using the answers to previously solved subproblems. This method is particularly useful for tasks that require solving problems harder than the exemplars shown in the prompts.\n' +
+      '\n' +
+      '#### a.4.3 Adversarial Prompt Attacks\n' +
+      '\n' +
+      'Adversarial prompt attacks, as proposed by Zhu et al. (2023b), aims to _simulate_ potential disturbances that could naturally arise in practical scenarios. The proposed prompt attacks are intended to resemble common user errors or expressions, as users often make various mistakes when inputting prompts, such as typos, diverse word choices, and different sentence constructions. The prompt attacks encompass four distinct levels:\n' +
+      '\n' +
+      '* **Character-level:** Techniques such as TextBugger (Li et al., 2019) and DeepWordBug (Gao et al., 2018) are employed. These methods introduce errors or typos into words by altering characters.\n' +
+      '* **Word-level:** Attacks like BertAttack (Li et al., 2020) and TextFooler (Jin et al., 2019) are utilized. They focus on substituting words with their synonyms or contextually similar alternatives.\n' +
+      '* **Sentence-level:** StressTest (Naik et al., 2018) and CheckList (Ribeiro et al., 2020) are applied. These attacks add irrelevant or redundant sentences to prompts.\n' +
+      '\n' +
+      '* **Semantic-level:** To simulate the linguistic styles of different global regions.\n' +
+      '\n' +
+      '### Pipeline\n' +
+      '\n' +
+      'The full pipeline of using PromptBench for evaluation is shown in Figure 2.\n' +
+      '\n' +
+      '## Appendix B Benchmark Results\n' +
+      '\n' +
+      '### Adversarial prompt robustness\n' +
+      '\n' +
+      'The partial results of the robustness of different models on a range of tasks are presented in Figure 3. All models exhibit vulnerability to adversarial prompts, with ChatGPT and GPT-4 demonstrating the strongest robustness.\n' +
+      '\n' +
+      '### Prompt engineering\n' +
+      '\n' +
+      'Prompt engineering results are shown in Figure 4. Most methods are effective for special fields, so these methods can not surpass the baseline in every dataset.\n' +
+      '\n' +
+      '### Dynamic evaluation\n' +
+      '\n' +
+      'Figure 5 illustrates the outcomes of dynamic evaluations across various models and tasks. GPT-4 outperforms its counterparts significantly, yet there remains potential for enhancement in the performance of linear equation, abductive logic, and max sum path task.\n' +
+      '\n' +
+      'Figure 2: A pipeline for evaluation of LLMs.\n' +
+      '\n' +
+      'Figure 4: Comparison among different prompt engineering techniques.\n' +
+      '\n' +
+      'Figure 5: DyVal results.\n' +
+      '\n' +
+      'Figure 3: Adversarial prompt robustness results.\n' +
+      '\n' +
+      '## Appendix C Extensibility\n' +
+      '\n' +
+      'Each module in PromptBench can be easily extended. In the following, we provide basic guidelines for customizing your own datasets, models, prompt engineering methods, and evaluation metrics.\n' +
+      '\n' +
+      '### Add new datasets\n' +
+      '\n' +
+      'Adding new datasets involves two steps:\n' +
+      '\n' +
+      '1. Implementing a New Dataset Class: Datasets are supposed to be implemented in dataloader/dataset.py and inherit from the Dataset class. For your custom dataset, implement the _init_ method to load your dataset. We recommend organizing your data samples as dictionaries to facilitate the input process.\n' +
+      '2. Adding an Interface: After customizing the dataset class, register it in the DataLoader class within dataloader.py.\n' +
+      '\n' +
+      '### Add new models\n' +
+      '\n' +
+      'Similar to adding new datasets, the addition of new models also consists of two steps.\n' +
+      '\n' +
+      '1. Implementing a New Model Class: Models should be implemented in dataloader/model.py, inheriting from the LLMModel class. In your customized model, you should implement self.tokenizer and self.model. You may also customize your own predict function for inference. If the predict function is not customized, the default predict function inherited from LLMModel will be used.\n' +
+      '2. Adding an Interface: After customizing the model class, register it in the _create_model function within the class LLMModel in _init_.py.\n' +
+      '\n' +
+      '### Add new prompt engineering methods\n' +
+      '\n' +
+      'Adding new methods in prompt engineering is similar to steps of C.1 and C.2.\n' +
+      '\n' +
+      '1. Implementing a New Methods Class: Methods should be implemented in prompt_engineering Module. Firstly, create a new.py file for your methods. Then implement two functions: _init_ and query. For unified management, two points need be noticed: 1. all methods should inherits from Base class that has common code for prompt engineering methods. 2. prompts used in methods should be stored in prompts/method_oriented.py.\n' +
+      '2. Adding an Interface: After implementing a new methods, register it in the METHOD_MAP that is used to map method names to their corresponding class.\n' +
+      '\n' +
+      '### Add new metrics and input/output process functions\n' +
+      '\n' +
+      'New evaluation metrics should be implemented as static functions in class Eval within the metrics module. Similarly, new input/output process functions should be implemented as static functions in class InputProcess and class OutputProcess in the utils module.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
