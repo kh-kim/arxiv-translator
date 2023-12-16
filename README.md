@@ -62,6 +62,7 @@
 | 2002.06563 | Epidemic analysis of COVID-19 in China by dynamical modeling | [arXiv](https://arxiv.org/abs/2002.06563) / [ar5iv](https://ar5iv.org/abs/2002.06563) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2002.06563/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2002.06563/paper.ko.html) |
 | 1910.10683 | Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer | [arXiv](https://arxiv.org/abs/1910.10683) / [ar5iv](https://ar5iv.org/abs/1910.10683) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1910.10683/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1910.10683/paper.ko.html) |
 | 1910.07099 | Entire Space Multi-Task Modeling via Post-Click Behavior Decomposition for Conversion Rate Prediction | [arXiv](https://arxiv.org/abs/1910.07099) / [ar5iv](https://ar5iv.org/abs/1910.07099) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1910.07099/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1910.07099/paper.ko.html) |
+| 1702.08734 | Billion-scale similarity search with GPUs | [arXiv](https://arxiv.org/abs/1702.08734) / [ar5iv](https://ar5iv.org/abs/1702.08734) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1702.08734/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1702.08734/paper.ko.html) |
 
 ## Procedure
 
