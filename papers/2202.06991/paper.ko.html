@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Transformer Memory as a\n' +
+      '\n' +
+      '미분 검색 인덱스\n' +
+      '\n' +
+      ' Yi Tay\\({}^{*}\\), Vinh Q. Tran\\({}^{*}\\), Mostafa Dehghani, Jianmo Ni, Dara Bahri, Harsh Mehta\n' +
+      '\n' +
+      '**Zhen Qin, Kai Hui, Zhe Zhao, Jai Gupta, Tal Schuster**\n' +
+      '\n' +
+      '**William W**. 코헨, 도널드 메츨러\n' +
+      '\n' +
+      'Google Research\n' +
+      '\n' +
+      '{yitay,vqtran,metzler}@google.com\n' +
+      '\n' +
+      'Co-leads.\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '본 논문에서는 말뭉치에 대한 모든 정보를 모델의 파라미터에 부호화하는 단일 Transformer를 사용하여 정보 검색이 가능함을 보인다. 이를 위해 문자열 질의를 관련 도키드에 직접 매핑하는 텍스트-텍스트 모델을 학습하는 새로운 패러다임인 차분 검색 인덱스(Differentiable Search Index, DSI)를 소개한다. 즉, DSI 모델은 매개변수만을 사용하여 질의에 직접 응답함으로써 전체 검색 프로세스를 극적으로 단순화한다. 우리는 문서와 식별자가 표현되는 방식의 변화, 훈련 절차의 변화, 모델과 말뭉치 크기 간의 상호 작용을 연구한다. 실험들은 주어진 적절한 설계 선택들이 주어지면, DSI가 듀얼 인코더 모델들과 같은 강한 베이스라인들보다 상당히 우수함을 입증한다. 또한, DSI는 제로 샷 설정에서 BM25 기준선을 능가하는 강력한 일반화 기능을 보여준다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '정보검색(IR) 시스템은 사용자 질의 \\(q\\in\\mathcal{Q}\\)을 관련 문서 \\(\\{d_{1},\\dots,d_{n}\\}\\subseteq\\mathcal{D}\\)의 순위 리스트에 매핑한다. 가장 널리 사용되는 IR 접근 방식은 파이프라인 _retrieve-then-rank_ 전략을 기반으로 합니다. 검색을 위해, 반전된 인덱스 또는 최근접 이웃 검색에 기초한 접근법들은 대조적 학습 기반 이중 인코더(DEs)(Gillick et al., 2018; Karpukhin et al., 2020; Ni et al., 2021)가 현재의 최첨단인 경우에 공통적이다.\n' +
+      '\n' +
+      '본 논문에서는 시퀀스-투-시퀀스(seq2seq) 학습 시스템(Sutskever et al., 2014)을 이용하여 질의 \\(q\\)을 관련 문서 \\(j\\in\\mathcal{Y}\\)에 직접 매핑하는 대체 아키텍처를 제안한다. 이 제안은 시퀀스 투 시퀀스 인코더-디코더 아키텍처에 대한 그림 1의 하단 절반에 나와 있다.\n' +
+      '\n' +
+      '우리는 이 제안된 아키텍처를 _differentiable search index_ (DSI)라고 부르고, 대형 사전 훈련된 Transformer (Vaswani et al., 2017) 모델로 구현하여, 최근 대형 생성 언어 모델 (LMs)의 성공을 기반으로 구축한다 (Brown et al., 2020; Raffel et al., 2019; Devlin et al., 2018; Thoppilan et al., 2022; Du et al., 2021). 제안된 구조에서 말뭉치의 모든 정보는 Transformer 언어 모델의 파라미터 내에서 인코딩된다.\n' +
+      '\n' +
+      '추론 시간에 학습된 모델은 텍스트 질의 \\(q\\)을 입력으로 하고 docid \\(j\\)을 출력한다. 원하는 경우, 빔 탐색은 잠재적으로 관련된 도키드의 랭킹된 리스트를 생성하는 데 사용될 수 있다. 우리가 보여주듯이, 이 과정은 적절하게 훈련될 때 놀라울 정도로 잘 작동할 수 있다. 실험 결과, 기본 크기 T5 모델의 경우, 가장 작은 코퍼스의 Hits@1은 DE의 경우 12.4%에서 DSI의 경우 33.9%로 20점 이상 향상되었고, 코퍼스 30\\(\\times\\)의 경우 7점 가까이 성능이 향상되었다. 이러한 이득은 더 큰 모델이 사용될 때 증가한다: 11B-파라미터 T5 모델의 경우, Hits@1 성능은 작은 말뭉치에서 DE보다 25포인트 이상, 큰 말뭉치에서 15포인트 이상 향상된다. DSI는 또한 제로 샷 설정에서, 예를 들어, Hits@1을 BM25에 비해 14 포인트 개선하는 것과 같이 매우 잘 수행한다.\n' +
+      '\n' +
+      '이러한 정량적 이득에 더하여, DSI 아키텍처는 DE보다 훨씬 간단하다(표 1 참조). DE 시스템은 검색 절차(MIPS)를 수정하고 그 검색 절차에 대한 성능을 최적화하는 내부 표현을 학습하며, 대조적으로 DSI 시스템은 인코딩에서 도키드로 매핑하기 위해 표준 모델 추론을 사용하는 대신 특수 목적 고정 검색 절차를 포함하지 않는다.\n' +
+      '\n' +
+      '표 1에서 볼 수 있듯이 기계 학습 커뮤니티에 특히 관심이 있는 것은 DSI에서 검색의 모든 측면이 잘 이해된 ML 작업에 매핑된다. 이것은 오랜 IR 문제를 해결하기 위한 새로운 잠재적 접근법으로 이어질 수 있다. 하나의 예로서, 인덱싱은 이제 모델 트레이닝의 특별한 경우이므로, 인덱스를 점진적으로 업데이트하는 것은 모델 업데이트의 특별한 경우가 된다(Sun 등, 2020).\n' +
+      '\n' +
+      '본 논문에서는 DSI를 중규모의 말뭉치(10k에서 320k 문서)에 적용하여, 모두 하나의 도전적인 검색 작업에서 파생되었으며, DSI의 스케일링에 대한 중요한 질문을 더 큰 말뭉치에 남겨두고 향후 작업을 수행한다. 고려 되는 작업은 어휘 모델에 대 한 도전적인 작업인 자연 질문 (NQ) 데이터 집합에서 지정 된 지문을 검색 하는 것입니다.\n' +
+      '\n' +
+      'DSI의 아이디어는 간단하지만 실현될 수 있는 방법은 여러 가지가 있는데, 일부는 놀랍게도 잘 작동하고 일부는 놀랍게도 잘 작동하지 않는다. 아래에서는 DSI 아키텍처의 여러 가지 변형을 탐구한다.\n' +
+      '\n' +
+      '_Document representation._ 우리는 문서의 전체 텍스트를 사용하는 "순진한" 접근법과 전통적인 IR 엔진에 의해 사용되는 단어 백 표현의 변형을 포함하여 문서를 표현하는 몇 가지 접근법을 탐구한다.\n' +
+      '\n' +
+      '_Docid representation._ 우리는 도키드를 대표하는 몇 가지 방법을 살펴본다. 정수를 텍스트 문자열로 순진하게 표현하는 것 외에도 각 문서에 고유한 토큰이 할당되는 _비구조화된 원자 문서_ 및 설명하는 _구조화된 의미 문서_를 구성하는 몇 가지 간단한 기준선도 고려합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c|c} \\hline \\hline  & BM25 or TFIDF & Dual Encoder (DE) & Differentiable Search Index (DSI) \\\\ \\hline doc/query rep. & sparse \\(\\mathbf{v}_{d_{j}}\\) vector in \\(\\mathbb{R}^{|V|}\\) & dense \\(\\mathbf{v}_{d_{j}}\\) vector in \\(\\mathbb{R}^{d}\\) & Various (see Section 3.1.2) \\\\ \\hline docid rep. & \\(-\\) & \\(-\\) & Various (see Section 3.2) \\\\ \\hline indexing & build inverted index mapping & build table mapping & train model (see Section 3.1.1) \\\\  & each term \\(t\\rightarrow\\{d_{j_{1}},\\ldots,d_{j_{k}}\\}\\) & each docvec \\(\\mathbf{v}_{d_{j}}\\to j\\) & to map \\(d_{j}\\to j\\) \\\\ \\hline retrieval & approximate sparse matmul & approximate MIPS & run trained model \\\\ (top-1) & to find \\(\\operatorname*{argmax}_{j}\\mathbf{v}_{q}^{\\mathbf{T}}\\mathbf{v}_{d_{j}}\\) & to find \\(\\operatorname*{argmax}_{j}\\mathbf{v}_{q}^{\\mathbf{T}}\\mathbf{v}_{d_{j}}\\) & to find \\(\\operatorname*{argmax}_{j}\\Pr(j|q)\\) \\\\ \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 정보 검색은 문서 표현, 인덱싱 및 검색의 하위 문제와 관련된 일련의 결정을 필요로 한다. DSI의 구조화된 문서 변형은 또한 네 번째 결정, 즉 도키드가 표현되는 방식에 민감하다.\n' +
+      '\n' +
+      '도 1: 이중 인코더(상단)와 미분가능한 검색 인덱스(하단)의 비교.\n' +
+      '\n' +
+      '코퍼스의 계층적 클러스터링을 통해 문서를 탐색하는 방법. 클러스터링을 통해 의미적으로 구조화 되거나 토큰화된 정수로 _naively structured_ 하는 구조적 도키드는 디코더에서 사용 되는 어휘의 크기가 더 커지기 때문에 큰 말뭉치로 더 잘 확장 됩니다.\n' +
+      '\n' +
+      '_Indexing._ 학습 가능한 IR 시스템은 전통적으로 코퍼스를 인덱싱하는 단계(즉, 각 문서에 대한 정보를 암기하는 단계)와 인덱스에서 효과적으로 검색하는 방법을 배우는 두 단계로 구성된다. DSI에서 인덱스는 모델 파라미터에 저장되고, 인덱싱은 단순히 다른 종류의 모델 트레이닝이다. 그림 1은 코퍼스를 인덱싱하기 위한 한 가지 방법을 제안한다. 즉, (1) 예제 \\((d_{j},\\j)\\) 문서 \\(d_{j}\\)를 문서 \\(j\\)와 페어링하는 방법, (2) 예제 \\((q,\\j)\\) 쿼리를 관련 문서 \\(j\\)와 페어링하는 방법. 이 설정에서 유형 (1)의 예는 "인덱싱" 예제입니다.\n' +
+      '\n' +
+      '유형 (2)의 예만으로는 시스템이 새로운 검색으로 일반화하기에 충분한 정보를 제공하지 않는다는 것은 분명하지만, 문서와 문서 사이의 연관성에 대한 모델을 그럴듯하게 "가르칠" 수 있는 유형 (1)의 예에는 많은 대안이 있다. 우리는 아래에 있는 여러 가지 방법을 탐색하고 일부 그럴듯한 보기 기법이 매우 제대로 작동하지 않는다는 것을 보여준다. 또한 이러한 유형의 예제를 결합하기 위한 여러 대안적 다중 작업 최적화 및 커리큘럼 학습 방안을 탐색한다.\n' +
+      '\n' +
+      '_모델 및 말뭉치 크기의 효과._ 최근 연구 결과에 따르면 대형 LM의 일부 속성은 매우 큰 모델 크기 브라운 등(2020)에서만 나타나는 것으로 나타나므로, 10k, 100k, 320k 문서의 모델 크기와 코퍼스 크기 범위에 대한 DSI의 성능을 탐구한다.\n' +
+      '\n' +
+      '_ 요약._ 본 논문에서는 문서와 도키드에 대한 순진한 표현과 현대의 대형 LMs를 미세 조정하기 위한 적절한 훈련 절차가 놀라울 정도로 잘 수행된다는 것을 보여준다; 본 논문에서는 순진한 표현 선택을 향상시키는 두 가지 개선된 도키드 표현, 즉 비구조화된 도키드와 의미론적으로 구조화된 도키드를 제시한다. 인덱싱/트레이닝 전략에 따라 성능에 상당한 차이가 있음을 보여주고, 모델 규모에 따라 DSI의 성능이 상당히 일관되게 향상됨을 보여준다. 우리가 아는 한, 이것은 잘 연구된 문서 검색 작업에 대한 강력한 기준선보다 성능을 향상시키는 생성 인덱싱의 첫 번째 경우이다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      'De Cao 등(2020)은 _자기회귀 엔티티 링킹_이라는 관련 시퀀스-대-시퀀스 시스템을 기술하며, 여기서 엔티티를 언급하는 문서들 - 아마도 암시적으로, 예를 들어, 해당 엔티티가 답변인 질문을 제기함으로써 - 이 엔티티의 표준 명칭에 매핑된다. 위키피디아의 경우 정준 개체명이 페이지 제목에 해당하므로 이는 일종의 문서 검색으로 볼 수 있다. 이러한 접근법은 표준 형태로 지식 베이스 트리플들을 생성하는 것과 같은 다른 목적들에 적응되었다(Josifoski et al., 2021). 우리가 고려하는 작업은 자동 회귀 개체 연결에서 고려하는 작업과 다르다. 우리의 목표는 제목이 정답인 문서가 아니라 정답이 포함된 문서를 검색하는 것이다. 더 중요한 것은 생성 대상을 연결하는 자기 회귀 엔터티에서 _의미적으로 의미 있는 이름_ 인 반면, 대상은 _임의 도키드_ 일 수 있습니다. 이는 일반적인 검색 작업에 적용할 수 있지만 도키드 표현 및 인덱싱 전략에 대한 새로운 질문을 제기한다.\n' +
+      '\n' +
+      '자기 회귀 엔터티 연결에서 생성은 고정 집합에서 출력을 반환 하도록 제한 됩니다. DSI 생성 출력을 유효한 도키드로 제한하는 것이 가능할 것이다. 이 기술을 사용하지 않지만 이것이 성능을 향상시킬 수 있는 정도는 가치 있는 질문이다.\n' +
+      '\n' +
+      '_검색 증강 생성_에 대한 큰 작업, 즉 언어 모델을 향상시키기 위한 보조 문서를 검색하는 작업이 있다(Borgeaud et al., 2021; Guu et al., 2020). 이 기법들은 질의응답을 포함한 많은 작업에 유용하지만, DEs와 같은 전통적인 검색 방법에 의존한다. 여기서는 생성 프로세스를 확장 하기 위해 검색을 사용 하는 것이 아니라 검색 프로세스를 _대체 하기 위해 생성을 사용 합니다.\n' +
+      '\n' +
+      '이중 인코더(Dehghani et al., 2017; Gillick et al., 2018; Gao et al., 2021; Ni et al., 2021; Karpukhin et al., 2020)는 검색을 위한 잘 확립된 패러다임이다. 핵심 아이디어는 질의와 문서 임베딩을 독립적으로 생성하고 모든 임베딩 쌍에 걸쳐 벡터 공간에서 유사성 검색을 수행하는 것이다. 질의 및 후보 문서들은 시퀀스 인코더에 의해 생성되고 대조 손실의 형태를 사용하여 트레이닝이 수행된다.\n' +
+      '\n' +
+      '대규모 변압기 모델을 메모리 저장소로 해석하는 것은 선행 연구에서 조사되었다. (Roberts et al., 2020)는 사전 트레이닝 동안 모델의 파라미터들 내에 인코딩된 사실들을 검색하기 위해 T5 모델들을 트레이닝하는 폐쇄-북 QA 태스크에서 성공을 입증했다. 그러나 CBQA와는 달리 본 논문에서 제시하는 문제는 직접 답변을 생성하는 대신 _docids_를 기반으로 전체 문서를 검색하는 것이다. 한편, (Petroni et al., 2019) 또한 언어 모델을 지식 베이스로서 조사하였고, 사전 훈련된 LM들이 이미 관계적 지식을 포함할 수 있음을 발견하였다. (Geva et al., 2020)는 Transformer feedforward 계층 내에 인코딩된 지식을 분석한다. 또한, Transformers와 연관 메모리 및 홉필드 네트워크(Ramsauer et al., 2020)의 관계를 입증하는 작업도 있었으며, 이는 Transformers가 직관적으로 좋은 연관 메모리 저장소 또는 검색 인덱스로서 역할을 해야 한다는 개념을 강화한다.\n' +
+      '\n' +
+      '## 3 Differentiable Search Index\n' +
+      '\n' +
+      '제안된 차분 검색 인덱스(Differentiable Search Index, DSI)의 핵심 아이디어는 단일 신경망 모델 내에서 전통적인 다단계 검색-then-rank 파이프라인들을 완전히 파라미터화하는 것이다. 그렇게 하기 위해, DSI 모델들은 다음의 두 가지 기본 동작 모드를 지원해야 한다:\n' +
+      '\n' +
+      '* **인덱싱**: DSI 모델은 각 문서 \\(d_{j}\\)의 콘텐츠를 해당 docid \\(j\\)와 연결하는 방법을 배워야 합니다. 본 논문은 문서 토큰을 입력으로 하고 식별자를 출력으로 생성하는 간단한 시퀀스-투-시퀀스(seq2seq) 접근법을 사용한다.\n' +
+      '* **검색**: 입력 쿼리가 지정 된 DSI 모델은 후보 도키드의 순위 목록을 반환 해야 합니다. 여기서, 이것은 자기회귀 생성으로 달성된다.\n' +
+      '\n' +
+      '이 두 동작 후에, DSI 모델은 문서들의 코퍼스를 인덱싱하고 선택적으로 라벨링된 데이터 세트(쿼리들 및 라벨링된 문서들)에 대해 미세 조정하도록 훈련될 수 있고, 그 후 관련 문서들을 검색하는데 사용될 수 있다 - 모두 단일의 통합된 모델 내에서. 검색-then-rank 접근법과 달리, 이러한 유형의 모델은 단순한 종단간 훈련을 허용하고 더 크고 더 복잡한 신경 모델의 미분가능한 하위 구성요소로서 쉽게 사용될 수 있다.\n' +
+      '\n' +
+      '### Indexing Strategies\n' +
+      '\n' +
+      '우리는 문서와 식별자들 사이의 연관성을 학습하기 위한 다양한 인덱싱 전략들을 조사한다. 우리는 문서 토큰의 시퀀스가 주어진 도키드를 예측하도록 모델을 훈련시킨다. 이를 통해 우리의 모델은 어떤 식별자가 어떤 문서에 속하는지 학습할 수 있으며 전통적인 검색 색인에 대한 차별 가능한 태도로 생각할 수 있다. 우리는 다양한 대안을 고려하고 후속 섹션에서 이러한 설정을 제거한다. 사용된 최종 전략은 직접 인덱싱을 사용하는 Inputs2Target이었다.\n' +
+      '\n' +
+      '#### 3.1.1 Indexing Method\n' +
+      '\n' +
+      '이 섹션에서는 우리가 고려하는 색인 작업 변형에 대해 설명합니다.\n' +
+      '\n' +
+      'Inputs2TargetWe는 이를 doc_tokens \\(\\rightarrow\\) docid의 seq2seq 작업으로 프레임합니다. 이름에서 알 수 있듯이 문서 토큰에 직접 입력 대 타겟 방식으로 도키드를 바인딩합니다. 여기서 장점은 식별자가 잡음 제거 대상이라는 점이며, 이는 손실 함수에 더 근접하게 한다. 검색 작업은 식별자를 예측하는 것과도 관련이 있기 때문에, 이 공식화는 네트워크가 시퀀스 길이의 관점에서 유사한 입력-목표 균형을 따를 수 있게 한다. 잠재적인 약점은 문서 토큰이 노이즈 제거 대상이 아니므로 문서 토큰에 대한 일반적인 사전 훈련의 기회가 없다는 것이다.\n' +
+      '\n' +
+      'Targets2Inputs 이 공식은 위의 반대, 즉 식별자, 즉 docid\\(\\rightarrow\\) doc_tokens에서 문서 토큰을 생성 하는 것을 고려 합니다. 직관적으로 이것은 도키드에 조건화된 자기회귀 언어 모델을 훈련시키는 것과 같다.\n' +
+      '\n' +
+      '양방향 이 공식은 동일한 공동 학습 설정 내에서 Inputs2Targets 및 Targets2Inputs를 모두 학습합니다. 모델이 작업이 수행 중인 방향을 알 수 있도록 접두사 토큰이 미리 작성됩니다.\n' +
+      '\n' +
+      'Span CorruptionWe는 또한 doc 토큰을 포함 하 여 span corruption 기반 노이즈 제거 (Raffel et al., 2019)를 수행 하는 설정을 탐색 했습니다. 이 접근 방식에서는 식별자를 스팬 손상 목표에서 스팬으로 무작위로 마스킹할 수 있는 접두사로 문서 토큰에 연결합니다.\n' +
+      '\n' +
+      '이 방법은 (1) 또한 인덱싱 동안 일반적인 사전-트레이닝을 수행하고 (2) 디노이징 타겟들 및 입력들로서 도키들의 양호한 균형을 달성하는 이점을 갖는다.\n' +
+      '\n' +
+      '#### 3.1.2 문서 표현 전략\n' +
+      '\n' +
+      '이전 섹션에서는 _"인덱싱 방법"_을 탐구했다. 이 섹션에서는 _"인덱싱할 것?"_, 즉 _doc_tokens_를 가장 잘 나타내는 방법을 조사합니다. 우리는 여기서 우리의 선택사항들을 진술하고 나중에 실험에서 그것들을 조심스럽게 제거한다 결국 가장 좋은 선택은 직접 인덱싱 방법이었습니다.\n' +
+      '\n' +
+      '직접 인덱싱 이 전략은 문서를 정확하게 나타냅니다. 우리는 순차적 순서가 보존된 문서의 첫 번째 \\(L\\) 토큰을 가져와서 도키드와 연관시킨다.\n' +
+      '\n' +
+      'Set IndexingDocuments는 반복된 용어 및/또는 비정보적 단어(예를 들어, 불용어)를 포함할 수 있다. 이 전략은 기본 Python 집합 작업을 사용 하 여 반복 된 용어를 중복 제거하고 문서에서 불용어를 제거 합니다. 필터링 후 나머지 문서는 직접 색인과 유사한 방식으로 모델에 전달된다.\n' +
+      '\n' +
+      '역색인 이 전략은 전체 문서 대신 청크된 문서(토큰의 연속 블록)를 도키드에 직접 매핑합니다. 우리는 \\(k\\) 토큰의 연속된 단일 청크를 무작위로 서브샘플링하고 도키드와 연관시킨다. 이 접근 방식의 주요 장점은 첫 번째 \\(k \\) 토큰을 넘어 볼 수 있도록 하는 것입니다.\n' +
+      '\n' +
+      '### 검색을 위한 Docids 표현\n' +
+      '\n' +
+      'seq2seq 기반 DSI 모델들 내에서의 검색은 입력 질의가 주어진 도키드들을 디코딩함으로써 달성된다. 효과적인 방식으로 이러한 디코딩을 수행하는 방법은 도키드가 모델에 어떻게 표현되는지에 크게 좌우된다. 이 섹션의 나머지는 도키드를 표현하기 위한 다수의 가능한 방법들 및 각각에 대한 디코딩을 처리하는 방법을 탐구한다.\n' +
+      '\n' +
+      '비구조화된 원자 식별자들 문서를 표현하는 가장 순진한 방법은 각각의 임의의(및 아마도 랜덤한) 고유 정수 식별자를 할당하는 것이다. 이를 _비구조화된 원자 식별자_ 라고 합니다.\n' +
+      '\n' +
+      '이러한 식별자들을 가지고, 명백한 디코딩 공식은 식별자들에 대한 확률 분포를 학습하는 것이다. 이 경우, 모델들은 각각의 고유한 도키드에 대해 하나의 로짓(\\(|N_{documents}|\\))을 방출하도록 트레이닝된다. 이는 표준 언어 모델에서의 출력 계층과 유사하지만, 도키드를 포함하도록 확장된다.\n' +
+      '\n' +
+      '이를 수용하기 위해 표준 언어 모델의 출력 어휘를 다음과 같이 확장한다.\n' +
+      '\n' +
+      '\\[O=\\text{Softmax}([W_{tokens};\\;W_{docs}]^{T}\\;h_{last})\\]\n' +
+      '\n' +
+      '여기서 \\([;]\\)는 행 단위 연결 연산자, \\(W_{tokens}\\in\\mathbb{R}^{d_{model}\\times|N_{tokens}|}\\) 및 \\(W_{docs}\\in\\mathbb{R}^{d_{model}\\times|N_{documents}|}\\)입니다. \\ (h_{last}\\)는 디코더 스택의 마지막 계층의 은닉 상태(\\(\\in\\mathbb{R}^{d_{model}}\\))이다. 주어진 질의에 대한 상위 k개의 문서를 검색하기 위해, 우리는 단순히 출력 로짓들을 정렬하고 대응하는 인덱스들을 반환한다. 이는 또한 모든 문서가 한 번에 고려되는 순위를 매기기 위한 표준 목록 학습을 연상시킨다.\n' +
+      '\n' +
+      'Naively Structured String 식별자 구조화되지 않은 식별자, 즉 임의 고유 정수를 _토큰 가능_ 문자열로 처리하는 표면적으로 불합리한 접근 방식도 고려합니다. 이를 "naively structured identifier"라고 합니다.\n' +
+      '\n' +
+      '이 공식에서, 검색은 한 번에 하나의 토큰을 순차적으로 도키드 스트링을 디코딩함으로써 달성된다. 따라서 구조화되지 않은 원자 식별자와 함께 제공되는 큰 소프트맥스 출력 공간이 필요하지 않습니다. 또한 각 개별 도키드에 대한 임베딩을 학습할 필요가 없습니다.\n' +
+      '\n' +
+      '디코딩할 때, 빔 탐색은 예측된 최상의 도키드를 획득하기 위해 사용된다. 이 전략을 사용하면 상위 k 순위를 얻는 것이 덜 간단합니다. 전체 도키드 공간을 철저하게 샅샅이 뒤져서 쿼리가 주어졌을 때 각 도키드의 가능성을 얻을 수 있다. 대신 부분 빔 탐색 트리를 사용하여 상위 k개의 검색 점수를 구성한다. 우리는 이 근사치가 실제로 매우 효율적이고 효과적이라는 것을 발견한다.\n' +
+      '\n' +
+      '의미적으로 구조화된 식별자 지금까지 도키드를 나타내기 위한 모든 접근법은 식별자가 임의의 방식으로 할당되는 것으로 가정했다. 임의 식별자의 한계를 탐구하는 것은 매우 흥미롭지만, 의미 구조를 가진 도키드 공간을 삽입하는 것이 더 나은 색인 및 검색 능력으로 이어질 수 있다는 것은 직관적일 뿐이다. 따라서 이 섹션에서는 _의미적으로 구조화된 식별자_ 를 탐구합니다.\n' +
+      '\n' +
+      '특히, 다음과 같은 속성을 만족하는 식별자를 자동으로 생성하는 것을 목표로 한다. (1) 도시드는 관련 문서의 의미론에 대한 일부 정보를 캡처해야 하며, (2) 도시드는 각 디코딩 단계 후에 검색 공간이 효과적으로 감소되는 방식으로 구조화되어야 한다. 이것은 의미적으로 유사한 문서들이 식별자 접두사를 공유하는 식별자들을 초래한다.\n' +
+      '\n' +
+      '이 작업에서 우리는 이것을 완전히 감독되지 않은 전처리 단계로 취급한다. 그러나, 향후 작업의 일부로서 완전히 종단간 방식으로 시맨틱 식별자들을 통합하고 자동으로 학습하는 것이 가능할 수 있다.\n' +
+      '\n' +
+      '이러한 특성을 갖는 식별자를 구성하기 위해, 우리는 십진 트리(또는 더 일반적으로 트라이)를 유도하기 위해 문서 임베딩에 걸쳐 간단한 계층적 클러스터링 프로세스를 사용한다.\n' +
+      '\n' +
+      '인덱싱할 코퍼스가 주어지면 모든 문서가 10개의 클러스터로 클러스터링됩니다. 각 문서에는 0-9개의 클러스터 수를 갖는 식별자가 할당된다. \\(c\\)개 이상의 문서를 포함하는 모든 클러스터에 대해 알고리즘은 재귀적으로 적용되며, 다음 단계의 결과(식별자의 나머지 접미사)가 기존 식별자에 추가된다.\n' +
+      '\n' +
+      '\\(c\\) 문서 이하의 클러스터의 경우 각 요소에는 0에서 최대 \\(c-1\\)까지의 임의의 숫자가 할당되며 마찬가지로 해당 숫자가 기존 식별자에 추가됩니다. 이 특정 프로세스는 소수 트리를 유도하지만 다른 합리적인 전략을 사용하여 유사한 유형의 시도를 유도할 수 있다. 실제로 작은 8층 BERT 모델에 의해 생성된 임베딩에 \\(k\\)-평균을 \\(c=100\\)과 함께 적용하면 된다. 우리는 알고리즘 1에 이 과정을 위한 의사 코드를 포함한다.\n' +
+      '\n' +
+      '```\n' +
+      'Input: Document embeddings \\(X_{1:N}\\), where \\(X_{i}\\in\\mathbb{R}^{d}\\) Output: Corresponding docid strings \\(J_{1:N}\\) functionGenerateSemananticIDs(\\(X_{1:N}\\)) \\(C_{1:10}\\gets Cluster(X_{1:N},\\ k=10)\\) \\(J_{current}\\leftarrow[i]*[C_{i+1}]\\) if\\(|C_{i+1}\\>c\\)then \\(J_{rest}\\leftarrow\\)GenerateSemanticIDs(\\(J_{cluster}\\leftarrow\\)elementwiseStCtConcat(\\(J_{current},J_{rest}\\)) endfor \\(J\\leftarrow J.\\)appendElements(\\(J_{cluster}\\)) endfor \\(J\\leftarrow\\)reorderToOriginal(\\(J,\\ X_{1:N},\\ C_{1:10}\\)) return\\(J\n' +
+      '```\n' +
+      '\n' +
+      '**알고리즘 1** 의미적으로 구조화된 식별자를 생성합니다. (섹션 3.2 참조)\n' +
+      '\n' +
+      '### 학습 및 최적화\n' +
+      '\n' +
+      '우리가 훈련하는 DSI 모델은 seq2seq 교차 엔트로피 손실에 최적화되어 있으며 교사 강제력으로 훈련된다. 우리는 DSI 모델을 훈련시키기 위한 두 가지 주요 전략을 탐색했다. 첫 번째 및 보다 간단한 전략은 인덱싱(암기)을 수행하기 위해 모델을 먼저 트레이닝하고, 이어서 트레이닝된 모델이 쿼리를 도키드(예를 들어, 검색)에 매핑하는 데 사용되는 미세 조정 단계를 수행하는 것이다. 두 번째 전략은 다중 작업 설정에서 함께 훈련하는 것입니다. 이를 위해, 우리는 T5-스타일 코-트레이닝과 유사한 방식으로(예를 들어, 태스크 프롬프트를 사용하여) 코-트레이닝 태스크들을 프레임화한다. 후자는 특히 검색 작업 예제에 대한 인덱싱의 비율이 높을 때 훨씬 더 나은 성능을 보였다. 따라서 우리는 기본 전략으로 다중 작업 학습을 채택했다.\n' +
+      '\n' +
+      '여기서 우리는 우리의 설정이 독특하고 전통적인 다중 작업 학습 또는 전이 학습과 다르다는 관찰을 한다. 일반적인 멀티 태스크 설정에서 두 태스크는 함께 학습하면 두 태스크의 성능을 향상시킬 수 있는 공통점을 공유하였다. 그러나 설정에서는 검색 작업이 인덱싱 작업에 완전히 의존합니다. 특히, 인덱싱 작업이 없으면, 검색 작업에 의해 레버리지되는 식별자들은 완전히 무의미할 것이다. 따라서, 태스크 B(검색)를 해결하기 위해, 모델은 태스크 A(인덱싱)를 충분히 잘 학습할 필요가 있다. 이러한 문제점은\n' +
+      '\n' +
+      '도 2: 의미론적으로 구조화된 식별자를 할당하기 위해 사용되는 계층적 클러스터링 프로세스의 시각적 예. 추론 동안, 빔 탐색은 정확한 도키드를 디코딩하기 위해 이 트라이를 탐색한다.\n' +
+      '\n' +
+      '설정은 ML 커뮤니티가 관심을 가질 수 있는 독특하고 대체로 탐구되지 않은 연구 과제를 제시한다.\n' +
+      '\n' +
+      '## 4 Experiments\n' +
+      '\n' +
+      '이 섹션에서는 실험 설정, 사용된 데이터 세트 및 비교 기준선에 대해 논의한다. 또한 논문의 이전 섹션에서 논의된 다양한 전략의 실험 결과, 결과 및 효과에 대해 논의한다. 이것은 상당히 새로운 개념이기 때문에 이 작업은 개념의 증명(proof-of-concept)을 제시하고 _\'sotaeesque\'_ 비교를 하는 대신 연구 질문에 답하는 것을 목표로 한다. 우리는 다른 설정과 기준선에 대한 광범위한 비교를 향후 작업에 남겨둔다.\n' +
+      '\n' +
+      'DatasetWe는 NQ (Kwiatkowski et al., 2019) 데이터셋에 대한 실험을 수행한다. NQ는 307K 질의-문서 훈련 쌍과 8K 검증 쌍으로 구성되며, 질의는 자연어 질의이고 문서는 위키피디아 문서이다. 질문이 주어지면, 검색 작업은 그것에 답하는 위키피디아 기사를 식별하는 것이다. DSI 모델이 서로 다른 스케일에서 어떻게 수행되는지 평가하기 위해 NQ에서 세 개의 집합을 구성하여 테스트베드를 구성하는데, NQ10K, NQ100K 및 NQ320K는 결합된 트레인 및 검증 분할에서 서로 다른 수의 총 쿼리-문서 쌍을 나타낸다. NQ320K는 전체 NQ 집합이며 평가 목적으로 미리 정해진 훈련 및 유효성 검사 분할을 사용합니다. NQ320K와 달리 NQ10K 및 NQ100K는 무작위로 샘플링된 검증 세트를 구성한다. 모든 데이터 세트에 대해, 우리는 모든 비구조화된 원자 및 순진하게 구조화된 식별자 실험에 대해 320K 토큰의 동일한 도키드 공간/예산을 사용한다. 의미론적 구조화된 식별자들은 더 큰 분할들로부터 더 작은 분할들로의 의미론적 정보의 유출을 방지하기 위해 각각의 데이터세트마다 개별적으로 생성된다. 텍스트가 축소되어 있습니다. 이러한 데이터 세트에는 쿼리-문서 쌍보다 고유 문서가 더 적습니다. 이러한 데이터 세트의 통계를 보고하는 표 4(부록)를 참조하십시오.\n' +
+      '\n' +
+      'Metrics우리는 Hits@N에서 N=\\(\\{1,10\\}\\)인 모델을 평가한다. 이 메트릭은 상위 \\(N\\) 예측에서 순위가 매겨진 올바른 문서의 비율을 보고합니다.\n' +
+      '\n' +
+      '구현 세부사항 모든 DSI 모델은 표준 사전 훈련된 T5(Raffel 등, 2019) 모델 구성을 사용하여 초기화된다. 구성 이름 및 해당 모델 매개 변수 수는 Base(0.2B), Large(0.8B), XL(3B) 및 XXL(11B)입니다. 비구조화된 원자 식별자가 실행되는 경우, 새로운 파라미터로 식별자를 무작위로 초기화하고 인덱싱 단계에서 가중치만 조정한다. 실험을 위해 Jax/T5X 2 구현을 사용한다. DSI 모델은 \\(128\\)의 배치 크기를 사용하여 최대 1M 단계에 대해 훈련된다. 검색 유효성 검사 성능을 기반으로 최상의 검사점을 선택합니다. 학습 하드웨어는 1B 이상의 모델을 위한 128-256 TPUv4 칩과 그렇지 않은 경우 64-128 TPUv3 또는 TPUv4 칩으로 구성된다. 추정으로서, 1B 파라미터 이상의 모델은 일반적으로 NQ320K에 대한 수렴에 약 하루 이상이 걸린다. 학습률은 \\(\\{0.001,0.0005\\}\\)과 선형 워밍업은 {10K, 100K, 200K, 300K} 및/또는 없음으로 조정한다. 의미적으로 구조화된 식별자는 8-계층 BERT(Devlin et al., 2018) 모델 3, 및 기본 \\(k\\)-scikit-learn에서의 클러스터링을 사용하여 생성된다. 다양한 DSI 설정에 대한 초기 절제 실험을 기반으로 제시된 주요 결과는 직접 인덱싱(\\(L=32\\)) 및 Inputs2Targets 인덱싱 전략을 사용한다. 우리는 모든 도키드 표현 방법에 대한 결과를 제시한다. 주요 결과에 따라 절제 연구를 제시한다.\n' +
+      '\n' +
+      '각주 2: [https://github.com/google-research/t5x](https://github.com/google-research/t5x)\n' +
+      '\n' +
+      '각주 3: [https://tfhub.dev/google/collections/bert](https://tfhub.dev/google/collections/bert)\n' +
+      '\n' +
+      '### Baselines\n' +
+      '\n' +
+      '베이스라인은 (Ni et al., 2021)에서 구현한 T5 기반 듀얼 인코더를 사용한다. BM25 점수를 계산하기 위해 젠심4 패키지를 사용한다. T5 기반 이중 인코더의 경우, 수렴(\\(\\approx\\) 10K 단계)까지 NQ 쌍에 대한 대조적 학습으로 훈련하고 ScaNN(Guo et al., 2020)과 유사한 시스템을 사용하여 상위 k개의 최근접 이웃을 얻는다. 또한 제로 샷 검색을 위해 유사 학습 태스크로 특별히 사전 훈련된 최신 비감독 기준선인 Sentence T5(Ni 등, 2021)와 비교한다. DPR(Karpukhin et al.,2020)과 같은 다른 조밀 검색 작업보다 이 작업에 대한 관련 이중 인코더 기준선을 고려하는 두 가지 이유가 있다(Ni et al., 2021). 첫째, 동일한 사전 훈련 모델을 사용하여 다른 요인을 혼동하지 않고 제안된 접근법을 체계적으로 절제할 수 있다. 과학적으로, 우리는 미세 조정된 T5에 대한 이 비교가 우리가 제공하는 최고의 사과 대 사과 비교라고 믿습니다. 두 번째로, 미세 조정된 T5 이중 인코더는 DPR과 구조 및 방법적으로 매우 동일한 것으로 간주된다(파라미터 공유와 같은 약간의 차이가 있지만 배치 내 음성의 동일한 개념을 사용함).\n' +
+      '\n' +
+      '### Experimental Results\n' +
+      '\n' +
+      '표 2는 NQ10K, NQ100K, NQ320K에 대한 검색 결과를 피니튜닝으로 보고하고 표 3은 제로 샷 검색 결과를 보고한다. 0 샷 검색을 위해 모델은 검색 작업이 아닌 인덱싱 작업에 대해서만 학습되므로 모델은 레이블이 지정된 쿼리 \\(\\rightarrow\\) dock 데이터 점을 보지 않습니다. 부록의 섹션 7.2는 DSI의 인덱싱 성능 및 트레이닝 역학에 관한 확장된 결과를 보고한다.\n' +
+      '\n' +
+      '감독된 Finetuning 결과 우리의 결과는 DSI가 모든 데이터 세트 크기에서 DE보다 성능이 우수함을 보여준다. 소형 데이터세트(NQ10K)에서, DSI와 DE 사이의 성능 갭은 크며, 예를 들어, 최상의 DSI 변이체가 DE보다 2배 더 우수하다. NQ100K에서 가장 좋은 DSI 모델(구조화되지 않은 원자 식별자)이 DE를 능가하는 \\(+5\\%\\) Hits@1 및 Hits@10으로 격차가 덜 두드러진다. 대규모 데이터 세트(NQ320K)에서 가장 좋은 DSI 모델(구조화된 의미 식별자)이 가장 좋은 DE 모델을 능가하는 \\(+66\\%\\) 상대적 Hits@1 및 \\(+4.5\\%\\) Hits@10이다.\n' +
+      '\n' +
+      '영샷 결과표 3은 영샷 검색에 대한 결과를 보고한다. 검색 작업이 아닌 인덱싱만 수행하여 제로 샷 검색이 수행됨을 기억하십시오. 즉, 모델에 주석이 달린 쿼리 또는 문서 쌍이 표시되지 않습니다. 일반적으로 DSI를 사용하면 가장 좋은 결과를 얻을 수 있다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l|c c|c c|c c} \\hline \\hline \\multirow{2}{*}{Model} & \\multirow{2}{*}{Size} & \\multirow{2}{*}{Params} & \\multirow{2}{*}{Method} & \\multicolumn{2}{c}{NQ10K} & \\multicolumn{2}{c}{NQ100K} & \\multicolumn{2}{c}{NQ320K} \\\\  & & & Hits@1 & Hits@10 & Hits@1 & Hits@10 & Hits@1 & Hits@10 \\\\ \\hline BM25 & - & - & & \\(12.4\\) & \\(33.5\\) & \\(20.9\\) & \\(46.4\\) & \\(11.6\\) & \\(34.4\\) \\\\ \\hline T5 & Base & 220M & Dual Encoder & \\(16.2\\) & \\(48.6\\) & \\(18.7\\) & \\(55.2\\) & \\(20.5\\) & \\(58.3\\) \\\\ T5 & Large & 800M & Dual Encoder & \\(18.8\\) & \\(55.7\\) & \\(22.3\\) & \\(60.5\\) & \\(22.4\\) & \\(63.3\\) \\\\ T5 & XL & 3B & Dual Encoder & \\(20.8\\) & \\(59.6\\) & \\(23.3\\) & \\(63.2\\) & \\(23.9\\) & \\(65.8\\) \\\\ T5 & XXL & 11B & Dual Encoder & \\(22.1\\) & \\(61.6\\) & \\(24.1\\) & \\(64.5\\) & \\(24.3\\) & \\(67.3\\) \\\\ \\hline DSI & Base & 250M & Atomic Docid & \\(13.0\\) & \\(38.4\\) & \\(23.8\\) & \\(58.6\\) & \\(20.7\\) & \\(40.9\\) \\\\ DSI & Large & 800M & Atomic Docid & \\(31.3\\) & \\(59.4\\) & \\(17.1\\) & \\(52.3\\) & \\(11.6\\) & \\(37.6\\) \\\\ DSI & XL & 3B & Atomic Docid & \\(40.1\\) & \\(76.9\\) & \\(19.0\\) & \\(55.3\\) & \\(28.1\\) & \\(61.9\\) \\\\ DSI & XXL & 11B & Atomic Docid & \\(39.4\\) & \\(77.0\\) & \\(25.3\\) & \\(67.9\\) & \\(24.0\\) & \\(55.1\\) \\\\ \\hline DSI & Base & 250M & Naive String Docid & \\(28.1\\) & \\(48.0\\) & \\(18.7\\) & \\(44.6\\) & \\(6.7\\) & \\(21.0\\) \\\\ DSI & Large & 800M & Naive String Docid & \\(34.7\\) & \\(60.5\\) & \\(21.2\\) & \\(50.7\\) & \\(13.3\\) & \\(33.6\\) \\\\ DSI & XL & 3B & Naive String Docid & \\(44.7\\) & \\(66.4\\) & \\(24.0\\) & \\(55.1\\) & \\(16.7\\) & \\(58.1\\) \\\\ DSI & XXL & 11B & Naive String Docid & \\(46.7\\) & \\(**77.9\\)** & \\(**27.5\\)** & \\(62.4\\) & \\(23.8\\) & \\(55.9\\) \\\\ \\hline DSI & Base & 250M & Semantic String Docid & \\(33.9\\) & \\(57.3\\) & \\(19.0\\) & \\(44.9\\) & \\(27.4\\) & \\(56.6\\) \\\\ DSI & Large & 800M & Semantic String Docid & \\(37.5\\) & \\(65.1\\) & \\(20.4\\) & \\(50.2\\) & \\(35.6\\) & \\(62.6\\) \\\\ DSI & XL & 3B & Semantic String Docid & \\(41.9\\) & \\(67.1\\) & \\(22.4\\) & \\(52.2\\) & \\(39.1\\) & \\(66.8\\) \\\\ DSI & XXL & 11B & Semantic String Docid & \\(\\mathbf{48.5}\\) & \\(72.1\\) & \\(26.9\\) & \\(59.5\\) & \\(\\mathbf{40.4}\\) & \\(\\mathbf{70.3}\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: NQ 문서 검색에 대한 실험 결과. DSI는 BM25 및 Dual Encoder 기준선보다 성능이 우수하다. 모든 Doci 표현 방법 중 시맨틱 스트링 도시드가 가장 좋은 성능을 보인다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l|c c|c c|c c} \\hline \\hline  & & & \\multicolumn{2}{c}{NQ10K} & \\multicolumn{2}{c}{NQ100K} & \\multicolumn{2}{c}{NQ320K} \\\\ Model & Size & Method & Hits@1 & Hits@10 & Hits@1 & Hits@10 & Hits@1 & Hits@10 \\\\ \\hline BM25 & - & - & \\(12.4\\) & \\(33.5\\) & \\(20.9\\) & \\(46.4\\) & \\(11.6\\) & \\(34.4\\) \\\\ T5 & XXL & Dual Encoder & \\(0.3\\) & \\(1.3\\) & \\(1.9\\) & \\(8.0\\) & \\(1.1\\) & \\(5.9\\) \\\\ SentenceT5 & Large & Dual Encoder & \\(17.6\\) & \\(50.7\\) & \\(17.4\\) & \\(50.8\\) & \\(16.9\\) & \\(51.0\\) \\\\ \\hline DSI & XXL & Atomic Docid & \\(25.7\\) & \\(60.1\\) & \\(\\mathbf{23.0}\\) & \\(\\mathbf{57.3}\\) & \\(\\mathbf{25.1}\\) & \\(\\mathbf{56.6}\\) \\\\ DSI & XXL & Naive String Docid & \\(43.4\\) & \\(67.4\\) & \\(17.4\\) & \\(41.5\\) & \\(9.2\\) & \\(22.6\\) \\\\ DSI & XXL & Semantic String Docid & \\(\\mathbf{43.9}\\) & \\(\\mathbf{68.8}\\) & \\(11.4\\) & \\(26.6\\) & \\(13.9\\) & \\(31.1\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: Zero-Shot NQ 문서 검색에 대한 실험 결과. DSI는 비지도 유사성 모델링을 위한 최신 기술인 BM25, T5 임베딩 및 SentenceT5보다 성능이 우수하다. Doci 표현 방법 중 Atomic Doci가 zero-shot 학습에서 가장 좋은 성능을 보인다.\n' +
+      '\n' +
+      'NQ100K 및 NQ320K 둘 다 상의 비구조화된 원자 식별자들. 모든 NQ 데이터셋에서 최상의 성능은 BM25와 같은 잘 확립된 비지도 검색 베이스라인보다 우수하다. 또한, DSI는 대조적 학습을 통해 유사성 인식 표현을 학습하도록 훈련된 SentenceT5(Ni 등, 2021)와 같은 비지도 표현 학습 방법보다 우수하다. 또한 원시 T5 임베딩이 매우 제대로 수행되지 않고 감독되지 않은 검색 작업에 대해 합리적인 결과를 생성하지 않는다는 점에 주목한다. 무감독 신경 방법이 BM25를 능가하는 것이 일반적으로 어렵다는 점을 감안할 때 이러한 초기 결과는 매우 고무적이다.\n' +
+      '\n' +
+      '문서 식별자 이 문서의 주요 연구 질문 중 하나는 도키드를 나타내는 방법의 중요한 선택이다. 일반적으로, 우리는 구조화된 의미 식별자가 비구조화된 식별자에 비해 도움이 되고 개선된다는 것을 발견했다. 순진한 문자열 식별자와 의미론적 문자열 식별자를 비교할 때 가능하면 의미론적 식별자를 사용하는 것이 필수인 것 같다. 이는 의미 구조로 대상 공간을 삽입하면 외부 지식으로서 최적화 및 추가 비지도 표현 학습 방법의 더 큰 용이성을 촉진할 수 있기 때문에 직관적이다. 비구조화된 원자 식별자의 경쟁력은 다소 혼재되어 있으며 이러한 모델을 최적화하는 데 다소 어려움이 있었다. 이것이 새로 초기화된 소프트맥스 층 때문일 수 있으며 이러한 시스템을 처음부터 훈련하면 이러한 문제를 완화할 수 있다고 가정한다. 그러나, 우리는 이 조사 라인을 향후 작업으로 연기합니다. 비구조화된 원자 식별자의 불안정성과 높은 분산 대신, 성능은 서로 다른 데이터 세트에 걸쳐 일관되지 않는다. 또한 이러한 도키드는 간헐적으로 비수렴이 발생할 수 있으며, 이는 최적화 관련 특이점으로 거슬러 올라간다. 그러나, 우리는 또한 구조화되지 않은 원자 식별자가 제로 샷 검색 설정에서 넓은 마진으로 가장 잘 수행하고 빔 디코딩 방법보다 종종 두 배 이상의 성능을 달성한다는 점에 주목한다.\n' +
+      '\n' +
+      '인덱싱 전략 이 섹션에서는 다양한 인덱싱 방법의 효과를 탐색한다(섹션 3.1.1). 앞서 설명한 다양한 인덱싱 전략을 사용하여 NQ100K에 대한 실험을 실행한다. 모델들은 Naive Docid 방법을 사용하여 트레이닝된다. 인덱싱 없이 모델은 \\(0\\%\\) Hits@1을 달성합니다. 인덱싱 작업이 없으면 Docids가 의미가 없기 때문에 직관적입니다. 둘째, Inputs2Targets와 Bidirectional 공식이 가장 좋은 성능을 보였으며, 양방향 공식이 전자에 비해 약간 나쁜 성능(13.5 vs 13.2)을 보였다. 마지막으로 Targets2Inputs를 사용한 정확도와 Docids를 사용한 Span Corruption은 의미 있는 결과를 얻지 못했다 (\\(0\\%\\) 정확도). 이거.\n' +
+      '\n' +
+      '도 5: 상이한 문서 표현의 성능. (섹션 4.2 참조)\n' +
+      '\n' +
+      '일부 전략은 합리적으로 잘 작동하고 일부는 전혀 작동하지 않는 인덱싱 전략에 큰 차이가 있을 수 있음을 보여준다.\n' +
+      '\n' +
+      '문서 표현 이 섹션에서는 섹션 3.1.2에서 설명한 다양한 문서 표현 전략의 성능을 탐구한다. 그림 5는 NQ320K에 대한 결과를 보고한다. 전반적으로, 우리는 직접 인덱싱 접근법이 가장 잘 작동한다는 것을 발견했다. 또한 도키드가 서로 다른 토큰에 반복적으로 노출되기 때문에 역 인덱스 방법을 학습하는 것이 어렵다는 것을 알 수 있다. 또한 문서 길이가 짧은 경우 성능이 \\(64\\) 토큰 이상으로 크게 떨어지는 것으로 나타나 더 많은 수의 문서 토큰이 있을 때 최적화하거나 효율적으로 기억하는 것이 더 어려울 수 있음을 시사한다. 마지막으로, 문서 토큰에 집합 처리나 불용어 전처리를 적용하는 데 추가적인 이점이 없음을 발견하였다.\n' +
+      '\n' +
+      '스케일링 법칙 또 다른 흥미로운 통찰은 DSI의 스케일링 법칙이 듀얼 엔코더와 어떻게 다른지이다. 트랜스포머의 스케일링 거동을 이해하는 것은 최근 몇 년 동안 상당한 관심을 끌었다(Kaplan et al., 2020; Tay et al., 2021; Abnar et al., 2021). 실험 결과, DE의 모델 파라미터화 증가에 따른 검색 성능의 이득은 상대적으로 작은 것으로 나타났다. 반대로 DSI의 스케일링 속성은 더 낙관적인 것으로 보인다.\n' +
+      '\n' +
+      '그림 3은 세 가지 방법(순진한 ID와 의미 있는 ID가 있는 DE 및 DSI)의 스케일링 행동(로그 척도)을 보여준다. DSI는 기지에서 XXL로 가는 규모에서 강한 이익을 얻으며 여전히 개선의 여지가 있는 것 같다 한편, DSI(의미)는 DE 기반과 동등한 경쟁에서 출발하지만 규모에 따라 훨씬 더 나은 성능을 보인다. DE 모델은 불행히도 더 작은 매개변수화에서 다소 안정적이다.\n' +
+      '\n' +
+      '인덱싱과 검색 사이의 상호 작용 우리의 초기 실험은 먼저 인덱싱 작업을 학습한 다음 순차적 방식으로 검색 작업을 학습하는 것이 보통의 성능을 가져온다는 것을 보여주었다. 본 논문에서는 다중 태스크 학습을 이용하여 인덱싱과 검색 작업을 함께 학습하기 위한 좋은 비율 \\(r\\)을 탐색하는 것에 중점을 두었다. 그림 4는 검색 샘플에 대한 색인의 비율을 수정하는 효과를 보여준다. 최적화 과정은 색인 작업과 검색 작업의 상호 작용에 의해 크게 영향을 받는다는 것을 알 수 있다. \\(r\\)을 너무 높거나 낮게 설정하면 일반적으로 성능이 저하됩니다. 우리는 32의 비율이 일반적으로 잘 수행되었음을 발견했다.\n' +
+      '\n' +
+      '## 5 Conclusion\n' +
+      '\n' +
+      '본 논문은 End-to-End 검색 시스템을 통일적으로 학습하기 위한 새로운 패러다임인 Differentiable Search Index(DSI)를 제안하여 차세대 검색의 길을 열었다(Metzler et al., 2021). 트랜스포머 모델의 파라미터 내에서 용어와 도키드의 관계를 완전히 인코딩하는 새로운 인덱싱 및 검색 작업을 정의한다. 본 논문은 문서와 도키드를 표현하는 다양한 방법을 제안하고, 다양한 모델 아키텍처와 모델 학습 전략을 탐색하였다. 자연 질문 데이터 세트에 대해 수행된 실험은 DSI가 표준 미세 조정 설정과 제로 샷 설정 모두에서 BM25 및 이중 인코더와 같은 일반적인 베이스라인에 대해 유리하게 수행함을 보여준다.\n' +
+      '\n' +
+      '여기에 제시된 모델과 결과는 유망하지만 이 접근법을 개선하기 위해 이 작업을 기반으로 탐색할 수 있는 잠재적인 미래 연구가 많이 있다. 예를 들어, DSI의 메모리 용량을 스케일링하기 위한 혼합물-오브-엑스퍼트 모델들(Du et al., 2021; Fedus et al., 2021; Lepikhin et al., 2020)을 조사할 뿐만 아니라 문서들 및 도키드들을 표현하기 위한 대안적인 전략들을 탐색하는 것이 흥미로울 것이다. 한 가지 중요한 방향은 또한 문서가 시스템에서 추가되거나 제거될 수 있는 동적 코포마에 대해 그러한 모델이 어떻게 업데이트될 수 있는지를 탐색하는 것일 것이다. 마지막으로 다른 언어 모델이 레버리지하기 위해 비지도 표현 학습 방법 및/또는 메모리 저장소로서 DSI를 추가로 조사하는 것도 흥미로울 수 있다.\n' +
+      '\n' +
+      '## 6 Acknowledgements\n' +
+      '\n' +
+      '작가들은 페르난도 페레이라, 화이시우 스티븐 정, 세바스티안 루더, 아담 델크스, 이안 웨더비, 다니 요가타마에게 귀중한 피드백과 토론에 감사드린다. 우리는 또한 추가적인 실험적인 기여를 위해 Sanket Vaibhav Mehta에게 특별한 감사를 전하고 싶습니다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Abnar 등(2021) Samira Abnar, Mostafa Dehghani, Behnam Neyshabur, and Hanie Sedghi. 대규모 사전 훈련의 한계를 탐구합니다. _ arXiv preprint arXiv:2110.02095_, 2021.\n' +
+      '* Borgeaud et al. (2021) Sebastian Borgeaud, Arthur Mensch, Jordan Hoffmann, Trevor Cai, Eliza Rutherford, Katie Millican, George van den Driessche, Jean-Baptiste Lespiau, Bogdan Damoc, Aidan Clark, et al. Improving language models by retrieving from trillions of tokens. _ arXiv preprint arXiv:2112.04426_, 2021.\n' +
+      '* Brown et al.(2020) Tom B Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _ arXiv preprint arXiv:2005.14165_, 2020.\n' +
+      '* De Cao 등(2020) Nicola De Cao, Gautier Izacard, Sebastian Riedel, and Fabio Petroni. Autoregressive entity retrieval. _ arXiv preprint arXiv:2010.00904_, 2020.\n' +
+      '* Dehghani 등(2017) Mostafa Dehghani, Hamed Zamani, Aliaksei Severyn, Jaap Kamps, and W Bruce Croft. 감독력이 약한 신경 순위 모델입니다. _Proceedings of the 40th International ACM SIGIR Conference on Research and Development in Information Retrieval_, pages 65-74, 2017.\n' +
+      '* Devlin 등(2018) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: 언어 이해를 위한 깊은 양방향 트랜스포머의 사전 훈련. _ arXiv preprint arXiv:1810.04805_, 2018.\n' +
+      '* Du et al. (2021) Nan Du, Yanping Huang, Andrew M Dai, Simon Tong, Dmitry Lepikhin, Yuanzhong Xu, Maxim Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, et al. Glam: Mixed-of-experts를 가진 언어 모델의 효율적인 스케일링. _ arXiv preprint arXiv:2112.06905_, 2021.\n' +
+      '* Fedus 등(2021) William Fedus, Barret Zoph, and Noam Shazeer. 변압기 전환: 간단 하 고 효율적인 희소성을 사용 하 여 매개 변수 모델을 조정 합니다. _ arXiv preprint arXiv:2101.03961_, 2021.\n' +
+      '* Gao 등(2021) Tianyu Gao, Xingcheng Yao, and Danqi Chen. SimCSE: 문장 임베딩의 단순 대조적 학습. _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing_, pages 6894-6910, Online and Punta Cana, Dominican Republic, November 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.552. URL [https://aclanthology.org/2021.emnlp-main.552](https://aclanthology.org/2021.emnlp-main.552)\n' +
+      '* Geva 등(2020) Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. 트랜스포머 피드 포워드 계층은 키 값 메모리입니다. _ arXiv preprint arXiv:2012.14913_, 2020.\n' +
+      '* Gillick et al. (2018) Daniel Gillick, Alessandro Presta, and Gaurav Singh Tomar. End-to-End retrieval in continuous space. _ arXiv preprint arXiv:1811.08008_, 2018.\n' +
+      '* Guo 등(2020) Ruiqi Guo, Philip Sun, Erik Lindgren, Quan Geng, David Simcha, Felix Chern, and Sanjiv Kumar. 비등방성 벡터 양자화를 이용한 대규모 추론의 가속화 _Machine Learning에 대 한 국제 회의_에서 2020. URL [https://arxiv.org/abs/1908.10396](https://arxiv.org/abs/1908.10396)입니다.\n' +
+      '* Guu 등(2020) Kelvin Guu, Kenton Lee, Zora Tung, and Panupong Pasupat. REALM: 검색-증강 언어 모델 사전 트레이닝. _Proceedings of ICML 2020_, 2020.\n' +
+      '* Josifoski 등(2021) Martin Josifoski, Nicola De Cao, Maxime Peyrard, Robert West. Genie: Generative information extraction. _ arXiv preprint arXiv:2112.08340_, 2021.\n' +
+      '* Kaplan 등(2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 신경 언어 모델에 대한 법칙을 스케일링합니다. _ arXiv preprint arXiv:2001.08361_, 2020.\n' +
+      '* Karpukhin 등(2020) Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, and Wen-tau Yih. 오픈 도메인 질문 응답을 위한 고밀도 구문 검색입니다. _ arXiv preprint arXiv:2004.04906_, 2020.\n' +
+      '* Kwiatkowski 등(2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin Kenton Lee, Kristina Toutanova, Llion Jones Matthew Kelcey, Ming-Wei Chang, Andrew M Dai, Jakob Uszkoreit, Quoc Le, and Slav Petrov. 자연 질문: 질문 응답 연구를 위한 벤치마크입니다. 2019년 _ACL 트랜잭션_ 에서입니다.\n' +
+      '* Kwiatkowski 등(2019)Dmitry Lepikhin, Hyouk Joongong Lee, Yuanzhong Xu, Dehao Chen, Orhan Firat, Yanping Huang, Maxim Krikun, Noam Shazeer, and Zhifeng Chen. Gshard: 조건부 계산 및 자동 샤딩이 있는 크기 조정 거대 모델입니다. _ arXiv preprint arXiv:2006.16668_, 2020.\n' +
+      '* Metzler 등(2021) Donald Metzler, Yi Tay, Dara Bahri, and Marc Najork. 탐구를 다시 생각하는 것: 도메인 전문가를 딜레마로 만드는 것. _ACM SIGIR Forum_에서, 권 55, 페이지 1-27. ACM New York, NY, USA, 2021.\n' +
+      '*Ni 등(2021) Jianmo Ni, Gustavo Hernandez Abrego, Noah Constant, Ji Ma, Keith B Hall, Daniel Cer, and Yinfei Yang. 문장-t5: 미리 훈련된 텍스트-텍스트 모델들로부터 확장 가능한 문장 인코더들. _ arXiv preprint arXiv:2108.08877_, 2021.\n' +
+      '* Petroni 등(2019) Fabio Petroni, Tim Rocktaschel, Patrick Lewis, Anton Bakhtin, Yuxiang Wu, Alexander H Miller, and Sebastian Riedel. 지식 베이스로서의 언어 모델? _ arXiv preprint arXiv:1909.01066_, 2019.\n' +
+      '* Raffel 등(2019) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 통합 텍스트-텍스트 변환기를 사용하여 전이 학습의 한계를 탐구합니다. _ arXiv preprint arXiv:1910.10683_, 2019.\n' +
+      '* Ramsauer et al. (2020) Hubert Ramsauer, Bernhard Schaff, Johannes Lehner, Philipp Seidl, Michael Widrich, Thomas Adler, Lukas Gruber, Markus Holzleitner, Milena Pavlovic, Geir Kjetil Sandve, et al. Hopfield networks is all you need. _ arXiv preprint arXiv:2008.02217_, 2020.\n' +
+      '* Roberts 등(2020) Adam Roberts, Colin Raffel, and Noam Shazeer. 언어 모델의 매개 변수에 얼마나 많은 지식을 담을 수 있습니까? _ arXiv preprint arXiv:2002.08910_, 2020.\n' +
+      '* Sun 등(2020) Yu Sun, Xiaolong Wang, Zhu, John Miller, Alexei Efros, and Moritz Hardt. 분포 이동 하에서 일반화를 위한 자체 감독을 통한 테스트 시간 훈련. Hal Daume III 및 Aarti Singh, editors, _Proceedings of the 37th International Conference on Machine Learning_, Volume 119 of _Proceedings of Machine Learning Research_, pages 9229-9248. PMLR, 13-18 Jul 2020. URL [https://proceedings.mlr.press/v119/sun20b.html](https://proceedings.mlr.press/v119/sun20b.html).\n' +
+      '* Sutskever et al. (2014) Ilya Sutskever, Oriol Vinyals, and Quoc V Le. 신경망을 이용한 시퀀스 투 시퀀스 학습. _ arXiv preprint arXiv:1409.3215_, 2014.\n' +
+      '* Tay 등(2021) Yi Tay, Mostafa Dehghani, Jinfeng Rao, William Fedus, Samira Abnar, Hyung Won Chung, Sharan Narang, Dani Yogatama, Ashish Vaswani, and Donald Metzler. 효율적으로 확장: 사전 훈련 및 미세 조정 변압기의 Insights _ arXiv preprint arXiv:2109.10686_, 2021.\n' +
+      '* Thoppilan et al.(2022) Romal Thoppilan, Daniel De Freitas, Jamie Hall, Noam Shazeer, Apoorv Kulshreshtha, Heng-Tze Cheng, Alicia Jin, Taylor Bos, Leslie Baker, Yu Du, et al. Lamda: Language models for dialog applications. _ arXiv preprint arXiv:2201.08239_, 2022.\n' +
+      '* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 관심만 있으면 됩니다. _신경 정보 처리 시스템의 발전_에서, 2017년 5998-6008 페이지가 있다.\n' +
+      '\n' +
+      'Appendix\n' +
+      '\n' +
+      '여기서는 실험에 대한 추가 세부 정보를 포함하는 수치를 포함한다.\n' +
+      '\n' +
+      '### Dataset Statistics\n' +
+      '\n' +
+      '우리는 인덱싱 성능이 메소드와 모델 크기에 걸쳐 NQ에 상대적으로 강하다는 것을 관찰할 수 있다. 모델 크기를 늘리면 인덱싱 성능이 향상된다는 것은 분명합니다.\n' +
+      '\n' +
+      '#### 7.2.2 DSI Training Dynamics에 대한 논의\n' +
+      '\n' +
+      '본 논문에서는 자연 질의의 트레인 분할과 검증 분할에서 문서의 합집합에 대해 모든 색인 작업을 학습한다. 인덱스가 인덱스를 검색하려면 문서가 인덱스에 있어야 하는 인덱스의 기존 정의와 일치합니다. 그런 다음 검색은 최상의 검사점을 기반으로 NQ 유효성 검사로 검색 성능을 평가 하 여 NQ 트레인 분할에 대해서만 학습 됩니다.\n' +
+      '\n' +
+      '이 원본 작업에 따른 분석에서는 DSI 모델이 훈련할 때 새로운 배치를 인덱싱할 때 이전에 인덱싱된 배치를 잊어버리는 것을 경험하고 다음 시대로 다시 순환하고 동일한 예를 다시 처리하는 것으로 나타났다. 본 논문에서 사용하는 인덱싱 작업은 훈련 문서 뒤에 검증 문서를 연결한 다음 모델을 훈련하는 동안 버퍼 셔플을 적용하여 구성하였다(매 단계마다 버퍼에서 다음 훈련 배치를 샘플링). NQ100K 및 NQ320K에 대한 검증 분할 크기보다 작은 5000 크기의 셔플 버퍼를 사용했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|r r r r} \\hline \\hline Dataset & \\(|D|\\) & Train Pairs & Val Pairs & \\(V_{doc,out}\\) \\\\ \\hline NQ10K & 10K & 8K & 2K & 320K \\\\ NQ100K & 86K & 80K & 20K & 320K \\\\ NQ320K & 228K & 307K & 8K & 320K \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 실험에 사용된 NQ 데이터 세트의 통계량. (섹션 4에서 참조.) 데이터 세트 이름의 숫자는 데이터 세트의 총 문서 쿼리 쌍 수에 해당 하는 반면 \\(|D|\\)은 문서의 처음 4000 UTF-8 문자를 기준으로 고유 문서의 수에 해당 합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l|r} \\hline \\hline Size & Params & Method & Indexing Hits@1 \\\\ \\hline Base & 250M & Atomic Dacid & \\(85.4\\) \\\\ Large & 800M & Atomic Dacid & \\(84.9\\) \\\\ XL & 3B & Atomic Dacid & \\(88.4\\) \\\\ XXL & 11B & Atomic Dacid & \\(92.7\\) \\\\ \\hline Base & 250M & Naive String Dacid & \\(76.3\\) \\\\ Large & 800M & Naive String Dacid & \\(92.1\\) \\\\ XL & 3B & Naive String Dacid & \\(92.2\\) \\\\ XXL & 11B & Naive String Dacid & \\(91.9\\) \\\\ \\hline Base & 250M & Semantic String Dacid & \\(87.6\\) \\\\ Large & 800M & Semantic String Dacid & \\(91.5\\) \\\\ XL & 3B & Semantic String Dacid & \\(92.6\\) \\\\ XXL & 11B & Semantic String Dacid & \\(92.0\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: Inputs2Targets 인덱싱 목표를 통한 NQ 문서에 대한 인덱싱 성능(암기) 모든 모델은 모든 NQ 문서(훈련 및 검증)에 인덱싱되었으며 암기는 검증 세트의 문서에만 평가되었다.\n' +
+      '\n' +
+      '결과적으로, 본 논문의 DSI 실험은 모델이 방금 검증 문서를 인덱싱했는지 또는 한 시대 전에 인덱싱했는지 여부에 따라 최소 및 최대 _잊기_, 즉 더 높고 더 낮은 검증 점수의 주기를 경험하여 검증 성능에 규칙적인 피크와 골을 유발했다. 본 논문의 주요 실험에서와 같이 최대 검증 성능을 갖는 체크포인트를 선택할 때, 우리는 암묵적으로 최소 망각을 갖는 체크포인트를 선택한다.\n' +
+      '\n' +
+      '표 6에서는 최소 망각 검사점(최고 피크), 최대 망각 검사점(최고 최저 최저)에 대한 검색 유효성 검사 점수와 유효성 검사 문서가 전체 인덱싱 분할에 균일하게 분포되어 있는지 나타내는 평균 점수를 제공하여 이 현상에 대한 더 많은 맥락을 제공하는 것을 목표로 한다.\n' +
+      '\n' +
+      '_Results._ 우리는 DSI(의미론적 도키드)의 최상의 구성에 대해, 최대 망각을 경험하는 경우에도 DSI가 BM25와 여전히 경쟁적이며, 평균적인 경우에 DSI는 여전히 듀얼 인코더 기준선보다 우수함을 알 수 있다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l|c c c c} \\hline \\hline Size & Params & Method & Hits@1 & Hits@5 & Hits@10 & Hits@20 \\\\ \\hline Base & 250M & Atomic Docid & 20.7 / 2.6 / 11.7 & 40.2 / 8.6 / 24.4 & 50.9 / 13.0 / 31.9 & 59.2 / 18.8 / 39.0 \\\\ Large & 800M & Atomic Docid & 11.6 / 5.7 / 10.0 & 30.5 / 7.2 / 18.9 & 37.6 / 10.9 / 24.2 & 46.7 / 15.9 / 31.3 \\\\ XL & 3B & Atomic Docid & 28.1 / 2.7 / 15.4 & 52.7 / 7.2 / 30.0 & 61.9 / 10.4 / 36.1 & 69.2 / 14.4 / 41.8 \\\\ XXL & 11B & Atomic Docid & 24.0 / 4.5 / 14.2 & 46.7 / 11.9 / 29.3 & 55.1 / 17.3 / 36.2 & 62.8 / 23.6 / 43.2 \\\\ \\hline Base & 250M & Naive String Docid & 6.7 / 1.5 / 4.1 & 12.6 / 4.3 / 8.4 & 21.0 / 6.0 / 13.5 & 25.6 / 8.1 / 16.9 \\\\ Large & 800M & Naive String Docid & 13.3 / 2.6 / 8.0 & 26.0 / 7.9 / 16.9 & 33.6 / 11.0 / 22.3 & 40.4 / 14.7 / 27.5 \\\\ XL & 3B & Naive String Docid & 16.7 / 1.2 / 8.9 & 32.8 / 1.1 / 17.9 & 58.1 / 14.1 / 31.1 & 62.5 / 5.6 / 34.0 \\\\ XXL & 11B & Naive String Docid & 23.8 / 1.3 / 1.2 & 46.3 / 3.2 / 24.8 & 55.9 / 5.9 / 30.9 & 62.2 / 8.0 / 35.1 \\\\ \\hline Base & 250M & Semantic String Docid & 27.4 / 12.0 / 19.7 & 47.8 / 25.4 / 36.6 & 56.0 / 36.4 / 43.6 & 61.3 / 34.9 / 48.1 \\\\ Large & 800M & Semantic String Docid & 35.6 / 10.2 / 22.9 & 54.3 / 21.6 / 38.0 & 62.6 / 24.5 / 43.5 & 67.3 / 27.8 / 47.5 \\\\ XL & 3B & Semantic String Docid & 39.1 / 10.6 / 24.9 & 60.2 / 22.8 / 41.5 & 66.8 / 27.3 / 47.0 & 71.3 / 31.2 / 51.2 \\\\ XXL & 11B & Semantic String Docid & 40.4 / 12.2 / 26.3 & 60.3 / 24.9 / 42.6 & 70.3 / 30.1 / 50.2 & 74.8 / 35.0 / 54.9 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: Hits@1,5,10,20에서 평균(min-forget/max-forget/avg)을 갖는 최소 망각 및 최대 망각 체크포인트에서의 추가 NQ320K 결과.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
