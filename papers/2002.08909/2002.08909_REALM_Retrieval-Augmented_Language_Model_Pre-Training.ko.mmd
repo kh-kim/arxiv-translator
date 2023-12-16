@@ -1,0 +1,332 @@
+# REALM: Retrieval-Augmented Language Model Pre-Training
+
+ 겔빈구
+
+Kenton Lee
+
+Zora Tung
+
+Panupong Pasupat
+
+Ming-Wei Chang
+
+동등 기여 \({}^{1}\)Google Research. Kelvin Guu \(<\)kguu@google.com\(>\), Kenton Lee \(<\)kentonl@google.com\(>\), Zora Tung \(<\)gatoatigrado@google.com\(>\), Panupong Pasupat \(<\)ppasupat@google.com\(>\), Ming-Wei Chang \(<\)mingweichang@google.com\(>\).
+
+###### Abstract
+
+언어 모델 사전 훈련은 질문 응답과 같은 NLP 작업에 중요한 놀라운 양의 세계 지식을 포착하는 것으로 나타났다. 그러나, 이러한 지식은 신경망의 파라미터들에 암시적으로 저장되며, 더 많은 사실들을 커버하기 위해 점점 더 큰 네트워크가 요구된다. 보다 모듈적이고 해석 가능한 방식으로 지식을 포착하기 위해 사전 훈련, 미세 조정 및 추론 중에 사용되는 위키피디아와 같은 대규모 코퍼스에서 문서를 검색하고 참석할 수 있는 잠재 _지식 검색기_를 사용하여 언어 모델 사전 훈련을 보강한다. 본 논문에서는 이러한 지식 검색기를 비지도 방식으로 사전 학습하는 방법을 처음으로 보인다. 학습 신호로는 마스킹 언어 모델링을 사용하고, 수백만 개의 문서를 고려하는 검색 단계를 통해 역전파하는 방법을 사용한다. 본 논문에서는 개방형 질의응답(Open-domain Question Answering, Open-QA)의 도전 과제에 대한 세밀한 조정을 통해 검색-증강 언어 모델 사전 훈련(REALM)의 효과를 입증한다. 3개의 Open-QA 벤치마크에서 명시적 지식 저장과 암시적 지식 저장에 대한 최신 모델과 비교하고, 해석 가능성과 모듈성과 같은 질적 이점을 제공하는 동시에 상당한 마진(4-16% 절대 정확도)으로 이전의 모든 방법을 능가한다는 것을 발견했다.
+
+기계 학습, ICML
+
+## 1 Introduction
+
+언어 모델 사전 트레이닝에서의 최근의 진보들은 BERT(Devlin et al., 2018), RoBERTa(Liu et al., 2019) 및 T5(Raffel et al., 2019)와 같은 모델들이 그들이 트레이닝되는 방대한 텍스트 코퍼스로부터 획득된 놀라운 양의 세계 지식을 저장한다는 것을 보여주었다(Petroni et al., 2019). 예를 들어 BERT는 다음 문장에서 누락된 단어를 올바르게 예측할 수 있습니다. "\(\underline{\phantom{\rule{0.0pt}{0.0pt}}}\)은 영국의 통화입니다." (답변: "파운드").
+
+이러한 언어 모델에서 학습된 세계 지식은 기본 신경망의 매개 변수에 _암묵적으로_ 저장됩니다. 이는 네트워크에 어떤 지식이 저장되어 있고 어디에 저장되어 있는지 판단하기 어렵게 만든다. 또한, 저장 공간은 네트워크의 크기에 의해 제한되며, 더 많은 세계 지식을 포착하기 위해서는 엄청나게 느리거나 비용이 많이 들 수 있는 점점 더 큰 네트워크를 훈련해야 한다.
+
+보다 해석 가능하고 모듈화된 방법으로 지식을 포착하기 위해, 우리는 학습된 _텍스트 지식 검색기_를 사용하여 언어 모델 사전 훈련 알고리즘을 증강하는 새로운 프레임워크인 검색-증강 언어 모델(REALM) 사전 훈련을 제안한다. 매개 변수에 지식을 저장 하는 모델과 달리이 접근 방식은 _명시적으로_ 모델에 요청 하 여 세계 지식의 역할을 노출 합니다.
+
+그림 1: REALM은 **텍스트 지식 코퍼스**, \(\mathcal{Z}\)(예: 모든 위키피디아)에서 지식을 검색하는 **신경 지식 검색기** 를 사용하여 언어 모델 사전 훈련을 보강합니다. 언어 모델링 목표의 신호는 검색기를 통해 역 전파되며, 이는 우리가 다루는 중요한 계산 과제인 \(\mathcal{Z}\)에 있는 수백만 개의 문서를 고려해야 한다.
+
+추론 중에 어떤 지식을 검색하고 사용할지 결정합니다. 각각의 예측을 하기 전에, 언어 모델은 검색기를 사용하여 위키피디아와 같은 큰 말뭉치로부터 문서1을 검색한 다음, 그 문서 위에 참석하여 예측을 알리는 것을 돕는다. 이 모델을 종단 간 학습하려면 그림 1과 같이 텍스트 지식의 전체 코퍼스를 고려하는 검색 단계를 통해 역전파가 필요하다.
+
+각주 1: "문서"라는 용어를 느슨하게 사용하여 지식 코퍼스로부터의 구절을 지칭하는 것이지, 반드시 전체 기사를 지칭하는 것은 아니다.
+
+REALM의 핵심 직관은 감독되지 않은 텍스트의 성능 기반 신호를 사용하여 검색기를 훈련시키는 것이다. 예를 들어, 도 1에서, 모델이 "피라미드 상단의 -"에 빈칸을 채울 필요가 있는 경우, 검색기는 "상단의 피라미디온은 피라미드의 상단의 더 적은 재료를 허용한다"를 포함하는 문서를 선택하는 것에 대해 보상을 받아야 한다. 우리는 _검색-then-predict_ 접근법을 잠재 변수 언어 모델로 모델링하고 한계 가능성을 최적화함으로써 이 행동을 달성한다.
+
+사전 훈련 동안 대규모 신경 검색 모듈을 통합하는 것은 중요한 계산 문제를 구성하는데, 이는 검색기가 각 사전 훈련 단계에 대해 수백만 개의 후보 문서를 고려해야 하고 결정을 통해 역전파해야 하기 때문이다. 이를 해결하기 위해, 각 문서에 대해 수행된 계산이 캐싱되고 비동기적으로 갱신될 수 있도록 검색기를 구성하며, 최적의 문서 선택은 최대 내부 제품 검색(MIPS)으로 공식화될 수 있다.
+
+수많은 선행 연구들은 신경망에 이산 검색 단계를 추가하는 이점을 입증했지만(Miller et al., 2016; Chen et al., 2017), 언어 모델 사전 훈련에 프레임워크를 적용하지 않고 대규모 문서 컬렉션을 처리하기 위해 비학습된 검색기를 사용했다. 언어 모델링 문헌에서, \(k\)-Nearest Neighbor Language Model (Khandelwal et al., 2019) (\(k\)NN-LM)은 암기를 개선하기 위해 유사한 LM 예제를 검색한다. 그러나 \(k\)NN-LM은 다운스트림 작업에 대해 미세 조정되지 않았는데, 아마도 검색 메커니즘을 어떻게 적용할지 불분명하기 때문일 것이다. \(k\)NN은 대상 작업에 레이블이 지정된 예만 사용할 수 있는데, 미세 조정 동안 원하는 세계 지식을 포함하는 LM 예제를 배제한다. 대조적으로, REALM의 검색기는 다른 작업으로 전송하도록 설계되고, 검색은 라벨이 붙은 예가 아닌 텍스트일 뿐이다.
+
+본 논문에서는 자연어 처리 분야에서 가장 지식 집약적인 태스크 중 하나인 오픈 도메인 질의 응답(Open-domain Question Answering, Open-QA) 태스크에 대해 REALM으로 사전 학습한 모델을 미세 조정하여 성능을 평가한다. 본 연구에서는 Open-QA 벤치마크(NaturalQuestions-Open, WebQuestions, CuratedTrec)를 이용하여 3개의 Open-QA 모델을 평가하고, T5와 같은 지식을 암시적으로 저장하는 매우 큰 모델과 외부 지식에 접근하기 위해 지식 검색기를 사용하는 이전 접근법을 모두 포함하여 최신 Open-QA 모델과 비교한다(Lee et al., 2019; Min et al., 2019; Asai et al., 2019). REALM은 세 가지 벤치마크 모두에서 새로운 최첨단 결과를 달성하여 이전 모든 시스템을 4-16%의 절대 정확도만큼 크게 능가한다. 또한 해석 가능성과 모듈성을 포함하여 REALM의 질적 이점을 보여준다.
+
+## 2 Background
+
+언어 모델 사전 훈련의 목표는 일반적으로 레이블이 지정되지 않은 텍스트 말뭉치로부터 언어의 유용한 표현을 배우는 것이다. 그 후, 결과적인 사전 트레이닝된 모델은 일차 관심의 다운스트림 태스크(우리의 경우, Open-QA)에 대해 추가로 트레이닝될 수 있으며, 종종 처음부터 트레이닝하는 것보다 더 나은 일반화를 유도한다(Dai and Le, 2015; Radford et al., 2019).
+
+우리는 BERT에 의해 대중화된 사전 훈련의 _마스크된 언어 모델2_ (MLM) 변형에 초점을 맞춘다(Devlin 등, 2018). 기본 형태에서, MLM은 입력 텍스트 통로에서 누락된 토큰들을 예측하도록 트레이닝된다. 라벨이 지정되지 않은 사전-트레이닝 코퍼스 \(\mathcal{X}\)(예를 들어, 위키피디아 텍스트)가 주어지면, 트레이닝 예 \((x,y)\)는 샘플링된 텍스트 조각(예를 들어, \(x=\) "The [MASK] is the currency [MASK] the UK"; \(y=\)("pound", "of")에서 토큰을 랜덤하게 마스킹함으로써 생성될 수 있다. 모델은 마스킹된 입력 \(x\)의 표현을 사용하여 각 마스크에 들어가야 하는 토큰을 예측합니다. 좋은 MLM은 구문 및 의미 정보를 인코딩하는 것(예를 들어, "of"를 예측하는 것)뿐만 아니라 일부 세계 지식(예를 들어, "pound"를 예측하는 것)을 학습해야 한다.
+
+각주 2: 엄밀히 말하면, MLM은 토큰들의 전체 시퀀스에 대한 분포를 정의하지 않기 때문에 표준 언어 모델이 아니다. 논문에서 우리는 때때로 구절을 더 짧게 하기 위해 언어 모델이라는 용어를 약간 남용한다.
+
+개방형 질문 응답(Open-QA) 모델의 세계 지식 통합 능력을 측정하기 위해서는 세계 지식이 중요한 다운스트림 작업이 필요하다. 자연어 처리에서 가장 지식 집약적인 작업 중 하나는 개방형 질문 응답(Open-QA): "영국의 화폐는 무엇인가?"와 같은 질문 \(x\)이 주어지면 모델은 정답 문자열 \(y\), "파운드"를 출력해야 한다. Open-QA의 "open" 부분은 SQuAD(Rajpurkar et al., 2016, 2018)와 같은 전통적인 독해(RC) 작업과 달리 모델이 답변을 담고 있는 것으로 알려진 사전 식별 문서를 _not_ 받는다는 사실을 의미한다. RC 모델은 하나의 문서를 이해하는 반면, Open-QA 모델은 수백만 개의 문서로부터 지식을 유지해야 하는데, 그 중 하나에 대한 질문이 있을 수 있기 때문이다.
+
+본 논문에서는 _textual knowledge corpus_\(\mathcal{Z}\)을 지식 소스로 사용하는 Open-QA 시스템에 초점을 맞춘다. 이러한 시스템 중 다수는 _검색 기반_ 접근법을 사용합니다. 질문이 주어지면 \(x\), 잠재적으로 관련 있는 문서 \(z\)를 코퍼스 \(\mathcal{Z}\)에서 검색한 다음, 문서에서 답변 \(y\)을 추출합니다 (Brill et al., 2002; Chen et al., 2017; Lee et al., 2019). 우리의 접근법인 REALM은 이 패러다임에 영감을 받아 언어 모델 사전 훈련으로 확장한다. 대안적으로, 몇몇 최근의 작업은 \(x\) 상에 시퀀스-투-시퀀스 모델을 적용하여 \(y\) 토큰-바이-토큰을 직접 생성하는 _생성 기반_ 시스템을 제안했다(Lewis et al., 2019; Raffel et al., 2019). 우리는 실험에서 두 패러다임의 최첨단 시스템과 비교할 것이다.
+
+## 3 Approach
+
+섹션 3.1에서 REALM의 사전 훈련 및 미세 조정 작업을 _검색-then-predict_ 생성 프로세스로 공식화하는 것으로 시작합니다. 그런 다음, 섹션 3.2에서 해당 프로세스의 각 구성 요소에 대한 모델 아키텍처를 설명합니다. 3.3절에서는 REALM의 생성 과정의 가능성을 극대화하여 REALM 사전 훈련과 미세 조정을 구현하는 방법을 보여준다. 경로에서 우리는 중요한 계산 문제를 해결하고 훈련이 작동하는 이유를 설명하고 유용한 귀납적 편향을 주입하기 위한 전략을 논의한다. 전체 프레임워크는 그림 2에 나와 있다.
+
+### REALM 생성 프로세스
+
+사전 훈련 및 미세 조정 모두에서 REALM은 일부 입력 \(x\)을 사용 하 고 가능한 출력 \(y\)에 대 한 분포 \(p(y\,|\,x)\)를 학습 합니다. 사전 학습을 위해 태스크는 마스킹된 언어 모델링이다: \(x\)은 사전 학습 말뭉치 \(\mathcal{X}\)의 문장이고, 일부 토큰은 마스킹되어 있으며, 모델은 누락된 토큰의 값인 \(y\)을 예측해야 한다. 미세 조정을 위해 작업은 Open-QA입니다. \(x\)는 질문이고 \(y\)는 답변입니다.
+
+REALM은 \(p(y\,|\,x)\)를 _retrieve_ 다음 _predict_의 두 단계로 분해합니다. 입력 \(x\)이 주어지면, 먼저 지식 코퍼스 \(\mathcal{Z}\)에서 유용한 문서 \(z\)를 검색한다. 우리는 이것을 분포 \(p(z\,|\,x)\)의 샘플로 모델링한다. 그런 다음 검색된 \(z\) 및 원본 입력 \(x\)을 조건화 하 여 \(p(y\,|\,z,x)\)으로 모델링 된 출력 \(y\)을 생성 합니다. \(y\)의 전체 생성 가능성을 얻기 위해 \(z\)을 잠재 변수로 취급하고 가능한 모든 문서에 대해 주변화 \(z\), 산출
+
+\[p(y\,|\,x)=\sum_{z\in\mathcal{Z}}p(y\,|\,z,x)\,p(z\,|\,x). \tag{1}\]
+
+### Model architecture
+
+이제 두 가지 주요 구성 요소, 즉 \(p(z\,|\,x)\)를 모델링 하는 **신경 지식 검색기** 및 \(p(y\,|\,z,x)\)를 모델링 하는 **지식 확장 인코더** 를 설명 합니다.
+
+Knowledge Retriever Retriever는 조밀한 내부 제품 모델을 사용하여 정의됩니다.
+
+\[p(z\,|\,x) =\frac{\exp f(x,z)}{\sum_{z^{\prime}}\exp f(x,z^{\prime})},\] \[f(x,z) =\texttt{Embed}_{\texttt{input}}(x)^{\top}\texttt{Embed}_{ \texttt{doc}}(z),\]
+
+여기서 \(\texttt{Embed}_{\texttt{input}}\)과 \(\texttt{Embed}_{\texttt{doc}}\)은 \(x\)과 \(z\)을 각각 \(d\)차원 벡터로 매핑하는 임베딩 함수이다. \(x\)과 \(z\) 사이의 _관련성 점수_\(f(x,z)\)는 벡터 임베딩의 내산물로 정의된다. 검색 분포는 모든 관련성 점수에 대한 소프트맥스입니다.
+
+우리는 BERT-style Transformers(Devlin et al., 2018)를 이용하여 임베딩 함수를 구현한다. 표준 관행에 따라 워드피스 토큰화를 적용 하 고 [SEP] 토큰으로 분리 하 고 [CLS] 토큰을 접두사 하 고 최종 [SEP] 토큰을 추가 하 여 텍스트의 범위를 결합 합니다.
+
+\[\texttt{join}_{\texttt{BERT}}(x) =\texttt{[CLS]}x\texttt{[SEP]}\] \[\texttt{join}_{\texttt{BERT}}(x_{1},x_{2}) =\texttt{[CLS]}x_{1}\texttt{[SEP]}x_{2}\texttt{[SEP]}\]
+
+Devlin 등(2018)에서와 같이, 우리는 이것을 Transformer에 전달하며, 이 Transformer는 시퀀스의 "풀링된" 표현으로 사용되는 [CLS]에 대응하는 벡터(\(\texttt{BERT}_{\texttt{CLS}}\)로 표시됨)를 포함하여 각각의 토큰에 대해 하나의 벡터를 생성한다. 마지막으로, 프로젝션 행렬 \(\mathbf{W}\):로 표현되는 벡터의 차원을 줄이기 위한 선형 프로젝션을 수행한다.
+
+\[\texttt{Embed}_{\texttt{input}}(x) =\mathbf{W}_{\texttt{input}}\texttt{BERT}_{\texttt{CLS}}(\texttt{join }_{\texttt{BERT}}(x))\] \[\texttt{Embed}_{\texttt{doc}}(z) =\mathbf{W}_{\texttt{doc}}\texttt{BERT}_{\texttt{CLS}}(\texttt{join }_{\texttt{BERT}}(z_{\text{title}},z_{\text{body}}))\]
+
+여기서 \(z_{\text{title}}\)은 문서의 제목이고 \(z_{\text{body}}\)은 문서의 본문이다. 우리는 변환기와 투영행렬을 포함하는 리트리버와 관련된 모든 파라미터를 \(\theta\)라 한다.
+
+지식 증강 인코더는 입력 \(x\)과 검색된 문서 \(z\)가 주어지면, 지식 증강 인코더는 \(p(y\,|\,z,x)\)을 정의한다. 우리는 \(x\)와 \(z\)을 트랜스포머에 공급하는 단일 시퀀스로 결합한다. 이를 통해 \(y\)을 예측하기 전에 \(x\)과 \(z\) 사이의 풍부한 교차 주의를 수행할 수 있다. 구체적인 예는 도 1을 참조한다.
+
+이 단계에서 사전 훈련과 미세 조정을 위한 아키텍처는 약간 다르다. 마스킹된 언어 모델 사전 학습 작업의 경우 \(x\)에서 각 [MASK] 토큰의 원래 값을 예측해야 합니다. 그렇게 하기 위해, Devlin 등(2018)에서와 동일한 MMLM(masked language modeling) 손실을 사용한다:
+
+\[p(y\,|\,z,x) =\prod_{j=1}^{J_{x}}p(y_{j}\,|\,z,x)\] \[p(y_{j}\,|\,z,x) \propto\exp\left(w_{j}^{\top}\texttt{BERT}_{\texttt{Mask}(j)}( \texttt{join}_{\texttt{BERT}}(x,z_{\texttt{body}}))\right]\]
+
+여기서, \(\texttt{BERT}_{\texttt{MASK}(j)}\)은 \(j^{th}\) 마스킹된 토큰에 대응하는 Transformer 출력 벡터를 의미하고, \(J_{x}\)은 \(x\)의 \(\texttt{[MASK]}\) 토큰의 총 개수이며, \(w_{j}\)은 토큰 \(y_{j}\)에 대한 학습된 단어 임베딩이다.
+
+Open-QA 미세 조정을 위해 응답 문자열 \(y\)을 생성하려고 합니다. 이전의 독해 작업인 Rajpurkar 등(2016); Seo 등(2016); Lee 등(2016); Clark & Gardner(2017)에 이어, 우리는 답 \(y\)이 일부 문서 \(z\)에서 연속적인 토큰 시퀀스로 발견될 수 있다고 가정할 것이다. \(s(z,y)\)를 \(z\)에서 \(y\)과 일치하는 스팬 집합이라고 합시다. 그러면 \(p(y\,|\,z,x)\)를 다음과 같이 정의할 수 있습니다.
+
+\[p(y\,|\,z,x) \propto\sum_{s\in S(z,y)}\exp\left(\texttt{MLP}\left(\left[h_{ \texttt{START}(\texttt{s})};h_{\texttt{END}(\texttt{s})}\right]\right)\right) \] \[h_{\texttt{START}(\texttt{s})} =\texttt{BERT}_{\texttt{START}(\texttt{s})}(\texttt{join}_{ \texttt{BERT}}(x,z_{\texttt{body})),\] \[h_{\texttt{END}(\texttt{s})} =\texttt{BERT}_{\texttt{END}(\texttt{s})}(\texttt{join}_{ \texttt{BERT}}(x,z_{\texttt{body})),\] \[h_{\text
+
+여기서, \(\texttt{BERT}_{\texttt{START}(\texttt{s})}\)와 \(\texttt{BERT}_{\texttt{END}(\texttt{s})}\)는 각각 span \(s\)의 시작 토큰과 끝 토큰에 해당하는 Transformer 출력 벡터를 나타내며, MLP는 피드포워드 신경망을 나타낸다. 우리는 \(\phi\)이 지식 증강 인코더와 관련된 모든 파라미터를 나타내도록 할 것이다.
+
+### Training
+
+사전 훈련과 미세 조정을 위해 정확한 출력 \(y\)의 로그 우도 \(\log p(y\,|\,x)\)를 최대화하여 훈련한다. 지식 검색기와 지식 증강 인코더는 모두 미분 가능한 신경망이기 때문에 모델 파라미터 \(\theta\)와 \(\phi\)에 대한 \(\log p(y\,|\,x)\)(식 1에 정의됨)의 기울기를 계산하고 확률적 기울기 하강을 사용하여 최적화할 수 있다.
+
+주요 계산 문제는 한계 확률 \(p(y\,|\,x)=\sum_{z\in\mathcal{Z}}p(y\,|\,x,z)\,p(z\,|\,x)\)은 지식 코퍼스 \(\mathcal{Z}\)의 모든 문서 \(z\)에 대한 합산을 포함한다. 우리는 대신 상위 \(k\) 문서에서 가장 높은 확률을 갖는 \(p(z\,|\,x)\) - 대부분의 문서가 거의 0 확률에 가까운 경우 이는 합리적이다.
+
+이 근사치에도 불구하고, 우리는 여전히 상위 \(k\) 문서를 찾는 효율적인 방법이 필요하다. \(p(z\,|\,x)\) 아래의 문서 순서는 내부 제품인 관련성 점수 \(f(x,z)=\texttt{Embed}_{\texttt{input}}(x)^{\top}\texttt{Embed}_{\texttt{ doc}}(z)\) 아래의 문서 순서와 동일합니다. 따라서 Ram and Gray (2012), Shrivastava & Li (2014), Shen et al. (2015)의 문서 수에 따라 하위 선형적으로 확장되는 실행 시간과 저장 공간을 사용하여 근사 상위 \(k\) 문서를 찾기 위해 Maximum Inner Product Search (MIPS) 알고리즘을 사용할 수 있다.
+
+MIPS를 사용하기 위해서는 매 \(z\in\mathcal{Z}\)마다 \(\texttt{Embed}_{\texttt{doc}}(z)\)을 미리 계산하고, 이들 임베딩에 대한 효율적인 검색 인덱스를 구축해야 한다. 그러나 이 데이터 구조는 \(\texttt{Embed}_{\texttt{doc}}\)의 매개 변수 \(\theta\)가 나중에 업데이트 되는 경우 \(p(z\,|\,x)\)와 더 이상 일치 하지 않습니다. 따라서 검색 인덱스는 \(\theta\)의 모든 기울기 업데이트 후에 "stale"이 된다.
+
+우리의 솔루션은 수백 번의 훈련 단계마다 모든 문서를 비동기적으로 다시 삽입하고 다시 인덱싱하여 인덱스를 "새로 고침"하는 것입니다. MIPS 인덱스는 새로 고침 사이에 약간 오래되었지만 맨 위 \(k \) 문서를 선택 하는 데 사용 되는 _only_ 입니다. 이 상위 \(k\) 문서를 검색한 후 새로운 \(\theta\)을 사용하여 \(p(z\,|\,x)\)와 그 기울기를 재계산한다. 섹션 4.5에서 우리는 리프레시가 충분히 빈번한 비율로 발생하는 경우 이 절차가 안정적인 최적화를 초래한다는 것을 경험적으로 보여준다.
+
+비동기 MIPS 새로 고침 구현 매개 변수에 대 한 그래디언트 업데이트를 수행 하는 기본 _trainer_ 작업과 문서를 포함 하 고 인덱싱 하는 보조 _index builder_ 작업의 두 작업을 병렬로 실행 하 여 MIPS 인덱스를 비동기적으로 새로 고칩니다. 도시된 바와 같이
+
+도 2: REALM의 전체 프레임워크. **왼쪽:**_감독 되지 않은 사전 교육입니다._ 지식 검색기와 지식 증강 인코더는 비지도 언어 모델링 작업에 대해 공동으로 사전 훈련된다. **오른쪽:**_감독된 미세 조정입니다._ 리트리버(\(\theta\))와 인코더(\(\phi\))의 파라미터는 사전 훈련된 후, 감독된 예제를 사용하여 주요 관심 태스크에서 미세 조정된다.
+
+아래에서 트레이너는 인덱스 작성기에 매개 변수 \(\theta^{\prime}\)의 스냅샷을 보냅니다. 그런 다음 트레이너는 트레이닝을 계속 하는 동안 인덱스 작성기는 \(\theta^{\prime}\)을 사용하여 백그라운드에 새 인덱스를 구성합니다. 인덱스 빌더가 완료되는 즉시 새로운 인덱스를 트레이너에게 다시 전송하고, 그 과정이 반복된다.
+
+비동기 리프레시는 사전 훈련과 미세 조정 모두에 사용할 수 있지만, 실험에서는 사전 훈련에만 사용한다. 미세 조정을 위해 MIPS 인덱스를 한 번만 빌드합니다 (미리 훈련된 \(\theta\ 사용). 단순화를 위해 \(\mathtt{Embed}_{\mathtt{doc}}\).3 여전히 미세 조정 \(\mathtt{Embed}_{\mathtt{input}}\)이므로 쿼리 쪽에서 검색 함수가 여전히 업데이트됩니다.
+
+각주 3: 사전 훈련은 이미 좋은 \(\mathtt{Embed}_{\mathtt{doc}}\) 함수를 생성하므로 작동합니다. 그러나 인덱스를 새로 고치면 성능이 더욱 향상될 수 있습니다.
+
+리트리버는 무엇을 학습하는가?REALM의 지식 검색은 잠재되어 있기 때문에 훈련 목표가 의미 있는 검색을 장려하는 방법은 분명하지 않다. 여기서는 예측 정확도를 향상시키는 검색에 어떻게 보상하는지 보여준다.
+
+지정된 쿼리 \(x\) 및 문서 \(z\)에 대해 \(f(x,z)\)이 지식 검색기가 문서에 할당하는 "관련성 점수"임을 상기합니다 \(z\). REALM 사전 훈련 중 기울기 하강 단일 단계가 지식 검색기의 매개변수에 대한 기울기를 분석하여 이 점수를 변경하는 방법을 볼 수 있다. \(\theta\):
+
+\[\nabla\log p(y\,|\,x) =\sum_{z\in\mathcal{Z}}r(z)\nabla f(x,z)\] \[r(z) =\left[\frac{p(y\,|\,z,x)}{p(y\,|\,x)}-1\right]p(z\,|\,x)\]\]
+
+각 문서 \(z\)에 대해 기울기는 검색기가 점수 \(f(x,z)\)를 \(r(z)\)만큼 변경하도록 권장합니다. \(r(z)\)이 양수이면 증가하고 음수이면 감소합니다. 곱셈기 \(r(z)\)는 \(p(y\,|\,z,x)>p(y\,|\,x)\)인 경우에만 양수입니다. 용어 \(p(y\,|\,z,x)\)는 문서 \(z\)를 사용할 때 올바른 출력 \(y\)을 예측할 확률입니다. 용어 \(p(y\,|\,x)\)는 \(p(z\,|\,x)\)에서 문서를 무작위로 샘플링할 때 \(p(y\,|\,x,z)\)의 예상 값입니다. 따라서 문서 \(z\)는 기대 이상의 성능을 보일 때마다 긍정적인 업데이트를 받는다.
+
+### 사전 훈련에 귀납적 편향 주입
+
+REALM을 개발하는 과정에서 아래에 설명된 의미 있는 검색을 향해 모델을 추가로 안내하는 몇 가지 추가 전략을 발견했다.
+
+REALM 사전 교육 중에 두드러진 범위 마스킹은 마스킹된 토큰을 예측하기 위해 세계 지식이 필요한 예 \(x \)에 초점을 맞추고 싶습니다. 섹션 2에서 설명한 바와 같이 일부 MLM 스팬은 로컬 컨텍스트만 필요로 한다. 세계 지식이 필요한 문제에 초점을 맞추기 위해 "영국" 또는 "1969년 7월"과 같은 _현저한 스팬_ 을 가립니다. 우리는 CoNLL-2003 데이터(상 및 드 멀더, 2003)에 대해 훈련된 BERT 기반 태거를 사용하여 명명된 개체를 식별하고 정규식을 사용하여 날짜를 식별한다. 우리는 마스킹된 언어 모델링 작업을 위해 문장 내에서 이러한 두드러진 스팬 중 하나를 선택하고 마스킹한다. 우리는 이것이 섹션 4.5의 다른 마스킹 전략보다 상당히 우수함을 보여준다.
+
+널 문서는 현저한 범위 마스킹을 사용하더라도 마스킹된 모든 토큰이 예측하기 위해 세계 지식을 필요로 하는 것은 아니다. 검색된 상위 \(k\) 문서에 빈 _null document_\(\varnothing\)을 추가하여 모델링하여 검색이 필요하지 않은 경우 일관된 싱크에 적절한 크레딧을 할당할 수 있습니다.
+
+사전 학습 말뭉치 \(\mathcal{X}\)와 지식 말뭉치 \(\mathcal{Z}\)가 동일한 경우, 문서 \(z\)에서 마스킹된 문장 \(x\)이 나온다면, 지식 증강 인코더는 \(z\)에서 마스킹되지 않은 버전 \(x\)을 보고 \(y\)을 3차원적으로 예측할 수 있다. 이것은 \(p(z\,|\,x)\)에 대해 큰 양의 기울기를 초래한다. 이것이 너무 자주 발생하는 경우, 지식 검색기는 \(x\)과 \(z\ 사이의 정확한 문자열 매칭을 찾는 학습을 종료하게 되며, 이는 다른 형태의 관련성을 포착하지 못한다. 이러한 이유로 우리는 사전 훈련 중에 이 사소한 후보를 제외한다.
+
+학습 초기에 초기화는 검색기가 \(\mathtt{Embed}_{\mathtt{input}}(x)\)와 \(\mathtt{Embed}_{\mathtt{doc}}(z)\)에 대한 임베딩이 잘 되지 않으면 검색된 문서 \(z\)는 \(x\)과 관련이 없을 것이다. 이것은 지식 증강 인코더로 하여금 검색된 문서들을 무시하도록 학습하게 한다. 이렇게 되면 지식 검색기는 의미 있는 기울기를 받지 못하고 향상되지 못해 악순환이 발생한다. 이러한 콜드 스타트 문제를 피하기 위해 본 논문에서는 간단한 학습 목적인 역 클로즈 태스크(Inverse Cloze Task, ICT)를 이용하여 웜 스타트 \(\mathtt{Embed}_{\mathtt{input}}\)과 \(\mathtt{Embed}_{\mathtt{doc}}\)을 학습하여 해당 문장이 나온 문서를 검색한다. 자세한 내용은 Lee 등(2019)에 따른다. 지식-증강 인코더의 경우, BERT 사전-훈련으로 이를 웜-스타팅한다 - 구체적으로, 비-디케이싱 BERT-베이스 모델(12개의 레이어, 768개의 숨겨진 유닛, 12개의 어텐션 헤드).
+
+도 3: 비동기식 MIPS 리프레시를 사용한 REALM 사전 트레이닝.
+
+## 4 Experiments
+
+이제 Open-QA 태스크에 대한 접근 방식을 평가한다. 이 섹션에서는 사용된 벤치마크와 경험적으로 비교하는 다양한 접근법을 자세히 설명한다.
+
+### Open-QA Benchmarks
+
+Open-QA를 위한 벤치마크가 많이 제안되었다. 이 연구에서는 질문 작성자가 답을 이미 알지 못한 데이터 세트에 초점을 맞춘다. 이는 보다 현실적인 정보 추구 요구를 반영하는 질문을 산출하고, 질문이 특정 답변을 염두에 두고 공식화될 경우 발생할 수 있는 아티팩트를 방지한다. Lee 등(2019)에서 더 깊은 정당화가 주어진다. 모든 경우에, 예측된 답변은 이전의 Open-QA 작업(Chen 등, 2017)에 따라 임의의 참조 답변과의 정확한 매칭을 통해 평가된다.
+
+NaturalQuestions-OpenThe NaturalQuestions dataset(Kwiatkowski et al., 2019)은 자연발생적인 구글 질의와 이들의 답변으로 구성된다. 각 답변에는 Lee 등(2019)에 따라 "답변 유형"도 함께 제공되며, 최대 5개의 토큰이 있는 "단답형"으로 분류된 질문만 보관합니다. 데이터셋은 또한 검색하기 위해 제안된 위키피디아 문서를 제공한다; 우리가 비교하는 모든 모델과 마찬가지로, 우리는 이것을 우리 모델에 제공하지 않는다.
+
+WebQuestions The WebQuestions dataset(Berant et al., 2013)은 Google Suggest API로부터 수집되었으며, 하나의 시드 질문을 사용하고 관련 질문으로 세트를 확장하였다. 우리는 Chen 등(2017)에 의해 정의된 설정을 따른다.
+
+CuratedTree CuratedTree 데이터 세트는 MSNSearch 및 Askleeves와 같은 사이트에서 발급 된 실제 사용자 쿼리에서 가져온 질문-답변 쌍의 모음입니다. 다수의 정답 또는 상이한 맞춤법 변형을 설명하기 위해, 이 데이터세트의 답변은 모든 정답과 일치하는 정규식으로 정의된다. 이러한 유형의 감독으로 생성 기반 모델을 훈련하는 방법이 불분명하므로 이 데이터 세트에 대해 평가하지 않는다.
+
+### Approaches compared
+
+검색 기반 Open-QAMost 기존 Open-QA 시스템은 지식 코퍼스에서 잠재적으로 관련된 문서를 먼저 검색한 다음 읽기 이해 시스템을 사용하여 문서에서 답변을 추출함으로써 입력 질문에 답한다. 이 패러다임에서 지식은 코퍼스에 명시적으로 저장됩니다. 우리는 검색을 구현하기 위한 다양한 방법들을 비교하고자 한다.
+
+많은 접근법들은 관련 문서들의 작은 세트(예를 들어, 20개)를 선택하기 위해 질문 상에 링크하는 희소 백-오브-워드 매칭(Robertson et al., 2009) 또는 엔티티와 같은 비학습된 휴리스틱 검색을 사용한다. 이러한 문서들은 일반적으로 학습된 모델을 사용하여 순위가 재지정되지만, 커버리지는 초기 휴리스틱 검색 단계에 의해 제한될 수 있다. 표 1의 DrQA(Chen et al., 2017), HardEM(Min et al., 2019), GraphRetriever(Min et al., 2019), PathRetriever(Asai et al., 2019)와 같은 접근법이 이 범주에 속한다.
+
+최근 MIPS 인덱스를 사용하여 학습 가능한 검색을 구현하는 방법이 제안되었다. ORQA(Lee et al., 2019)는 REALM과 유사한 잠재변수 모델을 이용하여 Open-QA를 공식화하고, 또한 한계우도를 최대화하여 훈련한다. 그러나 REALM은 고정된 인덱스를 사용하는 것이 아니라 새로운 언어 모델 사전 훈련 단계를 추가하고 MIPS 인덱스로 역전파한다. <표 1>에서 두 가지를 직접 비교한다. REALM 사전 훈련 및 ORQA 모두에 대한 검색기는 섹션 3.4에 설명된 역 클로즈 태스크를 사용하여 초기화된다는 점에 유의하는 것도 중요하다.
+
+Open-QA에 대한 생성 기반 Open-QAAn 새로운 대안적 접근법은 그것을 시퀀스 예측 태스크로서 모델링하는 것이다: 단순히 질문을 인코딩하고, 이어서 인코딩에 기초하여 답변 토큰-바이-토큰을 디코딩한다. 처음에 얼마나 많은 양의 지식이 모델에 주입될 수 있는지는 불분명했지만, GPT-2(래드포드 등, 2019)는 시퀀스-투-시퀀스를 통해 임의의 주어진 컨텍스트를 사용하지 않고 직접 답변을 생성할 가능성을 암시했다. 그러나, 그들의 성능은 미세 조정의 부족으로 인해 경쟁력이 없었다. Orthogonally, T5(Raffel et al., 2019)는 주어진 문맥으로부터 명시적인 추출 없이 직접 답변을 생성하는 것이 실행 가능한 접근법임을 보여주었지만, 문맥 문서가 제공되는 읽기 이해 과제에 대해서만 실험하였다.
+
+가장 경쟁적이고 비교 가능한 세대 기반 기준선에 대해 Open-QA를 위해 T5를 미세 조정하는 동시 작업과 비교한다(Roberts et al., 2020).4 우리는 모델 크기의 영향을 측정하기 위해 기본, 대형 및 훨씬 더 큰 110억 매개 변수 모델과 비교한다.
+
+각주 4: 처음에 [https://tinyurl.com/t5-openga-colab](https://tinyurl.com/t5-openga-colab)(Raffel et al., 2019)의 코드를 사용하여 자체 T5 실험을 수행했습니다. 우리는 이제 개선된 미세 조정 절차를 가진 Roberts 등(2020)의 동시 작업 결과를 보고한다.
+
+### Implementation Details
+
+Fine-tuningWe reuse all hyperparameters from Lee et al. (2019), enable direct comparison. 우리의 지식 코퍼스는 2018년 12월 20일 영어 위키피디아 스냅샷에서 파생되었습니다. 문서는 탐욕스럽게 최대 288개의 BERT 단어 조각으로 분할되어 1,300만 개 이상의 검색 후보가 생성된다. 미세 조정 추론 동안 상위 5개의 후보를 고려하며 전체 모델은 12GB GPU를 사용하는 단일 머신에서 실행될 수 있다.
+
+사전 훈련은 BERT의 기본 최적화기를 사용하여 배치 크기가 512이고 학습 속도가 3e-5인 64개의 구글 클라우드 TPU에서 200k 단계를 사전 훈련한다. MIPS 인덱스에 대한 문서 임베딩 단계는 16개의 TPU에 걸쳐 병렬화된다. 각 예제에 대해 null 문서 \(\varnothing\)을 포함한 8개의 후보 문서를 검색하고 주변화한다.
+
+학습 전 말뭉치 \(\mathcal{X}\): (1) 지식 말뭉치와 동일한 Wikipedia \(\mathcal{Z}\)와 (2) Liu et al. (2019)에 의해 제안된 영어 뉴스 말뭉치를 재생산한 CC-News를 실험한다.
+
+### Main results
+
+표 1은 세 가지 Open-QA 데이터 세트에 대한 다양한 접근법의 정확도를 보여준다. REALM은 이전의 모든 접근 방식을 상당한 차이로 능가합니다. 표 1은 또한 각 모델에 대한 모수의 수를 보여준다.
+
+Roberts 등(2020)의 동시 작업에서 보고된 바와 같이, T5를 기반으로 하는 생성적 Open-QA 시스템은 놀랍도록 강력하며, 가장 큰 T5-11B 모델은 이전의 최상의 Open-QA 시스템을 능가한다. T5의 크기를 증가시키는 것은 일관된 개선을 산출하지만, 상당한 계산 비용이 발생한다(베이스에서 11B로, 모델은 50배 더 크고, 정확도에서 대략 5 포인트 이득을 얻는다). 반면 REALM은 가장 큰 T5-11B 모델을 능가하는 반면 30배 더 작다. T5는 사전 학습(100,000+ 예제) 동안 SQuAD에서 추가 읽기 이해 데이터에 액세스하는 것도 중요하다. 이러한 데이터에 대한 액세스도 REALM에 도움이 될 수 있지만 실험에는 사용되지 않았다.
+
+모든 시스템 중에서, REALM과의 가장 직접적인 비교는 ORQA(Lee et al., 2019)이며, 여기서 미세 조정 설정, 하이퍼파라미터 및 트레이닝 데이터는 동일하다. ORQA에 비해 REALM의 개선은 순전히 더 나은 사전 훈련 방법 때문이다. 또한, 사전 학습 방법은 (1) 단일 코퍼스 설정 (\(\mathcal{X}\) = Wikipedia, \(\mathcal{Z}\) = Wikipedia) 또는 (2) 개별 코퍼스 설정 (\(\mathcal{X}\) = CC-News, \(\mathcal{Z}\) = Wikipedia)에 모두 적용될 수 있음을 나타낸다.
+
+기존의 검색 기반 시스템(Asai et al., 2019; Min et al., 2019; b)과 비교하여 20~80개의 문서를 검색하는 경우가 많으며, 5개의 문서만 검색하는 경우에 비해 전반적으로 우수한 성능을 보인다.
+
+### Analysis
+
+표 2에서 REALM의 중요한 구성 요소를 제거한 후 NaturalQuestions-Open에 대한 결과를 제시한다. 우리는 종단 간 결과 외에도 미세 조정을 적용하기 전에 상위 5개 검색에서 금 답변이 얼마나 자주 나타나는지 보고한다. 후자의 메트릭은 사전 훈련 동안 검색기를 개선하는 기여를 더 크게 분리한다.
+
+\begin{table}
+\begin{tabular}{l l c c c c} \hline \hline
+**Name** & **Architectures** & **Pre-training** & **NQ** & **WQ** & **CT** \\  & & (79k/4k) & (3k/2k) & (1k /1k) & **\# params** \\ \hline BERT-Baseline (Lee et al., 2019) & Sparse Retr.\(+\)Transformer & BERT & 26.5 & 17.7 & 21.3 & 110m \\ \hline T5 (base) (Roberts et al., 2020) & Transformer Seq2Seq & T5 (Multitask) & 27.0 & 29.1 & - & 223m \\ T5 (large) (Roberts et al., 2020) & Transformer Seq2Seq & T5 (Multitask) & 29.8 & 32.2 & - & 738m \\ T5 (11b) (Roberts et al., 2020) & Transformer Seq2Seq & T5 (Multitask) & 34.5 & 37.4 & - & 11318m \\ \hline DrQA (Chen et al., 2017) & Sparse Retr.\(+\)DocReader & N/A & - & 20.7 & 25.7 & 34m \\ HardEM (Min et al., 2019a) & Sparse Retr.\(+\)Transformer & BERT & 28.1 & - & - & 110m \\ GraphRetriever (Min et al., 2019b) & GraphRetriever\(+\)Transformer & BERT & 31.8 & 31.6 & - & 110m \\ PathRetriever (Asai et al., 2019) & PathRetriever\(+\)Transformer & MLM & 32.6 & - & - & 110m \\ ORQA (Lee et al., 2019) & Dense Retr.\(+\)Transformer & ICT\(+\)BERT & 33.3 & 36.4 & 30.1 & 330m \\ \hline Ours (\(\mathcal{X}\) = Wikipedia, \(\mathcal{Z}\) = Wikipedia) & Dense Retr.\(+\)Transformer & REALM & 39.2 & 40.2 & **46.8** & 330m \\ Ours (\(\mathcal{X}\) = CC-News, \(\mathcal{Z}\) = Wikipedia) & Dense Retr.\(+\)Transformer & REALM & **40.4** & **40.7** & 42.9 & 330m \\ \hline \hline \end{tabular}
+\end{table}
+표 1: Open-QA 벤치마크에 대한 테스트 결과. 열차/테스트 예제 수는 각 벤치마크 아래의 괄호 안에 표시됩니다. 예측은 참조 답변과 정확히 일치하여 평가됩니다. 희소 검색은 TF-IDF, BM25와 같은 희소 특징을 사용하는 방법을 의미하며, 본 논문에서 제안하는 모델인 REALM은 기존의 모든 시스템보다 성능이 우수하다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline
+**절제** & **Exact** &
+\begin{tabular}{c} **Zero-shot** \\ **Retrieval** \\ **Recall@5** \\ \end{tabular} \\ \hline REALM & 38.2 & 38.5 \\ \hline REALM retriever\(+\)Baseline encoder & 37.4 & 38.5 \\ Baseline retriever\(+\)REALM encoder & 35.3 & 13.9 \\ Baseline (ORQA) & 31.3 & 13.9 \\ \hline REALM with random uniform masks & 32.3 & 24.2 \\ REALM with random span masks & 35.3 & 26.1 \\ \hline
+30\(\times\) stale MIPS & 28.7 & 15.1 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: NQ의 개발 세트에 대한 절제 실험.
+
+인코더 또는 리트리버REALM 사전 트레이닝이 리트리버 또는 인코더, 또는 둘 모두를 개선하는지 여부를 결정하는 것을 먼저 목표로 한다. 이를 위해 REALM 사전 훈련 전에 리트리버 또는 인코더의 매개변수를 기본 상태로 재설정하고 미세 조정으로 공급할 수 있다. 리트리버와 인코더를 모두 재설정하면 시스템이 기본 기준인 ORQA로 감소합니다. 인코더와 리트리버 모두 REALM 훈련에 의해 개별적으로 이익을 얻지만, 최상의 결과는 두 구성 요소가 동시에 작용해야 한다는 것을 발견한다.
+
+마스킹 스킴은 우리의 두드러진 스팬 마스킹 스킴(섹션 3.4)과 (1) BERT에 소개된 랜덤 토큰 마스킹(Devlin et al., 2018) 및 (2) SpanBERT에 의해 제안된 랜덤 스팬 마스킹(Joshi et al., 2019)을 비교한다. 이러한 두드러진 스팬 마스킹은 표준 BERT 훈련(조시 등, 2019)을 사용한 이전 작업에서 영향을 미치지 않는 것으로 나타났지만 REALM에 중요하다. 직관적으로 잠재 변수 학습은 검색의 유용성에 크게 의존하므로 일관된 학습 신호에 더 민감하다.
+
+미리 훈련하는 동안 MIPS 인덱스 새로 고침률을 병렬로 실행하여 코퍼스 문서를 재임베딩하고 MIPS 인덱스를 재구축한다. 이렇게 하면 약 500개의 훈련 단계당 하나의 인덱스 새로 고침이 발생합니다. 빈발 인덱스 리프레시의 중요성을 입증하기 위해, 우리는 더 느린 리프레시 레이트를 사용하는 것과 비교한다. 표 2의 결과는 오래된 지수가 모델 학습에 부정적인 영향을 미칠 수 있으며 이러한 엄격함을 더욱 줄이면 더 나은 최적화를 제공할 수 있음을 시사한다.
+
+검색된 문서의 예들 표 3은 REALM 마스킹된 언어 모델 예측의 예를 나타낸다. 이 예에서, "페르마"는 올바른 단어이고, REALM(row(c))은 BERT 모델(row(a))에 비해 훨씬 높은 확률을 단어에 부여한다. REALM은 관련 사실이 있는 일부 문서를 검색(행(b))하기 때문에, 정답의 주변화 확률은 급격히 증가한다. 이는 REALM이 비지도 텍스트로만 학습되어도 마스킹된 단어를 채울 문서를 검색할 수 있음을 보여준다.
+
+## 5 토론 및 관련 작업
+
+우리는 이전에 Open-QA를 위한 관련 방법에 대해 논의했다. 여기에서 Open-QA를 넘어 광범위한 아이디어 집합에 연결하는 REALM을 보는 몇 가지 대체 방법을 제시합니다.
+
+말뭉치를 문맥으로 하는 언어 모델링 언어 표현 모델은 예측을 할 때 점점 더 큰 범위의 문맥을 통합해 왔다. 이러한 진행의 예들은 주변 단어들(Mikolov et al., 2013, 2013), 문장들(Kiros et al., 2015; Peters et al., 2018), 및 단락들(Radford et al., 2018; Devlin et al., 2018)을 조건화하는 모델들을 포함한다. 우리는 REALM을 위의 작업을 다음 단계의 범위인 전체 텍스트 _corpus_로 일반화한 것으로 볼 수 있다.
+
+입력 텍스트의 분산을 더 잘 설명하고 제어 가능한 생성을 가능하게 하기 위해 Guu et al.(2018)은 어휘 중복이 높은 텍스트를 조건으로 하는 검색 및 편집 프레임워크(Hashimoto et al., 2018)를 사용하여 언어 모델을 제안했다. REALM은 모델이 어떤 텍스트가 당혹감을 줄이는 데 가장 유용한지 스스로 학습한다는 점을 제외하고는 유사한 접근법을 가지고 있다. REALM은 검색기를 공동으로 학습함으로써 어휘 중복을 넘어 정보에 의존할 수 있는 능력을 가지고 있다.
+
+확장 가능한 접지된 신경 메모리 문서 인덱스는 키가 문서 임베딩인 메모리로 볼 수 있다. 이러한 관점에서, 우리의 작업은 메모리 네트워크에서 서브-선형 메모리 액세스를 가능하게 하는 제품 키 메모리(Lample et al., 2019)와 같은 작업과 동기를 공유하여(Weston et al., 2014; Graves et al., 2014; Sukhbaatar et al., 2015), 이러한 확장 가능한 메모리 계층이 대형 언어 모델에 통합될 수 있게 한다. 한 가지 주요 차이점은 우리의 메모리는 접지되어 있다는 것이다 - 각각의 메모리는 이름 없는 값 벡터보다는 문서와 연관되어 있다. 이러한 수준의 해석 가능성은 사용자가 예측된 답변을 신뢰할 수 있도록 출처를 요구하는 Open-QA와 같은 응용 프로그램에 매우 중요하다.
+
+비감독 코퍼스 AlignmentIn sequence-to-sequence models with attention (Bahdanau et al., 2014),
+
+\begin{table}
+\begin{tabular}{l l l l l} \hline \hline \multicolumn{2}{c}{\(x\):} & \multicolumn{2}{c}{An equilateral triangle is easily constructed using a straightedge and compass, because 3 is a} \\ \hline (a) & BERT & \(p(y=\) “Fermat”\(\,x\,)\) & \(=\,\,1.1\times 10^{-14}\) & (No retrieval.) \\ \hline (b) REALM & \(p(y=\) “Fermat”\(\,x\,)\) & \(=\,\,1.0\) & \begin{tabular}{l} (Conditional probability with document \(z=\) “257 is... a Fermat prime. \\ Thus a regular polygon with 257 sides is constructible with compass...”) \\ (c) REALM & \(p(y=\) “Fermat”\(\,x\,)\) & \(=\,\,0.129\) \\ \end{tabular} &
+\begin{tabular}{l} (Conditional probability with document \(z=\) “257 is... a Fermat prime. \\ Thus a regular polygon with 257 sides is constructible with compass...”) \\ (Marginal probability, marginalizing over top 8 retrieved documents.) \\ \end{tabular} \\ \hline \hline \end{tabular}
+\end{table}
+표 3: REALM이 검색된 문서를 활용하여 마스킹된 토큰을 더 잘 예측하는 예. 그것은 BERT에 비해 정확한 용어인 "페르마"에 훨씬 더 높은 확률(0.129)을 할당한다. (블랭크는 3개의 BERT 워드피스들에 대응한다는 점에 유의한다.) 텍스트는 관련 토큰들의 잠재 선택으로 생성된다. 이렇게 하면 대상 토큰과 원본 토큰 간에 _모델 중심_ 감독 되지 않은 정렬 집합이 생성 됩니다. 유사하게, REALM은 또한 관련 문서의 잠재 선택으로 텍스트를 생성한다. 이 방법의 부산물은 사전 학습 말뭉치 \(\mathcal{X}\)와 지식 말뭉치 \(\mathcal{Z}\)의 텍스트 사이에 모델 중심 비지도 정렬 집합을 제공하는 것이다.
+
+## 6 Future Work
+
+여기에 제시된 작업은 추론하는 동안 대용량의 지식 코퍼스에 대한 추론을 수행하기 위해 표현이 미리 훈련되는 REALM 유사 접근법의 패밀리의 최소 인스턴스화이다. (1) 구조화된 지식에 대한 이 작업의 일반화에 대해 특히 낙관적이며, 이는 Peters 등(2019)의 일반화를 초래하여 어떤 개체가 유익한지, (2) 다국어 설정, 예를 들어, 저자원 언어로 텍스트를 더 잘 표현하기 위해 고자원 언어로 지식을 검색하는 것, (3) 텍스트에서 거의 관찰되지 않는 지식을 제공할 수 있는 이미지 또는 비디오를 검색하는 것과 같은 다국어 설정을 학습한다.
+
+## References
+
+* Asai et al. (2019) Asai, A., Hashimoto, K., Hajishirzi, H., Socher, R., and Xiong, C. Learning to retrieve reasoning paths over wikipedia graph for question answer. _ arXiv preprint arXiv:1911.10470_, 2019.
+* Bahdanau et al. (2014) Bahdanau, D., Cho, K., and Bengio, Y. 정렬 및 번역을 공동으로 학습하여 신경망 기계 번역을 수행합니다. _ arXiv preprint arXiv:1409.0473_, 2014.
+* Berant 등(2013) Berant, J., Chou, A., Frostig, R., and Liang, P. Semantic parsing on freebase from question-answer pairs. _Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing_, pp.1533-1544, 2013.
+* Brill 등(2002) Brill, E., Dumais, S., and Banko, M. 질문응답 시스템에 대한 분석. _Empirical Methods in Natural Language Processing_, 2002.
+* Chen 등(2017) Chen, D., Fisch, A., Weston, J., and Bordes, A. Reading wikipedia to answer open-domain questions. _Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics(Volume 1: Long Papers)_, Volume 1, pp. 1870-1879, 2017.
+* Clark & Gardner (2017) Clark, C. and Gardner, M. 간단하고 효과적인 다중 단락 읽기 이해입니다. _Computational Linguistics Association의 연례 회의_ 2017.
+* Dai & Le (2015) Dai, A. M. and Le, Q. V. Semi-supervised sequence learning. _Advances in neural information processing systems_, pp. 3079-3087, 2015.
+* Devlin 등(2018) Devlin, J., Chang, M. - W., Lee, K., and Toutanova, K. Bert: 언어 이해를 위한 깊은 양방향 트랜스포머의 사전 훈련. _ arXiv preprint arXiv:1810.04805_, 2018.
+* Graves et al. (2014) Graves, A., Wayne, G., and Danihelka, I. Neural turing machines. _ ArXiv_, abs/1410.5401, 2014.
+* Guu et al. (2018) Guu, K., Hashimoto, T. B., Oren, Y., and Liang, P. Generating sentences by editing prototype. _ Transactions of the Association for Computational Linguistics_, 6:437-450, 2018.
+* Hashimoto et al. (2018) Hashimoto, T. B., Guu, K., Oren, Y., and Liang, P. S. A retrieve-and-edit framework for predict structured output. _Advances in Neural Information Processing Systems_, pp. 10052-10062, 2018.
+* Joshi 등(2019) Joshi, M., Chen, D., Liu, Y., Weld, D. S., Zettlemoyer, L., and Levy, O. SpanBERT: 스팬을 나타내고 예측하여 사전 교육을 개선합니다. _ arXiv preprint arXiv:1907.10529_, 2019.
+* Khandelwal et al. (2019) Khandelwal, U., Levy, O., Jurafsky, D., Zettlemoyer, L., and Lewis, M. 암기를 통한 일반화 : 최근접 이웃 언어 모델. _ ArXiv_, abs/1911.00172, 2019.
+* Kiros et al. (2015) Kiros, R., Zhu, Y., Salakhutdinov, R. R., Zemel, R., Urtasun, R., Torralba, A., and Fidler, S. Skip-thought vector. _Advances in neural information processing systems_, pp. 3294-3302, 2015.
+* Kwiatkowski et al. (2019) Kwiatkowski, T., Palomaki, J., Rhinehart, O., Collins, M., Parikh, A., Alberti, C., Epstein, D., Polosukhin, I., Kelcey, M., Devlin, J., et al. Natural questions: benchmark for question answer research. _ Transactions of the Association for Computational Linguistics_, 2019.
+* Lample 등(2019) Lample, G., Sablayrolles, A., Ranzato, M., Denoyer, L., and Jegou, H. Large memory layers with product keys. _Advances in Neural Information Processing Systems_, pp. 8546-8557, 2019.
+* Lee et al. (2016) Lee, K., Salant, S., Kwiatkowski, T., Parikh, A., Das, D., and Berant, J. Learning recurrent span representations for extractive question answer. _ arXiv preprint arXiv:1611.01436_, 2016.
+* Lee et al.(2019) Lee, K., Chang, M. -W, Toutanova, K. 약하게 감독된 오픈 도메인 질문 응답을 위한 잠재 검색입니다. _Proceedings of the Conference of Association for Computational Linguistics_, 2019.
+* Lewis 등(2019) Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mohamed, A., Levy, O., Stoyanov, V., and Zettlemoyer, L. 바트: 자연어 생성, 번역 및 이해를 위한 시퀀스 대 시퀀스 사전 트레이닝의 노이즈 제거_ ArXiv_, abs/1910.13461, 2019.
+
+* Liu 등(2019) Liu, Y., Ott, M., Goyal, N., Du, J., Joshi, M., Chen, D., Levy, O., Lewis, M., Zettlemoyer, L., and Stoyanov, V. Roberta: 강건하게 최적화된 버트 사전 트레이닝 접근법. _ arXiv preprint arXiv:1907.11692_, 2019.
+* Mikolov et al. (2013a) Mikolov, T., Chen, K., Corrado, G., and Dean, J. Efficient estimation of word representations in vector space. _ arXiv preprint arXiv:1301.3781_, 2013a.
+* Mikolov 등(2013b) Mikolov, T., Sutskever, I., Chen, K., Corrado, G. S., and Dean, J. Distributed representations of words and phrases and their compositionality. _Advances in neural information processing systems_, pp. 3111-3119, 2013b.
+* Miller et al. (2016) Miller, A., Fisch, A., Dodge, J., Karimi, A.-H., Bordes, A., and Weston, J. Key-value memory networks for directly reading documents. _ arXiv preprint arXiv:1606.03126_, 2016.
+* Min 등(2019a) Min, S., Chen, D., Hajishirzi, H., and Zettlemoyer, L. 약하게 감독된 질의응답을 위한 이산적인 하드 엠 접근법. _ arXiv preprint arXiv:1909.04849_, 2019a.
+* Min et al. (2019b) Min, S., Chen, D., Zettlemoyer, L., and Hajishirzi, H. Knowledge guided text retrieval and reading for open domain question answer. _ arXiv preprint arXiv:1911.03868_, 2019b.
+* Peters 등(2018) Peters, M. E., Neumann, M., Iyyer, M., Gardner, M., Clark, C., Lee, K., and Zettlemoyer, L. 심층 문맥화된 단어 표현. _Proc. of NAACL_, 2018.
+* Peters 등(2019) Peters, M. E., Neumann, M., IV, R. L. L., Schwartz, R., Joshi, V., Singh, S., and Smith, N. A. Knowledge enhanced contextual word representation, 2019.
+* Petroni et al. (2019) Petroni, F., Rocktaschel, T., Lewis, P., Bakhtin, A., Wu, Y., Miller, A. H., and Riedel, S. 지식 베이스로서의 언어 모델? _ arXiv preprint arXiv:1909.01066_, 2019.
+* Radford 등(2018) Radford, A., Narasimhan, K., Salimans, T., and Sutskever, I. Improving language understanding with nonsupervised learning. 기술 보고서, 오픈AI, 2018
+* Radford 등(2019) Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., and Sutskever, I. Language models are nonsupervised multi-task learners. _ OpenAI Blog_, 2019.
+* Raffel et al. (2019) Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S., Matena, M., Zhou, Y., Li, W., and Liu, P. J. Exploring the limit of transfer learning with Unified text-to-text transformer. _ arXiv preprint arXiv:1910.10683_, 2019.
+* Rajpurkar 등(2016) Rajpurkar, P., Zhang, J., Lopyrev, K., and Liang, P. Squad: 100,000+ questions for machine comprehension of text. _Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing_, pp. 2383-2392, 2016.
+* Rajpurkar 등(2018) Rajpurkar, P., Jia, R., and Liang, P. Know what you don't know: Unanswerable questions for squad. _ arXiv preprint arXiv:1806.03822_, 2018.
+* Ram and Gray (2012) Ram, P. and Gray, A. G. Maximum inner-product searching cone tree. _Proceedings of the 18th ACM SIGKDD international conference on Knowledge discovery and data mining_, pp. 931-939, 2012.
+* Roberts et al. (2020) Roberts, A., Raffel, C., and Shazeer, N. 언어 모델의 매개 변수에 얼마나 많은 지식을 담을 수 있습니까? _ arXiv preprint arXiv:TBD_, 2020.
+* Robertson et al. (2009) Robertson, S., Zaragoza, H., et al. The probabilistic relevance framework: Bm25 and beyond. _ Foundations and Trends in Information Retrieval_, 3(4):333-389, 2009.
+* Sang & De Meulder (2003) Sang, E. T. K. and De Meulder, F. Introduction to the conll-2003 shared task: Language-independent named entity recognition. _Proceedings of the Seventh Conference on Natural Language Learning at HLT-NAACL 2003_, pp. 142-147, 2003.
+* Seo et al. (2016) Seo, M., Kembhavi, A., Farhadi, A., and Hajishirzi, H. Bidirectional attention flow for machine comprehension. 2016년 _학습 표현에 대한 국제 회의_ 에서입니다.
+* Shen 등(2015) Shen, F., Liu, W., Zhang, S., Yang, Y., and Tao Shen, H. Learning binary codes for maximum inner product search. _Proceedings of the IEEE International Conference on Computer Vision_, pp. 4148-4156, 2015.
+* Shrivastava & Li (2014) Shrivastava, A. and Li, P. Asymmetric lsh (alsh) for sub-linear time maximum inner product search (mips). _Advances in Neural Information Processing Systems_, pp. 2321-2329, 2014.
+* Sukhbaatar 등(2015) Sukhbaatar, S., Weston, J., Fergus, R., et al. End-to-end memory networks. _Advances in neural information processing systems_ 2015.
+* Weston et al. (2014) Weston, J., Chopra, S., and Bordes, A. Memory networks. _ arXiv preprint arXiv:1410.3916_, 2014.
+
+## 부록 지식 검색기에 대 한 그래디언트 유도
+
+REALM 사전 학습 목표(로그 우도)의 기울기를 지식 검색기의 매개 변수에 따라 계산한다. \(\theta\):
+
+\[=p(y\,|\,x)^{-1}\nabla p(y\,|\,x)\] \[=p(y\,|\,x)^{-1}\sum_{z}p(y\,|\,z,x)\nabla p(z\,|\,x)\] \[=p(y\,|\,x)^{-1}\sum_{z}p(y\,|\,x)^{-1}\sum_{z}p(y\,|\,z,x)p(z\,|\,x)\nabla\log p(z\,|\,x)\] \[=\sum_{z}p(z\,|\,y,x)\nabla\log p(z\,|\,x)\] \[=\sum_{z}p(z\,|\,y,x)\nabla\log p(z\,|\,x),\]
+
+여기서 마지막 선은 조건부 베이즈 규칙을 적용하여 따릅니다. 그런 다음 \(\nabla\log p\left(z\,|\,x\right)\)를 다음과 같이 확장할 수 있습니다.
+
+\[\nabla\log\frac{\exp f(x,z)}{\sum_{z^{\prime}}\exp f(x,z^{\prime })}\] \[=\nabla\left[f(x,z)-\log\sum_{z^{\prime}}\exp f(x,z^{\prime})\right]\] \[=\nabla f(x,z))-\sum_{z^{\prime}}p(z^{\prime}\,|\,x)\nabla f(x,z^{ \prime})\]
+
+이를 다시 첫 번째 방정식 집합에 연결하면 다음과 같다.
+
+\[=\sum_{z}\left[p\left(z\,|\,y,x\right)\nabla f(x,x\right)\nabla f(x,x\right]\] \[=\sum_{z}\left[p\left(z\,|\,y,x\right)\nabla f(x,x\right)\nabla f(x,z)\] \[=\sum_{z}\left[p\left(z\,|\,y,x\right)\nabla f(x,x\right)\nabla f(x,z)\] \[=\sum_{z}\left[p\left(z\,|\,y,x\right)p\left(z\,|\,x\right)}{p\left(y\,|\,x\right)}-p\left(z\,|\,x\right)\nabla f(x,z)\] \[=\sum_{z}\left[p\left(
+
+두 번째 선에서는 전체 표현이 \(p\left(z\,|\,y,x\right)\)에 대한 기대라는 사실을 사용했으며 \(z^{\prime}\)에 의존하지만 \(z\)에 의존하지 않는 항은 그 기대에서 벗어날 수 있다.
+
+## 부록 B REALM 및 지도 학습 연결
+
+부록 A의 방정식으로부터 우리는 그것을 보았다.
+
+\[\nabla\log p\left(y\,|\,x\right)=\sum_{z}\left[p\left(z\,|\,y,x\right)-p\left(z\,|\,x\right)\right]\nabla f(x,z)\]
+
+하나의 문서 \(z^{*}\)가 존재하여 모델이 완벽한 예측 정확도를 얻을 수 있다고 가정하자(즉, \(p\left(y\,|\,z^{*},x\right)=1\)), 다른 모든 문서 \(z^{\prime}\)는 0의 정확도(즉, \(p\left(y\,|\,z^{\prime},x\right)=0\)). 이러한 설정 하에서, \(p\left(z^{*}\,|\,y,x\right)=1\)(단, \(p\left(z^{*}\,|\,x\right)\)는 영이 아님)에 기인하여, 그래디언트가 경사지게 된다.
+
+\[\nabla\log p\left(y\,|\,x\right =\nabla f\left(x,z^{*}\right)-\sum_{z}p\left(z\,|\,x\right)\nabla f (x,z)\] \[=\nabla\log p\left(z^{*}\,|\,x\right).\]\]
+
+이로부터 REALM 대물렌즈의 기울기 하강은 \(\log p\left(z^{*}\,|\,x\right)\)의 기울기 하강과 같다는 것을 알 수 있다. 이것은 다름 아닌 지도 학습에 사용되는 전형적인 최대 가능성 훈련 목표이며, 여기서 \(z^{*}\)은 "황금" 문서이다.
+
+## 부록 C 새로운 지식에 적응
+
+명시적 검색 시스템은 코퍼스 문서를 수정하는 것만으로 새로운 세계 지식에 적응할 수 있다. 이 능력을 입증하기 위해 사전 교육이 수행된 후 지식 말뭉치를 보다 최신 버전의 위키피디아 말뭉치로 대체한다. 입력 쿼리가 두 코퍼스가 불일치하는 사실에 관한 것일 때, REALM은 표 4에 예시된 바와 같이, 업데이트된 정보를 반영하도록 예측을 변경할 수 있다. 그러나, 명시적 검색 메커니즘으로도, 지식-증강 인코더는 여전히 일부 세계 지식을 기억하게 되어, 새로운 코퍼스로 업데이트되지 않은 일부 입력 문장의 예측을 만들 것이다. (예를 들어, 이 모델은 위키피디아 기사에서 그녀의 이름이 자주 언급되었기 때문에 두 말뭉치에서 "영국 총리"에 대한 "대처"를 예측한다.)
+
+## Appendix D Retrieval Utility
+
+섹션 3.4에 설명된 null 문서 \(\varnothing\)는 검색된 문서의 중요도를 측정하는 방법을 제공합니다 \(z\): 마스킹된 입력에 대한 \(z\)의 _검색 유틸리티_(RU) \(z\)를 \(z\)과 \(\varnothing\)에서 컨디셔닝할 때 지식 증강 인코더의 로그 우도 간의 차이로 정의합니다 \(z\):
+
+\[\text{RU}(z\,|\,x)=\log p(y\,|\,z,x)-\log p(y\,|\,\varnothing,x) \tag{2}\]
+
+음의 RU는 \(z\)이 null 문서보다 \(y\)을 예측하는 데 덜 유용하다는 것을 보여줍니다. 이것은 \(z\)이 \(x\)과 무관하다는 것을 의미할 수 있지만, \(x\)의 마스킹된 토큰이 예측하기 위해 세계 지식을 필요로 하지 않거나 세계 지식이 모델의 매개 변수에 충분히 일반적이라는 것을 의미할 수도 있다. 실제로, 우리는 RU가 사전 훈련 과정에서 꾸준히 증가하고 전체 로그 가능성보다 Open-QA의 다운스트림 작업에 대한 우수한 성능을 더 예측한다는 것을 발견했다. RU가 시간이 지남에 따라 다양한 설정에서 어떻게 작동하는지에 대한 예는 그림 4에 나와 있다.
+
+## Appendix A
+
+\begin{table}
+\begin{tabular}{l l l} \hline \hline \(x\): & “Jennifer & formed & the production company Excellent Cadaver.” \\ \hline BERT & & also (0.13), then (0.08), later (0.05), \(\dots\) \\ REALM (\(\mathcal{Z}\) =20 Dec 2018 corpus) & & smith (0.01), brown (0.01), Jones (0.01) \\ REALM (\(\mathcal{Z}\) =20 Jan 2020 corpus) & **lawrence** (0.13), brown (0.01), smith (0.01), \(\dots\) \\ \hline \hline \end{tabular}
+\end{table}
+표 4: REALM이 업데이트된 지식 코퍼스에 적응하는 예. 위키피디아 페이지 ‘우수 카데버’가 2019년에 추가돼 지식코퍼스가 구식(2018년)일 때 모델이 단어를 복구하려 하지 않았다. 흥미롭게도, 2018 코퍼스에서 미리 훈련된 동일한 REALM 모델은 업데이트된 코퍼스(2020)에서 문서를 검색하고 정확한 토큰인 "Lawrence"를 생성할 수 있다.
+
+도 4: 검색 유틸리티(RU, 식 2에 설명됨) 사전 교육 단계 수를 나타냅니다. RU는 검색의 "유용성"을 대략적으로 추정한다. RU는 마스킹의 선택과 사전 훈련 단계의 수에 영향을 받는다.
