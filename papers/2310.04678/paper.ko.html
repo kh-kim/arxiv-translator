@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Doris-Mae:\n' +
+      '\n' +
+      '다단계 관점 기반 질의를 이용한 과학적 문서 검색\n' +
+      '\n' +
+      ' 왕건유\n' +
+      '\n' +
+      'Kaicheng Wang\n' +
+      '\n' +
+      'Xiaoyue Wang\n' +
+      '\n' +
+      'Prudhviraj Naidu\n' +
+      '\n' +
+      'Leon Bergen\n' +
+      '\n' +
+      '&Ramamohan Paturi\n' +
+      '\n' +
+      '신흥지능연구실\n' +
+      '\n' +
+      '샌디에이고 캘리포니아 대학교\n' +
+      '\n' +
+      '라 졸라 CA 92093\n' +
+      '\n' +
+      '{jiw101, kaw036, xiw027, prnaidu, lbergen, rpaturi} @ ucsd.edu\n' +
+      '\n' +
+      '동일 기여도\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '과학 연구에서 복잡하고 다면적인 질의를 기반으로 관련 문서를 효과적으로 검색할 수 있는 능력은 매우 중요하다. 이 작업에 대한 기존의 평가 데이터 세트는 주로 복잡한 쿼리를 효과적으로 나타내는 리소스에 주석을 다는 데 필요한 높은 비용과 노력으로 인해 제한된다. 이를 해결하기 위해 과학 연구에서 사용자 쿼리의 복잡한 특성을 처리하도록 설계된 **M** 수준 **A** 스펙트럼 기반 qu**E**ries(DORIS-MAE)를 사용하는 새로운 작업인 **S**cientific **DO**cument **R** 검색을 제안합니다. 우리는 100개의 인간이 작성한 복잡한 쿼리 사례로 구성된 컴퓨터 과학 분야 내에서 벤치마크 데이터 세트를 개발했다. 복잡한 각 쿼리에 대해 100개의 관련 문서 모음을 조립하고 순위를 매기기 위해 주석이 달린 관련성 점수를 생성했다. 또한 전문가 수준의 데이터셋 주석 작업에서 대용량 언어 모델(LLM)의 성능을 검증하기 위한 확장 가능한 프레임워크인 Anno-GPT를 소개한다. DORIS-MAE 데이터 세트의 LLM 주석은 품질을 손상시키지 않으면서 비용을 500배 감소시켰다. 또한, 이러한 복잡한 질의의 다중 계층 구조로 인해 DORIS-MAE 데이터 세트는 추가 주석을 요구하지 않고 4,000개 이상의 하위 질의 테스트 케이스로 확장될 수 있다. DORIS-MAE에 대한 17개의 최근 검색 방법을 평가했으며, 기존 데이터 세트에 비해 주목할 만한 성능 저하를 관찰했다. 이것은 과학 연구에서 복잡하고 다면적인 쿼리를 처리하기 위한 더 나은 접근법의 필요성을 강조한다. 우리의 데이터 세트 및 코드 베이스는 [https://github.com/Real-Doris-Mae/Doris-Mae-Dataset](https://github.com/Real-Doris-Mae/Doris-Mae-Dataset)에서 사용할 수 있습니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '과학자들은 종종 자기 분야의 다양한 부분(그림 1) 내에서 철저한 탐구가 필요한 복잡한 질문을 가지고 있다. 이 과정에서 많은 과제 중 하나인 관련 과학 문헌을 찾는 것은 다면 질의를 다룰 때 특히 어려울 수 있다. 이러한 질의들은 통상적으로 수많은 상호 연결된 토픽들을 포괄하며, 이러한 복잡성의 수준을 인식하고 대응할 수 있는 정보 검색(IR) 시스템을 필요로 한다.\n' +
+      '\n' +
+      '정보 검색, 특히 질의 기반 문서 검색[78; 3; 34]은 검색 엔진[9; 13; 29] 및 콘텐츠 추천[58; 31; 41]으로부터 오픈 도메인 질의 응답(QA; open-domain question answer; 82; 33; 15]에 이르기까지 많은 애플리케이션에 필수적이다. 그러나, 지속적인 도전은 복잡하고 다중 의도 사용자 질의를 처리하는 데 있어서 낮은 정확도이다. 키워드 매칭(13) 외에 의미론적 이해 및 사용자 행동 데이터를 사용하는 고급 검색 엔진에도 불구하고, 이러한 시스템은 복잡하고 다중 의도 질의를 처리할 때 여전히 부족하다. 신경 정보 검색(Neural Information Retrieval; NIR) 모델들[63; 85; 75; 23; 66; 85; 47]은 주로 비교적 간단한 질의들[57; 17; 64; 61; 87]에 대해 트레이닝된다. 또한 MacAvaney 등 [49]는 다양한 진단 프로브를 생성하여 배포 외 텍스트 입력을 처리할 때 NIR 모델의 불안정성을 드러내는데, 이는 잠재적으로 텍스트의 더 깊은 의미를 이해하지 못하기 때문이다. 이러한 제한 사항은 더 복잡한 쿼리를 사용 하 여 적절 하지 않은 성능을 초래할 수 있습니다. ChatGPT[11]와 같은 개방형 QA 모델은 상당한 능력을 보여주었지만 종종 부정확하거나 조작된 응답을 생성하며[4; 46; 50; 39; 89], 과학 문서의 전체 코퍼스에 직접 적용하면 엄청나게 비싸다.\n' +
+      '\n' +
+      '이러한 문제를 해결하기 위해 DORIS-MAE(M**ulti-level **A**spect-based qu**E**ries)에 대한 새로운 작업인 **S**cientific **D**ocument **R**rieval을 소개합니다. DORIS-MAE는 질의 기반 및 예제 기반 IR 패러다임을 확장하여 사용자에게 자연어를 사용하여 질의를 공식화하는 데 더 많은 제어를 제공하는 것을 목표로 한다. 이 분야의 연구를 발전시키기 위해, 우리는 관련 CS 기사 초록의 순위 풀과 쌍을 이루는 컴퓨터 과학 도메인에서 100개의 고유한 복잡한 쿼리를 포함하는 DORIS-MAE 데이터 세트를 제시한다. 각 쿼리는 주석을 지원하는 측면/하위 측면의 계층 구조로 구성됩니다.\n' +
+      '\n' +
+      'DORIS-MAE 데이터세트의 구별되는 특징은 그림 1과 같은 애스펙트 기반 계층 구조이다. 이 특징은 주석 프로세스의 자동화를 돕고, 추가 주석 없이 테스트 케이스 볼륨을 확장하며, 검색 방법에 대한 애스펙트 정보의 유용성에 대한 탐구를 개방한다.\n' +
+      '\n' +
+      '또한, 대용량 언어 모델(LLM) 주석을 통계적으로 건전하게 검증하기 위한 파이프라인인 Anno-GPT를 소개한다. 우리의 테스트는 LLM 주석이 인간 주석이 생성한 것과 유사한 품질을 달성하지만 시간과 비용 모두에서 상당한 절감을 달성한다는 것을 보여준다. 또한 파이프라인의 설계는 다양한 도메인에 쉽게 적응할 수 있도록 합니다.\n' +
+      '\n' +
+      '실험에서는 DORIS-MAE 데이터셋을 이용하여 17개의 IR/NIR(Information Retrieval/Neural Information Retrieval) 방법을 평가하였다. 이 방법은 기존의 문서 검색 데이터셋에 비해 DORIS-MAE에서 더 나쁜 성능을 보여 DORIS-MAE의 복잡성과 보다 정교한 검색 방법의 필요성을 강조한다.\n' +
+      '\n' +
+      '우리의 주요 기여는 3배이다. 첫째, **DORIS-MAE** 작업을 공식화 하 여 과학 연구 중에 복잡 하 고 다각적인 쿼리를 처리 하는 데 대 한 새로운 조명을 제공 합니다. 둘째, 도전적인 주석 작업을 위해 인간 전문가를 대체하는 LLM의 능력을 엄격하게 평가하는 절차인 **Anno-GPT** 를 제안합니다. 셋째, 복잡한 질의를 분해하는 것의 가치를 보인다.\n' +
+      '\n' +
+      '도 1: DORIS-MAE 데이터세트로부터의 예시. 각 쿼리는 측면과 하위 측면으로 세분화됩니다. 양상들은 질의의 의미론적으로 구별되는 컴포넌트들이고, 하위 양상들은 양상들로부터 추출될 수 있는 최소 요건들이다.\n' +
+      '\n' +
+      '주석 정확성과 검색 방법의 잠재적인 개선을 위해 **다중** 수준 **측면** 기반 계층 구조로 구성됩니다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      '문서 검색 및 순위 재결정을 위한 다양한 방법들이 개발되고 있다. TF-IDF[67], BM25[72]와 같은 고전적 검색 방법은 질의와 문서 간의 키워드 매칭을 활용하며, 사용자에게 필요한 핵심 구절을 알 수 없을 때 부족하다. 이를 해결하기 위해 연구자들은 RocketQA-v2[63], ColBERT-v2[66], SimLM[75], SPLADE-v2[23]를 포함한 NIR 모델을 개발하기 위해 딥러닝 기술을 적용했다. 이러한 모델들은 질의들 및 문서들에 대한 잠재 벡터 표현들을 생성하는데, 이는 많은 검색 작업들에 효과적이지만, 그들의 트레이닝 분포들을 벗어나는 텍스트 입력들을 처리하지 못할 수 있다[49].\n' +
+      '\n' +
+      'SPECTER[18] 및 aspect-based ASPIRE[54]와 같은 다른 모델들은 문서-레벨 유사도를 계산하는 것에 초점을 맞춘다. 이 모델들은 기존의 논문을 입력으로 하여 검색하도록 설계되어 개방형 질의에 적합하지 않다. 텍스트-임베딩 모델(OpenAI[28] 및 E5-large-v2[74]) 및 문장-임베딩 모델 Sentence-BERT[62]와 같은 다른 검색 모델들은 모두 질의의 여러 양태들을 동시에 나타내기 위해 고군분투한다는 점에서 NIR 방법들과 유사한 제한들에 직면한다. 이러한 어려움에도 불구하고, 효율적인 조밀한 통과 검색을 위해 특수 NIR 모델보다 데이터 세트에서 더 나은 성능을 보이는 경향이 있으며, 이는 DORIS-MAE와 같은 복잡한 작업에 대한 잠재력을 나타낸다.\n' +
+      '\n' +
+      '대규모 전통적인 IR 데이터 세트[57; 86; 40; 66; 69]는 주로 간단한 웹 기반 쿼리를 포함한다. 이러한 데이터 세트에 대해 잘 수행하는 모델은 종종 DORIS-MAE에서 어려움을 겪는다. 대조적으로, 보다 전문화된 IR 데이터 세트[56; 14; 53]는 인간 전문가 주석이 필요하며 결과적으로 그 규모가 더 한정적이다. Mysore et al. [53] 및 Chan et al. [14]는 문서 검색 태스크에서 "aspect"의 개념을 도입한다. 이러한 데이터 세트는 "배경" 또는 "방법"과 같은 측면에 대해 미리 정의된 범주를 제공합니다. DORIS-MAE는 쿼리의 컨텍스트를 기반으로 개방형 측면을 허용하여 이 작업을 확장합니다. NDR(Narrative-Driven Recommendation) 연구[6; 2; 55]에서, 사용자 질의는 사용자의 다양한 요구를 포착하는 설명이다. 이러한 쿼리는 레스토랑 및 엔터테인먼트를 찾는 것과 같은 일상적인 작업과 관련이 있습니다.\n' +
+      '\n' +
+      'LLM들[11] 및 프롬프트-엔지니어링[24; 45; 59; 79; 65]에서의 진보는 NLP 태스크들[90; 21]에 주석을 달기 위해 ChatGPT와 같은 LLM들을 레버리지하는 것을 가능하게 했으며, 심지어 일부 경우들에서 크라우드-워크들[60; 70; 27]을 능가한다. 그러나 이러한 작업은 도메인별 지식이 필요하지 않으며 생성된 주석은 전문가 주석에 미치지 못할 수 있다. Faggioli et al. [22], MacAvaney and Soldaini [48]는 LLMs를 사용하여 인간의 관련성 판단을 돕는 개념을 탐색하고 단일 면 질의가 있는 TREC-DL 데이터 세트 [19]에 대해 평가했다. 우리의 작업은 이러한 노력을 도메인 전문 지식이 필요한 새로운 주석 작업으로 확장하는 동시에 별도의 파이프라인 단계와 가설 테스트 단계를 도입하려고 한다.\n' +
+      '\n' +
+      '## 3 데이터 세트 설명\n' +
+      '\n' +
+      'DORIS-MAE 태스크는 각각 95~226개의 단어를 포함하는 100개의 복잡한 인간 작성 쿼리 데이터 세트를 사용한다. 각각의 복잡한 질의는 양상들 및 하위 양상들의 계층으로 분해되며, 양상들은 원래 질의의 중요한 의미 구성요소들, 전형적으로 문장 또는 몇 개의 문장들을 나타낸다. 하위 측면은 측면을 더 간단하고 검증 가능한 요구 사항으로 분해한다. 양상과 하위 양상 모두 일반적으로 하나의 문장 길이이지만, 이들의 의미 복잡성은 다양하다. 복잡한 쿼리는 최대 9개의 양태를 가질 수 있고, 각각의 양태는 최대 6개의 하위 양태를 더 포함할 수 있다. 도 1은 일례를 도시한 것이다.\n' +
+      '\n' +
+      '각각의 복잡한 질의 \\(Q\\)에 대해, 우리는 다양한 검색/리랭킹 방법의 재순위 성능을 평가하기 위해 약 100개의 잠재적으로 관련된 과학 초록의 풀 \\(\\mathcal{P}\\)을 만들었다. \\(Q\\)과 그 \\(\\mathcal{P}\\)의 문맥 내에서, 양상 및 하위 양상들의 집합은 함께 (표기의 약간의 남용과 함께) \\(Q:=\\{a_{i}\\}\\)으로 표시된다. 임의의 측면 또는 하위 측면 \\(a_{i}\\in Q\\), 그리고 임의의 논문 초록 \\(p_{j}\\in\\mathcal{P}\\)에 대하여 질문쌍 \\((a_{i},p_{j})\\)을 형성한다. 100개의 질의로부터 총 165,144개의 질의쌍을 생성하였고, 이를 \\(\\mathcal{D}:=\\{(a_{i},p_{j})\\}\\)으로 표기하였다.\n' +
+      '\n' +
+      '질의 \\(Q\\)에 대한 논문 \\(p_{j}\\)의 관련성을 계산하기 위해 먼저 질의를 그 측면으로 나눈다. 그런 다음 종이의 관련성을 측정하는 관련성 점수 \\(S(a_{i},p_{j})\\)를 계산한다 \\(a_{i}\\)에 대한 종이의 관련성을 측정한다 \\(p_{j}\\) 쿼리에 대한 관련성 점수 \\(S(p_{j}|Q)\\) \\(Q\\)는 해당 측면 관련성 점수의 합계입니다. 평균 점수 \\(\\frac{S(p_{j}|Q)}{|Q|}\\geq 1\\)는 \\(p_{j}\\)이 \\(Q\\)에 대한 관련 추상임을 나타낸다.\n' +
+      '\n' +
+      '\\[S(p_{j}|Q):=\\sum_{a_{i}\\in Q}S(a_{i},p_{j}) \\tag{1}\\]\n' +
+      '\n' +
+      '따라서, 각각의 복잡한 질의 및 후보 풀에 대해, 우리는 초록들의 리스트에 대한 완전한 랭킹을 제공한다. 또한, 복잡한 질의 \\(Q\\) 내에서 양상의 조합을 선택하고 해당 문장을 연결하여 하위 질의 \\(q\\subset Q\\)를 구성할 수 있으며, 문서 초록 \\(p_{j}\\)과 하위 질의 \\(q\\) 사이의 관련성 점수를 계산할 수 있다.\n' +
+      '\n' +
+      '\\[S(p_{j}|q):=\\sum_{a_{i}\\in q}S(a_{i},p_{j}) \\tag{2}\\]\n' +
+      '\n' +
+      '따라서 임의의 하위 질의 \\(q\\subset Q\\)과 후보 풀 \\(\\mathcal{P}\\)의 경우 \\(\\mathcal{P}\\)에 대한 완전한 지상-진실 순위 순서를 제공할 수 있다. 이를 통해 데이터 세트는 추가 주석 비용 없이 4000개 이상의 하위 쿼리 테스트 케이스로 확장할 수 있습니다.\n' +
+      '\n' +
+      '후보 풀 초록은 arXiv3의 2011년부터 2021년까지 360,000편의 컴퓨터 과학 논문 데이터베이스에서 추출하였다. 우리는 각 arXiv 논문을 시맨틱 스콜라(Semantic Scholar, 37)에 교차 매칭하여 해당 인용 정보로 보완하였다.\n' +
+      '\n' +
+      '각주 3: [https://arxiv.org/](https://arxiv.org/)\n' +
+      '\n' +
+      '### Query Formation\n' +
+      '\n' +
+      'DORIS-MAE 과제는 연구자가 연구 프로젝트에 대한 불완전한 개념을 가지고 있으며, 확고한 출발점을 설정하기 위해 기존 연구의 폭을 탐색해야 하는 실제 시나리오를 반영하는 것을 목표로 한다. 데이터 세트의 100개의 복잡한 쿼리는 이 시나리오를 시뮬레이션합니다.\n' +
+      '\n' +
+      '각 쿼리는 하나 이상의 기존 연구 논문을 기반으로 합니다. 아르시브에서 AI, NLP, ML 및 CV 범주에서 140개의 논문을 무작위로 선택했다. 선정된 각 논문의 동기, 배경, 관련 작업, 방법론 및 실험 결과를 살펴보았다. 이 정보를 사용하여 논문의 저자들의 초기 사고 과정을 반영하도록 설계된 복잡한 쿼리를 역설계했다. 전체적으로 DORIS-MAE는 단일 논문 초록에서 파생된 80개의 쿼리를 포함하고 있으며 AI, NLP, ML 및 CV 각각에서 20개의 쿼리를 포함한다. 우리는 각각 2-3개의 초록에서 아이디어를 통합하는 20개의 복합 쿼리를 추가로 생성했다. 이러한 복합 질의는 다른 80개의 질의보다 학제간 및 미개척된 연구 아이디어를 시뮬레이션하도록 설계된다.\n' +
+      '\n' +
+      '### 쿼리를 양상에 분해\n' +
+      '\n' +
+      '이 섹션에서는 쿼리를 측면 목록으로 분해하고 측면을 하위 측면으로 더 세분화하는 과정에 대해 논의한다. 양상을 결정하기 위한 안내 원리는 다음과 같다:\n' +
+      '\n' +
+      '1. 각각의 양태는 질의에서 두드러지고 의미론적으로 의미 있는 컴포넌트에 대응해야 한다(이 대응관계에 대해서는 도 1 참조).\n' +
+      '2. 각각의 양태는 잠재적인 모호성을 제거하면서 독립적으로 이해하기에 충분한 컨텍스트를 포함해야 한다.\n' +
+      '3. 각각의 양태는 의미론적으로 구별되어야 하고 다른 것들과 관련되지 않아야 하며, 이들의 내용이 서로 일치하지 않고 중복되지 않도록 보장한다.\n' +
+      '\n' +
+      '일부 양상들은 [53]에서 정의된 바와 같이 _배경_, _방법_ 또는 _결과_와 같은 더 넓은 패싯들에 속할 수 있다. 하위 측면으로 측면을 분해하는 것과 관련하여 우리의 기준은 다음과 같다.\n' +
+      '\n' +
+      '1. 각각의 하위 양태는 그 부모 양태보다 더 많은 정보를 포함하지 않아야 한다.\n' +
+      '2. 각각의 하위 양태는 그 부모 양태의 의미론적 세그먼트를 표현해야 한다\n' +
+      '3. 상이한 서브-양상이 의미론적으로 중첩될 수 있지만, 각각은 별개의 질문을 제기해야 한다.\n' +
+      '4. 각각의 서브-양상은 가능한 한 단순해야 한다.\n' +
+      '\n' +
+      '대용량 후보 풀의 순위를 매기는 동안 질의의 전체 세부 사항을 기억하는 데 내재된 어려움을 감안할 때, 복잡한 질의의 측면 기반 계층적 구조는 주석을 위한 체계적이고 효율적이며 해석 가능한 접근법을 제공한다. 이는 후보 풀의 보다 정밀한 랭킹으로 이어진다. 각각의 양상들이 원래의 질의 \\(Q\\)의 특정 부분에 해당하기 때문에, 여러 양상들을 결합하는 것은 질의에서 대응하는 부분들을 연결하는 것과 동일하며, 의미적으로 일관성 있는 하위 질의 \\(q\\subset Q\\)를 형성한다.\n' +
+      '\n' +
+      '### Candidate Pooling\n' +
+      '\n' +
+      '각 질의에 대해 약 100개의 논문 초록으로 구성된 후보 풀 \\(\\mathcal{P}\\)을 생성하기 위해 [53]의 접근법과 유사한 다양한 IR 및 NIR 방법을 사용하였다. 보다 구체적으로, 우리는 약 80개의 종이 초록을 검색하기 위해 다양한 세분화(즉, 각 질의에 대한 문장 및 단락 수준)에서 인기 있는 IR 검색 알고리즘 TF-IDF[67] 및 BM25[72]를 활용했다. 그런 다음 OpenAI의 텍스트 임베딩 모델인 ada-002 [28]을 사용하여 20개의 더 많은 종이 초록을 추출했다. 또한 의미학자 [37]의 인용 신호를 사용하여 해당 특정 쿼리를 만드는 데 사용된 원본 논문에 직접 인용되거나 인용되는 논문을 포함한다. 마지막으로 어휘 매칭 검색 방법에 대한 편향을 방지하기 위해 \\(\\mathcal{P}\\) 질의 \\(Q\\)의 공식화 과정에서 저자가 참조한 논문을 제외했다. 후보 풀 구성 절차의 민감도 분석에서는 부록 C.6을 참조한다.\n' +
+      '\n' +
+      '## 4 Anno-GPT Framework\n' +
+      '\n' +
+      '통계적으로 건전한 주석 파이프라인을 개발하기 위한 프레임워크인 Anno-GPT를 제안한다. 본 논문에서는 chatgpt-3.5-turbo-0301을 이용하여 165,144개의 모든 질문쌍에 주석을 달았다 \\(\\mathcal{D}:=\\{(a_{i},p_{j})\\}\\) 여기서 \\(a_{i}\\)은 질의의 측면/하위 측면이고 \\(p_{j}\\)은 질의 후보 풀의 추상이다. 이 전략은 인간의 주석 노력을 최소화한다. 이 접근법의 핵심은 복잡한 쿼리를 더 간단한 측면과 하위 측면으로 분해하여 객관적이고 관리 가능한 주석 작업을 보장하는 것이다. 이 구조화된 접근법이 없으면 부분적 관련성을 평가하는 방법의 가변성으로 인해 복잡한 쿼리에 대한 초록의 관련성을 평가하는 것이 어렵다는 것을 발견했다. 그러나 질의 쌍 \\((a_{i},p_{j})\\)을 다룰 때 시나리오는 크게 변화하는데, 이는 질의의 단일 측면 또는 하위 측면만 볼 수 있다. 이러한 경우 0-2 사이의 거친 규모의 관련성 점수를 할당하는 것이 실현 가능하게 되어 합리적인 수준의 객관성을 유지한다.\n' +
+      '\n' +
+      '주석 파이프라인의 성능은 여러 요인들에 의해 영향을 받을 수 있다 : 질의를 측면으로 분해하는 절차, 질의 관련성을 스코어링하기 위해 사용되는 기준, 및 LLM 프롬프트 선택[24; 45; 59; 79; 65]. 이 파이프라인에서 과적합을 피하기 위해 방법론은 두 가지 별개의 개발 및 테스트 단계로 구성된다. 개발 단계는 파이프라인의 모든 단계를 최적화하고 피드백 및 관찰된 결과를 사용하여 이 전략을 반복적으로 개선하는 것을 포함한다. 검정 단계는 미리 지정된 가설 검정을 사용합니다. 귀무 가설은 ChatGPT와 인간의 일치 수준과 인간 자신 간의 일치 수준 사이에는 유의한 차이가 없다는 것이다. 파이프라인이 최적화 된 후에는 테스트 세트에서 평가 합니다. 우리는 ChatGPT-인간 합의와 인간-인간 합의의 차이를 계산한다. 이 차이가 0에 충분히 가깝고 신뢰 구간이 작으면 최적화된 프롬프트 \\(\\pi\\)를 사용하여 전체 데이터 세트에 주석을 달 수 있습니다.\n' +
+      '\n' +
+      '아래에서 우리는 Anno-GPT 프레임워크의 요약을 제공한다:\n' +
+      '\n' +
+      '1. aspect-document question pair, \\(\\mathcal{D}:=\\{(a_{i},p_{j})\\}\\)을 구성합니다.\n' +
+      '2. 개발 집합 \\(S_{\\text{dev}}\\subset\\mathcal{D}\\)을 선택하고 인간 주석기를 사용하여 \\(S_{\\text{dev}}\\) 점수를 매깁니다.\n' +
+      '3. 원하는 파워를 기준으로 테스트 세트 \\(S_{\\text{test}}\\subset\\mathcal{D}\\setminus S_{\\text{dev}}\\)를 선택하고, 인간 주석기를 사용하여 \\(S_{\\text{test}}\\)을 채점합니다.\n' +
+      '4. 프롬프트 전략 \\(\\pi\\) 및 기타 하이퍼 매개 변수를 \\(S_{\\text{dev}}\\)에 최적화합니다. Fix \\(\\pi\\).\n' +
+      '5. \\(S_{\\text{test}}\\)에 고정 \\(\\pi\\)을 평가합니다.\n' +
+      '6. \\(S_{\\text{test}}\\)에서 만족스러운 성능이 달성되면 \\(\\pi\\)를 사용하여 전체 데이터 세트 \\(\\mathcal{D}\\)에 주석을 추가합니다.\n' +
+      '7. 그렇지 않으면 \\(S_{\\text{dev}}\\gets S_{\\text{dev}}\\cup S_{\\text{test}}\\) 및 new \\(S_{\\text{test}}\\)에 대해 iii, iv, v 단계를 반복합니다.\n' +
+      '\n' +
+      'DORIS-MAE에 대한 자동화된 주석은 단일 개발/테스트 주기만 사용했기 때문에 단계 vii로 들어가지 않았다는 점에 유의하는 것이 중요하다. 따라서, 다중 비교[30;83;1]로 인해 주석 정확도의 부풀려진 추정의 위험은 없었다. 여러 사이클이 필요한 경우 새로운 \\(S_{\\text{test}}\\)은 이러한 문제를 피하기 위해 충분히 커야 한다.\n' +
+      '\n' +
+      '### Annotation Guidelines\n' +
+      '\n' +
+      '우리의 주석자 팀은 컴퓨터 과학 대학원생 3명으로 구성되며, 모두 NLP, CV, ML 및 AI에서 최소 2년의 연구 경험을 가지고 있다. 인간 및 ChatGPT 둘 다의 주석자는 3-포인트 등급 척도(0-2)를 사용하여 각각의 질문 쌍을 점수화하도록 요청된다:\n' +
+      '\n' +
+      '* **레벨 0:** 개요는 관련 되지 않거나 측면 또는 하위 측면의 주요 구성 요소에 도움이 되지 않습니다.\n' +
+      '* **레벨 1:** 추상화는 일부(또는 모든) 핵심 구성 요소(명시적으로 또는 하나의 자연 추론 단계 내에서)에 응답하지만 적어도 하나의 핵심 구성 요소는 명시적으로 응답하지 않습니다.\n' +
+      '* **레벨 2:** 개요는 측면 또는 하위 측면의 모든 주요 구성 요소에 직접 응답 합니다.\n' +
+      '\n' +
+      '우리는 이러한 경우를 구별하는 것이 도전적이고 잠재적으로 주관적일 수 있음을 인정하여 레벨 1에 따라 직접 및 간접 적용 범위를 모두 포함하기로 결정했다. 인간 주석에 대한 자세한 지침은 부록 B에서 확인할 수 있다.\n' +
+      '\n' +
+      '### 주석 파이프라인 최적화\n' +
+      '\n' +
+      '개발 단계에서는 두 명의 주석자가 165,144쌍의 전체 집합 \\(\\mathcal{D}\\)에서 무작위로 선택된 90개의 질문 쌍 \\(S_{\\text{dev}}\\)을 독립적으로 주석하였다. 이 주석이 달린 개발 세트는 ChatGPT에 대한 프롬프트 전략을 정제하는 기초가 되었다.\n' +
+      '\n' +
+      '주석의 품질은 매크로 F1 점수, 정확 정확도(동의) 및 스피어먼의 순위 상관 계수(스피어먼의 \\(\\rho\\))의 세 가지 메트릭을 사용하여 평가되었다. 이러한 메트릭은 주석자 간의 일치 수준을 측정하며, 유사한 태스크에서 성공적으로 사용되었다[53]. 개발 세트에 대한 ChatGPT와 인간 주석 사이에 만족스러운 일치 수준이 달성된 후, 세 가지 주석자가 모두 포함된 가설 테스트 단계로 전환했다. 이 단계에서 테스트 세트에서 과도하게 적합하거나 누출되지 않도록 고정된 최종 프롬프트 전략을 사용했다.\n' +
+      '\n' +
+      '우리의 신속한 전략 개발은 소수의 샷 인-컨텍스트 학습(ICL) [16; 11; 80; 51; 91] 및 사상 사슬(CoT) [38; 81; 77; 32]과 같은 최근의 방법론을 실험하는 것과 관련되었다. 우리는 CoT 접근법이 질문 쌍 \\((a_{i},d_{j})\\in\\mathcal{D}\\)을 주석하는 작업에 가장 강력하고 최적의 결과를 제공한다는 것을 발견했다. 신속한 공학 과정에 대한 포괄적인 설명은 부록 B에서 찾을 수 있다.\n' +
+      '\n' +
+      '### Annotation Evaluations\n' +
+      '\n' +
+      '가설 검증은 개발 세트와 구별되는 \\(\\mathcal{D}\\)의 250개 질문 쌍 \\(S_{\\text{test}}\\)의 표본을 사용하여 수행되었다. 선택된 쌍은 3명의 인간 주석자에 의해 독립적으로 주석이 달렸다. 우리는 부트스트래핑을 사용하여 매크로 F1 점수, 정확도(동의) 및 스피어먼의 \\(\\rho\\)에 대한 95% 신뢰 구간을 추정했다. 샘플링 온도는 0으로 고정되어 있지만 GPU 비결정론(52)에 의해 도입된 작은 무작위성을 인식하지만 ChatGPT 주석은 두 번 실행되고 인간 주석자와의 쌍별 비교는 이러한 실행에 걸쳐 평균화된다.\n' +
+      '\n' +
+      '이러한 미리 지정된 분석 외에도 더 안정적인 인간 주석 세트를 생성하기 위해 판결 절차를 사용하여 사후 분석을 수행했다[53]. 우리는 판결된 주석을 결정하기 위해 세 명의 인간 주석자 사이의 다수결[8]을 사용한다.\n' +
+      '\n' +
+      '표 1에 제시된 결과는 ChatGPT-인간 합의 비율이 인간-인간 합의 범위 내에 있음을 보여준다. 구체적으로, ChatGPT의 성능은 F1 및 정확한 일치(정확도)로 측정된 인간 주석기의 성능과 유사하다. ChatGPT의 평균 일치 수준은 Spearman의 \\(\\rho\\)에 의해 측정된 평균 인간 일치 수준보다 수치적으로 낮다. 두 사람 중 가장 낮은 Spearman의 \\(\\rho\\)은 평균 ChatGPT/사람의 \\(\\rho=46.61\\%\\)과 비슷한 \\(46.51\\%\\)으로 여전히 ChatGPT의 성능이 인간 수준의 일치 범위 내에 있음을 알 수 있다. 모든 \\(p\\)-값은 \\(\\alpha=0.05\\) 기준보다 크다.\n' +
+      '\n' +
+      '사후 분석에서 ChatGPT를 판정된 인간 주석과 수치적으로 비교하면 일치율이 증가한다는 것을 발견했다. 이는 인간 전문가에 비해 ChatGPT의 성과에 대한 질적 증거를 제공한다. 챗GPT의 주석이 인간의 주석과 다른 경우를 추가로 분석했다. 흥미로운 사실은 이러한 불일치의 특성은 인간 간에 발견된 것과 유사했으며 차이점은 주로 측면/하위 측면에서 주요 구성 요소의 해석을 중심으로 한다. 예를 들어, ChatGPT는 때때로 주어진 컴포넌트의 중요성을 결정하지 않는 인간 주석자와 달랐다. ChatGPT의 추론과 종합적인 오류 분석의 자세한 예는 부록 B에서 확인할 수 있다.\n' +
+      '\n' +
+      '### 주석 확장성\n' +
+      '\n' +
+      '가설 테스트 결과는 주석을 위한 ChatGPT의 사용을 뒷받침한다. 배포 시 파이프라인은 $150 미만의 비용으로 24시간 내에 165,144개의 aspect-paper 쌍 모두에 주석을 달았습니다. 대조적으로 인간 전문가는 일반적으로 질문 쌍당 약 4분이 필요하므로 전체 데이터 세트에 주석을 달려면 약 11,146시간이 소요됩니다. 배치는 주석 품질을 희생시키지 않으면서 시간 500배, 비용 1,000배 감소를 초래했다. 주석 처리가 완료되면 방정식 1과 2를 사용하여 결과를 컴파일하고 전체 쿼리 및 하위 쿼리 테스트 케이스 모두에 대한 최종 순위를 계산했다. Anno-GPT는 잠재적으로 ChatGPT를 대체하기 위해 고성능 LLM을 활용할 수 있으며 검증을 위한 작은 도메인 전문가 주석 세트의 가용성을 고려할 때 다른 전문가 수준의 작업에 적합할 수 있다.\n' +
+      '\n' +
+      '## 5 Retrieval Results\n' +
+      '\n' +
+      '본 절에서는 DORIS-MAE 데이터셋에 대해 2절에서 논의된 17개 모델을 테스트한 결과를 제시한다. 사용 가능한 경우 CS 코퍼스에서 모델을 훈련하고 도메인(ID)에서 훈련된 최상의 버전으로 표시했으며 부록 D.1의 전체 훈련 세부 정보를 참조한다. DORIS-MAE에 대한 성능을 맥락화하기 위해 MS MARCO[57], LoTTE[66], NQ[40], Wiki-QA[86]를 포함한 다양한 IR 데이터 세트에 대해 이러한 모델의 이전에 보고된 성능과 결과를 비교한다.\n' +
+      '\n' +
+      '### DORIS-MAE 벤치마킹 결과\n' +
+      '\n' +
+      'DORIS-MAE를 위한 벤치마킹 프로세스에서는 복잡한 질의를 이러한 모델에 대한 입력으로 사용한다. R@5, R@20, R-Precision (RP), NDCG\\({}_{10\\%}^{\\text{exp}}\\), MRR@10 및 MAP을 포함하여 IR/NIR 문헌에서 일반적으로 사용되는 다양한 메트릭을 사용한다. 공정성을 위해 긴 질의를 처리하기 위해 설계되지 않은 RocketQA-v2 [63] 및 ColBERT-v2 [66]과 같은 모델에 대한 대체 접근법을 채택했다. 이러한 경우에, 우리는 모델들이 입력을 단일 텍스트 문자열 또는 문장 단위로 처리하고 달성된 최대 성능을 보고하도록 허용한다. ASPIRE 모델(TSApire/OTAspire)은 우리가 고려하는 모델들 중에서 독특하게 다중 관점 질의를 처리하도록 설계되었다. 간결함을 위해 표 2의 모델에 대한 이 두 옵션 중 더 높은 수만 보고한다. 더 자세한 결과는 부록 C를 참조한다.\n' +
+      '\n' +
+      '결과를 더 잘 해석하기 위해 무작위 순위 기준선과 비교한다. 일반적으로 모델은 더 크고 더 범용적인 모델(예: E5-Large-V2, RocketQA-v2, ada-002, Specter-v2)이 더 작고 더 전문화된 모델(예: SciBERT [5], ColBERT-v2, BM25, TF-IDF)보다 더 나은 일관된 거동을 보여준다. Aspire 모델은 다면 질의를 위해 설계되었지만 DORIS-MAE의 복잡한 질의에 대해서는 성능이 좋지 않다.\n' +
+      '\n' +
+      '이러한 모델의 DORIS-MAE 성능을 기존 검색 데이터 세트 MS MARCO(표 3) 및 NQ(표 4)에 대해 보고된 결과와 비교할 때 DORIS-MAE 성능이 크게 감소하는 것을 관찰할 수 있다. 우리는 이전에 발표된 작업에서 사용할 수 있는 것을 기반으로 비교를 위한 메트릭을 선택한다. 결과는 DORIS-MAE가 제기하는 문제를 강조하고 복잡한 쿼리 검색에 잘 일반화하는 기존 방법의 능력에 격차를 시사한다.\n' +
+      '\n' +
+      '마지막으로 표 5에서 CSFCube [53], RELISH [10], TRECCOVID [73]과 같은 전문 검색 데이터 세트에 대한 모델 성능과 비교한다. 상기 비교는\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c|c c|c c|c} \\hline \\hline\n' +
+      '**Metrics** & **G\\&A** & **avg. H\\&H** & **avg. G\\&H** & **H\\&H** & **G\\&H** & \\(p\\)**-value** \\\\ \\hline F1-score (macro) & 64.17 & 58.33 & 57.46 & (52.33, 63.46) & (50.93, 62.79) & 0.74 \\\\ Accuracy & 67.40 & 64.13 & 62.07 & (59.73, 68.80) & (57.67, 66.13) & 0.41 \\\\ Spearman’s \\(\\rho\\) & 52.63 & 54.31 & 46.61 & (46.87, 61.56) & (38.67, 54.41) & 0.07 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 인간과 ChatGPT 간의 주석 일치. H는 인간, G는 ChatGPT, A는 Adjudication, CI는 95% 신뢰구간. \\ (p\\)-값은 avg 사이에 차이가 없다는 귀무 가설에 해당한다. H\\&H와 avg. H\\(p\\)-값은 ChatGPT와 인간 간의 차이에 대한 증거가 적음을 나타낸다.\n' +
+      '\n' +
+      'DORIS-MAE와 이러한 완전히 인간 주석이 달린 데이터 세트 사이의 일관성 있는 난이도 수준은 DORIS-MAE가 유사하게 어려운 검색 작업을 제시함을 나타낸다.\n' +
+      '\n' +
+      '### Additional Experiments\n' +
+      '\n' +
+      '지금까지 Anno-GPT가 사용하는 계층적 측면 기반 구조는 복잡한 질의를 자동으로 분해할 수 없기 때문에 평가된 모든 모델에서 숨겨져 왔다. 이러한 구조는 실제 검색 방법에 쉽게 사용할 수 없지만 이 쿼리 분해 프로세스가 완전히 자동화될 수 있으면 여전히 가치를 유지할 수 있다. 이 가능성을 탐색하기 위해 원본 쿼리를 사용하는 대신 각 검색을 사용하는 실험을 수행한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c|c} \\hline \\hline  & NQ & DORIS \\\\ Ranking Method & R@20 & R@20 \\\\ \\hline ANCE\\({}_{\\text{Frist}}\\)P & 81.9 & 34.54 \\\\ BM25 & 59.1 & 30.50 \\\\ RocketQA-v2 & 83.7 & 45.41 \\\\ SimLM & 85.2 & 35.67 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: NQ와의 비교. Stats collected from [66].\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}^{\\text{exp}}\\) & MRR@10 & MAP \\\\ \\hline Random & 4.41 & 18.48 & 16.29 & 7.31 & 3.59 & 19.63 \\\\ \\hline E5-L-v2[74] & **16.51**\\(\\pm\\) 2.05 & 43.77 \\(\\pm\\) 2.14 & **37.46**\\(\\pm\\) 2.44 & 25.90 \\(\\pm\\) 2.15 & 14.85 \\(\\pm\\) 2.73 & **40.49**\\(\\pm\\) 2.32 \\\\ RocketQA-v2[63] & 15.63 \\(\\pm\\) 1.88 & **45.41**\\(\\pm\\) 2.43 & 34.36 \\(\\pm\\) 2.32 & **30.30**\\(\\pm\\) 2.26 & **20.87**\\(\\pm\\) 3.12 & 40.18 \\(\\pm\\) 2.23 \\\\ ada-002[28] & 15.38 \\(\\pm\\) 1.95 & 42.84 \\(\\pm\\) 2.53 & 35.81 \\(\\pm\\) 2.67 & 27.46 \\(\\pm\\) 2.48 & 19.88 \\(\\pm\\) 3.21 & 40.37 \\(\\pm\\) 2.55 \\\\ SimCSE[25] & 14.90 \\(\\pm\\) 1.89 & 42.62 \\(\\pm\\) 2.40 & 35.27 \\(\\pm\\) 2.34 & 26.88 \\(\\pm\\) 2.36 & 21.19 \\(\\pm\\) 3.47 & 39.02 \\(\\pm\\) 2.35 \\\\ SPLADE-v2[25] & 14.78 \\(\\pm\\) 1.89 & 40.14 \\(\\pm\\) 2.33 & 31.65 \\(\\pm\\) 2.38 & 26.08 \\(\\pm\\) 2.00 & 17.82 \\(\\pm\\) 2.99 & 37.23 \\(\\pm\\) 2.26 \\\\ SPECTER\\({}_{\\text{3-2}}\\)[18] & 14.50 \\(\\pm\\) 2.15 & 43.36 \\(\\pm\\) 2.50 & 33.41 \\(\\pm\\) 2.33 & 25.65 \\(\\pm\\) 2.23 & 17.19 \\(\\pm\\) 2.96 & 37.12 \\(\\pm\\) 2.10 \\\\ SPECTER\\({}_{\\text{ID}}\\) & 13.32 \\(\\pm\\) 1.76 & 42.52 \\(\\pm\\) 2.37 & 31.55 \\(\\pm\\) 2.28 & 21.27 \\(\\pm\\) 2.03 & 14.48 \\(\\pm\\) 2.78 & 36.02 \\(\\pm\\) 2.19 \\\\ TSApire[54] & 14.26 \\(\\pm\\) 1.80 & 41.25 \\(\\pm\\) 2.40 & 33.81 \\(\\pm\\) 2.47 & 26.63 \\(\\pm\\) 2.05 & 15.59 \\(\\pm\\) 2.59 & 37.00 \\(\\pm\\) 2.29 \\\\ SentBERT[62] & 14.09 \\(\\pm\\) 1.88 & 44.69 \\(\\pm\\) 2.47 & 33.79 \\(\\pm\\) 2.41 & 21.88 \\(\\pm\\) 2.07 & 13.23 \\(\\pm\\) 2.69 & 37.75 \\(\\pm\\) 2.28 \\\\ OTASpire[54] & 13.34 \\(\\pm\\) 1.56 & 42.25 \\(\\pm\\) 2.53 & 33.63 \\(\\pm\\) 2.38 & 25.52 \\(\\pm\\) 2.29 & 14.18 \\(\\pm\\) 2.66 & 36.70 \\(\\pm\\) 2.22 \\\\ ANCE\\({}_{\\text{Frist}}\\)[85] & 13.21 \\(\\pm\\) 2.02 & 34.54 \\(\\pm\\) 2.20 & 30.51 \\(\\pm\\) 2.50 & 20.30 \\(\\pm\\) 2.02 & 13.87 \\(\\pm\\) 2.64 & 34.53 \\(\\pm\\) 2.35 \\\\ SPLADE-v2[23] & 11.80 \\(\\pm\\) 1.86 & 36.59 \\(\\pm\\) 2.12 & 29.90 \\(\\pm\\) 2.20 & 21.35 \\(\\pm\\) 2.12 & 14.30 \\(\\pm\\) 2.77 & 33.98 \\(\\pm\\) 2.23 \\\\ LLAMA[71] & 12.74 \\(\\pm\\) 1.82 & 34.51 \\(\\pm\\) 2.36 & 28.33 \\(\\pm\\) 2.14 & 16.65 \\(\\pm\\) 1.68 & 11.78 \\(\\pm\\) 2.45 & 31.29 \\(\\pm\\) 1.99 \\\\ SimLM[75] & 12.68 \\(\\pm\\) 1.77 & 35.67 \\(\\pm\\) 2.49 & 28.90 \\(\\pm\\) 2.42 & 18.91 \\(\\pm\\) 1.86 & 11.29 \\(\\pm\\) 2.44 & 33.06 \\(\\pm\\) 2.34 \\\\ BM25[72] & 8.47 \\(\\pm\\) 1.80 & 30.50 \\(\\pm\\) 2.38 & 21.94 \\(\\pm\\) 2.03 & 13.23 \\(\\pm\\) 1.97 & 9.19 \\(\\pm\\) 2.46 & 25.99 \\(\\pm\\) 1.68 \\\\ ColBERT-v2[66] & 8.45 \\(\\pm\\) 1.46 & 27.86 \\(\\pm\\) 2.29 & 22.33 \\(\\pm\\) 2.01 & 12.57 \\(\\pm\\) 1.71 & 6.69 \\(\\pm\\) 2.15 & 25.80 \\(\\pm\\) 1.83 \\\\ TF-IDF[67] & 10.71 \\(\\pm\\) 1.48 & 29.22 \\(\\pm\\) 2.25 & 24.79 \\(\\pm\\) 2.06 & 18.25 \\(\\pm\\) 2.01 & 12.41 \\(\\pm\\) 2.53 & 28.77 \\(\\pm\\) 1.81 \\\\ ERNIQE[47] & 6.49 \\(\\pm\\) 0.94 & 22.58 \\(\\pm\\) 1.72 & 20.18 \\(\\pm\\) 1.82 & 9.66 \\(\\pm\\) 1.18 & 3.77 \\(\\pm\\) 1.06 & 22.71 \\(\\pm\\) 1.65 \\\\ SciBERT[5] & 5.13 \\(\\pm\\) 1.25 & 17.99 \\(\\pm\\) 1.69 & 17.13 \\(\\pm\\) 1.88 & 7.50 \\(\\pm\\) 1.34 & 3.41 \\(\\pm\\) 1.57 & 20.34 \\(\\pm\\) 1.64 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 전체 DORIS-MAE에서의 질의 레벨 성능. 표준 오류는 부트스트래핑으로 추정됩니다. ID는 모델이 도메인에서 트레이닝되는 것을 의미한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c|c} \\hline \\hline  & MS MARCO & DORIS \\\\ Ranking Method & MRR@10 & MRR@10 \\\\ \\hline ANCE & 33.0 & 13.87 \\\\ ColBERT-v2 & 39.7 & 6.69 \\\\ RocketQA-v2 & 41.9 & 20.87 \\\\ SimLM & 41.1 & 11.29 \\\\ SPLADE-v2 & 36.8 & 14.30 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: MS MARCO와의 비교. Stats collected from [66], [63, 75, 23].\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c|c c|c c c} \\hline \\hline  & \\multicolumn{2}{c|}{CSFCube} & \\multicolumn{2}{c|}{TRECCOVID} & \\multicolumn{2}{c|}{RELISH} & \\multicolumn{2}{c}{DORIS-MAE} \\\\ Ranking Method & RP & MAP & R@20 & MAP & MAP & RP & MAP & R@20 \\\\ \\hline TSApire & - & 40.26 & - & 26.24 & 61.29 & 33.81 & 37.00 & 41.25 \\\\ OTASpire & - & 40.79 & - & 30.92 & 62.57 & 33.63 & 36.70 & 42.25 \\\\ Specter-v2 & 18.32 & - & 52.12 & 28.24 & 60.62 & 33.41 & 37.12 & 43.36 \\\\ TF-IDF & 14.59 & - & 39method had access to a concatenated string of all aspects within a query, excluding sub-aspects. The results, as illustrated in Table 6, show that Sentence-BERT performs best on four metrics: R@5/20, RP, and MAP. These findings suggest that the use of aspect information could be potentially beneficial to guide retrieval methods.\n' +
+      '\n' +
+      '데이터 세트의 계층 구조는 쿼리의 일부만 포함하는 덜 복잡한 추가 작업을 만드는 데 사용할 수 있습니다. 예를 들어, 2개의 측면에 해당하는 쿼리의 일부를 빼내어 1000개 이상의 테스트 케이스를 생성할 수 있습니다. 이 작업을 위해 관련 초록의 수가 크게 증가하는 것을 발견했다. 하위 쿼리 DORIS-MAE에 대한 모든 모델을 재평가한 후, 표 7에 표시된 것처럼 이전 벤치마크에서 볼 수 있는 모델과 일치하는 모델 성능을 관찰했다. 표 7과 표 2를 비교하면 이 하위 쿼리 작업에서 더 나은 모델 성능을 나타내는 지표인 RP, NDCG\\({}_{10\\%}^{\\text{exp}}\\), MRR 및 MAP에 대해 눈에 띄게 더 많은 수를 관찰했다. 모델이 변경되지 않기 때문에 하위 쿼리 작업이 전체 쿼리 작업보다 덜 도전적이라는 것을 시사한다. 하위 쿼리는 복잡성이 낮고 측면이 적기 때문에 직관적입니다. 전반적으로 이러한 하위 쿼리 작업의 생성은 DORIS-MAE 설정 하에서 다양한 작업 복잡성을 수용할 수 있는 데이터 세트의 적응성을 강조한다.\n' +
+      '\n' +
+      '### DORIS-MAE에 대한 지도 학습\n' +
+      '\n' +
+      'IR 모델을 훈련하기 위한 데이터 세트의 유용성을 평가하기 위해 훈련을 위해 40개의 쿼리를 할당하고 테스트를 위해 나머지 60개를 할당하는 실험을 수행했다. 지도 대조 학습(supervised contrastive learning, SCL)을 사용하여 수학식 3과 같이 마진 기반 트리플렛 손실을 최적화하였다. \\((A,P,N)\\)으로 표현된 각 트리플렛은 질의와 두 개의 초록으로 구성되었다. 훈련 데이터에서 상위 순위의 초록은 긍정적인 인스턴스(즉, \\(P\\))로 기능했고, 다른 하나는 부정적인 인스턴스(즉, \\(N\\))로 기능했다. 각 질의의 후보 풀 크기 \\(\\geq 100\\)를 고려하여 다중 트리플렛을 유도하였다. 이 프로세스는 지정된 40개의 훈련 쿼리에서 3,000개의 트리플렛을 산출했다. 그 후, 단일 시대에 걸쳐 3억 5,500만 매개변수가 포함된 RoBERTa 기반 텍스트 임베딩 변형인 E5-L-v2 모델을 미세 조정했다.\n' +
+      '\n' +
+      '\\[L(A,P,N)=\\max\\left(\\frac{<A,N>}{||A||\\cdot||N||}-\\frac{<A,P>}{||A||\\cdot||P||P||}+m,0\\right)\\quad A,P,N\\in\\mathbb{R}^{n},m>0 \\tag{3}\\]\n' +
+      '\n' +
+      '60개의 테스트 쿼리에 대한 모델을 평가할 때 사전 훈련된 기준선과 대조적으로 SCL 훈련된 모델을 사용하여 모든 메트릭에 걸쳐 현저한 개선을 기록했다. 이 비교는 표 8에서 찾을 수 있다. DORIS-MAE에 대한 감독 대조 학습을 사용하여 달성된 이러한 긍정적인 결과는 모델 미세 조정을 위한 열차/테스트 분할의 유용성을 강조한다.\n' +
+      '\n' +
+      '표 2는 전체 DORIS-MAE 데이터 세트에 대한 모델 성능을 보고합니다. 또한 부록 C.4에서 제안된 60개 쿼리 테스트 세트에 대한 모델 성능을 보고한다.\n' +
+      '\n' +
+      '## 6 결론 및 향후 작업\n' +
+      '\n' +
+      '본 논문에서는 DORIS-MAE(multi-level **A**spect-based quEries)를 이용하여 정보 검색 프로세스를 모델링하는 새로운 작업인 **S**cientific **DO**cument **R**rieval(DORIS-MAE)을 소개한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}^{\\text{exp}}\\) & MRR@10 & MAP \\\\ \\hline ada-002 & 14.09 & 42.23 & 33.56 & 26.54 & **20.20** & 37.62 \\\\ SentBERT & **17.73** & **45.34** & **35.67** & 25.00 & 15.52 & **39.87** \\\\ RocketQA-v2 & 13.83 & 43.81 & 32.59 & **27.45** & 16.08 & 37.90 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: 양태에 대한 모델 액세스가 주어진 랭킹 성능. 전체 표는 부록 C\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}^{\\text{exp}}\\) & MRR@10 & MAP \\\\ \\hline ada-002 & **13.49** & **40.24** & **47.35** & **39.00** & **24.33** & **51.67** \\\\ SentBERT & 12.15 & 36.71 & 45.08 & 34.78 & 20.71 & 48.96 \\\\ RocketQA-v2 & 12.79 & 39.19 & 46.47 & 38.78 & 23.72 & 50.81 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 7: 서브-쿼리(2 측면) 태스크에 대한 랭킹 성능. 전체 표는 부록 C 과학 연구에 나와 있다. 또한 Anno-GPT 프레임워크를 사용하여 생성된 DORIS-MAE 데이터 세트를 제시한다.\n' +
+      '\n' +
+      '결과는 DORIS-MAE를 다룰 때 현재 검색 방법의 성능을 개선할 수 있는 여지가 있음을 보여준다. 향후 연구에서는 복잡하고 다면적인 질의를 더 잘 다루기 위해 모델 아키텍처 및 훈련 절차에 대한 수정을 탐색할 수 있다.\n' +
+      '\n' +
+      '양상 주석의 잡음이 전체 작업에 어떻게 영향을 미치는지 이해하는 것은 자동화된 주석의 오류가 DORIS-MAE의 최종 후보 풀 순위에 어떻게 영향을 미칠 수 있는지 밝힐 수 있기 때문에 향후 조사에 흥미로운 지점이다.\n' +
+      '\n' +
+      'DORIS-MAE에서 예시된 바와 같이 복잡한 질의의 계층 구조는 더 많은 관심을 필요로 하는 영역이다. 향후 작업에는 질문 분해[36; 92], 시퀀스 대 시퀀스 모델링[42; 43] 및 의미 구문 분석[76; 88; 68]의 진보에서 잠재적으로 끌어내는 보다 정교한 자동화된 쿼리 분해 방법의 개발이 포함될 수 있다.\n' +
+      '\n' +
+      '**제한 사항**: DORIS-MAE에는 현재 컴퓨터 과학 도메인의 쿼리 및 요약이 포함되어 있습니다. 결과적으로, 이 데이터 세트에 대해 훈련된 모델은 다른 학문으로 잘 일반화되지 않을 수 있다. DORIS-MAE의 확장된 다중 도메인 버전은 향후 작업을 위한 논리적 방향이다. 애스펙트 관련성을 결정하는 작업은 추상들의 복잡성으로 인해 도전적이다. 개선된 주석 지침 및 훈련(인간 및 모델 모두에 대해)은 이 문제를 해결할 수 있다. 마지막으로, 주석을 간소화하기 위해 LLM을 활용하는 동안 쿼리의 생성과 측면 분해는 수동으로 유지된다. 신뢰할 수 있고 자동화된 쿼리 생성 파이프라인의 개발이 어렵다는 것을 발견했지만 LLM의 발전이 가까운 장래에 이러한 격차를 해소할 수 있을 것으로 예상한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}^{\\text{exp}}_{10\\%}\\) & MRR@10 & MAP \\\\ \\hline SCL-trained E5-v2 & 19.57 \\(\\pm\\) 2.33 & 52.45 \\(\\pm\\) 3.17 & 44.47 \\(\\pm\\) 3.11 & 34.67 \\(\\pm\\) 3.17 & 23.16 \\(\\pm\\) 4.28 & 49.15 \\(\\pm\\) 3.14 \\\\ pretrained E5-v2 & 14.70 \\(\\pm\\) 1.72 & 42.38 \\(\\pm\\) 2.59 & 38.24 \\(\\pm\\) 2.94 & 26.31 \\(\\pm\\) 2.94 & 14.53 \\(\\pm\\) 3.69 & 40.62 \\(\\pm\\) 2.85 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 8: SCL 대 사전 훈련의 비교. 표준 오류는 부트스트래핑으로 추정됩니다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Abdi et al. [2007] H. Abdi et al. Bonferroni and sidak corrections for multiple comparisons. _Encyclopedia of measurement and statistics_, 3(01):2007, 2007.\n' +
+      '* Afzali et al. [2021] J. Afzali, A. M. Drzewiecki, and K. Balog. Pointrec: A test collection for narrative-driven point of interest recommendation. In _Proceedings of the 44th International ACM SIGIR Conference on Research and Development in Information Retrieval_, SIGIR \'21, page 2478-2484, New York, NY, USA, 2021. Association for Computing Machinery. ISBN 9781450380379. doi: 10.1145/3404835.3463243. URL [https://doi.org/10.1145/3404835.3463243](https://doi.org/10.1145/3404835.3463243).\n' +
+      '* Akkalyoncu Yilmaz et al. [2019] Z. Akkalyoncu Yilmaz, W. Yang, H. Zhang, and J. Lin. Cross-domain modeling of sentence-level evidence for document retrieval. In _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, pages 3490-3496, Hong Kong, China, Nov. 2019. Association for Computational Linguistics. doi: 10.18653/v1/D19-1352. URL [https://aclanthology.org/D19-1352](https://aclanthology.org/D19-1352).\n' +
+      '* Bang et al. [2023] Y. Bang, S. Cahyawijaya, N. Lee, W. Dai, D. Su, B. Wiliie, H. Lovenia, Z. Ji, T. Yu, W. Chung, et al. A multitask, multilingual, multimodal evaluation of chatgpt on reasoning, hallucination, and interactivity. _arXiv preprint arXiv:2302.04023_, 2023.\n' +
+      '* Beltagy et al. [2019] I. Beltagy, K. Lo, and A. Cohan. Scibert: A pretrained language model for scientific text. In _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, pages 3615-3620, 2019.\n' +
+      '* Bogers and Koolen [2017] T. Bogers와 M. 쿨렌 내러티브 중심의 추천을 정의하고 지원합니다. _Proceedings of the 11번째 ACM Conference on Recommender Systems_, RecSys\'17, page 238-242, New York, NY, USA, 2017. Association for Computing Machinery. ISBN 9781450346528. doi: 10.1145/3109859.3109893. URL [https://doi.org/10.1145/3109859.3109893](https://doi.org/10.1145/3109859.3109893)\n' +
+      '* Bowman et al. [2015] S. Bowman, G. Angeli, C. Potts, and C. D. Manning. A large annotated corpus for learning natural language inference. In _Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing_, pages 632-642, Lisbon, Portugal, Sept. 2015. Association for Computational Linguistics. doi: 10.18653/v1/D15-1075. URL [https://aclanthology.org/D15-1075](https://aclanthology.org/D15-1075).\n' +
+      '* Brin and Page [1998] S. Brin과 L. 페이지. 대규모 하이퍼텍스트 웹 검색 엔진의 해부학입니다. _ Computer Network and ISDN systems_, 30(1-7):107-117, 1998).\n' +
+      '* Brown et al. [2019] P. Brown, R. Consortium, and Y. Zhou. Large expert-curated database for benchmarking document similarity detection in biomedical literature search. _Database_, 2019, 10 2019. ISSN 1758-0463. doi: 10.1093/database/baz085. URL [https://doi.org/10.1093/database/baz085](https://doi.org/10.1093/database/baz085). baz085.\n' +
+      '* Brown et al. [2020] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger, T. Henighan, R. Child, A. Ramesh, D. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen, E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford, I. Sutskever, and D. Amodei. Language models are few-shot learners. In H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, editors, _Advances in Neural Information Processing Systems_, volume 33, pages 1877-1901. Curran Associates, Inc., 2020. URL [https://proceedings.neurips.cc/paper_files/paper/2020/file/1457c0d6bfcb4967418bfb8ac142f64a-Paper.pdf](https://proceedings.neurips.cc/paper_files/paper/2020/file/1457c0d6bfcb4967418bfb8ac142f64a-Paper.pdf).\n' +
+      '* Burges et al. [2005] C. Burges, T. Shaked, E. Renshaw, A. Lazier, M. Deeds, N. Hamilton, and G. Hullender. Learning to rank using gradient descent. In _Proceedings of the 22nd International Conference on Machine Learning_, ICML \'05, page 89-96, New York, NY, USA, 2005. Association for Computing Machinery. ISBN 1595931805. doi: 10.1145/1102351.1102363. URL [https://doi.org/10.1145/1102351.1102363](https://doi.org/10.1145/1102351.1102363).\n' +
+      '* Buttcher et al. [2016] S. Buttcher, C. L. Clarke, and G. V. Cormack. _Information retrieval: Implementing and evaluating search engines_. Mit Press, 2016.\n' +
+      '\n' +
+      '* Chan et al. [2018] J. Chan, J. C. Chang, T. Hope, D. Shahaf, and A. Kittur. Solvent: A mixed initiative system for finding analogies between research papers. _Proc. ACM Hum.-Comput. Interact._, 2(CSCW), nov 2018. doi: 10.1145/3274300. URL [https://doi.org/10.1145/3274300](https://doi.org/10.1145/3274300).\n' +
+      '* Chen and Yih [2020] D. Chen and W. -t. 그래 오픈 도메인 질문 답변입니다. _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics: Tutorial Abstracts_, pages 34-37, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-tutorials. 8. URL [https://aclanthology.org/2020.acl-tutorials.8](https://aclanthology.org/2020.acl-tutorials.8)\n' +
+      '* Chowdhery et al. [2022] A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, et al. Palm: Scaling language modeling with pathways. _arXiv preprint arXiv:2204.02311_, 2022.\n' +
+      '* Clark et al. [2018] P. Clark, I. Cowhey, O. Etzioni, T. Khot, A. Sabharwal, C. Schoenick, and O. Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge. _arXiv preprint arXiv:1803.05457_, 2018.\n' +
+      '* Cohan et al. [2020] A. Cohan, S. Feldman, I. Beltagy, D. Downey, and D. S. Weld. Specter: Document-level representation learning using citation-informed transformers. In _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pages 2270-2282, 2020.\n' +
+      '* Craswell et al. [2021] N. Craswell, B. Mitra, E. Yilmaz, and D. Campos. Overview of the trec 2020 deep learning track, 2021.\n' +
+      '* Dimitriadou et al. [2014] K. Dimitriadou, O. Papaemmanouil, and Y. Diao. Explore-by-example: An automatic query steering framework for interactive data exploration. In _Proceedings of the 2014 ACM SIGMOD international conference on Management of data_, pages 517-528, 2014.\n' +
+      '* Ding et al. [2022] B. Ding, C. Qin, L. Liu, L. Bing, S. Joty, and B. Li. Is gpt-3 a good data annotator? _arXiv preprint arXiv:2212.10450_, 2022.\n' +
+      '* Faggioli et al. [2023] G. Faggioli, L. Dietz, C. Clarke, G. Demartini, M. Hagen, C. Hauff, N. Kando, E. Kanoulas, M. Potthast, B. Stein, and H. Wachsmuth. Perspectives on large language models for relevance judgment, 2023.\n' +
+      '* Formal et al. [2021] T. Formal, C. Lassance, B. Piwowarski, and S. Clinchant. Splade v2: Sparse lexical and expansion model for information retrieval. _arXiv preprint arXiv:2109.10086_, 2021.\n' +
+      '* Gao et al. [2021] T. Gao, A. Fisch, and D. Chen. Making pre-trained language models better few-shot learners. In _Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)_, pages 3816-3830, 2021.\n' +
+      '* Gao et al. [2021] T. Gao, X. Yao, and D. Chen. SimCSE: Simple contrastive learning of sentence embeddings. In _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing_, pages 6894-6910, Online and Punta Cana, Dominican Republic, Nov. 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.emnlp-main.552. URL [https://aclanthology.org/2021.emnlp-main.552](https://aclanthology.org/2021.emnlp-main.552).\n' +
+      '* Gebru et al. [2020] T. Gebru, J. Morgenstern, B. Vecchione, J. W. Vaughan, H. Wallach, H. Daumee III, and K. Crawford. Datasheets for Datasets. _arXiv:1803.09010 [cs]_, Jan. 2020.\n' +
+      '* Gilardi et al. [2023] F. Gilardi, M. Alizadeh, and M. Kubli. Chatgpt outperforms crowd-workers for text-annotation tasks. _arXiv preprint arXiv:2303.15056_, 2023.\n' +
+      '* Greene et al. [2022] R. Greene, T. Sanders, L. Weng, and A. Neelakantan. New and improved embedding model. [https://openai.com/blog/new-and-improved-embedding-model/](https://openai.com/blog/new-and-improved-embedding-model/), 2022. Accessed: 2023-06-03.\n' +
+      '* Guha et al. [2003] R. Guha, R. McCool, and E. Miller. Semantic search. In _Proceedings of the 12th International Conference on World Wide Web_, WWW \'03, page 700-709, New York, NY, USA, 2003. Association for Computing Machinery. ISBN 1581136803. doi: 10.1145/775152.775250. URL [https://doi.org/10.1145/775152.775250](https://doi.org/10.1145/775152.775250).\n' +
+      '* Hsu[1996] J. Hsu. _ 다중 비교: 이론 및 방법_. CRC Press, 1996.\n' +
+      '* Hu et al. [2008] Y. Hu, Y. Koren, and C. Volinsky. Collaborative filtering for implicit feedback datasets. In _2008 Eighth IEEE international conference on data mining_, pages 263-272. Ieee, 2008.\n' +
+      '* Huang et al. [2022] W. Huang, P. Abbeel, D. Pathak, and I. Mordatch. Language models as zero-shot planners: Extracting actionable knowledge for embodied agents. In _International Conference on Machine Learning_, pages 9118-9147. PMLR, 2022.\n' +
+      '\n' +
+      '* Jin et al. [2022] Q. Jin, Z. Yuan, G. Xiong, Q. Yu, H. Ying, C. Tan, M. Chen, S. Huang, X. Liu, and S. Yu. Biomedical question answering: A survey of approaches and challenges. _ACM Comput. Surv._, 55(2), jan 2022. ISSN 0360-0300. doi: 10.1145/3490238. URL [https://doi.org/10.1145/3490238](https://doi.org/10.1145/3490238).\n' +
+      '* Karpukhin et al. [2020] V. Karpukhin, B. Oguz, S. Min, P. Lewis, L. Wu, S. Edunov, D. Chen, and W.-t. Yih. Dense passage retrieval for open-domain question answering. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pages 6769-6781, 2020.\n' +
+      '* Khattab and Zaharia [2020] O. Khattab과 M. 자하리아 콜버트: 버트에 대한 상황화된 늦은 상호 작용을 통한 효율적이고 효과적인 통과 검색입니다. _Proceedings of the 43th International ACM SIGIR conference on Research and Development in Information Retrieval_, pages 39-48, 2020.\n' +
+      '* Khot et al. [2021] T. Khot, D. Khashabi, K. Richardson, P. Clark, and A. Sabharwal. Text modular networks: Learning to decompose tasks in the language of existing models. In _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 1264-1279, 2021.\n' +
+      '* Kinney et al. [2022] R. M. Kinney, C. Anastasiades, R. Authur, I. Beltagy, J. Bragg, A. Buraczynski, I. Cachola, S. Candra, Y. Chandrasekhar, A. Cohan, M. Crawford, D. Downey, J. Dunkelberger, O. Etzioni, R. Evans, S. Feldman, J. Gorney, D. W. Graham, F. Hu, R. Huff, D. King, S. Kohlmeier, B. Kuehl, M. Langan, D. Lin, H. Liu, K. Lo, J. Lochner, K. MacMillan, T. Murray, C. Newell, S. Rao, S. Rohatgi, P. L. Sayre, Z. Shen, A. Singh, L. Soldaini, S. Subramanian, A. Tanaka, A. D. Wade, L. M. Wagner, L. L. Wang, C. Wilhelm, C. Wu, J. Yang, A. Zamarron, M. van Zuylen, and D. S. Weld. The semantic scholar open data platform. _ArXiv_, abs/2301.10140, 2023.\n' +
+      '* Kojima et al. [2022] T. Kojima, S. S. Gu, M. Reid, Y. Matsuo, and Y. Iwasawa. Large language models are zero-shot reasoners. In S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, editors, _Advances in Neural Information Processing Systems_, volume 35, pages 22199-22213. Curran Associates, Inc., 2022. URL [https://proceedings.neurips.cc/paper_files/paper/2022/file/8bb0d291acd4acf06ef112099c16f326-Paper-Conference.pdf](https://proceedings.neurips.cc/paper_files/paper/2022/file/8bb0d291acd4acf06ef112099c16f326-Paper-Conference.pdf).\n' +
+      '* Kuhn et al. [2023] L. Kuhn, Y. Gal, and S. Farquhar. Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation. _arXiv preprint arXiv:2302.09664_, 2023.\n' +
+      '* Kwiatkowski et al. [2019] T. Kwiatkowski, J. Palomaki, O. Redfield, M. Collins, A. Parikh, C. Alberti, D. Epstein, I. Polosukhin, M. Kelcey, J. Devlin, K. Lee, K. N. Toutanova, L. Jones, M.-W. Chang, A. Dai, J. Uszkoreit, Q. Le, and S. Petrov. Natural questions: a benchmark for question answering research. _Transactions of the Association of Computational Linguistics_, 2019.\n' +
+      '* Lee et al. [2013] J. Lee, K. Lee, and J. G. Kim. Personalized academic research paper recommendation system. _arXiv preprint arXiv:1304.5457_, 2013.\n' +
+      '* Li et al. [2018] Z. Li, J. Cai, S. He, and H. Zhao. Seq2seq dependency parsing. In _Proceedings of the 27th International Conference on Computational Linguistics_, pages 3203-3214, 2018.\n' +
+      '* Lin et al. [2022] B. Lin, Z. Yao, J. Shi, S. Cao, B. Tang, S. Li, Y. Luo, J. Li, and L. Hou. Dependency parsing via sequence generation. In _Findings of the Association for Computational Linguistics: EMNLP 2022_, pages 7339-7353, 2022.\n' +
+      '* Lissandrini et al. [2019] M. Lissandrini, D. Mottin, T. Palpanas, and Y. Velegrakis. Example-based search: A new frontier for exploratory search. In _Proceedings of the 42nd International ACM SIGIR Conference on Research and Development in Information Retrieval_, SIGIR\'19, page 1411-1412, New York, NY, USA, 2019. Association for Computing Machinery. ISBN 9781450361729. doi: 10.1145/3331184.3331387. URL [https://doi.org/10.1145/3331184.3331387](https://doi.org/10.1145/3331184.3331387).\n' +
+      '* Liu et al. [2023] P. Liu, W. Yuan, J. Fu, Z. Jiang, H. Hayashi, and G. Neubig. Pre-train, prompt, and predict: A systematic survey of prompting methods in natural language processing. _ACM Computing Surveys_, 55(9):1-35, 2023.\n' +
+      '* Liu et al. [2022] T. Liu, Y. Zhang, C. Brockett, Y. Mao, Z. Sui, W. Chen, and B. Dolan. A token-level reference-free hallucination detection benchmark for free-form text generation. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 6723-6737, Dublin, Ireland, May 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.acl-long.464. URL [https://aclanthology.org/2022.acl-long.464](https://aclanthology.org/2022.acl-long.464).\n' +
+      '\n' +
+      '* Lu et al. [2022] Y. Lu, Y. Liu, J. Liu, Y. Shi, Z. Huang, S. F. Y. Sun, H. Tian, H. Wu, S. Wang, D. Yin, and H. Wang. Ernie-search: Bridging cross-encoder with dual-encoder via self on-the-fly distillation for dense passage retrieval, 2022.\n' +
+      '* MacAvaney and Soldaini [2023] S. MacAvaney와 L. 솔다이니 자동 관련성 추정을 위한 원샷 레이블링입니다. _Proceedings of the 46th International ACM SIGIR Conference on Research and Development in Information Retrieval_, SIGIR \'23, page 2230-2235, New York, NY, USA, 2023. Association for Computing Machinery. ISBN 9781450394086. doi: 10.1145/3539618.3592032. URL [https://doi.org/10.1145/3539618.3592032](https://doi.org/10.1145/3539618.3592032)\n' +
+      '* MacAvaney et al. [2022] S. MacAvaney, S. Feldman, N. Goharian, D. Downey, and A. Cohan. ABNIRML: Analyzing the behavior of neural IR models. _Transactions of the Association for Computational Linguistics_, 10:224-239, 2022. doi: 10.1162/tacl_a_00457. URL [https://aclanthology.org/2022.tacl-1.13](https://aclanthology.org/2022.tacl-1.13).\n' +
+      '* Manakul et al. [2023] P. Manakul, A. Liusie, and M. J. Gales. Selfcheckgpt: Zero-resource black-box hallucination detection for generative large language models. _arXiv preprint arXiv:2303.08896_, 2023.\n' +
+      '* Min et al. [2022] S. Min, X. Lyu, A. Holtzman, M. Artetxe, M. Lewis, H. Hajishirzi, and L. Zettlemoyer. Rethinking the role of demonstrations: What makes in-context learning work? In _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pages 11048-11064, Abu Dhabi, United Arab Emirates, Dec. 2022. Association for Computational Linguistics. URL [https://aclanthology.org/2022.emnlp-main.759](https://aclanthology.org/2022.emnlp-main.759).\n' +
+      '* Morin and Willetts [2020] M. Morin과 M. 윌렛 텐서플로우 리스넷의 비결정성입니다. _ arXiv preprint arXiv:2001.11396_, 2020.\n' +
+      '* 예제에서 패싯 쿼리에 대한 컴퓨터 과학 연구 논문의 테스트 모음입니다. J. vanchoren과 S. 예, 편집기, _데이터 집합 및 Benchmarks에 대한 신경 정보 처리 시스템 추적의 진행률_, 볼륨 1. Curran, 2021. URL [https://datasets-benchmarks-proceedings.neurips.cc/paper_files/paper/2021/file/20f07591c6fbc220ffe637cda29bb3f6-Paper-round2.pdf](https://datasets-benchmarks-proceedings.neurips.cc/paper_files/paper/2021/file/20f07591c6fbc220ffe637cda29bb3f6-Paper-round2.pdf).\n' +
+      '* Mysore et al. [2022] S. Mysore, A. Cohan, and T. Hope. Multi-vector models with textual guidance for fine-grained scientific document similarity. In _Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 4453-4470, 2022.\n' +
+      '* Mysore et al. [2023] S. Mysore, A. McCallum, and H. Zamani. Large language model augmented narrative driven recommendations, 2023.\n' +
+      '* Neves et al. [2019] M. Neves, D. Butzke, and B. Grune. Evaluation of scientific elements for text similarity in biomedical publications. In _Proceedings of the 6th Workshop on Argument Mining_, pages 124-135, Florence, Italy, Aug. 2019. Association for Computational Linguistics. doi: 10.18653/v1/W19-4515. URL [https://aclanthology.org/W19-4515](https://aclanthology.org/W19-4515).\n' +
+      '* Nguyen et al. [2016] T. Nguyen, M. Rosenberg, X. Song, J. Gao, S. Tiwary, R. Majumder, and L. Deng. Ms marco: A human generated machine reading comprehension dataset. _choice_, 2640:660, 2016.\n' +
+      '* Ostendorff [2020] M. 오스텐도르프 내용 기반 문헌 추천 시스템을 위한 문맥 문서 유사성. _ arXiv preprint arXiv:2008.00202_, 2020.\n' +
+      '* Ouyang et al. [2022] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray, et al. Training language models to follow instructions with human feedback. _Advances in Neural Information Processing Systems_, 35:27730-27744, 2022.\n' +
+      '* Qin et al. [2023] C. Qin, A. Zhang, Z. Zhang, J. Chen, M. Yasunaga, and D. Yang. Is chatgpt a general-purpose natural language processing task solver? _arXiv preprint arXiv:2302.06476_, 2023.\n' +
+      '* Reddy et al. [2019] S. Reddy, D. Chen, and C. D. Manning. Coqa: A conversational question answering challenge. _Transactions of the Association for Computational Linguistics_, 7:249-266, 2019.\n' +
+      '* Reimers and Gurevych [2019] N. 라이머와 나, 구레비치 문장-버트: siamese bert-networks를 이용한 문장 임베딩. _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, pages 3982-3992, 2019.\n' +
+      '\n' +
+      '* Ren et al. [2021] R. Ren, Y. Qu, J. Liu, W. X. Zhao, Q. She, H. Wu, H. Wang, and J.-R. Wen. Rocketqav2: A joint training method for dense passage retrieval and passage re-ranking. In _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing_, pages 2825-2835, 2021.\n' +
+      '* Saeidi et al. [2018] M. Saeidi, M. Bartolo, P. Lewis, S. Singh, T. Rocktaschel, M. Sheldon, G. Bouchard, and S. Riedel. Interpretation of natural language rules in conversational machine reading. In _Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing_, pages 2087-2097, Brussels, Belgium, Oct.-Nov. 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-1233. URL [https://aclanthology.org/D18-1233](https://aclanthology.org/D18-1233).\n' +
+      '* Sanh et al. [2022] V. Sanh, A. Webson, C. Raffel, S. H. Bach, L. Sutawika, Z. Alyafeai, A. Chaffin, A. Stiegler, T. Le Scao, A. Raja, et al. Multitask prompted training enables zero-shot task generalization. In _ICLR 2022-Tenth International Conference on Learning Representations_, 2022.\n' +
+      '* Santhanam et al. [2022] K. Santhanam, O. Khattab, J. Saad-Falcon, C. Potts, and M. Zaharia. Colbertv2: Effective and efficient retrieval via lightweight late interaction. In _Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 3715-3734, 2022.\n' +
+      '* Sparck Jones[1972] K. 스파크 존스 용어 특이성에 대한 통계적 해석 및 검색에서의 적용. _ Journal of documentation_, 28(1):11-21, 1972.\n' +
+      '* Sun et al. [2020] Y. Sun, L. Zhang, G. Cheng, and Y. Qu. Sparqa: skeleton-based semantic parsing for complex questions over knowledge bases. In _Proceedings of the AAAI conference on artificial intelligence_, pages 8952-8959, 2020.\n' +
+      '* Thakur et al. [2021] N. Thakur, N. Reimers, A. Ruckle, A. Srivastava, and I. Gurevych. Beir: A heterogeneous benchmark for zero-shot evaluation of information retrieval models. In _Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2)_, 2021.\n' +
+      '* Tornberg[2023] P. Tornberg. Chatgpt-4는 제로 샷 학습으로 정치적 트위터 메시지에 주석을 달 때 전문가 및 군중 작업자보다 성능이 뛰어납니다. _ arXiv preprint arXiv:2304.06588_, 2023.\n' +
+      '* Touvron et al. [2023] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux, T. Lacroix, B. Roziere, N. Goyal, E. Hambro, F. Azhar, A. Rodriguez, A. Joulin, E. Grave, and G. Lample. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.\n' +
+      '* Trotman et al. [2014] A. Trotman, A. Puurula, and B. Burgess. Improvements to bm25 and language models examined. In _Proceedings of the 2014 Australasian Document Computing Symposium_, pages 58-65, 2014.\n' +
+      '* Voorhees et al. [2021] E. Voorhees, T. Alam, S. Bedrick, D. Demner-Fushman, W. R. Hersh, K. Lo, K. Roberts, I. Soboroff, and L. L. Wang. Trec-covid: Constructing a pandemic information retrieval test collection. _SIGIR Forum_, 54(1), feb 2021. ISSN 0163-5840. doi: 10.1145/3451964.3451965. URL [https://doi.org/10.1145/3451964.3451965](https://doi.org/10.1145/3451964.3451965).\n' +
+      '* Wang et al. [2022] L. Wang, N. Yang, X. Huang, B. Jiao, L. Yang, D. Jiang, R. Majumder, and F. Wei. Text embeddings by weakly-supervised contrastive pre-training. _arXiv preprint arXiv:2212.03533_, 2022.\n' +
+      '* Wang et al. [2022] L. Wang, N. Yang, X. Huang, B. Jiao, L. Yang, D. Jiang, R. Majumder, and F. Wei. Simlm: Pre-training with representation bottleneck for dense passage retrieval. _arXiv preprint arXiv:2207.02578_, 2022.\n' +
+      '* Wang et al. [2023] S. Wang, A. Shrivastava, and S. Livshits. Treepiece: Faster semantic parsing via tree tokenization. _arXiv preprint arXiv:2303.17161_, 2023.\n' +
+      '* Wang et al. [2022] X. Wang, J. Wei, D. Schuurmans, Q. Le, E. Chi, and D. Zhou. Self-consistency improves chain of thought reasoning in language models. _arXiv preprint arXiv:2203.11171_, 2022.\n' +
+      '* Wang et al. [2022] Y. Wang, Y. Hou, H. Wang, Z. Miao, S. Wu, Q. Chen, Y. Xia, C. Chi, G. Zhao, Z. Liu, X. Xie, H. Sun, W. Deng, Q. Zhang, and M. Yang. A neural corpus indexer for document retrieval. In S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, editors, _Advances in Neural Information Processing Systems_, volume 35, pages 25600-25614. Curran Associates, Inc., 2022. URL [https://proceedings.neurips.cc/paper_files/paper/2022/file/a46156bd3579c3b268108ea6aca71d13-Paper-Conference.pdf](https://proceedings.neurips.cc/paper_files/paper/2022/file/a46156bd3579c3b268108ea6aca71d13-Paper-Conference.pdf).\n' +
+      '* Wei et al. [2021] J. Wei, M. Bosma, V. Y. Zhao, K. Guu, A. W. Yu, B. Lester, N. Du, A. M. Dai, and Q. V. Le. Finetuned language models are zero-shot learners. _arXiv preprint arXiv:2109.01652_, 2021.\n' +
+      '\n' +
+      '* Wei et al. [2022] J. Wei, Y. Tay, R. Bommasani, C. Raffel, B. Zoph, S. Borgeaud, D. Yogatama, M. Bosma, D. Zhou, D. Metzler, et al. Emergent abilities of large language models. _arXiv preprint arXiv:2206.07682_, 2022.\n' +
+      '* Wei et al. [2022] J. Wei, X. Wang, D. Schuurmans, M. Bosma, b. ichter, F. Xia, E. Chi, Q. V. Le, and D. Zhou. Chain-of-thought prompting elicits reasoning in large language models. In S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, editors, _Advances in Neural Information Processing Systems_, volume 35, pages 24824-24837. Curran Associates, Inc., 2022. URL [https://proceedings.neurips.cc/paper_files/paper/2022/file/9d5609613524ecf4f15af0f7b31abca4-Paper-Conference.pdf](https://proceedings.neurips.cc/paper_files/paper/2022/file/9d5609613524ecf4f15af0f7b31abca4-Paper-Conference.pdf).\n' +
+      '* Weissenborn et al. [2017] D. Weissenborn, G. Wiese, and L. Seiffe. Making neural QA as simple as possible but not simpler. In _Proceedings of the 21st Conference on Computational Natural Language Learning (CoNLL 2017)_, pages 271-280, Vancouver, Canada, Aug. 2017. Association for Computational Linguistics. doi: 10.18653/v1/K17-1028. URL [https://aclanthology.org/K17-1028](https://aclanthology.org/K17-1028).\n' +
+      '* Weisstein [2004] E. W. Weisstein. Bonferroni correction. _ https://mathworld. 울프람 com/_, 2004.\n' +
+      '* Williams et al. [2018] A. Williams, N. Nangia, and S. Bowman. A broad-coverage challenge corpus for sentence understanding through inference. In _Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers)_, pages 1112-1122, 2018.\n' +
+      '* Xiong et al. [2020] L. Xiong, C. Xiong, Y. Li, K.-F. Tang, J. Liu, P. Bennett, J. Ahmed, and A. Overwijk. Approximate nearest neighbor negative contrastive learning for dense text retrieval. _arXiv preprint arXiv:2007.00808_, 2020.\n' +
+      '* Yang et al. [2015] Y. Yang, W.-t. Yih, and C. Meek. Wikiqa: A challenge dataset for open-domain question answering. In _Proceedings of the 2015 conference on empirical methods in natural language processing_, pages 2013-2018, 2015.\n' +
+      '* Yang et al. [2018] Z. Yang, P. Qi, S. Zhang, Y. Bengio, W. Cohen, R. Salakhutdinov, and C. D. Manning. Hotpotqa: A dataset for diverse, explainable multi-hop question answering. In _Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing_, pages 2369-2380, 2018.\n' +
+      '* Zhang et al. [2019] H. Zhang, J. Cai, J. Xu, and J. Wang. Complex question decomposition for semantic parsing. In _Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics_, pages 4477-4486, 2019.\n' +
+      '* Zhang et al. [2023] M. Zhang, O. Press, W. Merrill, A. Liu, and N. A. Smith. How language model hallucinations can snowball. _arXiv preprint arXiv:2305.13534_, 2023.\n' +
+      '* Zhang et al. [2023] Y. Zhang, Z. Wang, and J. Shang. Clusterllm: Large language models as a guide for text clustering. _arXiv preprint arXiv:2305.14871_, 2023.\n' +
+      '* Zhao et al. [2021] Z. Zhao, E. Wallace, S. Feng, D. Klein, and S. Singh. Calibrate before use: Improving few-shot performance of language models. In _International Conference on Machine Learning_, pages 12697-12706. PMLR, 2021.\n' +
+      '* Zhou et al. [2022] B. Zhou, K. Richardson, X. Yu, and D. Roth. Learning to decompose: Hypothetical question decomposition based on comparable texts. _arXiv preprint arXiv:2210.16865_, 2022.\n' +
+      '\n' +
+      '## 부록: 목차\n' +
+      '\n' +
+      '* 데이터 세트 라이선스 및 코드 라이선스\n' +
+      '* 데이터 세트 호스팅, 액세스 및 유지 관리\n' +
+      '* 데이터 세트 개요\n' +
+      '* DORIS-MAE 구조\n' +
+      '* 데이터셋의 통계량\n' +
+      '* 주석 지침\n' +
+      '* 주석의 예\n' +
+      '* Prompt Engineering\n' +
+      '* ChatGPT 어노테이션의 오류 분석\n' +
+      '* 주석 확장성\n' +
+      '* 실험 결과\n' +
+      '* 쿼리 수준 벤치마크 결과\n' +
+      '* 검색을 위한 양태를 이용함\n' +
+      '* DORIS-MAE 테스트 집합의 성능 모델\n' +
+      '* Two-Aspect Sub-Query Level Benchmark 결과\n' +
+      '* 후보 풀 민감도 분석\n' +
+      '* 실험 설정\n' +
+      '* 재교육 세부 정보\n' +
+      '* 모델 사양\n' +
+      '* Author Statement\n' +
+      '* DORIS-MAE를 위한 데이터 시트\n' +
+      'Dataset\n' +
+      '\n' +
+      '### 데이터 세트 라이선스 및 코드 라이선스\n' +
+      '\n' +
+      'DORIS-MAE 데이터 세트는 CC-BY-NC(Creative Commons Attribution-NonCommercial) 라이선스에 따라 사용할 수 있습니다. 이 라이선스를 사용하면 사용자가 원본 생성자에게 적절한 크레딧을 제공하고 상업적 목적으로 사용하지 않는 조건에서 데이터 세트를 공유하고 조정할 수 있습니다. 전체 라이선스의 복사본은 [https://github.com/Real-Doris-Mae/Doris-Mae-Dataset/blob/main/dataset_license.md](https://github.com/Real-Doris-Mae/Doris-Mae-Dataset/blob/main/dataset_license.md)에서 찾을 수 있습니다.\n' +
+      '\n' +
+      '본 논문에서 사용된 코드는 MIT 라이선스로 공개된다. MIT 라이선스는 원래 라이선스가 파생 작업에 포함된 한 코드의 무료 사용, 수정 및 배포를 허용하는 허용 오픈 소스 라이선스이다. 전체 라이선스의 복사본은 [https://github.com/Real-Doris-Mae/Doris-Mae-Dataset/blob/main/code_license.md](https://github.com/Real-Doris-Mae/Doris-Mae-Dataset/blob/main/code_license.md)에서 찾을 수 있습니다.\n' +
+      '\n' +
+      '### 데이터 세트 호스팅, 액세스 및 유지 관리\n' +
+      '\n' +
+      '메타 데이터가 포함된 DORIS-MAE 데이터 세트는 릴리스되며 CC-BY-NC 라이선스 아래 ([https://doi.org/10.5281/zenodo.8299749](https://doi.org/10.5281/zenodo.8299749))에서 자유롭게 액세스할 수 있습니다. 사용자 피드백을 통합하여 데이터 세트와 코드 베이스를 정기적으로 유지 관리하기로 약속합니다. 우리는 잠재적으로 다음 버전의 DORIS-MAE에서 향후 작업의 일부로 더 많은 기능을 도입할 것이다. 우리는 현재 버전의 DORIS-MAE가 항상 동일한 링크에서 액세스할 수 있음을 확인한다.\n' +
+      '\n' +
+      '### Dataset Overview\n' +
+      '\n' +
+      'DORIS-MAE 데이터 세트는 각각 고유한 목적을 제공하는 4개의 주요 하위 데이터 세트로 구성된다.\n' +
+      '\n' +
+      '**쿼리** 데이터 세트에는 ML, NLP, CV, AI 및 Composite의 5개 범주에 걸쳐 있는 100개의 인간 조작 복합 쿼리가 포함되어 있습니다. 각 범주에는 20개의 관련 쿼리가 있습니다. 쿼리는 측면(쿼리당 3~9개 범위)과 하위 측면(측면당 0~6개, 0은 추가 세분화가 필요하지 않음을 의미함)으로 세분화됩니다. 각각의 질의에 대해, 99 내지 138 범위의 관련 논문 초록의 대응하는 후보 풀이 제공된다.\n' +
+      '\n' +
+      '**Corpus** 데이터 세트는 2011-2021년 사이에 출판된 컴퓨터 과학 논문의 363,133개의 초록으로 구성되고 arXiv에서 공급됩니다. 각 항목에는 제목, 원본 초록, URL, 기본 및 보조 카테고리뿐만 아니라 시맨틱 학술지에서 검색된 인용 정보가 포함된다. 각 초록의 마스킹된 버전도 제공되어 쿼리의 자동 생성을 용이하게 합니다.\n' +
+      '\n' +
+      '**주석** 데이터 세트는 각각 쿼리의 후보 풀에서 aspect/sub-aspect 및 해당 논문 초록을 포함하는 모든 165,144개의 질문 쌍에 대해 생성된 주석을 포함합니다. 이는 ChatGPT의 최종 결정을 나타내는 3단계 관련성 점수(예: 0,1,2)와 함께 자신의 의사결정 과정을 설명하는 ChatGPT에 의해 생성된 원문을 포함한다.\n' +
+      '\n' +
+      '마지막으로 **테스트 세트** 데이터 세트에는 가설 테스트에 사용되는 250개 질문 쌍의 무작위 선택에 대한 인간 주석이 포함되어 있습니다. 그것은 3-레벨 관련성 점수(예를 들어, 0,1,2)로서 기록된, 3개의 인간 주석자의 최종 결정들 각각을 포함한다. 참고, 개발 세트에는 주석이 달린 질문 쌍 90개가 포함되어 있습니다. 개발 세트의 주석은 2명의 주석자에서만 나오고 개발 세트는 엄격하게 가설 테스트 단계의 일부가 아니기 때문에 공식적으로 출시된 DORIS-MAE 데이터 세트에 개발 세트를 포함하지 않는다. 대신 [https://github.com/Real-Doris-Mae/Doris-Mae-Dataset/](https://github.com/Real-Doris-Mae/Doris-Mae-Dataset/)에서 코드 베이스의 일부로 개발 세트를 제공합니다.\n' +
+      '\n' +
+      '이러한 데이터 세트 각각은 제안된 접근법의 최적화, 검증 및 벤치마킹에 기여하는 전체 프로세스에서 특정 기능을 제공한다는 점에 유의하는 것이 중요하다.\n' +
+      '\n' +
+      '### DORIS-MAE Structure\n' +
+      '\n' +
+      '* aspect2aspect_id: aspect/sub-aspects를 그들의 aspect_id에 매핑하는 사전.\n' +
+      '* aspect_id2aspect: aspect2aspect_id의 역 매핑.\n' +
+      '* **쿼리**: 50개의 복잡한 쿼리를 포함합니다.\n' +
+      '* 쿼리 1: - query_text: 쿼리의 텍스트입니다.\n' +
+      '- query_type: [ML, NLP, CV, AI, Composite] 중 하나.\n' +
+      '- idea_from: Query 생성 시 참조되는 abstract의 id\n' +
+      '- candidate_pool: Query 1의 후보 풀 내의 abstract_ids의 리스트.\n' +
+      '- sent2aspect_id: 개별 문장을 자신의 aspect_id(들)에 매핑하는 사전.\n' +
+      '- aspect_id2sent: sent2aspect_id의 역 매핑.\n' +
+      '- aspects: contains all aspects ids excluding sub-aspects for Query 1. * aspect1_id: [sub-aspect1_id, sub-aspect2_id,...] * aspect2_id: *...\n' +
+      '* Query 2:\n' +
+      '*...\n' +
+      '* **Corpus**: 363,133개의 컴퓨터 과학(CS) 문서 초록이 포함되어 있습니다.\n' +
+      '* 추상 1: - original_abstract: 추상 텍스트입니다. - masked_abstract: 전문 주제 단어가 마스킹된 초록의 텍스트. - 제목: 논문의 제목. - url: 종이에 연결 합니다. - primary_category: arXiv에 의해 할당된 논문의 Primary category. - 범주: arXiv에서 지정한 용지의 범주 전체 목록입니다. - ss_id: The paper\'s semantic scholar id. - incoming_citations: List of abstract_ids citing this paper. - outgoing_citations: List of abstract_ids cited by this paper. - abstract_id: 인덱스 1은 본 논문에 대한 abstract_id이다.\n' +
+      '* 추상 2: *\n' +
+      '* **주석**: 83,591개의 주석이 달린 질문 쌍이 포함됩니다.\n' +
+      '* 주석 1: 첫 번째 질문 쌍. - aspect_id: 질문 쌍 내의 aspect/sub-aspect의 id. - abstract_id: 질문 쌍의 abstract의 id. - gpt_response: 이 질문 쌍에 대한 ChatGPT에 의한 추론 및 결정. - 점수: 질문 쌍의 관련성 점수(예를 들어, 0,1,2).\n' +
+      '* 주석 2: *...\n' +
+      '* **테스트 세트**: 250개의 주석이 달린 질문 쌍이 포함되어 있습니다.\n' +
+      '* 테스트 세트 질문 쌍 1: - aspect_id: 질문 쌍에서 aspect/sub-aspect의 id입니다. - abstract_id: 질문 쌍의 abstract의 id. - human_annotation: 3개의 주석자 모두가 할당한 관련성 점수를 포함한다.\n' +
+      '* annotator_1: annotator_1의 점수.\n' +
+      '* annotator_2: annotator_2의 점수.\n' +
+      '* annotator_3: annotator_3의 점수.\n' +
+      '* 테스트 세트 질문 쌍 2:\n' +
+      '*...\n' +
+      '\n' +
+      '### 데이터 집합 통계\n' +
+      '\n' +
+      '평가 결과를 더 잘 해석하고 향후 개선 사항을 안내하기 위해 DORIS-MAE 데이터 세트에 있는 초록의 분포와 관련성에 대한 여러 분석을 제공한다.\n' +
+      '\n' +
+      '우리는 식 1과 식 2를 사용하여 특정 쿼리에 대한 초록의 관련성을 결정했다. 그런 다음 다양한 쿼리에 대한 관련 초록 수의 분포를 조사하고 이것이 다양한 평가 메트릭에 어떻게 영향을 미칠 수 있는지 고려했다.\n' +
+      '\n' +
+      '표 9는 데이터 세트에서 쿼리 유형(ML, NLP, CV, AI 및 복합)별로 분류된 관련 초록의 분포를 보여준다. 각 범주에 대해 관련 초록의 수를 결정했다.\n' +
+      '\n' +
+      '각 쿼리와 해당 카운트의 요약 통계를 제공합니다. 복합 질의가 관련 초록의 평균 수가 더 낮다는 것을 발견했으며, 이는 이러한 질의가 관련 풀의 논문에 의해 광범위하게 다루어지지 않는 측면 또는 하위 측면을 포함할 수 있음을 의미한다. 이 관찰은 쿼리당 관련 초록의 다양한 수(0에서 84까지)와 함께 DORIS-MAE 데이터 세트가 다양한 난이도 수준의 쿼리를 포함함을 시사한다. 주목할 점은 4개의 쿼리에 관련 초록이 없고 결과적으로 평가에서 누락되었다는 것이다.\n' +
+      '\n' +
+      '<표 9>의 하단은 1003개의 하위 질의에 대한 관련 초록의 분포를 두 가지 측면으로 제시하고 있다. 표에서 알 수 있듯이 5가지 유형 모두에 걸쳐 관련 초록의 수가 증가하여 하위 쿼리 DORIS-MAE 작업이 전체 쿼리 DORIS-MAE 작업보다 덜 도전적이라는 것을 시사한다.\n' +
+      '\n' +
+      '다음으로, 질의가 주어진 각 초록에 대한 정규화된 점수(\\(\\frac{S(p_{j}|Q)}{|Q|}\\)로 정의됨)의 분포를 조사했다. 각 쿼리 유형에 대한 후보 풀에서 각 초록에 대한 정규화된 점수를 컴파일하고 표 10에 집계 통계를 보고한다. 복합 쿼리는 평균 관련성 점수가 가장 낮다.\n' +
+      '\n' +
+      '그림 2(a)는 주어진 질의에 대한 후보 풀(내림차순 순위) 내에서 정규화된 점수를 보여준다. 도 2(b)는 도 2(a)로부터의 데이터를 집계한다. 그림 2(a)에서 볼 수 있듯이 몇 개의 고원(즉, 동점 점수를 가진 초록)만 있으며, 이는 정규화된 점수가 후보 풀에 대한 세밀한 순위를 제공한다는 것을 의미한다. 이 세분성은 재순위 모델을 평가할 때 가치가 있다.\n' +
+      '\n' +
+      '## 부록 B 주석\n' +
+      '\n' +
+      '### Annotation Guidelines\n' +
+      '\n' +
+      '4절에서는 문제 쌍에서 추상적 측면과 측면/하위 측면의 관계를 평가하기 위한 채점 척도(0-2)를 도입하였다. 이 주석 프로세스를 용이하게 하기 위해 수준 1의 정의를 두 개의 하위 범주로 확장하여 주석 단계 동안 4단계 정지 척도를 만듭니다. 그런 다음 이러한 수준을 원래 3단계 척도로 다시 매핑합니다.\n' +
+      '\n' +
+      '4단계 등급 척도 및 해당 매핑은 다음과 같습니다.\n' +
+      '\n' +
+      '1. **DISAGREE**: 주 문서의 수준 0에 해당 합니다. 초록은 무관하거나 측면 또는 하위 측면의 주요 구성 요소에 어떠한 도움도 제공하지 않는다.\n' +
+      '2. **DISPUTE**: 수준 1의 하위 범주입니다. 요약은 일부 주요 구성 요소에 응답하며 측면/하위 측면을 충족하도록 조정할 수 있습니다. 그러나, 초록은 측면/하위 측면을 직접적으로 다루지 않는다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c c c} \\hline \\hline  & & Min & Max & Mean & Std \\\\ \\hline \\multirow{6}{*}{Query} & ML & 0 & 1.778 & 0.665 & 0.377 \\\\  & NLP & 0 & 1.786 & 0.609 & 0.361 \\\\  & CV & 0 & 1.615 & 0.623 & 0.339 \\\\  & AI & 0 & 1.667 & 0.510 & 0.337 \\\\  & Comp & 0 & 1.909 & 0.483 & 0.332 \\\\ \\hline \\multirow{6}{*}{Sub-query} & All & 0 & 1.909 & 0.578 & 0.356 \\\\ \\cline{2-6}  & ML & 0 & 2.000 & 0.679 & 0.478 \\\\  & NLP & 0 & 2.000 & 0.638 & 0.453 \\\\  & CV & 0 & 2.000 & 0.642 & 0.434 \\\\  & AI & 0 & 2.000 & 0.533 & 0.419 \\\\  & Comp & 0 & 2.000 & 0.544 & 0.425 \\\\ \\hline \\multirow{6}{*}{Sub-query} & All & 0 & 2.000 & 0.610 & 0.448 \\\\ \\cline{1-1} \\cline{2-6}  & All & 0 & 2.000 & 0.610 & 0.448 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 10: 각 쿼리 유형에 대한 초록의 정규화된 점수. Comp는 복합 쿼리를 의미합니다. 하위 쿼리는 두 가지 측면의 하위 쿼리를 나타냅니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c c c} \\hline \\hline  & & Min & Max & Mean & Std \\\\ \\hline \\multirow{6}{*}{Query} & ML & 2 & 84 & 24.35 & 19.47 \\\\  & NLP & 0 & 41 & 17.65 & 11.98 \\\\  & CV & 0 & 52 & 18.55 & 13.29 \\\\  & AI & 1 & 51 & 11.60 & 12.35 \\\\  & Comp & 0 & 61 & 9.95 & 14.63 \\\\ \\hline \\multirow{6}{*}{Sub-query} & All & 0 & 84 & 16.42 & 15.49 \\\\ \\cline{1-1} \\cline{2-6}  & ML & 1 & 105 & 36.40 & 25.34 \\\\ \\cline{1-1}  & NLP & 0 & 83 & 29.86 & 18.56 \\\\ \\cline{1-1}  & CV & 1 & 99 & 28.52 & 16.57 \\\\ \\cline{1-1}  & AI & 0 & 79 & 20.96 & 16.16 \\\\ \\cline{1-1}  & Comp & 0 & 81 & 23.09 & 21.91 \\\\ \\hline \\multirow{6}{*}{Sub-query} & All & 0 & 105 & 28.14 & 21.07 \\\\ \\cline{1-1} \\cline{2-6}  & All & 0 & 28.14 & 21.07 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 9: 각 쿼리 유형에 대한 관련 초록의 수. Comp는 복합 쿼리를 의미합니다. 하위 쿼리는 두 가지 측면의 하위 쿼리를 나타냅니다.\n' +
+      '\n' +
+      '3. **AGREE**: 수준 1의 또 다른 하위 범주입니다. 초록은 측면/하위 측면의 일부만 직접 처리하지만 전체는 처리하지 않습니다.\n' +
+      '4. **CONCUR**: 수준 2에 해당 합니다. 개요는 측면 또는 하위 측면의 모든 주요 구성 요소에 직접 응답 합니다.\n' +
+      '\n' +
+      '도 2: (a)의 각 행은 질의를 나타낸다. (b)의 각 줄은 쿼리 유형을 나타냅니다. 선의 색상은 쿼리의 유형을 나타냅니다. 후보 초록은 정규화된 점수보다 내림차순으로 정렬되어 있다.\n' +
+      '\n' +
+      '이러한 라벨 "DISAGREE", "DISPUTE", "AGREE", 및 "CONCUR"은 정지 레벨에 의미론적 의미를 추가하는 역할을 하여 주석 프로세스 동안 주석기를 돕는다.\n' +
+      '\n' +
+      '일관성을 위해 "DISPUTE"와 "AGREE"는 가중치가 동일한 것으로 처리되어 수준 1에서 다른 시나리오를 나타내지만 둘 다 다른 시나리오보다 강하거나 약한 것으로 간주되지 않는다.\n' +
+      '\n' +
+      '주석 처리 과정에서 주석 작성자는 일관성을 유지하고 편향을 최소화하기 위해 설계된 일련의 지침을 따라야 합니다. 이 지침에는 시간 관리, 주석자 간의 통신(명시적으로 금지됨), 추가 리소스 사용, 질문 분석 프로세스 및 주요 구성 요소 식별과 같은 측면이 포함된다. 이러한 지침에 대한 자세한 내용은 다음 절에서 확인할 수 있다.\n' +
+      '\n' +
+      '1. **리소스 사용**: 추상화의 기술적 특성을 고려할 때 주석자는 간혹 익숙하지 않은 용어를 검색해야 할 수 있습니다. 이러한 인스턴스에 대해 기존 검색 엔진을 사용할 수 있습니다. 그러나, 이들은 LLM들에 의해 구동되는 임의의 대형 언어 모델(LLM) 인터페이스들 또는 검색 엔진들을 사용하는 것이 엄격히 금지된다.\n' +
+      '2. **주석 프로세스**: 결정을 내리기 전에 전체 초록을 읽고 한 번 이상 질문하려면 주석이 필요합니다. 그들은 결정을 확정하기 전에 마음속에 있는 네 가지 등급에 대한 이해를 새롭게 할 필요가 있다. 평균적으로 이 과정은 약 4분이 소요되지만 엄격한 시간 제한은 시행되지 않는다. 어노테이션 프로세스 동안, 어노테이션자는 어떤 방식으로든 엄격하게 그리고 명시적으로 통신하는 것이 금지된다.\n' +
+      '3. **주요 구성 요소 식별**: 등급 척도는 "주요 구성 요소" 개념을 중심으로 합니다. 연구 경험을 활용하여 측면/하위 측면에서 핵심 구성 요소로 구성하는 요소를 식별하는 것은 주석자에게 달려 있다. 다수의 주요 컴포넌트들(예를 들어, 2 또는 3)이 존재하는 경우, 이들은 이들 컴포넌트들 모두를 모니터링하고 추상적인 언급 여부를 검증할 것으로 예상된다.\n' +
+      '4. **추론 규칙**: 주석자는 전문 지식을 활용하여 주요 구성 요소에 대한 추상 콘텐츠에서 합리적인 추론을 도출할 수 있습니다. 그러나 측면과 초록 사이의 상관관계에서 불필요한 합병증을 피해야 한다. 각각의 추론은 분명하고 직설적인 정당성을 가져야 한다. 여기서 목표는 주석 프로세스를 과도하게 복잡하게 만들지 않고 정확도를 보장하는 것입니다.\n' +
+      '\n' +
+      '### 주석 예제\n' +
+      '\n' +
+      '이 섹션에서는 관련성 점수가 다른 측면/추상 쌍의 예를 제공한다.\n' +
+      '\n' +
+      '#### b.2.1 관련성 점수 0이 있는 예제\n' +
+      '\n' +
+      '_Aspect/Sub-aspect_: 본 논문은 라벨링 프로세스가 원치 않는 무작위성 또는 노이즈를 도입할 가능성을 언급한다.\n' +
+      '\n' +
+      '_Abstract_: 최근 문헌에서의 접근법들은 특정 다운스트림 문서 태스크들을 서비스하기 위해 문서들(텍스트, 레이아웃, 이미지) 내의 멀티-모달 정보를 이용했다. 그러나, 이들은 - (i) 문서들에 대한 텍스트, 레이아웃 및 이미지 차원들에 걸친 교차-모달 표현들을 학습할 수 없고 (ii) 다중 페이지 문서들을 프로세싱할 수 없다는 것에 의해 제한된다. 다양한 다운스트림 NLP 작업에 적용할 수 있는 레이블이 지정되지 않은 대용량 데이터 세트로부터 일반 텍스트 표현을 학습하기 위해 자연어 처리(Natural Language Processing, NLP) 도메인에서 사전 훈련 기술이 나타났다. 본 논문에서는 다양한 다운스트림 문서 태스크에 적용할 수 있는 일반적인 문서 표현을 학습하기 위해 자기 지도 학습과 지도 학습 사전 학습 태스크의 조합을 활용하는 다중 태스크 학습 기반 프레임워크를 제안한다. 구체적으로 문서에 대한 텍스트 및 레이아웃 표현과 함께 풍부한 이미지 표현을 학습하기 위한 새로운 사전 학습 과제로 문서 토픽 모델링 및 문서 셔플 예측을 소개한다. 본 논문에서는 Longformer 네트워크 구조를 백본으로 사용하여 종단간 방식으로 다중 페이지 문서로부터 다중 모달 정보를 인코딩한다. 문서 분류, 문서 정보 추출, 문서 검색과 같은 다양한 실제 문서 작업에 대한 사전 훈련 프레임워크의 적용 가능성을 보여준다. 다양한 표준 문서 데이터 세트에 대해 프레임워크를 평가하고, 프레임워크의 다양한 절제 및 최신 기준선과 성능을 비교하기 위해 철저한 실험을 수행한다.\n' +
+      '\n' +
+      '_인간 추론_: 상기 초록은 양태와 관련이 없다.\n' +
+      '\n' +
+      '_Aspect/Sub-aspect_: 문서는 오류 경계를 추정하기 위해 반 한정 프로그래밍을 사용해야 합니다.\n' +
+      '\n' +
+      '_Abstract_: 경제 모델을 풍부하게 하기 위해 기계 학습을 이용하여 추정 및 추론을 위한 방법론을 개발한다. 우리의 프레임워크는 잠재적으로 높은 차원 또는 복잡한 관찰 가능한 특성을 기반으로 풍부한 이질성을 포착하기 위해 표준 경제 모델을 취하고 매개변수를 완전히 유연한 비모수 함수로 재조정한다. 이러한 "매개 변수 함수"는 고전적인 매개변수의 해석 가능성, 경제적 의미 및 규율을 유지한다. 딥러닝은 특히 경제학의 이질성에 대한 구조화된 모델링에 적합하다. 예측을 넘어 딥러닝을 움직이는 새로운 방법론을 전달하면서 경제 모델의 구조에 맞도록 네트워크 아키텍처를 설계하는 방법을 보여준다. 추정된 모수함수에 대한 수렴율을 증명한다. 이 함수들은 추론적 관심의 유한 차원 파라미터에 대한 핵심 입력이다. 우리는 2단계 매개 변수를 포함하는 새로운 영향 함수 계산과 부드러운 관찰당 손실 함수를 사용하는 기계 학습이 풍부한 모델을 기반으로 추론을 얻는다. 추가 파생 작업이 필요하지 않습니다. 점수는 필요한 경우 자동 분산을 사용하여 데이터로 직접 가져갈 수 있다. 연구자는 원래 모델을 정의하고 관심 모수를 정의하기만 하면 된다. 중요한 통찰은 데이터에 영향을 평가하기 위해 영향 함수를 쓸 필요가 없다는 것이다. 우리의 프레임워크는 가격 탄력성, 지불 의사 금액 및 이항 또는 다항 선택 모델의 잉여 측정, 연속 처리 변수의 효과, 부분 결과 모델, 카운트 데이터, 이질적인 생산 함수 등과 같은 다양한 예를 포함하는 다양한 컨텍스트에 대한 새로운 결과를 제공합니다. 단기 대출에 대한 대규모 광고 실험에 방법론을 적용합니다. 우리는 우리의 결과가 없으면 사용할 수 없는 경제적으로 의미 있는 추정과 추론이 얼마나 이루어질 수 있는지 보여준다.\n' +
+      '\n' +
+      '_인간 추론_: 상기 초록은 양태와 관련이 없다.\n' +
+      '\n' +
+      '#### b.2.2 관련성 점수 1이 있는 예제\n' +
+      '\n' +
+      '_Aspect/Sub-aspect_: 본 논문은 동작 및 상태를 사용하여 의사 결정에서 가능한 옵션 및 결과를 나타낼 수 있는 시스템을 도입해야 한다.\n' +
+      '\n' +
+      '_Abstract_: 의사 결정은 종종 불확실한 데이터, 예를 들어 신뢰 점수 또는 확률과 연관된 데이터에 의존한다. 불확실한 데이터에 대한 다양한 정보 프레젠테이션의 비교를 제시하고 인간의 의사결정에 미치는 영향을 처음으로 측정한다. 자연어 생성(Natural Language Generation, NLG)의 사용은 기존의 그래픽 기반 표현 방법에 비해 불확실성 하에서 의사 결정을 향상시킨다는 것을 보인다. 성인 442명을 대상으로 한 과제 기반 연구에서 NLG를 사용한 프레젠테이션이 그래픽 프레젠테이션보다 평균적으로 24% 더 나은 의사 결정을 유도하고 NLG가 그래픽과 결합될 때 44% 더 나은 의사 결정을 유도한다는 것을 발견했다. 우리는 또한 여성이 NLG 출력을 제시했을 때 훨씬 더 나은 결과를 달성한다는 것을 보여준다(그래픽 프레젠테이션에 비해 평균적으로 87% 증가).\n' +
+      '\n' +
+      '_인간 추론_: 위의 초록은 의사 결정을 명시적으로 논의한다. 그러나 초록은 행동과 상태에 대해 언급하지 않습니다. 따라서 일부 핵심 구성요소가 누락되었습니다. 보다 구체적으로 1등급 이하 \'동의\' 등급에 속한다.\n' +
+      '\n' +
+      '_Aspect/Sub-aspect_: 문서는 더 긴 비디오들로부터 동작들의 세밀한 비디오를 검색하고 이러한 동작들을 텍스트 설명 또는 명령어에 매칭시킬 수 있는 시스템을 도입해야 한다.\n' +
+      '\n' +
+      '본 논문에서는 자연어 질의를 이용하여 비디오 세그먼트를 검색하는 새로운 방법을 제안한다. 개념 기반 방법이나 규칙 기반 구조 모델과 같은 대부분의 기존 접근 방식과 달리 제안된 방법은 이미지 캡셔닝 모델을 사용하여 시각적 정보에 대한 센텐셜 쿼리를 구성한다. 세부적으로, 본 논문에서 제안하는 방법은 \'Densecap\'을 사용하여 각 이미지에서 시각적 특징들에 의해 생성된 여러 자막들을 이용한다. 그런 다음, 인접한 이미지들의 캡션들 사이의 유사성들이 계산되며, 이는 다수의 프레임들에 걸쳐 의미적으로 유사한 캡션들을 추적하는 데 사용된다. 제안된 방법은 \'캡션에 의한 추적\'이라는 새로운 개념을 도입하는 것 외에도 신경망에 의해 학습된 언어 생성 모델을 사용하여 시각적 정보의 관계와 속성을 설명하는 의미론적 질의를 구성하는 첫 번째 접근법 중 하나이다. 제안된 방법의 효율성을 평가하기 위해 20명의 영화-트레일러에서 약 348개의 장면 세그먼트를 포함하는 새로운 평가 데이터 세트를 만들었다. 정량적, 정성적 평가를 통해 본 논문에서 제안한 방법이 자연어 질의를 이용한 비디오 세그먼트 검색에 효과적임을 보인다.\n' +
+      '\n' +
+      '_인간 추론_: 상기 초록은 자연어 질의를 이용한 비디오 세그먼트의 검색을 언급하며, 이는 양태와 관련된다. 그러나, 초록의 또 다른 핵심 구성요소는 "행위"이다. 문서 내의 시스템이 동작들의 비디오를 검색할 수 있다고 추론하는 것은 매우 자연스럽지만, 그것은 추상에서 명시적으로 언급되지 않는다. 보다 구체적으로 1등급 아래의 \'분쟁\' 등급에 속한다.\n' +
+      '\n' +
+      '#### b.2.3 관련성 점수 2\n' +
+      '\n' +
+      '_Aspect/Sub-aspect_: 논문은 화학 또는 화학 관련 지식을 언급해야 한다.\n' +
+      '\n' +
+      '_Abstract_: 현대 천문학적 조사는 수백만 개의 별에 대한 스펙트럼 데이터를 관찰하는 것이다. 이 스펙트럼에는 은하의 형성 및 화학 농축 이력을 추적하는 데 사용할 수 있는 화학 정보가 포함되어 있습니다. 그러나 스펙트럼에서 정보를 추출하고 정확하고 정확한 화학적 존재비를 측정하는 것은 어렵다. 여기서는 다른 매개변수(예: teff, logg, eh)로부터 별 스펙트럼의 화학적 변동 요인을 분리하기 위한 데이터 기반 방법을 제시한다. 이를 통해 이러한 매개변수를 제거한 각 별에 대한 스펙트럼 투영을 구축할 수 있다. 우리는 원소 존재비 자체에 대한 초기 지식 없이 이를 수행하므로 합성 별 스펙트럼에 의존하는 모델링과 관련된 불확실성 및 계통을 우회한다. 알려진 비화학적 변동 요인을 제거하기 위해, 우리는 얽히지 않은 스펙트럼 표현을 학습하는 신경망 아키텍처를 개발하고 구현한다. 합성 APOGEE와 유사한 데이터 세트에서 풀린 스펙트럼을 사용하여 화학적으로 동일한 별의 회수를 시뮬레이션한다. 이 복구는 신호 대 잡음비의 함수로 감소하지만 우리의 신경망 구조가 더 간단한 모델링 선택보다 성능이 우수함을 보여준다. 우리의 작업은 데이터 기반 풍부함 없는 화학 태깅의 가능성을 보여준다.\n' +
+      '\n' +
+      '_인간 추론_: 위의 초록은 화학에 관련된 "화학적으로 동일한 별의 회복"을 명시적으로 언급한다.\n' +
+      '\n' +
+      '_Aspect/Sub-aspect_: 본 논문은 민감한 환자 데이터에 대한 강력한 보호 장치를 제공해야 한다.\n' +
+      '\n' +
+      '_Abstract_: 생존 분석에서 회귀 모델을 사용하여 설명 변수(예: 연령, 성별, 체중 등)가 생존 확률에 미치는 영향을 파악한다. 그러나 의료 데이터와 같은 민감한 생존 데이터의 경우 회귀 모델에 적합하도록 의료 데이터를 사용할 때 데이터 집합에서 개인의 개인 정보 보호에 대한 심각한 우려가 있다. 이러한 프라이버시 문제를 해결하는 가장 가까운 작업은 원본 데이터를 저차원 공간에 선형 투영하는 콕스 회귀에 대한 작업이다. 그러나, 이러한 접근법의 약점은 그러한 투영에 대한 공식적인 프라이버시 보장이 없다는 것이다. 본 연구에서는 데이터 프라이버시 연구에서 프라이버시 보호의 황금 표준인 차등 프라이버시 보호를 통한 생존 분석에서의 회귀 문제에 대한 해결책을 제시하고자 한다. 이를 위해, 우리는 경험적 위험 최소화(ERM) 문제에 대한 차등 프라이버시를 보호하기 위해 원래 제안된 출력 섭동과 목표 섭동 접근법을 확장한다. 또한, 차분 프라이버시를 보다 정확하게 보장하기 위해 마코프 체인 몬테 카를로(Markov Chain Monte Carlo, MCMC) 기법에 기반한 새로운 샘플링 방법을 제안한다. 제안 기법은 개인 데이터 집합에서 개인에 대한 차별적인 프라이버시를 보장하면서 비개인 결과와 비교하여 좋은 정확도를 달성함을 보인다.\n' +
+      '\n' +
+      '_인간 추론_: 위의 초록은 차별적인 프라이버시 및 민감한 민간 의료 데이터를 명시적으로 논의하며, 이는 초록 내의 모든 구성요소를 만족시킨다.\n' +
+      '\n' +
+      '### Prompt Engineering\n' +
+      '\n' +
+      '신속 전략은 개발 세트에 최적화되었으며 명확성과 간결성에 중점을 두고 설계되었다. 그것은 ChatGPT로부터 상세한 추론과 결정적인 최종 결정을 이끌어내는 것을 목표로 했다.\n' +
+      '\n' +
+      '최종 프롬프트 설계의 핵심은 등급 옵션에 대한 레이블의 선택이었다. "반대", "분쟁", "동의", "컨커" 이러한 레이블은 섹션 B.1에 정의된 다양한 등급 척도 수준을 반영하도록 선택되었다.\n' +
+      '\n' +
+      '이 레이블은 자세한 정의와 함께 프롬프트에 포함됩니다. 그들은 채팅 등급별로 일관된 용어를 제공하여 채팅GPT의 의사 결정 과정을 안내하는 역할을 한다. 가설 테스트 단계에서 사용된 최종 프롬프트가 아래에 표시됩니다.\n' +
+      '\n' +
+      '당신은 참고 사서입니다. 사용자는 특정 요구사항을 만족하는 과학 논문을 찾고 싶어한다. 논문의 초록을 바탕으로 요건 충족 여부를 판단하게 된다.\n' +
+      '\n' +
+      '다음은 사용자 요구 사항입니다. {aspect} 다음은 추상: {abstract}\n' +
+      '\n' +
+      '초록이 사용자 요구 사항을 충족하는지 여부를 설명합니다. 모든 추론을 보여주면서 차근차근 생각해 보세요. 다음 *규칙* 을 사용하여 요구 사항을 충족하는지 여부를 확인합니다.\n' +
+      '\n' +
+      '동의하지 않는다는 것은 초록이 사용자 요구 사항을 다루지 않는다는 것을 의미하고, 분쟁은 초록이 사용자 요구 사항을 직접 다루지 않지만 사용자의 요구를 충족시키기 위해 적응 가능하다는 것을 의미하고, 일치한다는 것은 초록이 사용자 요구 사항을 직접 그리고 완전히 다루었다는 것을 의미하고, 동의한다는 것은 초록이 사용자 요구 사항의 일부만을 직접 다루지만 전체는 다루지 않는다는 것을 의미한다.\n' +
+      '\n' +
+      '이 4가지 옵션의 정의에 따라 [DISAGREE, DISPUTE, AGREE, CONCUR] 여부를 결정하기 위해 앞서 언급한 *규칙* 을 주의 깊게 생각해 보세요. 추론을 제공한 후에는 응답의 *끝* 에 *모든 대문자* 문자로 최종 선택을 나타냅니다.\n' +
+      '\n' +
+      '이 프롬프트는 인간 주석자의 응답 분포와 밀접하게 일치하는 개발 세트에 대한 최상의 결과를 생성했다. 이러한 결과를 바탕으로 테스트 과정에서 이 프롬프트를 계속 사용했다.\n' +
+      '\n' +
+      '### ChatGPT 주석 오류 분석\n' +
+      '\n' +
+      '최종 프롬프트는 인간 주석자와 유사한 결과를 산출했지만 인간의 답변에서 약간 벗어난 ChatGPT의 응답에서 잠재적인 불일치를 식별하는 것을 목표로 했다. 우리는 그것들을 몇 가지 범주로 정리했습니다:\n' +
+      '\n' +
+      '#### b.4.1 정의 불일치\n' +
+      '\n' +
+      '테스트 케이스 프롬프트:\n' +
+      '\n' +
+      '당신은 참고 사서입니다. 사용자는 특정 요구사항을 만족하는 과학 논문을 찾고 싶어한다. 논문의 초록을 바탕으로 요건 충족 여부를 판단하게 된다.\n' +
+      '\n' +
+      '다음은 사용자 요구 사항: 문서 내의 모델은 얼굴의 기하학적 구조 및 전역적 구조를 발견할 수 있는 능력을 가져야 한다\n' +
+      '\n' +
+      '초록: 얼굴 이미지 초해상도(SR)는 얼굴 이미지 분석, 얼굴 인식 및 이미지 기반 3D 얼굴 재구성을 위한 중요한 전처리이다. 최근 합성곱 신경망(CNN: Convolutional Neural Network) 기반 방법은 저해상도(LR: Low-resolution)와 고해상도(HR: High-resolution) 얼굴 영상의 쌍을 이용하여 매핑 관계를 학습함으로써 우수한 성능을 보였다. 그러나 CNN을 이용한 HR 얼굴 영상 재구성은 PSNR과 SSIM 메트릭을 증가시키는 것을 목표로 하기 때문에 높은 점수에서도 재구성된 HR 영상은 현실적이지 않을 수 있다. 본 연구에서는 블러 유무에 관계없이 HR 이미지를 동시에 생성하여 HR 얼굴 이미지를 재구성하는 적대적 프레임워크를 제안한다. 먼저, 5층 CNN을 이용하여 LR 얼굴 영상의 공간 해상도를 8배 증가시킨다. 그리고, 인코더는 업-스케일링된 이미지의 특징들을 추출한다. 이러한 특징들은 최종적으로 블러 유무에 관계없이 HR 얼굴 이미지를 생성하기 위해 두 개의 브랜치(디코더)로 전송된다. 또한 국소 및 전역 판별기를 결합하여 HR 안면 구조의 재구성에 중점을 둔다. 실험 결과는 제안된 알고리즘이 실제 HR 얼굴 영상을 생성함을 보여준다. 또한, 제안된 방법은 다양한 얼굴 영상을 생성할 수 있다. 초록이 사용자 요구 사항을 충족하는지 여부를 설명합니다. 모든 추론을 보여주면서 차근차근 생각해 보세요. 요구 사항이 충족되는지 여부를 결정하기 위해 다음 *규칙* 을 사용합니다. 동의하지 않는다는 것은 초록이 사용자 요구 사항을 다루지 않는다는 것을 의미하고, 분쟁은 초록이 사용자 요구 사항을 직접 다루지 않지만 사용자의 요구를 충족하도록 적응 가능하다는 것을 의미하고, 동의는 초록이 사용자 요구 사항을 직접 그리고 완전히 해결한다는 것을 의미하고, 동의는 초록이 사용자 요구 사항의 일부만 직접 다루지만 전체는 다루지 않는다는 것을 의미합니다. 이 4가지 옵션의 정의에 따라 [DISAGREE, DISPUTE, AGREE, CONCUR] 여부를 결정하기 위해 앞서 언급한 *규칙* 을 주의 깊게 생각해 보세요. 추론을 제공한 후에는 응답의 *끝* 에 *모든 대문자* 문자로 최종 선택을 나타냅니다.\n' +
+      '\n' +
+      'ChatGPT\'s Reasoning:\n' +
+      '\n' +
+      '사용자 요구사항은 문서 내의 모델이 얼굴의 기하학적 구조 및 전역 구조를 발견할 수 있는 능력을 가져야 한다는 것이다. 초록은 현실적인 HR 얼굴 이미지를 생성하는 적대적 프레임워크를 사용하여 얼굴 이미지 초해상도를 위한 제안된 알고리즘을 논의한다. 이 알고리즘은 국부 및 전역 판별기를 사용하여 HR 얼굴 구조의 재구성에 초점을 맞춘다. 이 정보를 바탕으로 I CONCUR은 초록이 사용자 요구사항을 만족한다는 것을 알 수 있다. 제안된 알고리즘은 블러 유무에 관계없이 HR 영상을 동시에 생성함으로써 HR 얼굴 영상을 재구성할 수 있도록 설계되었다. 국소 판별기와 전역 판별기를 결합하여 HR 얼굴 구조의 재구성에 초점을 맞추며, 이는 모델이 얼굴의 기하학과 전역 구조를 발견할 수 있는 능력을 가지고 있음을 의미한다. 따라서, 초록은 사용자 요구 사항을 직접적이고 완전하게 다룬다.\n' +
+      '\n' +
+      '오류 분석: 얼굴 구조를 식별하는 추상적인 함축적 능력에도 불구하고, 이것은 명시적으로 명시되지 않는다. 그러나 능력을 \'잠재적\'으로 인식한 후에도 챗GPT는 요구 사항을 직접 충족하는 추상화를 표시했다. 이것은 ChatGPT의 추론과 라벨링 기준 사이의 가끔 잘못된 정렬을 나타낸다.\n' +
+      '\n' +
+      '#### b.4.2 Inference Inconsistency\n' +
+      '\n' +
+      '테스트 케이스 프롬프트:\n' +
+      '\n' +
+      '당신은 참고 사서입니다. 사용자는 특정 요구사항을 만족하는 과학 논문을 찾고 싶어한다. 논문의 초록을 바탕으로 요건 충족 여부를 판단하게 된다.\n' +
+      '\n' +
+      '여기 사용자 요구사항이 있다: 문서는 스트라이프 패턴으로 사람의 얼굴을 취할 수 있고 스트라이프 패턴을 정확하게 제거할 수 있는 모델을 도입해야 한다.\n' +
+      '\n' +
+      '본 논문에서는 실제 환경에서 포즈와 폐색을 처리할 수 있는 강인한 3차원 얼굴 인식 시스템을 제안한다. 시스템은 먼저 3차원 거리 영상인 입력값을 ICP(Iterative Closest Point) 알고리즘을 이용하여 동시에 등록한다. 이 작업에 사용된 ICP는 프로브 모델과 갤러리 모델 사이의 거리를 최소화하여 얼굴 표면을 공통 모델에 등록한다. 그러나 ICP의 성능은 초기 조건에 크게 의존한다. 따라서, 초기 등록을 제공할 필요가 있으며, 이는 반복적으로 개선되고 최종적으로 가능한 최상의 정렬로 수렴될 것이다. 얼굴이 등록되면 3차원 영상의 깊이 맵 값을 임계화하여 자동으로 폐색을 추출한다. 폐색된 영역이 검출된 후, 주성분 분석(PCA: Principal Component Analysis)에 의해 복원이 수행된다. 복원된 영상은 폐색 제거 후 분류 목적으로 인식 시스템에 공급된다. 재구성된 비폐색 얼굴 영상으로부터 얼굴 정규의 형태로 특징을 추출한다. Bosophorus 3D 얼굴 데이터베이스로부터 폐색된 얼굴 영상을 대상으로 실험한 결과, 본 논문에서 제안한 폐색 보상 기법이 91.30의 인식 정확도를 가짐을 확인하였다.\n' +
+      '\n' +
+      '초록이 사용자 요구 사항을 충족하는지 여부를 설명합니다. 모든 추론을 보여주면서 차근차근 생각해 보세요. 요구 사항이 충족되는지 여부를 결정하기 위해 다음 *규칙* 을 사용합니다. 동의하지 않는다는 것은 초록이 사용자 요구 사항을 다루지 않는다는 것을 의미하고, 분쟁은 초록이 사용자 요구 사항을 직접 다루지 않지만 사용자의 요구를 충족하도록 적응 가능하다는 것을 의미하고, 동의는 초록이 사용자 요구 사항을 직접 그리고 완전히 해결한다는 것을 의미하고, 동의는 초록이 사용자 요구 사항의 일부만 직접 다루지만 전체는 다루지 않는다는 것을 의미합니다. 이 4가지 옵션의 정의에 따라 [DISAGREE, DISPUTE, AGREE, CONCUR] 여부를 결정하기 위해 앞서 언급한 *규칙* 을 주의 깊게 생각해 보세요. 추론을 제공한 후에는 응답의 *끝* 에 *모든 대문자* 문자로 최종 선택을 나타냅니다.\n' +
+      '\n' +
+      'ChatGPT\'s Reasoning:\n' +
+      '\n' +
+      '사용자 요구 사항이 포함된 추상적 DISAGREES입니다. 본 논문에서는 실제 환경에서 포즈와 폐색을 처리할 수 있는 3차원 얼굴 인식 시스템을 제안한다. 시스템은 3차원 거리 영상을 입력으로 하여 ICP 알고리즘을 이용하여 등록하고, 3차원 영상의 깊이 맵 값을 임계화하여 폐색을 추출한다. 그러나 본 논문에서는 사람의 얼굴에서 줄무늬 패턴을 제거할 수 있는 모델을 소개하지 않았다. 따라서, 초록은 사용자 요구 사항을 다루지 않는다.\n' +
+      '\n' +
+      '오류 분석: 인간 주석은 초록에서 폐색 감지, 제거 및 복원에 대한 언급으로 인해 이 질문을 "분쟁"으로 표시하여 "스트라이프 패턴"이 "개재"의 광범위한 범주에 속할 수 있다고 추론했다. 그러나 ChatGPT는 동일한 추론을 하지 않아 다른 추론 스타일을 나타낸다.\n' +
+      '\n' +
+      '#### b.4.3 주요 구성 요소 불일치\n' +
+      '\n' +
+      '테스트 케이스 프롬프트: 참조 사서입니다. 사용자는 특정 요구사항을 만족하는 과학 논문을 찾고 싶어한다. 논문의 초록을 바탕으로 요건 충족 여부를 판단하게 된다.\n' +
+      '\n' +
+      '여기 사용자 요구사항이 있다: 문서 내의 네비게이션 에이전트 모델은 다양한 레벨의 증강을 갖는 데이터에 대해 훈련될 수 있는 능력을 가져야 한다\n' +
+      '\n' +
+      '여기 초록이 있다: 지역화는 관찰과 환경의 지도로부터 자율 에이전트의 위치를 추정하는 문제이다. 관찰을 기반으로 믿음을 필터링하는 전통적인 현지화 방법은 에이전트가 취한 조치를 결정하지 않기 때문에 필요한 단계 수에서 차선책이다. 정확하고 효율적으로 지역화를 학습하는 완전 미분 가능한 신경망인 "Active Neural Localizer"를 제안한다. 제안된 모델은 전통적인 필터링 기반 지역화 방법의 아이디어를 통합하고, 승법적 상호작용과 함께 상태의 구조화된 믿음을 사용하여 믿음을 전파하고, 지역화에 필요한 단계 수를 최소화하면서 정확하게 지역화하기 위해 정책 모델과 결합한다. 능동 뉴럴 로컬라이저는 강화 학습으로 엔드 투 엔드 학습된다. 실험을 위해 랜덤 2D 미로, Doom 게임 엔진에서 랜덤 미로, Unreal 게임 엔진에서 사진 현실 환경을 포함한 다양한 시뮬레이션 환경을 사용한다. 2D 환경에 대한 결과는 이상적인 환경에서 학습된 정책의 효과를 보여주며, 3D 환경에 대한 결과는 원시 픽셀 기반 RGB 관찰로부터 정책과 지각 모델을 공동으로 학습하는 모델의 능력을 보여준다. 또한, Doom 환경에서 랜덤 텍스쳐를 학습한 모델이 Unreal 엔진에서 사진-사실적인 사무실 공간 환경으로 잘 일반화됨을 보인다.\n' +
+      '\n' +
+      '초록이 사용자 요구 사항을 충족하는지 여부를 설명합니다. 모든 추론을 보여주면서 차근차근 생각해 보세요. 요구 사항이 충족되는지 여부를 결정하기 위해 다음 *규칙* 을 사용합니다. 동의하지 않는다는 것은 초록이 사용자 요구 사항을 다루지 않는다는 것을 의미하고, 분쟁은 초록이 사용자 요구 사항을 직접 다루지 않지만 사용자의 요구를 충족하도록 적응 가능하다는 것을 의미하고, 동의는 초록이 사용자 요구 사항을 직접 그리고 완전히 해결한다는 것을 의미하고, 동의는 초록이 사용자 요구 사항의 일부만 직접 다루지만 전체는 다루지 않는다는 것을 의미합니다. 이 4가지 옵션의 정의에 따라 [DISAGREE, DISPUTE, AGREE, CONCUR] 여부를 결정하기 위해 앞서 언급한 *규칙* 을 주의 깊게 생각해 보세요. 추론을 제공한 후에는 응답의 *끝* 에 *모든 대문자* 문자로 최종 선택을 나타냅니다.\n' +
+      '\n' +
+      'ChatGPT\'s Reasoning:\n' +
+      '\n' +
+      '초록은 사용자 요구사항을 직접 다루지 않습니다. 초록은 다양한 환경에서 자율 에이전트의 위치 추정을 위한 신경망 모델을 논의한다. 이 모델은 강화 학습으로 훈련되며 원시 픽셀 기반 RGB 관찰로부터 정책과 지각 모델을 공동으로 학습할 수 있다. 그러나, 다양한 레벨의 증강을 갖는 데이터에 대해 훈련되고 있는 내비게이션 에이전트 모델에 대한 언급은 없다. 따라서, 상기 초록이 사용자 요구사항을 만족시키는 것을 I DISAGREE로 한다.\n' +
+      '\n' +
+      '오류 분석: 인간 주석자 1은 라벨 "분쟁"을 할당하고 인간 주석자 2는 라벨 "불일치"를 할당했으며 ChatGPT는 라벨 "불일치"를 할당했다. 이 경우 ChatGPT와 인간 주석기 1의 차이점은 측면에서 주요 구성요소에 대한 서로 다른 정의에서 비롯된다. 인간 주석자 1은 항법 에이전트 모델 자체가 핵심 구성 요소라고 믿으므로, 자율 에이전트의 현지화 문제를 언급함으로써, 초록은 이미 항법 에이전트 모델을 간접적으로 암시한다. 그러나, ChatGPT 및 주석기 2 둘 모두는 다양한 레벨의 증강을 갖는 데이터에 대해 훈련될 수 있는 내비게이션 에이전트가 측면의 유일한 핵심 컴포넌트라고 믿는다. 따라서, 다양한 레벨의 증강을 갖는 데이터는 초록에서 언급되지 않기 때문에, 둘 다 초록을 나타내는 "동의하지 않음"이 할당되는 것은 측면의 유일한 핵심 구성요소와 무관하다. 이러한 형태의 불일치는 ChatGPT의 추론과 일부 인간의 추론에서 발견된 가장 일반적인 불일치 형태이다. 그러나 인간도 때때로 핵심 구성 요소로 구성하는 것에 대해 동의하지 않기 때문에 ChatGPT가 인간과 유사한 성능을 나타내는 경우에도 이러한 형태의 핵심 구성 요소 불일치를 완전히 피할 수 없다.\n' +
+      '\n' +
+      '### Annotation Scalability\n' +
+      '\n' +
+      '섹션 4에 자세히 설명된 Anno-GPT 프레임워크는 가설 테스트 단계에서 인간 전문가와 비교할 수 있는 성능에 따라 자동화된 주석을 위해 ChatGPT를 사용한다. 이 시스템은 복잡한 쿼리 수, 측면/하위 측면 및 쿼리당 후보 풀의 크기에 따라 선형으로 확장되므로 학습 및 테스트 목적으로 더 큰 데이터 세트를 사용할 수 있습니다. 예를 들어 10개의 API 키를 사용하여 다중 스레드 프로그램은 약 240시간 내에 각각 100개의 초록으로 구성된 후보 풀을 가진 10,000개의 복잡한 쿼리로 구성된 훈련 크기 데이터 세트를 만들 수 있습니다.\n' +
+      '\n' +
+      '양자 컴퓨팅 또는 의공학과 같은 다른 분야에 대한 DORIS-MAE 데이터 세트를 만드는 것은 몇 가지 준비 단계를 포함한다. 초기 복잡한 쿼리(예를 들어, 50개의 쿼리)는 전문적으로 조작되거나 해당 분야의 온라인 기술 토론으로부터 수집될 필요가 있다. 다음으로, 복잡한 쿼리들은 양상들 및 하위 양상들의 리스트로 분해되어야 한다. 이 프로세스는 해당 분야의 전문가 또는 능숙한 주석자에 의해 수행될 수 있다.\n' +
+      '\n' +
+      '마지막으로, 최종 프롬프트를 미세 조정하고 새로운 연구 분야에서 ChatGPT의 역량을 검증하는 것이 중요하다. 주석 지침에 따라 이 단계는 각각 평균 20시간을 할당하는 세 명의 전문가 주석을 포함한다. 이 단계는 Anno-GPT를 새 필드에 적용하는 가장 큰 고정 비용을 구성하지만 데이터 세트 품질을 보장하는 데 필요한 투자입니다. 그러나, ChatGPT와 같은 언어 모델이 인간 전문가와 유사한 수준에서 수행되는 것이 확인되면, Anno-GPT 프레임워크는 이후 도메인에서 더 큰 데이터 세트를 생성하는 데 사용될 수 있다.\n' +
+      '\n' +
+      '## Appendix C Retrieval Results\n' +
+      '\n' +
+      '이 섹션에서는 DORIS-MAE 데이터 세트에 대해 섹션 2에서 논의된 16개 모델(ada-002 [28], E5-Large-v2 [74], LLAMA [71], Text-Supervised (TS)-ASPIRE [54], Optimal-Transport (OT)-ASPIRE [54], SPECTER [18], Sentence-BERT [62], RocketQA-v2 [63], ANCE FirstP [85], SimLM [75], SPLADE-v2 [23], ColBERT-v2 [66], SciBERT [5], ERNIE-Search [47], BM25 [72], TF-IDF [67])을 벤치마킹한 전체 결과를 제시한다. SciBERT와 SPECTER의 경우, 우리는 360k CS 코퍼스에서 인용신호(즉, 도메인)를 사용하여 훈련시켰고, 가장 잘 훈련된 버전을 SciBERT\\({}_{\\text{ID}}\\)과 SPECTER\\({}_{\\text{ID}}\\)으로 표시하였다.\n' +
+      '\n' +
+      '### Metrics\n' +
+      '\n' +
+      '실험에서는 랭킹 및 검색 모델을 평가하기 위해 IR/NIR 문헌에서 일반적으로 사용되는 몇 가지 메트릭을 사용했다. 여기에는 Recall@5(R@5), Recall@20(R@20), R-Precision(RP), NDCG\\({}_{10\\%}\\), NDCG\\({}_{10\\%}^{\\text{exp}}\\)[12], Mean Reciprocal Rank@10(MRR@10), Mean Average Precision(MAP)이 포함된다. 초록은 식 1\\(\\frac{S(p_{j}|Q)}{|Q|}\\geq 1\\)에서 점수를 받았을 때 관련이 있는 것으로 분류되었다. NDCG\\({}_{10\\%}\\)은 비정형적으로 높은 무작위 기준 값인 48.71%로 인해 본 논문에서 제외된다.\n' +
+      '\n' +
+      '### 쿼리 수준 벤치마크 결과\n' +
+      '\n' +
+      '#### c.2.1 전체 쿼리 임베딩\n' +
+      '\n' +
+      '표 11에서, 모델들(ada-002, E5-Large-v2, LLAMA, SPECTER, SentBERT, RocketQA-v2, ANCE, SPLADE-v2, ColBERT-v2, SciBERT, ERNIE, BM25, TF-IDF)이 전체 쿼리를 단일 벡터로 임베딩하고 전체 초록을 단일 벡터로 임베딩했을 때 얻어진 결과를 보여준다. 쿼리와 초록 사이의 관련성은 쿼리 벡터와 초록 벡터 사이의 코사인 유사성 또는 L2 거리(코한 등[18]에 의해 추천된 바와 같이 L2 거리를 사용하는 SPECTER과 함께)를 계산함으로써 결정된다.\n' +
+      '\n' +
+      '표 11에서, 우리는 일반-목적 텍스트 임베딩 모델들(ada-002, E5-Large-v2, LLAMA, SPECTER)(컨텍스트 윈도우의 크기에 의해 제한되지 않음)이 전형적으로 특수화된 NIR 모델들(RocketQA-v2, SimLM, SPLADE-v2, ColBERT-v2)을 능가하는 것을 본다. 영역 내 미세조정은 SciBERT의 성능을 향상시키지만 SPECTER의 경우 혼합된 결과를 보여준다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:30]\n' +
+      '\n' +
+      '표 13과 표 12 및 11을 비교할 때 검색을 위해 측면을 사용하는 명확한 효과는 관찰되지 않았다. 문장-BERT 및 SPLADE-v2는 이 설정에서 더 강력한 결과를 얻었지만 효과는 다른 모델로 일반화되지 않았다.\n' +
+      '\n' +
+      '### DORIS-MAE 테스트 집합의 모델 성능\n' +
+      '\n' +
+      '부록 섹션 C.2에서 전체 DORIS-MAE 데이터 세트에 대한 임베딩 모델의 제로 샷 성능을 평가했다. 60개의 질의로 구성된 DORIS-MAE 테스트 세트에 대해 제로 샷 결과를 제시한다. 이러한 질의에 대해, 우리는 모든 IR 모델을 실행하고 그 성능을 표 14에 보여준다. 모든 모델은 개별 최적 임베딩 방법(즉, 질의/추상 문장을 문장 단위로 처리하거나 전체 단락으로 처리)을 사용한다. 이 표의 결과는 DORIS-MAE 훈련 세트에서 모델을 훈련하는 향후 작업의 기준선 역할을 한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r r r r r r} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}\\) & NDCG\\({}_{10\\%}^{\\text{exp}}\\) & MRR@10 & MAP \\\\ \\hline random & 4.60 & 18.30 & 16.48 & 48.79 & 7.41 & 3.65 & 19.73 \\\\ \\hline SentBERT* & **17.71**\\(\\pm\\) 2.44 & **45.26**\\(\\pm\\) 2.66 & **35.63**\\(\\pm\\) 2.48 & 70.47 \\(\\pm\\) 0.97 & 24.94 \\(\\pm\\) 2.19 & 15.54 \\(\\pm\\) 3.00 & **39.79**\\(\\pm\\) 2.42 \\\\ RocketQA* & 13.79 \\(\\pm\\) 1.48 & 43.69 \\(\\pm\\) 2.38 & 32.63 \\(\\pm\\) 2.17 & **72.21**\\(\\pm\\) 0.93 & **27.39**\\(\\pm\\) 2.04 & 16.03 \\(\\pm\\) 2.52 & 37.90 \\(\\pm\\) 2.13 \\\\ ANCE* & 15.35 \\(\\pm\\) 2.02 & 38.36 \\(\\pm\\) 2.29 & 29.45 \\(\\pm\\) 2.07 & 67.27 \\(\\pm\\) 1.08 & 20.46 \\(\\pm\\) 1.82 & 14.54 \\(\\pm\\) 2.75 & 33.59 \\(\\pm\\) 1.89 \\\\ SPLADE-v2 & 15.07 \\(\\pm\\) 1.99 & 41.20 \\(\\pm\\) 2.42 & 34.26 \\(\\pm\\) 2.45 & 71.34 \\(\\pm\\) 0.91 & 24.91 \\(\\pm\\) 1.90 & 18.30 \\(\\pm\\) 3.00 & 38.72 \\(\\pm\\) 2.33 \\\\ CoIBERT-v2* & 7.37 \\(\\pm\\) 1.11 & 26.64 \\(\\pm\\) 1.94 & 22.28 \\(\\pm\\) 1.82 & 58.70 \\(\\pm\\) 1.14 & 12.17 \\(\\pm\\) 1.30 & 5.78 \\(\\pm\\) 1.65 & 25.24 \\(\\pm\\) 1.69 \\\\ ERNIE* & 5.34 \\(\\pm\\) 1.23 & 19.96 \\(\\pm\\) 1.85 & 18.02 \\(\\pm\\) 1.64 & 50.33 \\(\\pm\\) 1.13 & 7.14 \\(\\pm\\) 1.03 & 3.14 \\(\\pm\\) 1.26 & 21.38 \\(\\pm\\) 1.50 \\\\ SciBERT* & 5.41 \\(\\pm\\) 0.78 & 21.36 \\(\\pm\\) 1.86 & 18.50 \\(\\pm\\) 1.72 & 51.27 \\(\\pm\\) 1.15 & 6.84 \\(\\pm\\) 0.92 & 2.29 \\(\\pm\\) 1.04 & 21.66 \\(\\pm\\) 1.57 \\\\ SciBERT\\({}_{\\text{ID}}\\)* & 8.88 \\(\\pm\\) 1.44 & 30.81 \\(\\pm\\) 2.15 & 22.56 \\(\\pm\\) 2.00 & 59.86 \\(\\pm\\) 1.01 & 13.82 \\(\\pm\\) 1.64 & 10.24 \\(\\pm\\) 2.28 & 26.53 \\(\\pm\\) 1.77 \\\\ ada-002 & 14.12 \\(\\pm\\) 2.00 & 42.13 \\(\\pm\\) 2.73 & 33.60 \\(\\pm\\) 2.44 & 71.52 \\(\\pm\\) 0.98 & 26.57 \\(\\pm\\) 2.57 & **20.22**\\(\\pm\\) 3.49 & 37.63 \\(\\pm\\) 2.29 \\\\ E5-L-v2 & 14.32 \\(\\pm\\) 1.97 & 41.55 \\(\\pm\\) 2.21 & 34.21 \\(\\pm\\) 2.54 & 69.37 \\(\\pm\\) 1.00 & 22.51 \\(\\pm\\) 2.16 & 13.87 \\(\\pm\\) 2.68 & 37.31 \\(\\pm\\) 2.33 \\\\ TSApire & 14.30 \\(\\pm\\) 1.80 & 42.75 \\(\\pm\\) 2.25 & 33.63 \\(\\pm\\) 2.45 & 70.96 \\(\\pm\\) 1.10 & 25.29 \\(\\pm\\) 2.14 & 16.26 \\(\\pm\\) 2.90 & 37.31 \\(\\pm\\) 2.23 \\\\ OTASpire & 14.45 \\(\\pm\\) 1.81 & 30.99 \\(\\pm\\) 2.30 & 32.53 \\(\\pm\\) 2.43 & 69.74 \\(\\pm\\) 1.14 & 23.81 \\(\\pm\\) 2.07 & 15.38 \\(\\pm\\) 2.76 & 36.09 \\(\\pm\\) 2.18 \\\\ SimLM & 16.18 \\(\\pm\\) 2.19 & 39.24 \\(\\pm\\) 2.36 & 32.20 \\(\\pm\\) 2.22 & 67.56 \\(\\pm\\) 1.03 & 23.36 \\(\\pm\\) 2.14 & 16.61 \\(\\pm\\) 2.84 & 36.24 \\(\\pm\\) 2.12 \\\\ SimCSE & 12.41 \\(\\pm\\) 1.84 & 35.02 \\(\\pm\\) 2.52 & 27.67 \\(\\pm\\) 2.27 & 64.19 \\(\\pm\\) 1.24 & 20.52 \\(\\pm\\) 1.93 & 15.27 \\(\\pm\\) 2.57 & 30.83 \\(\\pm\\) 2.12 \\\\ SPECTER & 11.56 \\(\\pm\\) 1.76 & 35.30 \\(\\pm\\) 2.34 & 28.43 \\(\\pm\\) 2.49 & 63.55 \\(\\pm\\) 1.30 & 19.69 \\(\\pm\\) 2.33 & 15.07 \\(\\pm\\) 3.12 & 31.39 \\(\\pm\\) 2.22 \\\\ SPECTER\\({}_{\\text{ID}}\\) & 12.01 \\(\\pm\\) 1.77 & 35.79 \\(\\pm\\) 2.27 & 28.71 \\(\\pm\\) 2.17 & 66.22 \\(\\pm\\) 1.05 & 19.70 \\(\\pm\\) 2.04 & 13.44 \\(\\pm\\) 2.67 & 32.69 \\(\\pm\\) 1.97 \\\\ SPECTER-v2 & 12.97 \\(\\pm\\) 1.78 & 41.45 \\(\\pm\\) 2.50 & 31.30 \\(\\pm\\) 2.35 & 68.37 \\(\\pm\\) 1.13 & 23.16 \\(\\pm\\) 2.20 & 14.59 \\(\\pm\\) 2.66 & 35.77 \\(\\pm\\) 2.09 \\\\ BM25 & 6.25 \\(\\pm\\) 1.00 & 25.11 \\(\\pm\\) 2.09 & 20.51 \\(\\pm\\) 1.88 & 49.65 \\(\\pm\\) 1.31 & 10.33 \\(\\pm\\) 1.33 & 5.72 \\(\\pm\\) 1.62 & 23.74 \\(\\pm\\) 1.57 \\\\ TF-IDF & 7.62 \\(\\pm\\) 1.40 & 23.16 \\(\\pm\\) 2.10 & 20.14 \\(\\pm\\) 2.00 & 50.73 \\(\\pm\\) 1.52 & 12.55 \\(\\pm\\) 1.81 & 7.72 \\(\\pm\\) 2.15 & 24.25 \\(\\pm\\) 1.91 \\\\ \\hline \\hline \\multicolumn{10}{l}{* : Approach 2} \\\\ \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 12: 모델의 쿼리 레벨 랭킹 성능(쿼리와 초록을 여러 벡터로 임베딩)\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r r r r r r} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}\\) & NDCG\\({}_{10\\%}^{\\text{exp}}\\) & MRR@10 & MAP \\\\ \\hline random & 4.41 & 18.48 & 16.29 & 48.72 & 7.31 & 3.59 & 19.63 \\\\ \\hline SentBERT & 14.16 \\(\\pm\\) 1.95 & 44.81 \\(\\pm\\) 2.54 & 33.84 \\(\\pm\\) 2.50 & 69.58 \\(\\pm\\) 0.96 & 22.03 \\(\\pm\\) 2.06 & 13.39 \\(\\pm\\) 2.63 & 37.89 \\(\\pm\\) 2.34 \\\\ RocketQA & **15.55**\\(\\pm\\) 1.93 & **45.38**\\(\\pm\\) 2.43 & **34.43**\\(\\pm\\) 2\n' +
+      '\n' +
+      '### Two-Aspect 하위 쿼리 수준 벤치마크 결과\n' +
+      '\n' +
+      '데이터 세트의 계층 구조는 복잡한 쿼리의 일부만 포함하는 더 간단한 작업을 공식화할 수 있는 기회를 제공합니다. 두 가지 측면에 해당하는 부분을 추출하여 1000개 이상의 테스트 케이스를 생성하여 섹션 A.5에 설명된 대로 관련 초록의 수를 크게 늘렸다. 이 작업에 대한 전체 결과는 표 15에 나와 있다. 이러한 하위 쿼리의 길이가 긴 문장과 유사하므로 전체 쿼리를 단일 벡터 또는 다중 벡터 문장 단위로 임베딩하는 것을 구별하지 않았다. OTAspire 및 TSAspire를 제외하고 Sentence-BERT 및 ANCE를 포함한 다른 모든 모델에 단일 벡터 임베딩을 적용했다.\n' +
+      '\n' +
+      '우리는 ada-002가 모든 범주에서 다른 모델을 능가한다는 것을 관찰했다. 모든 모델은 R-Precision, NDCG\\({}^{\\text{exp}}_{10\\%}\\), MAP에서 약간의 증가를 보였다. 이러한 작은 개선은 무작위 기준선의 유사한 증가와 상관관계가 있으며, 이는 모델의 검색 능력보다는 무작위 기준선의 이동 때문일 수 있음을 시사한다. 반면, R@5 및 R@20의 무작위 기준선의 작은 감소는 하위 쿼리 수준에서 검색 모델의 Recall@k 성능의 감소를 나타낸다. 이는 표 9에 도시된 바와 같이 서브-쿼리 당 관련 추상들의 수의 증가에 대응한다. Recall@k는 서브-쿼리 당 관련 추상들의 수와 반비례하고, 검색 모델들이 이러한 더 간단한 서브-쿼리들에 대해 관련 추상들을 효과적으로 검색하는 것으로 보이지 않기 때문에, 그들의 R@5 및 R@20 메트릭들이 실질적으로 떨어졌다는 것은 놀라운 일이 아니다.\n' +
+      '\n' +
+      '### 후보 풀 민감도 분석\n' +
+      '\n' +
+      '이 섹션에서는 DORIS-MAE의 후보 풀에 대한 민감도 분석을 수행한다. 원래 후보 풀은 주로 키워드 기반 방법을 사용하여 구성되었다. 이것이 결과에 어떻게 영향을 미쳤는지 평가하기 위해 DORIS-MAE의 처음 50개 쿼리에 대한 두 번째 후보 풀 세트를 생성했다. 이 새로운 "임베딩 기반 후보 풀"은 원래 후보 풀 생성 동안 사용되지 않은 두 개의 텍스트 임베딩 모델인 E5-v2 및 SPECTER-v2로 생성되었다.\n' +
+      '\n' +
+      '각 질의에 대해, 우리는 질의의 원래 후보 풀(E5-v2에서 75개, SPECTER-v2에서 75개)에 없는 상위 순위 150개의 초록을 수집한다. 질의가 주어진 후보 풀에서 각 초록의 관련성을 추정하기 위해 동일한 LLM 주석 절차를 적용했다.\n' +
+      '\n' +
+      '**관련성 분석:** 새 풀에 원래 풀의 문서보다 관련성이 높은 문서가 포함되어 있는지 여부를 먼저 평가했습니다. 50개의 질의 각각에 대해, 그리고 각각의 후보 풀(즉, 원본 풀 및 확장 임베딩 풀)에 대해, 가장 높은 관련성 점수를 기록한다. 각 쿼리에 대해 각 풀링 방법에서 가장 높은 관련성 점수를 비교한다. 평균적으로,\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}\\) & NDCG\\({}^{\\text{exp}}_{10\\%}\\) & MRR@10 & MAP \\\\ \\hline random & 4.58 & 17.91 & 17.34 & 50.22 & 7.36 & 3.32 & 20.69 \\\\ \\hline ada-002 & **15.80**\\(\\pm\\) 1.92 & 40.87 \\(\\pm\\) 3.09 & 37.64 \\(\\pm\\) 3.17 & **73.92**\\(\\pm\\) 1.29 & 28.47 \\(\\pm\\) 3.22 & 23.29 \\(\\pm\\) 4.52 & **41.72**\\(\\pm\\) 3.12 \\\\ SimCSE & 14.40 \\(\\pm\\) 1.71 & 41.94 \\(\\pm\\) 3.01 & 36.29 \\(\\pm\\) 2.86 & 71.31 \\(\\pm\\) 1.25 & 29.08 \\(\\pm\\) 3.16 & **25.00**\\(\\pm\\) 4.85 & 39.65 \\(\\pm\\) 2.86 \\\\ RocketQA & 13.26 \\(\\pm\\) 1.29 & **44.35**\\(\\pm\\) 2.80 & 35.32 \\(\\pm\\) 2.97 & 73.87 \\(\\pm\\) 1.26 & **29.83**\\(\\pm\\) 2.88 & 20.61 \\(\\pm\\) 4.01 & 40.66 \\(\\pm\\) 2.84 \\\\ SPECTER-v2 & 13.33 \\(\\pm\\) 2.26 & 41.83 \\(\\pm\\) 3.07 & 35.98 \\(\\pm\\) 3.16 & 71.46 \\(\\pm\\) 1.15 & 27.67 \\(\\pm\\) 3.26 & 20.70 \\(\\pm\\) 4.47 & 38.46 \\(\\pm\\) 2.80 \\\\ TSAspire & 13.31 \\(\\pm\\) 1.67 & 43.57 \\(\\pm\\) 2.97 & 36.51 \\(\\pm\\) 2.96 & 72.78 \\(\\pm\\) 1.26 & 27.72 \\(\\pm\\) 2.81 & 18.22 \\(\\pm\\) 3.81 & 38.50 \\(\\pm\\) 2.87 \\\\ E5-L-v2 & 14.59 \\(\\pm\\) 1.79 & 42.06 \\(\\pm\\) 2.47 & **38.16**\\(\\pm\\) 2.93 & 71.96 \\(\\pm\\) 1.18 & 26.04 \\(\\pm\\) 2.76 & 14.25 \\(\\pm\\) 3.52 & 40.51 \\(\\pm\\) 2.87 \\\\ OTAspire & 13.12 \\(\\pm\\) 1.61 & 42.65 \\(\\pm\\) 3.22 & 35.35 \\(\\pm\\) 2.97 & 71.01 \\(\\pm\\) 1.36 & 25.69 \\(\\pm\\) 2.72 & 15.38 \\(\\pm\\) 3.22 & 37.83 \\(\\pm\\) 2.86 \\\\ SPLADE-v2 & 10.99 \\(\\pm\\) 1.18 & 36.21 \\(\\pm\\) 2.57 & 32.50 \\(\\pm\\) 2.96 & 71.01 \\(\\pm\\) 1.18 & 25.10 \\(\\pm\\) 2.90 & 19.44 \\(\\pm\\) 4.38 & 36.44 \\(\\pm\\) 2.81 \\\\ SentBERT & 12.18 \\(\\pm\\) 1.72 & 43.23 \\(\\pm\\) 2.98 & 34.38 \\(\\pm\\) 3.07 & 69.63 \\(\\pm\\) 1.31 & 19.37 \\(\\pm\\) 2.47 & 10.84 \\(\\pm\\) 3.34 & 37.72 \\(\\pm\\) 2.93 \\\\ SimLM & 10.49 \\(\\pm\\) 1.27 & 32.19 \\(\\pm\\) 2.72 & 29.73 \\(\\pm\\) 3.14 & 66.73 \\(\\pm\\) 1.36 & 17.50 \\(\\pm\\) 2.52 & 11.90 \\(\\pm\\) 3.66 & 32.28 \\(\\pm\\) 3.04 \\\\ ANCE\\({}_{\\text{Enj}}\\) & 10.88 \\(\\pm\\) 1.83 & 23.03 \\(\\pm\\) 2.72 & 29.02 \\(\\pm\\) 3.04 & 66.48 \\(\\pm\\) 1.32 & 17.92 \\(\\pm\\) 2.28 & 11.11 \\(\\pm\\) 2.79 & 32.90 \\(\\pm\\) 2.83 \\\\ LLAMA & 9.60 \\(\\pm\\) 1.36 & 32.34 \\(\\pm\\) 2.86 & 28.43 \\(\\pm\\) 2.69 & 65.15 \\(\\pm\\) 1.24 & 14.71 \\(\\pm\\) 1.84 & 9.36 \\(\\pm\\) 2.67 & 31.16 \\(\\pm\\) 2.60 \\\\ TF-IDF & 9.53 \\(\\pm\\) 1.42 & 26.77 \\(\\pm\\) 2.51 & 25.27 \\(\\pm\\) 2.50 & 58.14 \\(\\pm\\) 1.59 & 17.03 \\(\\pm\\) 2.39 & 11.59 \\(\\pm\\) 3.36 & 28.56 \\(\\pm\\) 2.28 \\\\ BM25 & 6.86 \\(\\pm\\) 1.52 & 26.43 \\(\\pm\\) 2.27 & 22.45 \\(\\pm\\) 2.51 & 51.55 \\(\\pm\\) 1.76 & 12.29 \\(\\pm\\) 2.55 & 8.65 \\(\\pm\\) 3.49 & 26.00 \\(\\pm\\) 2.16 \\\\ ColBERTv2 & 6.49 \\(\\pm\\) 1.21 & 23.99 \\(\\pm\\) 2.78 & 21.58 \\(\\pm\\) 2.66 & 59.46 \\(\\pm\\) 1.64 & 12.92 \\(\\pm\\) 2.49 & 7.15 \\(\\pm\\) 2.97 & 25.24 \\(\\pm\\) 2.41 \\\\ ERNIE & 7.43 \\(\\pm\\) 1.26 & 24.92 \\(\\pm\\) 2.23 & 22.43 \\(\\pm\\) 2.50 & 57.52 \\(\\pm\\) 1.50 & 10.83 \\(\\pm\\) 1.62 & 3.64 \\(\\pm\\) 1.28 & 24.94 \\(\\pm\\) 2.24 \\\\ SciBERT & 4.57 \\(\\pm\\) 1.08 & 17.35 \\(\\pm\\) 1.84 & 16.83 \\(\\pm\\) 2.27 & 49.42 \\(\\pm\\) 1.56 & 7.13 \\(\\pm\\) 1.19 & 2.00 \\(\\pm\\) 1.06 & 20.61 \\(\\pm\\) 1.91 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 14: 원본 풀에서 DORIS-MAE 테스트 가장 중요한 관련 문서에 대한 모델의 쿼리 수준 순위 성능은 임베딩 풀보다 4% 더 높은 점수를 받았다. 그러나 질의의 30%에 대해 임베딩 풀은 원래 풀보다 평균 12% 개선된 더 관련 있는 문서를 포함했다. 그 결과, 원본 후보 풀의 문서가 확장 임베딩 풀의 문서와 유사함을 알 수 있었다.\n' +
+      '\n' +
+      '**순위 지정 성능 분석:** 다음으로 두 풀에서 IR 모델의 순위 지정 성능을 비교했습니다. 표 16과 표 2 및 표 14를 비교하면 새 풀에서 E5-v2, SPECTER-v2, SimCSE 및 SentBERT에서 상당한 성능 감소를 발견했다. ada-002의 성능은 안정적으로 유지된다. 확장 후보 풀 생성에 사용되는 기법인 E5-v2와 SPECTER-v2의 사전 학습 임베딩에 의해 새로운 확장 후보 풀의 모든 초록이 관련성이 높은 것으로 간주되기 때문에, 이 두 모델에 대한 성능 하락은 동일한 재순위 모델이 미리 선택된 문서를 구별하기 어렵게 하는 선택 편향에 기인할 수 있다. 더욱이, 트랜스포머 기반 인코더 모델들은 유사한 문서 표현들을 생성하고 있을 수 있는데, 이는 이들 모델들의 대부분이 또한 성능 저하를 보기 때문이다. 결과는 다운스트림 순위 재지정 방법과 상관관계가 낮은 방법을 사용하여 후보 풀을 생성하는 것이 유용함을 시사한다.\n' +
+      '\n' +
+      '## 부록 D 모델 세부 정보\n' +
+      '\n' +
+      '### Retraining Details\n' +
+      '\n' +
+      '360k CS 관련 논문의 코퍼스를 대상으로 인용 정보를 이용하여 SPECTER과 SciBERT를 재학습하였다. 특히, 4개의 에폭에 대해 SPECTER을 재학습시켰지만, 1개의 에폭 이상에서는 성능이 감소하는 것을 확인하였다. 따라서 SPECTERID는 epoch 1 checkpoint만 유지된다. 시맨틱 학자[37]의 인용 신호를 이용하여 SPECTER 모델을 학습하였다. 추상 A는 A가 B를 직접 인용하는 경우 또는 A가 B를 인용하는 논문을 인용하는 경우 추상 B와 관련된다. 우리의 말뭉치는 위의 정의에 의해 관련 초록이 있는 282,121개의 초록으로 구성된다. 이들 초록 중 관련 초록은 각각 평균 76.327개이다. 결과적으로, 우리는 SPECTER 훈련 동안 총 21,533,311개의 삼중항들을 활용한다. 우리는 12시간 동안 8개의 GPU를 사용하여 10개의 에폭에 대해 SciBERT를 재교육했다. SciBERTID에 대해서는 체크포인트 10이 유지된다. 그림 3은 SPECTER과 SciBERT에 대한 훈련 손실 곡선을 보여준다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{\\text{10\\%}}\\) & NDCG\\({}_{\\text{10\\%}}^{\\text{cap}}\\) & MRR@10 & MAP \\\\ \\hline random & 4.60 & 18.76 & 21.55 & 41.10 & 15.06 & 5.92 & 24.71 \\\\ \\hline ada-002 & **13.47**\\(\\pm\\) 0.47 & 40.22 \\(\\pm\\) 0.64 & 47.34 \\(\\pm\\) 0.77 & **69.78**\\(\\pm\\) 0.39 & **38.97**\\(\\pm\\) 0.64 & **24.29**\\(\\pm\\) 1.07 & **51.65**\\(\\pm\\) 0.77 \\\\ LLAMA & 8.06 \\(\\pm\\) 0.31 & 29.77 \\(\\pm\\) 0.61 & 36.49 \\(\\pm\\) 0.69 & 56.85 \\(\\pm\\) 0.44 & 23.59 \\(\\pm\\) 0.50 & 9.80 \\(\\pm\\) 0.66 & 39.01 \\(\\pm\\) 0.65 \\\\ ES-L-v2 & 11.62 \\(\\pm\\) 0.37 & 38.26 \\(\\pm\\) 0.58 & 45.11 \\(\\pm\\) 0.78 & 65.82 \\(\\pm\\) 0.42 & 35.12 \\(\\pm\\) 0.59 & 21.00 \\(\\pm\\) 0.95 & 48.73 \\(\\pm\\) 0.76 \\\\ TSApire & 13.15 \\(\\pm\\) 0.69 & 43.47 \\(\\pm\\) 1.04 & 41.46 \\(\\pm\\) 1.24 & 65.54 \\(\\pm\\) 0.71 & 36.31 \\(\\pm\\) 0.97 & 23.54 \\(\\pm\\) 1.58 & 45.85 \\(\\pm\\) 1.20 \\\\ OTAspire & 12.56 \\(\\pm\\) 0.70 & **43.66**\\(\\pm\\) 1.09 & 40.60 \\(\\pm\\) 1.23 & 65.06 \\(\\pm\\) 0.69 & 35.54 \\(\\pm\\) 0.91 & 22.71 \\(\\pm\\) 1.49 & 45.53 \\(\\pm\\) 1.16 \\\\ SPECTER & 10.51 \\(\\pm\\) 0.85 & 35.99 \\(\\pm\\) 1.07 & 35.40 \\(\\pm\\) 1.13 & 55.71 \\(\\pm\\) 0.67 & 26.26 \\(\\pm\\) 0.95 & 14.06 \\(\\pm\\) 1.32 & 38.27 \\(\\pm\\) 1.05 \\\\ SPECTER-v2 & 11.41 \\(\\pm\\) 0.41 & 36.09 \\(\\pm\\) 0.60 & 43.73 \\(\\pm\\) 0.80 & 64.80 \\(\\pm\\) 0.41 & 32.68 \\(\\pm\\) 0.55 & 18.02 \\(\\pm\\) 0.90 & 47.26 \\(\\pm\\) 0.79 \\\\ SPECTERID & 8.05 \\(\\pm\\) 0.31 & 30.97 \\(\\pm\\) 0.56 & 38.11 \\(\\pm\\) 0.77 & 57.19 \\(\\pm\\) 0.43 & 23.96 \\(\\pm\\) 0.45 & 10.09 \\(\\pm\\) 0.64 & 40.23 \\(\\pm\\) 0.74 \\\\ SentBERT & 12.79 \\(\\pm\\) 0.42 & 40.31 \\(\\pm\\) 0.62 & **48.34**\\(\\pm\\) 0.80 & 69.38 \\(\\pm\\) 0.42 & 38.52 \\(\\pm\\) 0.61 & 22.98 \\(\\pm\\) 1.00 & 52.34 \\(\\pm\\) 0.80 \\\\ RocketQA & 13.37 \\(\\pm\\) 0.61 & 42.42 \\(\\pm\\) 1.00 & 42.65 \\(\\pm\\) 1.19 & 67.20 \\(\\pm\\) 0.70 & 37.33 \\(\\pm\\) 1.04 & 24.19 \\(\\pm\\) 1.65 & 46.39 \\(\\pm\\) 1.21 \\\\ ANCE\\({}_{\\text{FinP}}\\) & 11.23 \\(\\pm\\) 0.43 & 35.12 \\(\\pm\\) 0.58 & 42.49 \\(\\pm\\) 0.77 & 64.00 \\(\\pm\\) 0.43 & 31.64 \\(\\pm\\) 0.62 & 17.70 \\(\\pm\\) 0.96 & 45.78 \\(\\pm\\) 0.77 \\\\ SimLM & 2.61 \\(\\pm\\) 0.70 & 37.73 \\(\\pm\\) 1.02 & 37.90 \\(\\pm\\) 1.08 & 63.18 \\(\\pm\\) 0.69 & 31.59 \\(\\pm\\) 0.95 & 19.18 \\(\\pm\\) 1.46 & 41.82 \\(\\pm\\) 1.10 \\\\ SPLADE-v2 & 12.95 \\(\\pm\\) 0.46 & 39.55 \\(\\pm\\) 0.62 & 46.63 \\(\\pm\\) 0.75 & 68.26 \\(\\pm\\) 0.39 & 37.33 \\(\\pm\\) 0.60 & 22.80 \\(\\pm\\) 1.00 & 50.71 \\(\\pm\\) 0.75 \\\\ ColBERT-v2 & 8.13 \\(\\pm\\) 0.50 & 27.22 \\(\\pm\\) 0.87 & 28.38 \\(\\pm\\) 1.02 & 53.32 \\(\\pm\\) 0.71 & 22.72 \\(\\pm\\) 0.79 & 11.84 \\(\\pm\\) 1.19 & 32.03 \\(\\pm\\) 0.98 \\\\ ERNIE & 3.25 \\(\\pm\\) 0.21 & 15.96 \\(\\pm\\) 0.53 & 20.05 \\(\\pm\\) 0.87 & 39.26 \\(\\pm\\) 0.69 & 12.83 \\(\\pm\\) 0.56 & 3.29 \\(\\pm\\) 0.66 & 23.27 \\(\\pm\\) 0.79 \\\\ SciBERT & 2.43 \\(\\pm\\) 0.20 & 14.59 \\(\\pm\\) 0.71 & 17.56 \\(\\pm\\) 0.78 & 33.29 \\(\\pm\\) 0.58 & 9.65 \\(\\pm\\) 0.42 & 1.35 \\(\\pm\\) 0.24 & 21.23 \\(\\pm\\) 0.72 \\\\ SciBERTID & 9.41 \\(\\pm\\) 0.35 & 32.43 \\(\\pm\\) 0.56 & 39.28 \\(\\pm\\) 0.72 & 60.19 \\(\\pm\\) 0.42 & 27.91 \\(\\pm\\) 0.51 & 13.63 \\(\\pm\\) 0.80 & 42.19 \\(\\pm\\) 0.70 \\\\ BM25 & 9.14 \\(\\pm\\) 0.62 & 31.68 \\(\\pm\\) 0.99 & 31.22 \\(\\pm\\) 1.00 & 51.05 \\(\\pm\\) 0.71 & 25.52 \\(\\pm\\) 0.84 & 14.74 \\(\\pm\\) 1.18 & 33.94 \\(\\pm\\) 0.94 \\\\ TF-IDF & 9.69 \\(\\pm\\) 0.58 & 32.56 \\(\\pm\\) 0.93 & 33.32 \\(\\pm\\) 1.05 & 56.58 \\(\\pm\\) 0.67 & 28.79 \\(\\pm\\) 0.91 & 19.57 \\(\\pm\\) 1.52 & 36.41 \\(\\pm\\) 0.97 \\\\ SimCSE & 10.98 \\(\\pm\\) 0.38 & 34.57 \\(\\pm\\) 0.58 & 41.40 \\(\\pm\\) 0.74 & 63.00 \\(\\pm\\) 0.43 & 31.19 \\(\\pm\\) 0.56 & 17.22 \\(\\pm\\) 0.90 &\n' +
+      '\n' +
+      '### Model Specifications\n' +
+      '\n' +
+      '#### d.2.1 Sentence-level Embedding Models\n' +
+      '\n' +
+      'ANCE[85] 및 SentBERT[62] 둘 모두는 문장 레벨 태스크들에 대해 트레이닝된다. 이 모델을 사용하여 전체 질의와 초록을 임베딩하는 대신 질의와 초록의 개별 문장을 임베딩하는 데 사용한다.\n' +
+      '\n' +
+      '근사 최근접 이웃 음성 대조 추정(Approximate nearest neighbor Negative Contrastive Estimation,ANCE) FirstP는 고밀도 다중 벡터 표현에서 텍스트 검색을 수행하는 BERT 기반 모델이다. 모델은 ANN(Approximate Nearest Neighbor) 검색을 사용하여 도전적인 네거티브 샘플을 선택함으로써 트레이닝 동안 데이터의 표현을 최적화한다. FirstP 모델은 문서의 처음 512 토큰을 사용합니다. 이 메서드의 구현은 [https://huggingface.co/sentence-transformers/msmarco-roberta-base-ance-firstp](https://huggingface.co/sentence-transformers/msmarco-roberta-base-ance-firstp)에서 비롯 됩니다.\n' +
+      '\n' +
+      '문장-BERT는 문장 수준 유사 작업에 최적화된 전통적인 BERT 기반 변환기 모델을 개선한 것이다. 문서를 의미적으로 의미 있는 문장 임베딩으로 인코딩하기 위해 샴과 트리플렛 네트워크 구조를 사용한다. 모델은 스탠포드 자연어 추론(SNLI) 코퍼스[7] 및 멀티-장르 자연어 추론(MultiNLI) 코퍼스[84]에 대해 트레이닝된다. 이 메서드의 구현은 [https://www.sbert.net/#](https://www.sbert.net/#)에서 비롯 됩니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline Method & R@5 & R@20 & RP & NDCG\\({}_{10\\%}\\) & NDCG\\({}_{10\\%}^{\\text{exp}}\\) & MRR@10 & MAP \\\\ \\hline random & 3.28 & 13.47 & 9.36 & 47.73 & 6.71 & 3.25 & 12.37 \\\\ \\hline ada-002 & **15.39**\\(\\pm\\) 3.49 & **37.17**\\(\\pm\\) 3.86 & **26.64**\\(\\pm\\) 3.52 & **67.45**\\(\\pm\\) 1.42 & **23.66**\\(\\pm\\) 3.34 & **20.97**\\(\\pm\\) 5.20 & **29.66**\\(\\pm\\) 3.35 \\\\ RocketQA & 11.33 \\(\\pm\\) 1.70 & 36.04 \\(\\pm\\) 2.57 & 21.51 \\(\\pm\\) 2.77 & 68.42 \\(\\pm\\) 1.40 & 21.40 \\(\\pm\\) 2.92 & 14.12 \\(\\pm\\) 3.57 & 24.62 \\(\\pm\\) 2.36 \\\\ SimCSE & 12.87 \\(\\pm\\) 3.30 & 35.92 \\(\\pm\\) 4.11 & 18.39 \\(\\pm\\) 2.37 & 64.22 \\(\\pm\\) 1.28 & 19.24 \\(\\pm\\) 1.95 & 8.34 \\(\\pm\\) 2.04 & 22.16 \\(\\pm\\) 1.82 \\\\ SentBERT & 6.55 \\(\\pm\\) 1.51 & 31.21 \\(\\pm\\) 3.44 & 18.41 \\(\\pm\\) 2.65 & 64.21 \\(\\pm\\) 1.42 & 16.93 \\(\\pm\\) 2.50 & 10.06 \\(\\pm\\) 3.41 & 22.50 \\(\\pm\\) 2.28 \\\\ TSApire & 6.17 \\(\\pm\\) 1.24 & 28.43 \\(\\pm\\) 3.36 & 17.42 \\(\\pm\\) 2.36 & 62.08 \\(\\pm\\) 1.20 & 13.58 \\(\\pm\\) 1.74 & 4.90 \\(\\pm\\) 1.39 & 19.54 \\(\\pm\\) 1.92 \\\\ OTAspire & 6.12 \\(\\pm\\) 1.21 & 26.44 \\(\\pm\\) 2.95 & 17.28 \\(\\pm\\) 2.31 & 62.34 \\(\\pm\\) 2.11 & 13.83 \\(\\pm\\) 1.76 & 5.62 \\(\\pm\\) 1.79 & 19.35 \\(\\pm\\) 2.03 \\\\ SPLADE-v2 & 10.04 \\(\\pm\\) 3.14 & 28.36 \\(\\pm\\) 3.45 & 14.05 \\(\\pm\\) 2.24 & 59.09 \\(\\pm\\) 1.43 & 12.10 \\(\\pm\\) 1.89 & 5.75 \\(\\pm\\) 1.95 & 18.48 \\(\\pm\\) 1.76 \\\\ ANCE\\({}_{\\text{FirstP}}\\) & 9.69 \\(\\pm\\) 2.61 & 24.31 \\(\\pm\\) 2.77 & 17.87 \\(\\pm\\) 2.81 & 61.10 \\(\\pm\\) 1.27 & 17.04 \\(\\pm\\) 2.99 & 11.50 \\(\\pm\\) 3.70 & 20.70 \\(\\pm\\) 2.60 \\\\ SPECTER-v2 & 6.75 \\(\\pm\\) 1.19 & 20.17 \\(\\pm\\) 2.03 & 15.18 \\(\\pm\\) 1.98 & 59.11 \\(\\pm\\) 1.46 & 12.54 \\(\\pm\\) 1.93 & 8.45 \\(\\pm\\) 3.15 & 17.37 \\(\\pm\\) 1.83 \\\\ SimLM & 5.55 \\(\\pm\\) 1.04 & 24.88 \\(\\pm\\) 2.69 & 16.22 \\(\\pm\\) 2.08 & 60.54 \\(\\pm\\) 1.23 & 13.27 \\(\\pm\\) 1.74 & 4.76 \\(\\pm\\) 2.23 & 18.11 \\(\\pm\\) 1.66 \\\\ TF-lpr & 5.22 \\(\\pm\\) 1.55 & 19.64 \\(\\pm\\) 2.71 & 14.15 \\(\\pm\\) 2.24 & 55.59 \\(\\pm\\) 1.38 & 15.32 \\(\\pm\\) 2.97 & 9.58 \\(\\pm\\) 3.59 & 17.24 \\(\\pm\\) 1.90 \\\\ E5-Lv2 & 4.88 \\(\\pm\\) 0.93 & 13.01 \\(\\pm\\) 1.99 & 11.43 \\(\\pm\\) 2.00 & 48.53 \\(\\pm\\) 1.80 & 9.04 \\(\\pm\\) 1.59 & 2.92 \\(\\pm\\) 1.24 & 14.48 \\(\\pm\\) 1.90 \\\\ ColBERT-v2 & 6.73 \\(\\pm\\) 2.35 & 17.40 \\(\\pm\\) 2.58 & 11.58 \\(\\pm\\) 1.72 & 57.10 \\(\\pm\\) 1.34 & 8.22 \\(\\pm\\) 1.21 & 2.14 \\(\\pm\\) 0.84 & 14.70 \\(\\pm\\) 1.41 \\\\ ERNIE & 4.25 \\(\\pm\\) 1.22 & 13.86 \\(\\pm\\) 2.57 & 10.39 \\(\\pm\\) 1.64 & 47.05 \\(\\pm\\) 1.65 & 6.91 \\(\\pm\\) 1.40 & 2.78 \\(\\pm\\) 1.42 & 12.89 \\(\\pm\\) 1.42 \\\\ BM25 & 2.16 \\(\\pm\\) 0.68 & 21.13 \\(\\pm\\) 2.81 & 10.36 \\(\\pm\\) 1.66 & 47.76 \\(\\pm\\) 1.20 & 8.26 \\(\\pm\\) 1.57 & 2.69 \\(\\pm\\) 1.17 & 13.58 \\(\\pm\\) 1.35 \\\\ SciBERT & 0.69 \\(\\pm\\) 0.29 & 5.65 \\(\\pm\\) 1.36 & 4.60 \\(\\pm\\) 1.05 & 34.73 \\(\\pm\\) 1.30 & 3.00 \\(\\pm\\) 0.86 & 1.17 \\(\\pm\\) 0.65 & 8.91 \\(\\pm\\) 1.03 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 16: 확장된 150 추상 후보 풀에 대한 모델의 질의 수준 랭킹 성능\n' +
+      '\n' +
+      '도 3: 재학습된 모델들\n' +
+      '\n' +
+      '#### d.2.2 통로 검색 모델\n' +
+      '\n' +
+      'ColBERT-v2[66], ERNIE-Search[47], SimLM[75], SPLADE-v2[23], 및 RocketQA-v2[63]은 통과 검색 작업을 위해 특별히 조작된 모델이다.\n' +
+      '\n' +
+      'ColBERT-v2는 조밀한 다중 벡터 표현에 가벼운 후기 상호작용을 통합하는 검색 모델이다. BERT 기반 ColBERT-v2 모델은 MS MARCO에 대해 훈련된다[57]. 공격적인 잔여 압축 메커니즘과 노이즈 제거 감독 전략을 통합함으로써 ColBERT-v2는 고품질 결과를 유지하면서 보다 효율적인 검색을 달성한다. 이 메서드의 구현은 [https://github.com/stanford-futuredata/ColBERT](https://github.com/stanford-futuredata/ColBERT)에서 비롯 됩니다.\n' +
+      '\n' +
+      'ERNIE-Search는 개방형 질의 응답 작업에 최적화된 신경망 검색 모델이다. 미리 훈련된 언어 모델을 기반으로 구축된 ERNIE-Search는 이중 인코더 아키텍처를 활용하고 성능을 향상시키기 위해 교차 아키텍처 증류의 새로운 방법을 소개한다. 모델은 MS MARCO 및 NQ[57, 40]에 대해 트레이닝된다. 모델의 구현은 [https://huggingface.co/docs/transformers/model_doc/ernie](https://huggingface.co/docs/transformers/model_doc/ernie)에서 비롯 됩니다.\n' +
+      '\n' +
+      'SimLM(Language Model pre-training)과의 유사도 매칭은 단일 벡터 표현에 질의와 초록을 임베딩하는 검색 모델이다. 자체 감독된 사전 훈련을 통해 문서를 조밀한 벡터로 인코딩하는 간단한 병목 구조를 사용한다. SimLM 모델은 MS MARCO 통로 코퍼스에서 미세 조정된다. 이 메서드의 구현은 [https://github.com/microsoft/unilm/tree/master/simlm](https://github.com/microsoft/unilm/tree/master/simlm)에서 비롯 됩니다.\n' +
+      '\n' +
+      'Sparse Lexical and Expansion Model for First Stage Ranking (SPLADE-v2)은 정보 검색 작업을 위한 문서 및 질의에 대해 매우 희소한 표현을 제공하는 모델이다. 이 모델은 MS MARCO 통과 순위 데이터 세트에 대해 훈련된다. 이 방법의 구현은 [https://github.com/beir-cellar/belt/blob/main/beir/retrieval/models/splade.py](https://github.com/beir-cellar/belt/blob/main/beir/retrieval/models/splade.py)에서 가져온 BEIR 평가의 구현을 따릅니다.\n' +
+      '\n' +
+      'RocketQA-v2는 리트리버와 리랭커를 공동으로 훈련시키기 위한 동적 리스트-와이즈 증류 메커니즘을 통합한 모델이다. 모델은 MS MARCO 및 NQ에 대해 트레이닝된다. 모델의 방법은 질의를 취하고 내용을 입력으로 추상화하여 재순위화 과정에 대한 매칭 점수를 출력한다. 이 메서드의 구현은 [https://github.com/PaddlePaddle/RocketQA](https://github.com/PaddlePaddle/RocketQA)에서 비롯 됩니다.\n' +
+      '\n' +
+      '#### d.2.3 Document Similarity Models\n' +
+      '\n' +
+      'SPECTER [18] 및 Aspire [54]는 문서 수준 유사성을 위해 설계된 모델입니다.\n' +
+      '\n' +
+      '인용정보변압기(Citation-informed TransformER, SPECTER)를 이용한 과학 논문 임베딩은 과학 문서에 미세 조정된 변압기 기반 모델이다. 사전 학습된 SciBERT [5]를 인용 그래프에 기반하여 과학 문서의 문서 수준 임베딩을 생성한다. SPECTER는 시맨틱 스콜라 코퍼스의 하위 집합에 대해 미세 조정되었다. SPECTER 2.0은 2018년 이후 발표된 최신 논문 모음에서 사전 훈련된 SPECTER의 후속이며 어댑터와 짝을 이룰 때 과학적 작업에 대한 작업별 임베딩을 생성할 수 있다. 실험에서는 기본 어댑터를 사용합니다. SPECTER은 코사인 유사도 대신 벡터 사이의 L2 거리를 사용한다는 점에 유의해야 한다.\n' +
+      '\n' +
+      '이 메서드의 구현은 [https://github.com/allenai/specter/tree/master](https://github.com/allenai/specter/tree/master) 및 [https://huggingface.co/allenai/specter2](https://huggingface.co/allenai/specter2)에서 비롯 됩니다.\n' +
+      '\n' +
+      'Aspire[54]는 세밀한 문장 수준의 양상 일치에 대해 유연하게 집계하는 문서 유사성 모델이다. 쿼리와 추상화를 여러 벡터로 임베딩합니다. 각 벡터는 텍스트에서 개별 문장을 나타내지만 주변 컨텍스트에 따라 달라집니다. 다중 벡터 표현을 얻기 위해 질의와 초록이 모두 한 번 임베딩된다. 쿼리와 초록 사이의 유사도는 [54]에 설명된 텍스트-감독 단일 매치(TSAspire) 방법과 최적-수송 다중 매치(OTAspire) 방법을 사용하여 계산된다. 이 메서드의 구현은 [https://github.com/allenai/aspire](https://github.com/allenai/aspire)에서 비롯 됩니다.\n' +
+      '\n' +
+      '#### d.2.4 일반 텍스트 임베딩 모델\n' +
+      '\n' +
+      '또한 일반적인 텍스트 임베딩 모델인 ada-002 [28], E5-Large-V2 [74] 및 LLAMA [71]을 사용한다. 이러한 모델들은 컨텍스트 윈도우의 크기에 의해 제한되지 않고 더 긴 텍스트들을 임베딩할 수 있다. 전체 쿼리 DORIS-MAE 작업 C.2.1에서만 이러한 모델을 테스트한다.\n' +
+      '\n' +
+      'Ada-002(ada)는 OpenAI에서 제공하는 텍스트 임베딩 모델이다. 아다는 트랜스포머 기반 아키텍처를 활용하고 임베딩 품질을 향상시키기 위해 몇 가지 새로운 기술을 통합한다. 이 모델은 생성된 임베딩의 신뢰성과 일관성을 향상시키기 위해 잡음 제거 기술을 사용한다. OpenAI의 API를 통해 ada-002를 사용합니다.\n' +
+      '\n' +
+      'E5-Large-V2 300m는 Weakly-Supervised Contrastive Pretraining에 의해 개발된 텍스트 임베딩 모델이다[74]. 이 모델은 BEIR[69]과 같은 벤치마크에서 강력한 결과를 보여주었다. 구현은 [https://huggingface.co/intfloat/e5-large-v2](https://huggingface.co/intfloat/e5-large-v2)에서 huggingface에서 비롯 됩니다.\n' +
+      '\n' +
+      '대형 언어 모델 메타 AI(LLAMA)는 메타가 출시한 최첨단 기반 LLM이다. 70억 모델은 약 1조 개의 토큰에 대해 훈련되었습니다. 우리는 70억 모수 버전의 가중치를 적용했다. 모델의 끝에서 두 번째 레이어에서 출력을 추출하여 텍스트 임베딩을 생성하기 위해 LLAMA를 사용한다.\n' +
+      '\n' +
+      '## Appendix E Author Statement\n' +
+      '\n' +
+      '이에 따라 저자는 우리가 제출된 원고의 유일한 저자임을 확인하고 그 내용에 대한 완전한 책임을 유지한다. 저자는 이 작업이 원본이며 다른 곳에서 출판되지 않았으며 현재 다른 곳에서 출판할 고려 대상이 아님을 보증한다. 권리 침해가 발생한 경우, 저작자는 모든 파장과 결과를 전적으로 수용하고 부담한다. 또한 저자는 이 연구에 사용된 모든 데이터가 필요한 라이선스 요구 사항을 준수하는지 확인한다. 저자들은 이러한 진술을 준수하지 않으면 작업이 철회되고 법적 결과가 발생할 수 있음을 인정한다.\n' +
+      '\n' +
+      'DORIS-MAE를 위한 데이터시트\n' +
+      '\n' +
+      '이 문서는 Gebru _et al._[26]의 _Datasheets for Datasets_ 를 기반으로 합니다. 여기에서 가장 업데이트된 버전을 확인하십시오.\n' +
+      '\n' +
+      '적용할 수 없거나 부정적인 답변이 있는 모든 질문은 간결함을 위해 생략됩니다.\n' +
+      '\n' +
+      '### Motivation\n' +
+      '\n' +
+      '**Q: 데이터 세트를 만든 목적은 무엇입니까?**\n' +
+      '\n' +
+      'A: 복잡한 다중 의도 사용자 질의에 대한 과학 문서 검색 시스템의 성능을 평가하고 개선하기 위한 목적으로 데이터 세트를 만들었다. 이 작업은 과학적 연구 맥락에서 전형적인 쿼리의 복잡성과 다면적 특성을 포착하지 못하는 기존 리소스의 격차를 메우는 것을 목표로 한다.\n' +
+      '\n' +
+      '**Q: 누가 이 데이터 세트(예: 어떤 팀, 연구 그룹)를 만들었고, 어떤 엔터티(예: 회사, 기관, 조직)를 대신했습니까?**\n' +
+      '\n' +
+      'A: 저자들은 우리의 작품을 받아들일 때까지 익명으로 남을 것입니다.\n' +
+      '\n' +
+      '**Q: 이 데이터 세트를 만드는 데 필요한 지원은 무엇인가요?**\n' +
+      '\n' +
+      'A: 펀더들은 우리의 일을 수락할 때까지 익명으로 남을 것입니다.\n' +
+      '\n' +
+      '### Composition\n' +
+      '\n' +
+      '**Q: 데이터 집합을 구성하는 인스턴스는 문서, 사진, 사람, 국가 등 무엇을 나타내나요?* *\n' +
+      '\n' +
+      'A: 데이터세트는 여러 유형의 데이터 인스턴스를 포함한다.\n' +
+      '\n' +
+      '* 인간 전문가가 만든 텍스트의 다면 복합 쿼리입니다.\n' +
+      '* 인간 전문가가 만든 각 복잡 한 쿼리에 대 한 측면 및 하위 측면의 계층적 목록입니다.\n' +
+      '* 각 복잡한 쿼리에 대해 arXiv에서 잠재적으로 관련 있는 문서 초록의 후보 풀입니다.\n' +
+      '* 각 측면 추상 질문 쌍에 대한 주석(인간 만들기 및 ChatGPT 만들기)입니다.\n' +
+      '\n' +
+      '**Q: (적절한 경우 각 유형의) 총 몇 개의 인스턴스가 있습니까?* *\n' +
+      '\n' +
+      'A: 95 내지 217개의 단어, 50개의 계층적인 측면 및 하위 측면의 목록, 50개의 후보 풀, 83,591개의 ChatGPT-made 주석 및 250개의 인간-made 주석을 포함하는 50개의 복잡한 쿼리를 갖는다.\n' +
+      '\n' +
+      '**Q: 데이터 집합에 가능한 모든 인스턴스가 포함 되어 있습니까 아니면 더 큰 집합에서 인스턴스의 샘플 (반드시 랜덤은 아님) 인가요?* *\n' +
+      '\n' +
+      'A: 데이터세트는 ML, CV, AI 및 NLP의 필드에 50개의 쿼리를 포함한다. 이 쿼리는 수동으로 작성됩니다. 섹션 3.1에 설명된 대로 쿼리는 먼저 arXiv에 게시된 2011-2021년 360k 논문이 포함된 CS 코퍼스에서 초록을 무작위로 샘플링하고 이러한 초록을 기반으로 쿼리를 설계하여 공식화된다. 각 후보 풀은 CS 코퍼스에서 선택되며, 이는 해당 기간 동안 CS 연구 논문의 전체에 가까워야 한다.\n' +
+      '\n' +
+      '**Q: 각 인스턴스는 어떤 데이터로 구성되나요?* *A: 각 데이터 인스턴스의 자세한 설명은 섹션 A.4를 참조하세요.\n' +
+      '\n' +
+      '**Q: 각 인스턴스와 연결된 레이블 또는 대상이 있습니까?**\n' +
+      '\n' +
+      'A: 각 애스펙트-추상 쌍에 대해, 0 내지 2로부터의 주석 스코어가 제공된다.\n' +
+      '\n' +
+      '**Q: 권장되는 데이터 분할(예: 훈련, 개발/검증, 테스트)이 있습니까?**\n' +
+      '\n' +
+      'A: 전체 DORIS-MAE 데이터 세트는 83,591개의 주석이 달린 질문 쌍(aspect/sub-aspect and abstract)으로 구성된다. 특히, 데이터세트는 프롬프트 최적화를 위해 수동으로 주석이 달린 90쌍의 개발 세트, 가설 테스트를 위해 수동으로 주석이 달린 250쌍의 테스트 세트, 및 각 후보 풀에 대한 초록의 관련성 순위를 계산하기 위한 83,591쌍을 포함한다. 이러한 관련성 순위는 다양한 검색 모델을 평가하기 위한 테스트 벤치마크 역할을 한다.\n' +
+      '\n' +
+      '**Q: 데이터 세트에 오류, 노이즈 원본 또는 중복이 있습니까?* *\n' +
+      '\n' +
+      'A: 애스펙트-추상 쌍의 주석은 GPU 비결정성에 의해 야기되는 일부 노이즈를 포함할 수 있다. 챗GPT의 성능이 인간과 동등하다는 것을 확인했지만 섹션 B.4에서 가능한 불일치를 문서화했다.\n' +
+      '\n' +
+      '**Q: 데이터 세트가 자체 포함 되어 있습니까, 또는 외부 리소스 (예: 웹 사이트, 트윗, 기타 데이터 세트)에 연결 되거나 의존 하 고 있습니까?**\n' +
+      '\n' +
+      'A: 데이터세트는 자체 포함되어 있다.\n' +
+      '\n' +
+      '### Collection\n' +
+      '\n' +
+      '**Q: 각 인스턴스와 연결된 데이터는 어떻게 획득되었습니까?**\n' +
+      '\n' +
+      'A: 후보 풀 및 코퍼스의 초록은 arXiv4에서 가져온 것입니다. 쿼리/측면/하위 측면은 수동으로 생성됩니다. 주석은 chatgpt-3.5-turbo-0301에 의해 생성됩니다.\n' +
+      '\n' +
+      '각주 4: [https://arxiv.org/](https://arxiv.org/)\n' +
+      '\n' +
+      '**Q: 데이터가 수집 된 기간은 언제 인가요?**\n' +
+      '\n' +
+      'A: 후보 풀 및 말뭉치의 초록은 2011년부터 2021년까지의 논문입니다. 쿼리는 2023년에 저자에 의해 생성됩니다.\n' +
+      '\n' +
+      '**Q: 데이터를 수집 하는 데 사용 된 메커니즘 또는 절차는 무엇인가요?**\n' +
+      '\n' +
+      'A: 쿼리/측면/하위 측면은 수동으로 생성됩니다. 후보 풀/코퍼스의 초록은 arXiv API에서 수집됩니다. 논문의 인용신호는 Semantic Scholar API[37]에서 수집하였다. 주석은 OpenAI API를 통해 chatgpt-3.5-0301에 의해 생성됩니다. 은퇴 모델은 8개의 NVIDIA GeForce RTX 2080 타이탄 GPU를 사용하여 재훈련된다.\n' +
+      '\n' +
+      '**Q: 데이터를 수집하는 데 드는 리소스 비용은 얼마입니까?**\n' +
+      '\n' +
+      'A: 모든 비용은 섹션 4.4 및 섹션 B.5에 자세히 설명되어 있습니다. 전체적으로 API 비용은 $100 미만입니다.\n' +
+      '\n' +
+      '**Q: 데이터 집합이 더 큰 집합의 샘플인 경우 샘플링 전략은 무엇인가요?* *A: 후보 풀은 다양한 IR 및 NIR 방법으로 코퍼스에서 샘플링됩니다. 쿼리는 코퍼스에서 무작위로 샘플링된 기존 논문 초록의 인간 전문가에 의해 생성된다.\n' +
+      '\n' +
+      'Q: **데이터 수집 프로세스에 참여 한 사람 (예: 학생, 크라우드 작업자, 계약자) 및 보상 된 방법 (예: 크라우드 작업자가 얼마를 지불 했습니까?)**\n' +
+      '\n' +
+      'A: 저자만이 데이터 주석 프로세스에 관여하고 보상은 NA이다.\n' +
+      '\n' +
+      '### USES\n' +
+      '\n' +
+      'Q: **데이터 세트가 이미 작업에 사용되었습니까?**\n' +
+      '\n' +
+      'A: 섹션 C에서 DORIS-MAE 태스크에 대한 16개의 다양한 검색 모델을 벤치마킹하기 위해 사용된다.\n' +
+      '\n' +
+      'Q: **데이터 세트를 사용하는 모든 논문 또는 시스템에 연결하는 리포지토리가 있습니까?* *\n' +
+      '\n' +
+      'A: [https://github.com/Real-Doris-Mae/Doris-Mae-Dataset](https://github.com/Real-Doris-Mae/Doris-Mae-Dataset)\n' +
+      '\n' +
+      'Q: **데이터 세트를 사용할 수 있는 다른 작업**\n' +
+      '\n' +
+      'A: 쿼리 분해 모델을 평가하는 데이터 세트 역할을 할 수 있습니다.\n' +
+      '\n' +
+      '### Distribution\n' +
+      '\n' +
+      'Q: **데이터 세트가 만들어진 엔터티 외부의 제3자(예: 회사, 기관, 조직)에 데이터 세트가 배포되나요?* *\n' +
+      '\n' +
+      'A: 데이터 세트는 Zenodo에서 릴리스되며 [https://doi.org/10.5281/zenodo.8035110](https://doi.org/10.5281/zenodo.8035110)에 액세스할 수 있습니다.\n' +
+      '\n' +
+      'Q: **데이터 세트는 어떻게 배포되나요?**\n' +
+      '\n' +
+      'A: 데이터 세트는 GitHub 및 Zenodo에 배포됩니다. 해당 DOI는 [https://doi.org/10.5281/zenodo.8035110](https://doi.org/10.5281/zenodo.8035110)입니다.\n' +
+      '\n' +
+      'Q: **데이터 세트는 언제 배포되나요?**\n' +
+      '\n' +
+      'A: 2023년 6월 13일에 출시되었습니다.\n' +
+      '\n' +
+      'Q: **데이터 세트가 저작권 또는 기타 지적 재산권(IP) 라이선스 및/또는 적용 가능한 사용 약관(ToU)에 따라 배포되나요?**\n' +
+      '\n' +
+      'A: 데이터세트는 CC-BY-NC 라이선스에 따라 분배된다. 자세한 내용은 섹션 A.1을 참조하십시오.\n' +
+      '\n' +
+      '### Maintenance\n' +
+      '\n' +
+      'Q: **데이터 세트를 지원/호스트/유지 하는 사람은 누구입니까?**\n' +
+      '\n' +
+      'A: GitHub와 Zenodo의 저자들.\n' +
+      '\n' +
+      'Q: **데이터 세트의 소유자/큐레이터/관리자와 어떻게 연락할 수 있습니까(예: 이메일 주소)?**\n' +
+      '\n' +
+      'A: GitHub에 대한 문제를 제기하거나 이메일을 통해 작성자에게 연락할 수 있으며, 이는 논문의 수용 시 드러날 것이다.\n' +
+      '\n' +
+      '**Q: 레이블링 오류를 수정하고, 새 인스턴스를 추가하며, 인스턴스를 삭제하기 위해 데이터 세트가 업데이트되나요?**\n' +
+      '\n' +
+      'A: 예, 데이터 세트는 오류를 수정하기 위해 필요에 따라 업데이트됩니다.\n' +
+      '\n' +
+      '**Q: 이전 버전의 데이터 세트가 계속 지원/호스트/유지 관리되나요?**\n' +
+      '\n' +
+      'A: 이전 버전의 데이터 세트에 대한 DOI 및 다운로드 가능한 링크는 GitHub에 문서화됩니다.\n' +
+      '\n' +
+      '**Q: 다른 사용자가 데이터 세트에 확장/확장/빌드 온/도포하려는 경우 그렇게 하는 메커니즘이 있습니까?**\n' +
+      '\n' +
+      'A: 네. 확장성은 섹션 4.4 및 섹션 B.5를 참조하십시오. 향후 작업은 섹션 6을 참조하십시오.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
