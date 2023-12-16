@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Dense Passage Retrieval for OpenDomain Question Answering\n' +
+      '\n' +
+      ' 블라디미르 카르푸킨, 바라스 오구스, 세원민, 패트릭 루이스\n' +
+      '\n' +
+      '**Ledell Wu, Sergey Edunov, Danqi Chen**, **Wen-tau Yih**\n' +
+      '\n' +
+      'Facebook AI\n' +
+      '\n' +
+      '워싱턴대학교\n' +
+      '\n' +
+      'Princeton University\n' +
+      '\n' +
+      '{vladk, barloso, plewis, ledell, edunov, scottyih}@fb.com\n' +
+      '\n' +
+      'sewon@cs.washington.edu\n' +
+      '\n' +
+      'danqic@cs.princeton.edu\n' +
+      '\n' +
+      'Equal contribution\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '오픈 도메인 질의 응답은 TF-IDF 또는 BM25와 같은 전통적인 희소 벡터 공간 모델이 사실상의 방법인 후보 컨텍스트를 선택하기 위해 효율적인 통로 검색에 의존한다. 이 연구에서는 간단한 이중 인코더 프레임워크에 의해 소수의 질문과 구절에서 임베딩을 학습하는 _dense_ 표현만을 사용하여 검색이 실제로 구현될 수 있음을 보여준다. 광범위한 오픈 도메인 QA 데이터 세트에 대해 평가했을 때, 우리의 조밀한 검색기는 상위 20개 통과 검색 정확도에서 강력한 Lucene-BM25 시스템보다 9%-19%의 절대값을 크게 능가하고, 우리의 엔드 투 엔드 QA 시스템이 여러 오픈 도메인 QA 벤치마크에서 새로운 최신 기술을 확립하는 데 도움이 된다.\n' +
+      '\n' +
+      '각주 1: 코드 및 훈련된 모델은 [https://github.com/facebookresearch/DPR](https://github.com/facebookresearch/DPR)에서 릴리스되었습니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '개방형 질문 응답(QA)[2]은 대량의 문서 모음을 사용하여 팩토이드 질문에 답하는 작업이다. 초기 QA 시스템은 종종 복잡하고 여러 구성 요소로 구성되지만, 읽기 이해 모델의 발전은 훨씬 단순화된 2단계 프레임워크를 제안한다. (1) 컨텍스트 _리트리버_는 먼저 질문에 대한 답을 포함하는 작은 부분 집합을 선택하고 (2) 기계 _리더_는 검색된 컨텍스트를 철저히 조사하고 정답을 식별할 수 있다[3]. 개방 도메인 QA를 기계 판독으로 줄이는 것은 매우 합리적인 전략이지만 실제로 2에서는 큰 성능 저하가 종종 관찰되어 검색 개선의 필요성을 나타낸다.\n' +
+      '\n' +
+      '각주 2: 예를 들어, SQuAD v1.1의 정확한 일치 점수는 80% 이상에서 40% 미만으로 떨어진다[27].\n' +
+      '\n' +
+      '개방 도메인 QA에서의 검색은 일반적으로 TF-IDF 또는 BM25[12]를 사용하여 구현되며, 이는 키워드를 역 인덱스와 효율적으로 매칭시키고, (가중치가 있는) 고차원, 희소 벡터에서 질문 및 컨텍스트를 나타내는 것으로 볼 수 있다. 반대로, _dense_, latent semantic encoding은 설계에 의한 희소 표현에 대한 _complementary_이다. 예를 들어, 완전히 다른 토큰으로 구성된 동의어 또는 패러프레이즈는 여전히 서로 가까운 벡터에 매핑될 수 있다. 문맥에서 대답할 수 있는 질문 _"반지의 제왕에 나쁜 사람이 누구입니까?" _"Sala Baker는 반지의 제왕 3부작에 악당 Sauron을 묘사하는 것으로 가장 잘 알려져 있습니다."_ 용어 기반 시스템은 이러한 컨텍스트를 검색하는 데 어려움이 있는 반면 조밀한 검색 시스템은 _"나쁜 사람"_과 _"악당"_을 더 잘 일치시키고 올바른 컨텍스트를 가져올 수 있습니다. 밀도 인코딩은 작업별 표현을 사용할 수 있는 추가 유연성을 제공하는 임베딩 함수를 조정하여 _학습 가능_ 합니다. 특별한 인-메모리 데이터 구조들 및 인덱싱 스킴들을 사용하여, 검색은 최대 내부 제품 검색(MIPS) 알고리즘들(예를 들어, [13, 14])을 사용하여 효율적으로 수행될 수 있다.\n' +
+      '\n' +
+      '그러나, 일반적으로 양호한 조밀한 벡터 표현을 학습하는 것은 많은 수의 라벨링된 질문 및 컨텍스트 쌍을 필요로 한다고 여겨진다. 따라서, 밀도 검색 방법은 추가적인 사전 훈련을 위해 마스킹된 문장을 포함하는 블록을 예측하는 정교한 역 클로즈 태스크(ICT) 목표를 제안하는 ORQA[15] 이전에 오픈 도메인 QA에 대해 TF-IDF/BM25보다 우수한 것으로 결코 보여지지 않았다. 그런 다음 질문 인코더와 판독기 모델은 질문과 답변 쌍을 공동으로 사용하여 미세 조정된다. ORQA는 조밀한 검색이 BM25를 능가할 수 있음을 성공적으로 보여주지만, 여러 오픈 도메인QA 데이터 세트에 새로운 최신 결과를 설정하면 두 가지 약점이 있다. 첫째, ICT 사전 훈련은 계산 집약적이며 정규 문장이 목적 함수에서 질문의 좋은 대용물이라는 것이 완전히 명확하지 않다. 둘째, 문맥 인코더는 질의와 답변 쌍을 사용하여 미세 조정되지 않기 때문에 해당 표현이 차선책일 수 있다.\n' +
+      '\n' +
+      '이 논문에서 우리는 질문을 다룬다: 우리는 질문과 구절(또는 답변)의 쌍만을 사용하여 더 나은 밀집 임베딩 모델을 훈련시킬 수 있는가, _without_ 추가 사전 훈련 없이? 현재 표준 BERT 사전 훈련 모델 Devlin 등(2019)과 이중 인코더 아키텍처 Bromley 등(1994)을 활용하여 상대적으로 적은 수의 질문과 통과 쌍을 사용하여 올바른 훈련 방식을 개발하는 데 중점을 둔다. 일련의 신중한 절제 연구를 통해 우리의 최종 솔루션은 놀랍게도 간단하다. 임베딩은 모든 질문과 구절의 쌍을 일괄적으로 객관적으로 비교하여 질문과 관련 구절 벡터의 내부 생성물을 최대화하기 위해 최적화된다. DPR(Dense Passage Retriever)은 예외적으로 강력합니다. BM25보다 큰 마진(Top-5 정확도 65.2% vs. 42.9%)을 얻을 수 있을 뿐만 아니라 성능도 우수하다. 또한, ORQA(41.5% vs. Open Natural Questions setting Lee et al. (2019), Kwiatkowski et al. (2019).\n' +
+      '\n' +
+      '우리의 기여는 이중적이다. 먼저, 적절한 훈련 설정으로 기존의 질문-통로 쌍에 대한 질문 및 통로 인코더를 미세 조정하는 것만으로도 BM25를 크게 능가할 수 있음을 보여준다. 또한 우리의 경험적 결과는 추가 사전 훈련이 필요하지 않을 수 있음을 시사한다. 둘째, 개방형 질문 응답의 맥락에서 검색 정확도가 높을수록 종단 간 QA 정확도가 높아진다는 것을 검증한다. 최신 판독기 모델을 검색된 상위 구절에 적용함으로써 여러 복잡한 시스템에 비해 개방형 검색 환경에서 여러 QA 데이터 세트에 대해 비교 가능하거나 더 나은 결과를 얻을 수 있다.\n' +
+      '\n' +
+      '## 2 Background\n' +
+      '\n' +
+      '본 논문에서 연구한 개방형 QA의 문제점은 다음과 같이 설명할 수 있다. "누가 먼저 메그를 가족 가이에 대해 목소리를 냈을까?"와 같은 팩토이드 질문을 고려할 때 아니면 "8번째 달라이 라마는 어디서 태어났지?_" 다양한 주제의 대규모 코퍼스를 사용하여 응답할 수 있는 시스템이 필요하다. 보다 구체적으로, 우리는 답이 말뭉치의 하나 이상의 구절에 나타나는 스팬으로 제한되는 추출 QA 설정을 가정한다. 우리의 컬렉션은 \\(D\\) 문서, \\(d_{1},d_{2},\\cdots,d_{D}\\)를 포함하고 있다고 가정하자. 먼저 각 문서를 기본 검색 단위 3으로 같은 길이의 텍스트 구절로 분할하고 말뭉치 \\(\\mathcal{C}=\\{p_{1},p_{2},\\ldots,p_{M}\\}\\)에서 \\(M\\) 총 구절을 얻는다. 여기서 각 구절 \\(p_{i}\\)은 토큰 \\(w_{1}^{(i)},w_{2}^{(i)},\\cdots,w_{|p_{i}|}^{(i)}\\)의 시퀀스로 볼 수 있다. 질문 \\(q\\이 주어졌을 때, 과제는 질문에 답할 수 있는 단락 \\(p_{i}\\)에서 스팬 \\(w_{s}^{(i)},w_{s+1}^{(i)},\\cdots,w_{e}^{(i)}\\)을 찾는 것이다. 매우 다양한 도메인을 커버하기 위해, 코퍼스 크기는 수백만 개의 문서(예를 들어, 위키피디아)로부터 수십억 개의 문서(예를 들어, 웹)까지 쉽게 확장될 수 있다는 점에 주목한다. 그 결과, 임의의 개방형 질의응답 시스템은 Chen et al.(2017)의 답을 추출하기 위해 독자를 적용하기 전에, 관련 텍스트의 작은 집합을 선택할 수 있는 효율적인 _retriever_ 컴포넌트를 포함할 필요가 있다. 4 형식적으로 말하면, 검색기 \\(R:(q,\\mathcal{C})\\rightarrow\\mathcal{C}_{\\mathcal{F}}\\)는 질문 \\(q\\)과 말뭉치 \\(\\mathcal{C}\\)를 입력으로 하고 훨씬 작은 _필터 집합의 텍스트 \\(\\mathcal{C}_{\\mathcal{F}}\\subset\\mathcal{C}\\)을 반환하는 함수이며, 여기서 \\(|\\mathcal{C}_{\\mathcal{F}}|=k\\ll|\\mathcal{C}|\\). 고정된 \\(k\\)의 경우, \\(\\mathcal{C}_{\\mathcal{F}}\\)이 질문에 답하는 스팬을 포함하는 질문의 분수인 _top-k 검색 정확도_에서 _retriever_를 별도로 평가할 수 있다.\n' +
+      '\n' +
+      '각주 3: 텍스트 구절의 이상적인 크기와 경계는 검색기와 판독기 모두의 기능이다. 또한 사전 실험에서 자연 문단을 실험했으며 Wang 등(2019)에 의해 관찰된 바와 같이 고정 길이 구절을 사용하는 것이 검색 및 최종 QA 정확도 모두에서 더 나은 성능을 보인다는 것을 발견했다.\n' +
+      '\n' +
+      '각주 4: 예외는 서 등(2019) 및 로버츠 등(2020)을 포함하며, 이들은 각각 답변을 _검색_하고 _생성_한다.\n' +
+      '\n' +
+      '## 3 DPR(Dense Passage Retriever)\n' +
+      '\n' +
+      '우리는 이 작업에서 오픈 도메인 QA에서 _검색_ 구성 요소를 개선하는 데 초점을 맞춘다. 본 논문에서는 \\(M\\) 텍스트 문장의 집합이 주어졌을 때, 저차원 연속 공간에서 모든 문장을 색인하여 실행 시간에 독자를 위한 입력 문장과 관련된 상위 \\(k\\) 문장을 효율적으로 검색할 수 있도록 하는 고밀도 문장 검색기(DPR)를 제안한다. \\(M\\)은 매우 클 수 있으며(예: 섹션 4.1에 설명된 실험에서 2,100만 구절) \\(k\\)은 일반적으로 \\(20\\)-\\(100\\)과 같이 작다.\n' +
+      '\n' +
+      '### Overview\n' +
+      '\n' +
+      '본 논문에서 제안하는 조밀통로 검색기는 조밀인코더\\(E_{P}(\\cdot)\\)를 이용하여 임의의 텍스트 통로를 \\(d\\)차원의 실수 벡터로 매핑하고 검색에 사용할 모든 \\(M\\) 통로에 대한 인덱스를 구축한다.\n' +
+      '\n' +
+      'DPR은 런타임에 입력 질문을 \\(d\\)차원의 벡터로 매핑하는 다른 인코더 \\(E_{Q}(\\cdot)\\)를 적용하고, 질문 벡터와 가장 가까운 벡터인 \\(k\\)개의 구절을 검색한다. 우리는 질문과 구절 사이의 유사성을 벡터의 내적을 사용하여 정의한다.\n' +
+      '\n' +
+      '\\[\\mathrm{sim}(q,p)=E_{Q}(q)^{\\intercal}E_{P}(p). \\tag{1}\\]\n' +
+      '\n' +
+      '질문과 구문 사이의 유사성을 측정하기 위한 보다 표현적인 모델 형태가 여러 겹의 교차 주의로 구성된 네트워크와 같이 존재하지만, 구문 수집의 표현을 미리 계산할 수 있도록 유사성 함수를 분해할 필요가 있다. 대부분의 분해 가능한 유사도 함수는 유클리드 거리(L2)의 일부 변환이다. 예를 들어, 코사인은 단위 벡터에 대한 내적과 같고 마할라노비스 거리는 변환된 공간에서 L2 거리와 같다. 내부 제품 검색은 코사인 유사성 및 L2 거리와의 연결뿐만 아니라 널리 사용 및 연구되어 왔다(Mussmann and Ermon, 2016; Ram and Gray, 2012). 절제 연구는 유사한 다른 유사성 함수를 찾기 때문에(섹션 5.2; 부록 B), 더 간단한 내부 제품 함수를 선택하고 더 나은 인코더를 학습하여 조밀한 통로 검색기를 개선한다.\n' +
+      '\n' +
+      '인코더는 원칙적으로 질문 및 통로 인코더는 임의의 신경망에 의해 구현될 수 있지만, 본 연구에서는 두 개의 독립적인 BERT(Devlin et al., 2019) 네트워크(베이스, uncased)를 사용하고 [CLS] 토큰에서의 표현을 출력으로 취하므로 \\(d=768\\).\n' +
+      '\n' +
+      '추론 시간 동안 모든 구절에 대해 구절 인코더 \\(E_{P}\\)을 적용하고 FAISS (Johnson et al., 2017) 오프라인에서 색인한다. FAISS는 수십억 개의 벡터에 쉽게 적용할 수 있는 밀집 벡터의 유사성 검색 및 클러스터링을 위한 매우 효율적인 오픈 소스 라이브러리이다. 실행시간에 질문 \\(q\\)이 주어지면, 임베딩 \\(v_{q}=E_{Q}(q)\\)을 유도하고, 임베딩이 \\(v_{q}\\)에 가장 가까운 상위 \\(k\\) 구절을 검색한다.\n' +
+      '\n' +
+      '### Training\n' +
+      '\n' +
+      '상기 도트-제품 유사성(Eq. (1))이 검색에 좋은 순위 함수가 되는 것은 본질적으로 _메트릭 학습_ 문제이다(Kulis, 2013). 목표는 더 나은 임베딩 함수를 학습함으로써 관련 질문 및 구절의 쌍이 관련 없는 것보다 더 작은 거리(즉, 더 높은 유사성)를 갖도록 벡터 공간을 생성하는 것이다.\n' +
+      '\n' +
+      '\\(\\mathcal{D}=\\{\\langle q_{i},p_{i}^{+},p_{i,1}^{-},\\cdots,p_{i,n}^{-}\\rangle\\}_ {i=1}^{m}\\)을 \\(m\\)개의 인스턴스로 구성된 학습 데이터로 한다. 각 인스턴스는 하나의 질문 \\(q_{i}\\)과 하나의 관련 (양성) 통로 \\(p_{i}^{+}\\)과 \\(n\\) 무관한 (음성) 통로 \\(p_{i,j}^{-}\\)을 포함한다. 우리는 손실 함수를 양의 계대의 음의 로그 가능성으로 최적화한다.\n' +
+      '\n' +
+      '\\[L(q_{i},p_{i}^{+},p_{i,1}^{-},\\cdots,p_{i,n}^{-})\\] \\[= -\\log\\frac{e^{\\mathrm{sim}(q_{i},p_{i}^{+})}}{e^{\\mathrm{sim}(q_ {i},p_{i}^{+})}+\\sum_{j=1}^{n}e^{\\mathrm{sim}(q_{i},p_{i,j}^{-})}}}}.\\]\n' +
+      '\n' +
+      '검색 문제에 대한 긍정 및 부정 구절은 일반적으로 긍정 예제를 명시적으로 사용할 수 있는 반면 부정 예제는 매우 큰 풀에서 선택해야 하는 경우가 많다. 예를 들어, 질문과 관련된 지문은 QA 데이터세트에서 주어질 수 있거나, 답변을 사용하여 찾을 수 있다. 컬렉션의 다른 모든 구절은 명시적으로 명시되지 않았지만 기본적으로 관련이 없는 것으로 볼 수 있다. 실제로 부정적인 예를 선택하는 방법은 종종 간과되지만 고품질 인코더를 학습하는 데 결정적일 수 있다. 우리는 세 가지 다른 유형의 부정들을 고려한다 : (1) 랜덤: 말뭉치로부터의 임의의 구절; (2) BM25: 정답을 포함하지 않지만 대부분의 질문 토큰들과 일치하는 BM25에 의해 반환되는 상단 구절; (3) 골드: 트레이닝 세트에 나타나는 다른 질문들과 쌍을 이루는 긍정적인 구절. 섹션 5.2에서 다양한 유형의 네거티브 통로와 훈련 계획의 영향에 대해 논의할 것이다. 우리의 최상의 모델은 동일한 미니 배치와 하나의 BM25 네거티브 통로의 골드 통로를 사용한다. 특히, 네거티브와 동일한 배치로부터의 금 패시지를 재사용하는 것은 큰 성능을 달성하면서 계산을 효율적으로 만들 수 있다. 우리는 아래에서 이 접근법에 대해 논의한다.\n' +
+      '\n' +
+      '배치 내 음성은 미니 배치에서 \\(B\\) 질문이 있고 각각이 관련 구절과 연관되어 있다고 가정한다. \\(\\mathbf{Q}\\) 및 \\(\\mathbf{P}\\)을 크기의 일괄 처리에서 질문 및 통과 임베딩의 \\((B\\times d)\\) 행렬로 가정합니다 \\(B\\). \\ (\\mathbf{S}=\\mathbf{QP}^{T}\\)는 유사성 점수의 \\((B\\times B)\\) 행렬이며, 각 행은 질문에 해당하며 \\(B\\) 구절과 쌍을 이룬다. 이러한 방법으로 우리는 계산을 재사용하고 각 배치에서 \\(B^{2}\\)(\\(q_{i}\\), \\(p_{j}\\)) 질문/통과 쌍에 대해 효과적으로 훈련한다. 임의의 (\\(q_{i}\\), \\(p_{j}\\)) 쌍은 \\(i=j\\)일 때 양의 예이고 그렇지 않으면 음의 예이다. 이렇게 하면 각 배치에 \\(B\\) 학습 인스턴스가 생성되며, 각 질문에 대해 \\(B-1\\)음수 구문이 있습니다.\n' +
+      '\n' +
+      '인-배치 네거티브의 트릭은 전체 배치 설정 Yih 등(2011) 및 보다 최근에 미니 배치 Henderson 등(2017); Gillick 등(2019)에 사용되었다. 훈련 사례 수를 높이는 이중 인코더 모델을 학습하는 데 효과적인 전략인 것으로 나타났다.\n' +
+      '\n' +
+      '## 4 Experimental Setup\n' +
+      '\n' +
+      '이 섹션에서는 실험에 사용한 데이터와 기본 설정에 대해 설명한다.\n' +
+      '\n' +
+      '### Wikipedia 데이터 전처리\n' +
+      '\n' +
+      'Lee et al. (2019)에 이어, 우리는 12월부터 English Wikipedia dump를 사용한다. 20, 2018. 우리는 먼저 DrQA Chen 등(2017)에서 공개된 전처리 코드를 적용하여 위키피디아 덤프로부터 기사의 깨끗하고 텍스트 부분을 추출한다. 이 단계에서는 테이블, 인포박스, 목록 및 명확화 페이지와 같은 반구조화된 데이터를 제거합니다. 그런 다음 각 문서를 _passages_ 로서 100 단어의 여러 개의 서로 다른 텍스트 블록으로 분할 하 여 기본 검색 단위 역할을 합니다. Wang 등 (2019)에 따라 끝에 21,015,324개의 구절이 생성 됩니다. 5 각 구절에는 [SEP] 토큰과 함께 해당 구절이 있는 위키피디아 문서의 제목도 함께 제공 됩니다.\n' +
+      '\n' +
+      '각주 5: 그러나 Wang 등(2019)도 문서를 겹치는 구절로 분할하는 것을 제안하며, 이는 겹치지 않는 버전에 비해 유리하지 않다.\n' +
+      '\n' +
+      '### 질문 응답 데이터 세트\n' +
+      '\n' +
+      '이전 연구 Lee 등(2019)과 동일한 5개의 QA 데이터셋과 학습/dev/테스트 분할 방법을 사용한다. 아래에서는 각 데이터 세트에 대해 간략하게 설명하고 데이터 준비에 대한 자세한 내용은 독자를 논문에 참조한다.\n' +
+      '\n' +
+      '**자연 질문 (NQ)**Kwiatkowski 등 (2019)은 엔드 투 엔드 질문 답변을 위해 설계 되었습니다. 질문은 실제 구글 검색 쿼리로부터 채굴되었으며 답변은 주석자가 식별한 위키피디아 기사에서 이루어졌다.\n' +
+      '\n' +
+      '**TriviaQA**Joshi et al. (2017)에는 원래 웹에서 긁어낸 답변이 있는 기본 질문 세트가 포함되어 있습니다.\n' +
+      '\n' +
+      '**WebQuestions (WQ)**Berant 등 (2013)은 Google Suggest API를 사용 하 여 선택 된 질문으로 구성 됩니다. 여기서 답변은 Freebase의 엔터티입니다.\n' +
+      '\n' +
+      '**TREC (CuratedTREC)**Baudis 및 Sedivy (2015)는 TREC QA 트랙의 질문과 다양한 웹 소스를 제공 하며 구조화되지 않은 말뭉치의 개방형 도메인 QA를 위한 것입니다.\n' +
+      '\n' +
+      '**SQuAD v1.1**Rajpurkar 등 (2016)은 읽기 이해를 위한 인기 있는 벤치마크 데이터 세트입니다. 주석에는 위키피디아 문단이 제시되었고 주어진 텍스트에서 답할 수 있는 질문을 작성하도록 요청하였다. SQuAD는 이전에 개방형 QA 연구에 사용되었지만 제공된 단락이 없을 때 많은 질문이 맥락이 부족하기 때문에 이상적이지 않다. 이전 작업과 공정한 비교를 제공하기 위해 여전히 실험에 포함되며 섹션 5.1에서 더 자세히 논의할 것이다.\n' +
+      '\n' +
+      '긍정적인 구절의 선택 TREC, WebQuestions 및 트리비아QA6에는 질문과 답변 쌍만 제공되기 때문에 BM25에서 가장 순위가 높은 구절을 긍정 구절로 사용한다. 검색된 상위 100개 구절 중 정답이 없는 경우 질문은 폐기된다. SQuAD와 Natural Question의 경우, 원본 구절이 후보 구절 풀과 다르게 분할되어 처리되었기 때문에, 각 골드 구절을 후보 풀의 해당 구절로 매칭하고 교체한다. 7 위키피디아 버전이나 전처리 과정이 달라 매칭이 실패했을 때 질문을 버린다. 표 1은 모든 데이터 세트에 대한 훈련/dev/테스트 세트의 질문 수와 검색기 훈련에 사용된 실제 질문을 보여준다.\n' +
+      '\n' +
+      '각주 6: 우리는 여과되지 않은 트리비아QA 버전을 사용하고 Bing에서 채굴된 시끄러운 증거 문서를 폐기한다.\n' +
+      '\n' +
+      '각주 7: 정답을 포함하는 구절보다 금 문맥을 사용하는 것의 개선은 작다. 섹션 5.2 및 부록 A를 참조하십시오.\n' +
+      '\n' +
+      '## 5 실험: 통로 검색\n' +
+      '\n' +
+      '이 절에서는 DPR(Dense Passage Retriever)의 검색 성능을 평가하고 출력과 어떤 차이가 있는지 분석한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r r r} \\hline \\hline\n' +
+      '**Dataset** & \\multicolumn{2}{c}{**Train**} & \\multicolumn{1}{c}{**Dev**} & \\multicolumn{1}{c}{**Test**} \\\\ \\hline Natural Questions & 79,168 & 58,880 & 8,757 & 3,610 \\\\ TriviaQA & 78,785 & 60,413 & 8,837 & 11,313 \\\\ WebQuestions & 3,417 & 2,474 & 361 & 2,032 \\\\ CuratedTREC & 1,353 & 1,125 & 133 & 694 \\\\ SQuAD & 78,713 & 70,096 & 8,886 & 10,570 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 각 QA 데이터세트의 질문 수. **훈련** 의 두 열은 데이터 세트의 원래 훈련 예제와 필터링 후 DPR 훈련에 사용되는 실제 질문을 나타냅니다. 자세한 내용은 텍스트를 참조하십시오.\n' +
+      '\n' +
+      '전통적인 검색 방법, 다양한 훈련 방식의 효과 및 실행 시간 효율성.\n' +
+      '\n' +
+      '주요 실험에 사용된 DPR 모델은 배치 크기 \\(128\\)의 배치 내 음성 설정(섹션 3.2)과 질문당 하나의 추가 BM25 음성 계대를 사용하여 훈련된다. 대용량 데이터셋(NQ, TriviaQA, SQuAD)과 소형 데이터셋(TREC, WQ)의 경우 최대 \\(40\\)에 대한 질문과 통과 인코더를 학습하였으며, Adam을 이용한 학습률 \\(10^{-5}\\), 웜업 및 드롭아웃률 \\(0.1\\)을 갖는 선형 스케줄링 \\(10^{-5}\\)을 학습하였다.\n' +
+      '\n' +
+      '리트리버를 각각의 데이터세트에 적응시키는 유연성을 갖는 것이 좋지만, 전체적으로 잘 작동하는 단일 리트리버를 얻는 것도 바람직할 것이다. 이를 위해 SQuAD.8을 제외한 모든 데이터셋의 학습 데이터를 결합하여 _multi_-dataset 인코더를 학습시킨다. 또한, 기존의 검색 방법 9인 BM25와 BM25+DPR의 결과를 새로운 순위 함수로 사용하여 제시한다. 구체적으로, BM25와 DPR을 기반으로 두 개의 상위 2000개 패시지의 초기 집합을 각각 구하고, BM25(\\(q\\),\\(p\\)) + \\(\\lambda\\cdot\\mathrm{sim}(q,p)\\)를 순위 함수로 사용하여 이들의 합을 재순위화한다. 개발 집합에서 검색 정확도를 기준으로 \\(\\lambda=1.1\\)을 사용하였다.\n' +
+      '\n' +
+      '각주 8: SQuAD는 작은 세트의 위키피디아 문서들로 제한되고 따라서 원치 않는 편향을 도입한다. 우리는 섹션 5.1에서 이 문제에 대해 더 논의할 것입니다.\n' +
+      '\n' +
+      '각주 9: 시행을 중단하라. BM25 파라미터 \\(b=0.4\\)(문서 길이 정규화) 및 \\(k_{1}=0.9\\)(기간 주파수 스케일링)은 개발 세트를 사용하여 조정된다.\n' +
+      '\n' +
+      '### Main Results\n' +
+      '\n' +
+      '표 2는 상위(k\\) 정확도(\\(k\\in\\{20,100\\}\\))를 사용하여 5개의 QA 데이터 세트에 대한 다른 통로 검색 시스템을 비교한다. SQuAD를 제외하고 DPR은 모든 데이터 세트에서 BM25보다 일관되게 더 나은 성능을 보인다. 그 차이는 특히 \\(k\\)이 작을 때 크다(예를 들어, 자연질문에 대한 상위 20개 정확도의 경우 78.4% 대 59.1%). 여러 데이터 세트로 훈련할 때 5개 중 가장 작은 데이터 세트인 TREC는 더 많은 훈련 예제에서 큰 이점을 얻는다. 대조적으로, 자연 질문과 웹 질문은 약간 개선되고 트리비아QA는 약간 저하된다. 결과는 단일 및 다중 데이터 세트 설정 모두에서 DPR과 BM25를 결합함으로써 일부 경우에 더 향상될 수 있다.\n' +
+      '\n' +
+      '우리는 SQuAD에서 낮은 성능이 두 가지 이유로 인한 것이라고 추측한다. 먼저, 주석자들은 구절을 보고 질문을 작성했다. 그 결과 구절과 문항 간 어휘 중복이 높아 BM25가 분명한 장점을 갖게 된다. 둘째, 데이터는 500개 이상의 위키피디아 기사에서만 수집되었기 때문에 Lee 등(2019)이 이전에 주장한 바와 같이 훈련 예제의 분포가 극도로 편향되어 있다.\n' +
+      '\n' +
+      '### 모델 학습 삭제 연구\n' +
+      '\n' +
+      '다양한 모델 훈련 옵션이 결과에 어떻게 영향을 미치는지 더 이해하기 위해 몇 가지 추가 실험을 수행하고 아래 결과를 논의한다.\n' +
+      '\n' +
+      '그림 1: 조밀한 통로 검색기와 BM25에서 사용된 훈련 예제의 수를 달리한 검색기 상단-\\(k\\) 정확도. 결과는 자연 질문의 개발 세트에 대해 측정된다. 1,000개의 예제를 사용하여 훈련된 DPR은 이미 BM25보다 성능이 뛰어납니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l|c c c c|c c c c c} \\hline \\hline\n' +
+      '**Training** & **Retriever** & \\multicolumn{4}{c|}{**Top-20**} & \\multicolumn{4}{c}{**Top-100**} \\\\  & & NQ & TriviaQA & WQ & TREC & SQuAD & NQ & TriviaQA & WQ & TREC & SQuAD \\\\ \\hline None & BM25 & 59.1 & 66.9 & 55.0 & 70.9 & 68.8 & 73.7 & 76.7 & 71.1 & 84.1 & 80.0 \\\\ \\hline \\multirow{2}{*}{Single} & DPR & 78.4 & 79.4 & 73.2 & 79.8 & 63.2 & 85.4 & **85.0** & 81.4 & 89.1 & 77.2 \\\\  & BM25 + DPR & 76.6 & 79.8 & 71.0 & 85.2 & **71.5** & 83.8 & 84.5 & 80.5 & 92.7 & **81.3** \\\\ \\hline \\multirow{2}{*}{Multi} & DPR & **79.4** & 78.8 & **75.0** & **89.1** & 51.6 & **86.0** & 84.7 & **82.9** & 93.9 & 67.6 \\\\  & BM25 + DPR & 78.0 & **79.9** & 74.7 & 88.5 & 66.2 & 83.9 & 84.4 & 82.3 & **94.1** & 78.6 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 정답을 포함하는 상위 20/100개의 검색된 구절의 백분율로 측정된, 테스트 세트에 대한 상위-20 및 상위-100 검색 정확도 _ Single_ 및 _Multi_는 DPR(Dense Passage Retriever)이 개별 또는 결합된 학습 데이터 세트(SQuAD를 제외한 모든 데이터 세트)를 사용하여 학습되었음을 나타냅니다. 자세한 내용은 텍스트를 참조하십시오.\n' +
+      '\n' +
+      '샘플 효율성은 좋은 통과 검색 성능을 얻기 위해 얼마나 많은 훈련 예제가 필요한지 탐구한다. 그림 1은 자연 질문의 개발 세트에서 측정된 다양한 수의 훈련 예제에 대한 상위-\\(k\\) 검색 정확도를 보여준다. 도시된 바와 같이, 단지 1,000개의 예만을 사용하여 트레이닝된 밀집형 통로 검색기는 BM25보다 이미 우수한 성능을 갖는다. 이는 일반적인 사전 트레이닝된 언어 모델을 사용하면, 적은 수의 질문-통로 쌍으로 고품질의 밀집형 검색기를 트레이닝할 수 있음을 시사한다. 더 많은 트레이닝 예(1k에서 59k까지)를 추가하면 검색 정확도가 일관되게 더욱 향상된다.\n' +
+      '\n' +
+      '배치 내 음성 훈련은 자연 질문의 개발 세트에 대해 서로 다른 훈련 방식을 테스트하고 결과를 표 3에 요약한다. 상단 블록은 배치의 각 질문이 양의 구절과 \\(n\\) 음의 구절 세트(Eq)와 쌍을 이루는 표준 1-of-\\(N\\) 훈련 설정이다. (2)). 무작위, BM25 또는 금 구절(다른 질문의 긍정 구절)의 선택이 \\(k\\geq 20\\)일 때 이 설정에서 상위 \\(k\\) 정확도에 큰 영향을 미치지 않는다는 것을 발견했다.\n' +
+      '\n' +
+      '중간 보크는 배치 내 음성 훈련(섹션 3.2) 설정입니다. 유사한 구성(7 골드 네거티브 패스)을 사용하여 배치 내 네거티브 트레이닝이 결과를 상당히 향상시킨다는 것을 발견했다. 둘 사이의 주요 차이점은 금 네거티브 구절이 동일한 배치에서 나오는지 전체 훈련 세트에서 나오는지 여부이다. 효과적으로, 회분식 네거티브 트레이닝은 새로운 예제를 생성하는 것보다 이미 배치에 있는 네거티브 예제를 재사용하는 쉽고 메모리 효율적인 방법이다. 이것은 더 많은 쌍을 생성하고 따라서 트레이닝 예제의 수를 증가시키며, 이는 좋은 모델 성능에 기여할 수 있다. 결과적으로 배치 크기가 커질수록 정확도가 지속적으로 향상됩니다.\n' +
+      '\n' +
+      '마지막으로, 질문이 주어졌을 때 BM25 점수가 높지만 답변 문자열(하단 블록)을 포함하지 않는 추가 "하드" 음성 구절을 사용하여 배치 내 음성 훈련을 탐색한다. 이 추가 구절은 동일한 배치의 모든 질문에 대한 부정적인 구절로 사용됩니다. 우리는 하나의 BM25 음성 계대를 추가하는 것이 결과를 실질적으로 개선하는 반면 두 개를 추가하는 것은 더 이상 도움이 되지 않는다는 것을 발견했다.\n' +
+      '\n' +
+      '금 패시지의 영향 원본 데이터 세트(사용 가능한 경우)의 금 컨텍스트와 일치하는 패시지를 긍정적인 예로 사용합니다(섹션 4.2). 자연질문에 대한 우리의 실험은 멀리 지도된 구절(답안을 포함하는 가장 높은 순위의 BM25 구절을 사용)로 전환하는 것이 검색에 1포인트 낮은 상위\\(k\\) 정확도라는 작은 영향만 미친다는 것을 보여준다. 부록 A는 더 자세한 내용을 담고 있다.\n' +
+      '\n' +
+      '유사도 및 손실 외에도 코사인 및 유클리드 L2 거리도 분해 가능한 유사성 함수로 일반적으로 사용된다. 우리는 이러한 대안을 테스트하고 L2가 내적에 필적하는 성능을 가지며 둘 다 코사인보다 우수하다는 것을 발견했다. 마찬가지로, 음의 로그 가능성 외에도 순위를 매기기 위한 인기 있는 옵션은 3중항 손실로, 이는 질문에 대해 긍정적인 통과와 부정적인 통과를 직접 비교한다[11]. 우리의 실험은 삼중항 손실을 사용하는 것이 결과에 큰 영향을 미치지 않는다는 것을 보여준다. 더 자세한 내용은 부록 B에서 확인할 수 있다.\n' +
+      '\n' +
+      '교차 데이터 세트 일반화 DPR의 차별적 훈련에 관한 한 가지 흥미로운 질문은 그것이 비-아이드 설정으로 인해 얼마나 많은 성능 저하를 겪을 수 있는지이다. 즉, 추가적인 미세 조정 없이 다른 데이터셋에 직접 적용해도 여전히 일반화가 잘 될 수 있는가? 교차 데이터 집합 일반화를 테스트하기 위해 자연 질문에 대해서만 DPR을 훈련하고 더 작은 WebQuestions 및 CuratedTREC 데이터 집합에서 직접 테스트한다. DPR은 상위 20개 검색 정확도(69.9/86.3 vs. WebQuestions 및 TREC의 경우 각각 75.0/89.1), 여전히 BM25 기준선(55.0/70.9)을 크게 능가한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c} \\hline \\hline\n' +
+      '**Type** & **\\#N** & **IB** & **Top-5** & **Top-20** & **Top-100** \\\\ \\hline Random & 7 & ✗ & 47.0 & 64.3 & 77.8 \\\\ BM25 & 7 & ✗ & 50.0 & 63.3 & 74.8 \\\\ Gold & 7 & ✗ & 42.6 & 63.1 & 78.3 \\\\ \\hline Gold & 7 & ✓ & 51.1 & 69.1 & 80.8 \\\\ Gold & 31 & ✓ & 52.1 & 70.8 & 82.1 \\\\ Gold & 127 & ✓ & 55.8 & 73.0 & 83.1 \\\\ \\hline G\\textless{}+BM25\\({}^{(1)}\\) & 31+32 & ✓ & 65.0 & 77.3 & 84.4 \\\\ G\\textless{}+BM25\\({}^{(2)}\\) & 31+64 & ✓ & 64.5 & 76.4 & 84.0 \\\\ G\\textless{}+BM25\\({}^{(1)}\\) & 127+128 & ✓ & **65.8** & **78.0** & **84.9** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: Natural Questions(개발 세트)에 대한 상위-\\(k\\) 검색 정확도로 측정된 상이한 트레이닝 스킴의 비교. # N: 부정 예시 수, IB: 배치 내 트레이닝. G\\textless{}+BM25\\({}^{(1)}\\) 및 G\\textless{}+BM25\\({}^{(2)}\\)은 배치의 모든 질문에 대해 부정적인 구절 역할을 하는 1개 또는 2개의 추가 BM25 음성을 사용하여 배치 내 훈련을 나타낸다.\n' +
+      '\n' +
+      '### Qualitative Analysis\n' +
+      '\n' +
+      'DPR이 일반적으로 BM25보다 성능이 우수하지만 이 두 가지 방법으로 검색된 계대는 질적으로 다르다. BM25와 같은 용어 매칭 방법은 매우 선택적인 키워드 및 구문에 민감한 반면 DPR은 어휘 변형 또는 의미 관계를 더 잘 포착한다. 예제 및 자세한 내용은 부록 C를 참조하십시오.\n' +
+      '\n' +
+      '### Run-time Efficiency\n' +
+      '\n' +
+      '오픈 도메인 질의응답을 위한 검색 컴포넌트를 필요로 하는 주된 이유는 실시간으로 사용자의 질문에 응답하기 위해 중요한 후보 구절의 수를 줄이기 위해서이다. 인텔 제온 CPU E5-2698 v4 @ 2.20GHz 및 512GB 메모리를 사용하여 서버에서 통과 검색 속도를 프로파일링했다. 실제 값 벡터 10에 대한 FAISS 인메모리 인덱스의 도움으로 DPR은 초당 995.0 질문을 처리하여 질문당 상위 100개의 지문을 반환하는 믿을 수 없을 정도로 효율적일 수 있다. 대조적으로, BM25/Lucene(Java로 구현, 파일 인덱스를 사용하여)은 CPU 스레드당 초당 23.7개의 질문을 처리한다.\n' +
+      '\n' +
+      '각주 10: FAISS 구성: CPU 상의 HNSW 인덱스 타입, 노드당 저장할 이웃들 = 512, 구축 시간 탐색 깊이 = 200, 탐색 깊이 = 128을 사용하였다.\n' +
+      '\n' +
+      '반면, 밀집 벡터에 대한 인덱스 구축에 소요되는 시간은 훨씬 길다. 2,100만 개의 통로에서 밀집 임베딩을 계산하는 것은 자원 집약적이지만 8개의 GPU에서 대략 8.8시간이 소요되어 쉽게 병렬화할 수 있다. 그러나 단일 서버에 2,100만 개의 벡터로 FAISS 인덱스를 구축하는 데는 8.5시간이 소요된다. 이에 비해 루신을 이용해 역지수를 구축하는 것은 훨씬 저렴하고 총 30분 정도밖에 걸리지 않는다.\n' +
+      '\n' +
+      '## 6 실험: 질문 응답\n' +
+      '\n' +
+      '이 섹션에서는 다른 통로 검색기가 최종 QA 정확도에 어떻게 영향을 미치는지 실험한다.\n' +
+      '\n' +
+      '### 엔드투엔드 QA 시스템\n' +
+      '\n' +
+      '다양한 검색 시스템을 직접 연결할 수 있는 종단 간 질의 응답 시스템을 구현한다. 검색기 외에도 QA 시스템은 질문에 대한 답변을 출력하는 신경 _읽기_ 로 구성됩니다. 실험에서 검색된 상위 \\(k\\)개의 구절(최대 \\(100\\)이 주어지면 독자는 각 구절에 구절 선택 점수를 할당한다. 또한, 각 구절에서 답안 스팬을 추출하여 스팬 점수를 부여한다. 가장 높은 지문의 선택 점수를 가진 지문의 가장 좋은 스팬이 최종 답안으로 선택된다. 지문 선택 모형은 문항과 지문의 교차 주의를 통해 재순위자 역할을 한다. 크로스 어텐션은 분해 불가능한 특성으로 인해 대용량 코퍼스에서 관련 구문을 검색할 수 없지만, Eq와 같이 이중 인코더 모델 \\(\\mathrm{sim}(q,p)\\)보다 더 많은 용량을 가지고 있다. (1). 소수의 검색된 후보에서 통과를 선택하는 데 적용하는 것은 Wang et al.(2019, 2018); Lin et al.(2018)이 잘 작동하는 것으로 나타났다.\n' +
+      '\n' +
+      '특히, \\(\\mathbf{P}_{i}\\in\\mathbb{R}^{L\\times h}\\)(\\(1\\leq i\\leq k\\))는 \\(i\\)번째 통로에 대한 BERT(base, uncased) 표현이며, 여기서 \\(L\\)은 통로의 최대 길이이고 \\(h\\)은 숨겨진 차원이다. 토큰이 응답 스팬 및 선택되는 패시지의 시작/종료 위치일 확률들은 다음과 같이 정의된다:\n' +
+      '\n' +
+      '\\[P_{\\text{start},i}(s) = \\mathrm{softmax}\\big{(}\\mathbf{P}_{i}\\mathbf{w_{\\text{start}} \\big{)}_{s}, \\tag{3}\\] \\[P_{\\text{end},i}(t) = \\mathrm{softmax}\\big{(}\\mathbf{P}_{i}\\mathbf{w_{\\text{end}} \\big{)}_{t},\\] (4) \\[P_{\\text{selected}}(i) = \\mathrm{softmax}\\big{(}\\mathbf{\\hat{P}}^{\\intercal}\\mathbf{w_{ \\text{selected}}}\\big{)}_{i}, \\tag{5}\\]\n' +
+      '\n' +
+      '여기서 \\(\\mathbf{\\hat{P}}=[\\mathbf{P}_{1}^{[\\mathrm{CLS}]},\\dots,\\mathbf{P}_{k}^{[\\mathrm{CLS}]}]\\in\\mathbb{R}^{h\\times k}\\) 및 \\(\\mathbf{w_{\\text{start}},\\mathbf{w_{\\text{end}},\\mathbf{w_{\\text{selected}}} \\in\\mathbb{R}^{h}\\)는 학습 가능한 벡터입니다. 본 논문에서는 \\(i\\)번째 문장에서 \\(s\\)번째부터 \\(t\\)번째 단어의 스팬 점수를 \\(P_{\\text{start},i}(s)\\times P_{\\text{end},i}(t)\\으로 계산하고, \\(i\\)번째 문장의 문장 선택 점수를 \\(P_{\\text{selected}}(i)\\으로 계산한다.\n' +
+      '\n' +
+      '학습 과정에서 각 질문에 대해 검색 시스템(BM25 또는 DPR)에서 반환한 상위 100개 구절에서 1개의 긍정 및 \\(\\tilde{m}-1\\) 부정 구절을 샘플링한다. \\ (\\tilde{m}\\)은 하이퍼파라미터이며, 우리는 모든 실험에서 \\(\\tilde{m}=24\\)을 사용한다. 트레이닝 목적은 선택되는 포지티브 패시지의 로그-우도와 결합된, 포지티브 패시지에 걸쳐 있는 모든 정답의 한계 로그-우도(답변 문자열이 하나의 패시지에서 여러 번 나타날 수 있음)를 최대화하는 것이다. 대용량(NQ, TriviaQA, SQuAD) 데이터셋의 경우 16, 소형(TREC, WQ) 데이터셋의 경우 4의 배치 크기를 사용하고 개발 집합에서 \\(k\\)을 조정한다. 다른 데이터 세트를 사용할 수 있는 _Multi_ 설정의 작은 데이터 세트에 대한 실험의 경우 자연 질문에 대해 훈련된 독자를 대상 데이터 세트에 미세 조정합니다. 모든 실험은 8개의 32GB GPU에서 수행되었다.\n' +
+      '\n' +
+      '### Results\n' +
+      '\n' +
+      '표 4는 Chen 등(2017); Lee 등(2019)에서와 같이 사소한 정규화 후 참조 답변과 _정확한 일치_로 측정한 최종 종단 간 QA 결과를 요약한 것이다. 표로부터, 우리는 일반적으로 더 높은 검색 정확도가 더 나은 최종 QA 결과를 도출한다는 것을 알 수 있다: SQuAD를 제외한 모든 경우에, DPR에 의해 검색된 패스에서 추출된 답변은 BM25에 비해 더 정확할 가능성이 더 높다. NQ 및 트리비아QA와 같은 대규모 데이터 세트의 경우, 다중 데이터 세트(Multi)를 사용하여 훈련된 모델은 개별 훈련 세트(Single)를 사용하여 훈련된 모델과 비교적으로 수행된다. 반대로 WQ 및 TREC와 같은 더 작은 데이터 세트에서는 다중 데이터 세트 설정이 분명한 이점이 있습니다. 전반적으로 DPR 기반 모델은 정확한 일치 정확도에서 1%에서 12%의 절대 차이로 5개의 데이터 세트 중 4개에서 이전 최신 결과를 능가한다. 우리의 결과를 ORQA(Lee et al., 2019) 및 동시에 개발된 접근법인 REALM(Guu et al., 2020)의 결과와 대조하는 것은 흥미롭다. 두 방법 모두 추가적인 사전 훈련 작업을 포함하고 값비싼 엔드 투 엔드 훈련 체제를 사용하는 반면, DPR은 단순히 질문과 답변 쌍을 사용하여 강력한 통과 검색 모델을 학습하는 데 초점을 맞추는 것만으로도 NQ 및 트리비아QA 모두에서 이를 능가할 수 있다. 추가적인 사전 트레이닝 태스크들은 타겟 트레이닝 세트들이 작을 때에만 더 유용할 가능성이 있다. 단일 데이터 세트 설정에서 WQ 및 TREC에 대한 DPR의 결과는 경쟁력이 낮지만 더 많은 질문-답변 쌍을 추가하면 성능이 향상되어 새로운 최신 기술을 달성할 수 있다.\n' +
+      '\n' +
+      '파이프라인 학습 방법과 공동 학습을 비교하기 위해 Lee et al. (2019)에 따라 검색기와 독자가 공동으로 학습되는 자연 질문에 대한 삭제를 실행한다. 이 접근법은 39.8 EM의 점수를 얻는데, 이는 강력한 검색기와 독자를 격리하여 훈련시키는 우리의 전략이 효과적으로 이용 가능한 감독을 활용할 수 있는 반면, 더 간단한 설계(부록 D)로 유사한 공동 훈련 접근법을 능가할 수 있음을 시사한다.\n' +
+      '\n' +
+      '주목할 만한 한 가지는 추론에 얼마나 더 많은 시간이 걸리는지는 완전히 명확하지 않지만 독자가 ORQA에 비해 더 많은 구절을 고려한다는 것이다. DPR이 각 질문에 대해 최대 100개의 패시지를 처리하는 동안 판독기는 모든 패시지를 단일 32GB GPU에서 하나의 배치에 맞출 수 있으므로 대기 시간은 단일 패시지의 경우(약 20ms)와 거의 동일하게 유지된다. ORQA는 DPR(100개의 토큰에 비해 288개의 단어 조각)에 비해 2-3배 더 긴 패스를 사용하고 계산 복잡도는 통로 길이가 초선형이다. 또한 \\(k=50\\)이 NQ에 최적인 것으로 나타났으며 \\(k=10\\)은 정확한 일치 정확도(40.8 vs. 41.5 EM on NQ)에서 한계 손실만 발생한다는 점에 주목한다. 이는 ORQA의 5개 계대 설정과 거의 비슷해야 한다.\n' +
+      '\n' +
+      '## 7 관련 작업\n' +
+      '\n' +
+      'Passage retrieval은 open-domain QA(Voorhees, 1999)의 중요한 구성 요소였다. 이는 답변 추출을 위한 검색 공간을 효과적으로 감소시킬 뿐만 아니라, 사용자가 답변을 검증하기 위한 지원 컨텍스트를 식별한다. TF-IDF나 BM25와 같은 강한 희소 벡터 공간 모델\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l c c c c c} \\hline \\hline\n' +
+      '**Training** & **Model** & **NQ** & **TriviaQA** & **WQ** & **TREC** & **SQuAD** \\\\ \\hline Single & BM25+BERT (Lee et al., 2019) & 26.5 & 47.1 & 17.7 & 21.3 & 33.2 \\\\ Single & ORQA (Lee et al., 2019) & 33.3 & 45.0 & 36.4 & 30.1 & 20.2 \\\\ Single & HardEM (Min et al., 2019) & 28.1 & 50.9 & - & - & - \\\\ Single & GraphRetriever (Min et al., 2019) & 34.5 & 56.0 & 36.4 & - & - \\\\ Single & PathRetriever (Asai et al., 2020) & 32.6 & - & - & - & **56.5** \\\\ Single & REALM\\({}_{\\text{Wiki}}\\)(Guu et al., 2020) & 39.2 & - & 40.2 & 46.8 & - \\\\ Single & REALM\\({}_{\\text{News}}\\)(Guu et al., 2020) & 40.4 & - & 40.7 & 42.9 & - \\\\ \\hline \\multirow{3}{*}{Single} & BM25 & 32.6 & 52.4 & 29.9 & 24.9 & 38.1 \\\\  & DPR & **41.5** & 56.8 & 34.6 & 25.9 & 29.8 \\\\  & BM25+DPR & 39.0 & 57.0 & 35.2 & 28.0 & 36.7 \\\\ \\hline \\multirow{3}{*}{Multi} & DPR & **41.5** & 56.8 & **42.4** & 49.4 & 24.1 \\\\  & BM25+DPR & 38.8 & **57.9** & 41.1 & **50.6** & 35.8 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 엔드 투 엔드 QA(Exact Match) 정확도. 첫 번째 결과 블록은 인용된 논문에서 복사됩니다. REALM\\({}_{\\text{Wiki}}\\)과 REALM\\({}_{\\text{News}}\\)은 동일한 모델이지만 위키피디아와 CC-News에서 각각 사전 훈련되었다. _ Single_ 및 _Multi_는 DPR(Dense Passage Retriever)이 개별 또는 결합된 학습 데이터 세트(SQuAD를 제외한 모든)를 사용하여 학습된다는 것을 나타냅니다. _Multi_ 설정에서 WQ 및 TREC의 경우 NQ에 대해 훈련된 판독기를 미세 조정합니다.\n' +
+      '\n' +
+      '다양한 QA 태스크들에 광범위하게 적용되는 표준 방법으로서 사용되었다 (예를 들어, Chen et al., 2017; Yang et al., 2019, 2019; Nie et al., 2019; Min et al., 2019; Wolfson et al., 2020). 지식 그래프 및 위키피디아 하이퍼링크와 같은 외부 구조화된 정보를 갖는 텍스트 기반 검색이 또한 최근에 탐색되었다(Min et al., 2019; Asai et al., 2020).\n' +
+      '\n' +
+      '검색에 대한 조밀한 벡터 표현의 사용은 Latent Semantic Analysis (Deerwester et al., 1990) 이후 오랜 역사를 가지고 있다. 질문과 문서의 라벨링된 쌍을 사용하여, 차별적으로 훈련된 밀집 인코더가 최근 대중화되고 있다(Yih et al., 2011; Huang et al., 2013; Gillick et al., 2019). 교차-언어 문서 검색, 광고 관련성 예측, 웹 검색 및 엔티티 검색에 대한 애플리케이션과 함께. 이러한 접근법은 정확한 토큰 매칭이 없어도 의미적으로 관련된 텍스트 쌍에 높은 유사성 점수를 잠재적으로 제공할 수 있기 때문에 희소 벡터 방법을 보완한다. 그러나 조밀한 표현만으로는 일반적으로 희박한 표현보다 열등하다. 이 작업의 초점은 아니지만, 교차-주의 메커니즘과 함께 사전 훈련된 모델로부터의 조밀한 표현은 또한 통과 또는 대화 재순위화 작업(노게이라 및 Cho, 2019; Humeau 등, 2020)에서 효과적인 것으로 나타났다. 마지막으로, 동시 작업(카탭과 자하리아, 2020)은 IR 작업에서 완전한 밀도 검색의 가능성을 보여준다. 이중 인코더 프레임워크를 사용하는 대신 BERT 인코더 위에 늦은 상호 작용 연산자를 도입했다.\n' +
+      '\n' +
+      '개방 도메인 QA에 대한 밀도 검색은 Das et al. (2019)에 의해 탐색되었으며, Das et al. (2019)은 재구성된 질문 벡터를 사용하여 관련 지문을 반복적으로 검색하도록 제안한다. 구절 검색을 생략하는 대안적인 접근법으로서, Seo 등(2019)은 후보 답안 구절을 벡터로 인코딩하여 입력 질문에 대한 답변을 효율적으로 직접 검색하는 것을 제안한다. 질문 및 관련 구절의 대리인과 일치하는 목적을 갖는 추가 프리트레이닝을 사용하여, Lee 등(2019)은 질문 인코더 및 판독기를 공동으로 트레이닝한다. QA 정확도에서 다중 오픈 도메인 QA 데이터 세트에 대한 BM25 플러스 리더 패러다임을 능가하며, 훈련 중에 패시지를 다시 인덱싱하여 비동기적으로 패시지 인코더를 튜닝하는 REALM(Guu et al., 2020)에 의해 더욱 확장된다. 프리 트레이닝 목표는 또한 최근에 Xiong 등(2020)에 의해 개선되었다. 이와는 대조적으로, 우리의 모델은 추가적인 사전 훈련 또는 복잡한 공동 훈련 방식에 의존하지 않고 더 강력한 경험적 성능을 보여주는 간단하면서도 효과적인 솔루션을 제공한다.\n' +
+      '\n' +
+      'DPR은 또한 매우 최근의 작업에서 중요한 모듈로 사용되었다. 예를 들어, 하드 네거티브를 활용하는 개념을 확장하면, Xiong 등(2020)은 이전 반복에서 트레이닝된 검색 모델을 사용하여 새로운 네거티브를 발견하고 각각의 트레이닝 반복에서 상이한 예들의 세트를 구성한다. 학습된 DPR 모델에서 시작하여 검색 성능이 더욱 향상될 수 있음을 보여준다. 최근의 작업(Izacard and Grave, 2020; Lewis et al., 2020)은 또한 DPR이 BART(Lewis et al., 2020) 및 T5(Raffel et al., 2019)와 같은 생성 모델과 결합될 수 있고, 오픈 도메인 QA 및 기타 지식 집약적 작업에서 양호한 성능을 달성한다는 것을 보여주었다.\n' +
+      '\n' +
+      '## 8 Conclusion\n' +
+      '\n' +
+      '본 연구에서는 오픈 도메인 질의 응답에서 조밀한 검색이 전통적인 희소 검색 요소를 능가하고 잠재적으로 대체할 수 있음을 보여주었다. 간단한 이중 인코더 접근법이 놀라울 정도로 잘 작동하도록 만들 수 있지만, 우리는 조밀한 검색기를 성공적으로 훈련시키는 데 몇 가지 중요한 요소가 있음을 보여주었다. 더욱이, 우리의 경험적 분석 및 절제 연구는 더 복잡한 모델 프레임워크 또는 유사성 함수가 반드시 추가 값을 제공하지 않는다는 것을 나타낸다. 검색 성능을 향상시킨 결과, 다중 오픈 도메인 질의 응답 벤치마크에서 새로운 최신 결과를 얻을 수 있었다.\n' +
+      '\n' +
+      '## Acknowledgments\n' +
+      '\n' +
+      '익명의 리뷰어들에게 도움이 되는 의견과 제안에 감사드립니다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '*Asai 등(2020) Akari Asai, Kazuma Hashimoto, Hannaneh Hajishirzi, Richard Socher, Caiming Xiong. 2020. Learning to retrieve reasoning path over Wikipedia graph for question answer. _ICLR(International Conference on Learning Representations)_에서.\n' +
+      '* Baudis and Sedivy (2015) Petr Baudis and Jan Sedivy. 2015. Modeling of the question answer task in the yodaqa system. _International Conference of the Cross-Language Evaluation Forum for European Languages_, pages 222-228. Springer.\n' +
+      '* Berant 등(2013) Jonathan Berant, Andrew Chou, Roy Frostig, and Percy Liang. 2013. Semantic parsing on Freebase from question-answer pair. _EMNLP(Empirical Methods in Natural Language Processing)_에서.\n' +
+      '* Bromley 등(1994) Jane Bromley, Isabelle Guyon, Yann LeCun, Eduard Sackinger, and Roopak Shah. 1994. Signature verification using "Siamese" time delay neural network. _NIPS_에서, 페이지 737-744이다.\n' +
+      '* Burges 등(2005) Chris Burges, Tal Shaked, Erin Renshaw, Ari Lazier, Matt Deeds, Nicole Hamilton, and Greg Hullender. 2005. Learning to rank using gradient descent. Machine Learning에 대 한 22 번째 국제 회의의 진행률 _89-96 페이지입니다.\n' +
+      '* Chen 등(2017) Danqi Chen, Adam Fisch, Jason Weston, and Antoine Bordes. 2017. Reading Wikipedia to answer open-domain questions. _Association for Computational Linguistics(ACL)_ 에서, 페이지 1870-1879.\n' +
+      '* Das et al. (2019) Rajarshi Das, Shehzaad Dhuliawala, Manzil Zaheer, and Andrew McCallum. 2019. Multi-step retriever-reader interaction for scalable open-domain question answer. _ICLR(International Conference on Learning Representations)_에서.\n' +
+      '* Deerwester 등(1990) Scott Deerwester, Susan T Dumais, George W Furnas, Thomas K Landauer, and Richard Harshman. 1990. Indexing by latent semantic analysis. _ Journal of the American society for information science_, 41(6):391-407.\n' +
+      '* Devlin 등(2019) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. BERT: 언어 이해를 위한 심층 양방향 변압기 사전 훈련. _NAACL(North American Association for Computational Linguistics)_에서.\n' +
+      '* Ferrucci (2012) David A Ferrucci. 2012. Introduction to "This is Watson." _ IBM Journal of Research and Development_, 56(3.4):1-1.\n' +
+      '* Gillick 등(2019) Daniel Gillick, Sayali Kulkarni, Larry Lansing, Alessandro Presta, Jason Baldridge, Eugene le, and Diego Garcia-Olano. 2019. Learning dense representation for entity retrieval. _Computational Natural Language Learning(CoNLL)_에서.\n' +
+      '* Guo 등(2016) Ruiqi Guo, Sanjiv Kumar, Krzysztof Choromanski, and David Simcha. 2016. Quantization based fast inner product search. _인공지능 및 통계_ 에서, 페이지 482-490 이다.\n' +
+      '* Guu 등(2020) Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Ming-Wei Chang. 2020. REALM: Retrieval-augmented language model pre-training. _ ArXiv_, abs/2002.08909.\n' +
+      '* Henderson 등(2017) Matthew Henderson, Rami Al-Rfou, Brian Strope, Yunhsuan Sung, Laszlo Lukacs, Ruiqi Guo, Sanjiv Kumar, Balint Miklos, and Ray Kurzweil. 2017. Smart reply을 위한 효율적인 자연어 응답 제안_ ArXiv_, abs/1705.00652.\n' +
+      '* Huang 등(2013) Po-Sen Huang, Xiaodong He, Jianfeng Gao, Li Deng, Alex Acero, and Larry Heck. 2013. Learning deep structured semantic models for web search using clickthrough data. _ACM CIKM(International Conference on Information and Knowledge Management)_에서, 페이지 2333-2338이다.\n' +
+      '* Humeau 등(2020) Samuel Humeau, Kurt Shuster, Marie-Anne Lachaux, and Jason Weston. 2020. Poly-encoder: Architectures and pre-training strategies for fast and accurate multi-sentence scoring. _ICLR(International Conference on Learning Representations)_에서.\n' +
+      '* Izacard and Grave (2020) Gautier Izacard and Edouard Grave. 2020.everaging passage retrieval with generative models for open domain question answer. _ ArXiv_, abs/2007.01282.\n' +
+      '* Johnson 등(2017) Jeff Johnson, Matthijs Douze, and Herve Jegou. 2017. Billion-scale similarity search with GPUs. _ ArXiv_, abs/1702.08734.\n' +
+      '* Joshi 등(2017) Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. 2017. TriviaQA: 판독 이해를 위한 대규모 원거리 감독 챌린지 데이터세트. _ACL(Association for Computational Linguistics)_에서, 페이지 1601-1611.\n' +
+      '* Khattab and Zaharia (2020) Omar Khattab and Matei Zaharia. 2020. ColBERT: BERT를 통한 맥락화된 후기 상호작용을 통한 효율적이고 효과적인 통과 검색. _ACM SIGIR Conference on Research and Development in Information Retrieval (SIGIR)_에서는 39-48페이지이다.\n' +
+      '* Kulis (2013) Brian Kulis. 2013. Metric learning: A survey. _ Foundations and Trends in Machine Learning_, 5(4):287-364.\n' +
+      '* Kwiatkowski 등(2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Matthew Kelcey, Jacob Devlin, Kenton Lee, Kristina N. 투타노바, 라이온 존스, 밍웨이 창, 앤드류 다이, 야콥 우스코레이트, 콥 르, 슬라브 페트로프 등이다. 2019. Natural questions: question answer research의 벤치마크. _ TACL(Association of Computational Linguistics)_의 트랜잭션.\n' +
+      '* Lee et al.(2019) Kenton Lee, Ming-Wei Chang, and Kristina Toutanova. 2019. Latent retrieval for weakly supervised open domain question answer. _Association for Computational Linguistics(ACL)_ 에서, 페이지 6086-6096.\n' +
+      '* Lewis 등(2020a) Mike Lewis, Yinhan Liu, Naman Goyal, Marjan Ghazvininejad, Abdelrahman Mohamed, Omer Levy, Veselin Stoyanov, and Luke Zettlemoyer. 2020a. BART: 자연어 생성, 번역 및 이해를 위한 시퀀스 대 시퀀스 사전 트레이닝의 노이즈 제거. _Association for Computational Linguistics(ACL)_ 에서, 페이지 7871-7880.\n' +
+      '* Lewis 등(2020b) Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Kuttler, Mike Lewis, Wen-tau Yih, Tim Rocktaschel, Sebastian Riedel, and Douwe Kiela. 2020b. 지식 집약적 NLP 작업에 대한 검색 향상 생성. _NeurIPS(Neural Information Processing Systems)의 발전_에서.\n' +
+      '\n' +
+      '얀카이 린, 하오제 지, 지위안 류, 마오송 선. 2018. Denoising 먼 supervised open-domain question answer. _Association for Computational Linguistics(ACL)_ 에서, 페이지 1736-1745.\n' +
+      '* Min 등(2019a) Sewon Min, Danqi Chen, Hannaneh Hajishirzi, and Luke Zettlemoyer. 2019a. 약하게 감독된 질문 응답을 위한 이산 하드 EM 접근 방식입니다. _EMNLP(Empirical Methods in Natural Language Processing)_에서.\n' +
+      '* Min 등(2019b) Sewon Min, Danqi Chen, Luke Zettlemoyer, and Hannaneh Hajishirzi. 2019b. 오픈 도메인 질문 답변을 위한 지식 가이드 텍스트 검색 및 읽기를 제공합니다. _ ArXiv_, abs/1911.03868.\n' +
+      '* Moldovan 등(2003) Dan Moldovan, Marius Pasca, Sanda Harabagiu, and Mihai Surdeanu. 2003. Performance issues and error analysis in the open-domain question answering system. _ ACM Transactions on Information Systems (TOIS)_, 21(2):133-154.\n' +
+      '* Russmann and Ermon (2016) Stephen Russmann and Stefano Ermon. 2016. 최대 내적 검색을 통한 학습 및 추론. _ICML(International Conference on Machine Learning)_에서 2587-2596 페이지.\n' +
+      '*Nie 등(2019) Yixin Nie, Songhe Wang, and Mohit Bansal. 2019. Revealing the importance of semantic retrieval for machine reading at scale. _EMNLP(Empirical Methods in Natural Language Processing)_에서.\n' +
+      '* 노게이라 및 조(2019) 로드리고 노게이라 및 조경현. 2019. Passage re-ranking with BERT. _ ArXiv_, abs/1901.04085.\n' +
+      '* Raffel 등(2019) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 2019. 통합 텍스트-텍스트 변환기를 이용한 전이학습의 한계 탐색. _ ArXiv_, abs/1910.10683.\n' +
+      '* Rajpurkar 등(2016) Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, and Percy Liang. 2016. SQuAD: 100,000+ questions for machine comprehension of text. _EMNLP(Empirical Methods in Natural Language Processing)_ 에서, 페이지 2383-2392.\n' +
+      '* Ram and Gray (2012) Parikshit Ram and Alexander G Gray. 2012. Maximum inner-product search using cone tree. 지식 발견 및 데이터 마이닝에 관한 제18차 ACM SIGKDD 국제 회의의 진행사항_에서, 페이지 931-939에 기재되어 있다.\n' +
+      '* Roberts 등(2020) Adam Roberts, Colin Raffel, and Noam Shazeer. 2020. 언어 모델의 매개 변수에 얼마나 많은 지식을 담을 수 있습니까? _ ArXiv_, abs/2002.08910.\n' +
+      '* Robertson and Zaragoza (2009) Stephen Robertson and Hugo Zaragoza. 2009. The probabilistic relevance framework: BM25 and beyond. _ Foundations and Trends in Information Retrieval_, 3(4):333-389.\n' +
+      '* Seo et al. (2019) Minjoon Seo, Jinhyuk Lee, Tom Kwiatkowski, Ankur Parikh, Ali Farhadi, and Hannanehajishirzi. 2019. Real-time open-domain question answer with dense-sparse phrase index. _ACL(Association for Computational Linguistics)_에서.\n' +
+      '* Shrivastava and Li (2014) Anshumali Shrivastava and Ping Li. 2014. Asymmetric LSH (ALSH) for sublinear time maximum inner product search (MIPS). _NIPS(Neural Information Processing Systems)_ 에서, 페이지 2321-2329.\n' +
+      '* Voorhees (1999) Ellen M Voorhees. 1999. The TREC-8 question answering track report. _TREC_에서, 볼륨 99, 페이지 77-82.\n' +
+      '* Wang 등(2018) Shuohang Wang, Mo Yu, Xiaoxiao Guo, Zhiguo Wang, Tim Klinger, Wei Zhang, Shiyu Chang, Gerry Tesauro, Bowen Zhou, and Jing Jiang. 2018. R^3: Opendomain question answer을 위한 Reinforced ranker-reader. 인공지능에 대한 회의(AAAI)_에서요.\n' +
+      '* Wang 등(2019) Zhiguo Wang, Patrick Ng, Xiaofei Ma, Ramesh Nallapati, and Bing Xiang. 2019. Multi-passage BERT: A globally normalized bert model for open-domain question answer. _EMNLP(Empirical Methods in Natural Language Processing)_에서.\n' +
+      '* Wolfson 등(2020) Tomer Wolfson, Mor Geva, Ankit Gupta, Matt Gardner, Yoav Goldberg, Daniel Deutch, and Jonathan Berant. 2020. Break down: A question understanding benchmark. _ TACL(Association of Computational Linguistics)_의 트랜잭션.\n' +
+      '* Xiong 등(2020a) Lee Xiong, Chenyan Xiong, Ye Li, Kwok-Fung Tang, Jialin Liu, Paul Bennett, Junaid Ahmed, and Arnold Overwijk. 2020a. 밀집 텍스트 검색을 위한 근사 최근접 이웃 네거티브 대조 학습. _ ArXiv_, abs/2007.00808.\n' +
+      '* Xiong 등(2020b) Wenhan Xiong, Hankang Wang, and William Yang Wang. 2020b. 오픈 도메인 질문 답변을 위해 점진적으로 사전 훈련된 dense corpus 인덱스입니다. _ ArXiv_, abs/2005.00038.\n' +
+      '* Yang 등(2019a) Wei Yang, Yuqing Xie, Aileen Lin, Xingyu Li, Luchen Tan, Kun Xiong, Ming Li, and Jimmy Lin. 2019a. 베르테리니로 답하는 종단 간 개방형 질문이다. _NAACL(North American Association for Computational Linguistics)_의 72-77페이지.\n' +
+      '* Yang 등(2019b) Wei Yang, Yuqing Xie, Luchen Tan, Kun Xiong, Ming Li, and Jimmy Lin. 2019b. 오픈 도메인 질문 답변에서 bert 미세 조정을 위한 데이터 확장입니다. _ ArXiv_, abs/1904.06652.\n' +
+      '*Yih 등(2011) Wen-tau Yih, Kristina Toutanova, John C Platt, and Christopher Meek. 2011. Learning discrimative projection for text similarity measures. _Computational Natural Language Learning (CoNLL)_에서 247-256 페이지.\n' +
+      '\n' +
+      '## 부록 원격 감독\n' +
+      '\n' +
+      '자연 질문을 사용하여 최종 DPR 모델을 훈련할 때 골드 컨텍스트와 가장 잘 일치하는 컬렉션의 패시지를 긍정적인 패시지로 사용한다. 일부 QA 데이터 세트에는 질문 및 답변 쌍만 포함되어 있으므로 답변이 포함된 지문을 긍정(즉, 원거리 감독 설정)으로 사용할 때 상당한 성능 저하가 있는지 확인하는 것이 흥미롭다. 질문과 답을 함께 쿼리로 사용하여 Lucene-BM25를 실행하고 정답이 포함된 상위 구절을 긍정 구절로 선택한다. 원본 설정과 원거리 감독 설정을 이용하여 훈련하였을 때 DPR의 성능은 Table 5와 같다.\n' +
+      '\n' +
+      '## 부록 B 대체 유사성 함수 및 트리플렛 손실\n' +
+      '\n' +
+      '또한, 소프트맥스(softmax, NLL)를 기반으로 하는 내적(DP) 및 음의 로그 가능성 외에도 유클리드 거리(L2)와 삼중항 손실을 실험한다. 소프트맥스를 적용하기 전에 L2 유사성 점수를 무효화하고 내적 점수에 삼중항 손실을 적용할 때 질문 대 양 및 질문 대 음 유사성의 징후를 변경한다. 삼중항 손실의 마진 값은 1로 설정된다. 표 6은 결과를 요약한다. 이러한 모든 추가 실험은 베이스라인(DP, NLL)에 대해 튜닝된 동일한 하이퍼-파라미터들을 사용하여 수행된다.\n' +
+      '\n' +
+      '표 5(금) 및 표 6(DP, NLL)에 보고된 "기본" 설정에 대한 검색 정확도는 표 3에 보고된 것보다 약간 더 좋다. 이는 이러한 분석 실험에 사용된 더 나은 하이퍼 매개변수 설정으로 인한 것이며, 이는 코드 릴리스에 문서화되어 있다.\n' +
+      '\n' +
+      '## Appendix C Qualitative Analysis\n' +
+      '\n' +
+      'DPR이 일반적으로 BM25보다 더 나은 성능을 발휘하지만, 이 두 검색기의 검색된 통로는 실제로 질적으로 다르다. BM25와 같은 방법은 매우 선택적인 키워드 및 구문에 민감하지만 어휘 변형이나 의미 관계를 잘 포착할 수 없다. 대조적으로, DPR은 의미 표현에 탁월하지만 드물게 나타나는 두드러진 구절을 표현하기에 충분한 용량이 부족할 수 있다. 표 7은 이러한 현상을 두 가지 예를 들어 설명한다. 첫 번째 예에서는 _잉글랜드_와 _아일랜드_와 같은 키워드가 여러 번 등장하더라도 BM25의 상위 득점 구절은 무관하다. 이에 비해 DPR은 어휘 중복이 존재하지 않더라도 _"물체"_를 _바다_ 및 _채널_과 같은 의미론적 이웃과 일치시켜 정답을 반환할 수 있다. 두 번째 예는 BM25가 더 나은 예이다. 중요한 문구 _"Myr의 Thoros"_는 중요하며 DPR이 캡처할 수 없습니다.\n' +
+      '\n' +
+      '## Appendix D Joint Training of Retriever and Reader\n' +
+      '\n' +
+      '결합된 (리트리버 + 리더) 손실 함수로부터 질문 인코더만이 역전파 신호를 수신하도록 하면서, 통로 인코더를 합동 훈련 방식으로 고정한다. 이를 통해 모델 업데이트 동안 패시지를 다시 인덱싱하지 않고 효율적인 저지연 검색을 위해 HNSW 기반 FAISS 인덱스를 활용할 수 있다. 손실 함수는 검색기 모델에서 선택된 양의 계대의 로그 확률과 판독기 모델에서 선택된 올바른 스팬 및 계대를 사용하는 ORQA의 접근법을 크게 따른다. 통로 인코더는 고정되어 있기 때문에 검색 손실을 계산할 때 더 많은 양의 검색된 통로를 사용할 수 있다. 특히 미니 배치에서 각 질문에 대해 상위 100개의 패시지를 얻고 배치 내 음성 훈련과 유사한 방법을 사용합니다. 검색된 모든 패시지의 벡터는 배치에서 _모든_ 질문에 대한 손실 계산에 참여합니다. 우리의 훈련 배치 크기는 16으로 설정되며, 이는 검색기 손실을 계산하기 위해 질문당 1,600개의 패시지를 효과적으로 제공한다. 독자는 여전히 질문당 24개의 구절을 사용하며, 이는 선택된다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l|c c c c} \\hline \\hline \\multicolumn{1}{c|}{\\multirow{2}{*}{**Sim**}} & \\multirow{2}{*}{**Loss**} & \\multicolumn{4}{c}{**Retrieval Accuracy**} \\\\  & & & Top-1 & Top-5 & Top-20 & Top-100 \\\\ \\hline \\multirow{2}{*}{DP} & NLL & **44.9** & **66.8** & **78.1** & **85.0** \\\\  & Triplet & 41.6 & 65.0 & 77.2 & 84.5 \\\\ \\hline \\multirow{2}{*}{L2} & NLL & 43.5 & 64.7 & 76.1 & 83.1 \\\\  & Triplet & 42.2 & 66.0 & **78.1** & 84.9 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: 서로 다른 유사도와 손실 함수를 이용한 자연질문의 전개 집합에 대한 검색 Top-\\(k\\) 정확도.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline  & **Top-1** & **Top-5** & **Top-20** & **Top-100** \\\\ \\hline Gold & 44.9 & 66.8 & 78.1 & 85.0 \\\\ Dist. Sup. & 43.9 & 65.3 & 77.1 & 84.4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: 답변(Dist. Sup.)을 포함하는 골드 컨텍스트(Gold) 또는 상단 BM25 구절과 일치하는 구절에 대해 훈련된, 자연 질의의 개발 세트에 대한 검색 정확도.\n' +
+      '\n' +
+      '(동일한 질문으로부터 검색된 상위 100개의 구절들의 세트로부터) 상위 5개의 긍정 및 상위 30개의 부정 구절들로부터. 질문 인코더의 초기 상태는 NQ 데이터 세트에 대해 이전에 트레이닝된 DPR 모델로부터 취해진다. 독자의 초기 상태는 BERT 기반 모델이다. 최종-대-최종 QA 결과 측면에서, 우리의 공동-트레이닝 스킴은 일반적인 리트리버/리더 트레이닝 파이프라인에 비해 더 나은 결과를 제공하지 않으며, 결과적으로 정규 판독기 모델 트레이닝에서와 동일한 39.8 정확한 일치 점수를 NQ dev에서 얻을 수 있다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{108.4pt}|p{108.4pt}|p{108.4pt}} \\hline \\hline\n' +
+      '**Question** & **Passage received by BM25** & **Passage retrieved by DPR** \\\\ \\hline What is the body of water between England and Ireland? & Title:British Cycling...**England** is not recognised as a region by the UCI, and there is no English cycling team outside the Commonwealth Games. For those occasions, British Cycling selects and supports the **England team**. Cycling is represented on the like of Man by the Isle of Man Cycling Association. Cycling in Northern **Ireland** is organised under Cycling Ulster, part of the all-Ireland governing **body** cyciling **Ireland**. Until 2006, a rival governing **body** existed,... & Title: Irish Sea... Annual traffic between Great Britain and **Ireland** amounts to over 12 million passengers and of traded goods. **The Irish Sea** is connected to the North Atlantic at both its northern and southern ends. To the north, the connection is through the North Channel between Scotland and Northern **Ireland** and the Mallin Sea. The southern end is linked to the Atlantic through the St George’s Channel between Ireland and Permobkeism, and the Celtic Sea... \\\\ \\hline Who plays Thores of Myr in Game of Thrones? & Title: No One (Game of Thrones)...He may be “no one,” but there’s still enough of a person left in him to respect, and admire who this girl is and what she’s become. Argy finally tells us something that we’ve kind of known all along, that she’s not one, she’s Arya Stark of Winterfell.” No One” saw the reintroduction of Richard Dormer and **Paul Kaye**, who portrayed Beric Dondarrion and **Thores** of **Myr**, respectively, in the third season,... & Title: Pal Sverre Hagen \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 7: BM25 및 DPR로부터 반송된 계대의 예. 정답은 **파란색** 으로 표시 되 고 문제의 내용 단어는 굵게 표시 됩니다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
