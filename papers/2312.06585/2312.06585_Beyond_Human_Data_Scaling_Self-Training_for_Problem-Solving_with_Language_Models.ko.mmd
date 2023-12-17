@@ -1,0 +1,286 @@
+# Beyond Human Data: Scaling Self-Training for Problem-Solving with Language Models
+
+Avi Singh
+
+singhui@google.com
+
+존디 코레예스
+
+Rishabh Agarwal
+
+Fishabhagarwal@google.com
+
+Ankesh Anand
+
+Piyush Patil
+
+류피터
+
+James Harrison
+
+Jaehoon Lee
+
+Kelvin Xu
+
+Aaron Parisi
+
+Abhishek Kumar
+
+Alex Alemi
+
+Alex Rizkowsky
+
+Azade Nova
+
+Ben Adlam
+
+Bernd Bohnet
+
+Gamaleldin Elsayed
+
+Hanie Sedghi
+
+Igor Mordatch
+
+Isabelle Simpson
+
+Izzeddin Gur
+
+Jasper Snoek
+
+Jeffrey Pennington
+
+Jiri Hron
+
+Kathleen Kenealy
+
+Kevin Swersky
+
+Kshiteej Mahajan
+
+Laura Culp
+
+Lechao Xiao
+
+맥스웰 L 빌스키
+
+Noah Constant
+
+Roman Novak
+
+Rosanne Liu
+
+Tris Warkentin
+
+Yundi Qian
+
+Ethan Dyer
+
+Behnam Neyshabur
+
+Jascha Sohl-Dickstein
+
+Noah Fiedel
+
+동등하게 기부한 구글 딥마인드 2밀라
+
+각주 1: 각주
+
+각주 2: 각주
+
+###### Abstract
+
+인간이 생성한 데이터에 대한 언어 모델(LMs)을 미세 조정하는 것은 일반적인 관행으로 남아 있다. 그러나 이러한 모델의 성능은 고품질 인간 데이터의 양과 다양성에 의해 제한되는 경우가 많다. 본 논문에서는 스칼라 피드백에 접근할 수 있는 태스크, 예를 들어 정답을 검증할 수 있는 수학 문제에 대한 인간의 데이터를 넘어설 수 있는지 탐구한다. 이를 위해, 우리는 기대-최대화를 기반으로 하는 간단한 자기 학습 방법을 조사한다. 여기서 우리는 (1) 모델로부터 샘플을 생성하고 이진 피드백을 사용하여 필터링하고, (2) 이 샘플들에 대해 모델을 미세 조정하고, (3) 이 과정을 몇 번 반복한다. PaLM-2 모델을 사용하여 고급 MATH 추론 및 APPS 코딩 벤치마크에 대한 테스트를 수행한 결과 \(\text{ReST}^{\text{EM}}\)은 모델 크기에 따라 유리하게 스케일링되며 인간 데이터에서만 미세 조정을 훨씬 능가하는 것으로 나타났다. 전반적으로, 우리의 연구 결과는 피드백을 통한 자가 훈련이 인간 생성 데이터에 대한 의존도를 상당히 감소시킬 수 있음을 시사한다.
+
+RL from external feedback, EM for RL, Language, LLMs, Reasoning, Coding, Self-Improvement
+
+## 1 Introduction
+
+LOM(Large Language Models)은 딥러닝의 풍경에 혁명을 일으키고 있으며, 인간 수준의 텍스트를 생성하고 다양한 언어 태스크를 다루는 데 있어 놀라운 능력을 보여주고 있다(Google et al., 2023; OpenAI, 2023). 인간이 수집한 데이터에 대한 감독된 미세 조정(SFT)은 관심 있는 작업에 대한 성능을 더욱 향상시키지만 고품질 인간 데이터를 획득하는 것은 상당한 병목 현상을 초래한다. 이는 특히 복잡한 문제 해결 과제에 대한 요구로 상당한 자원과 전문적인 지식을 필요로 한다. 이 장애물을 해결하기 위해 모델 생성 합성 데이터는 품질을 보장할 수 있는 경우 확장성과 비용 효율성을 제공하는 유망한 대안으로 등장한다. LLM은 생성된 데이터를 자체 평가할 수 있는 잠재력을 가지고 있지만, 이 논문은 외부 스칼라 피드백 신호가 생성된 각 샘플에 대한 품질 지표 역할을 하는 더 간단한 설정을 탐구한다.
+
+모델 생성 데이터에 대한 학습을 조사하기 위해 1) 모델에서 샘플 생성 및 2) 점수 매기기 메커니즘으로 이러한 샘플을 평가하는 두 가지 기능만 필요한 언어 모델에 대한 간단하면서도 강력한 자체 학습 접근법을 고려한다. 명확성과 일관성을 보장하기 위해, 우리는 Reinforced Self-Training(Gulcehre et al., 2023)의 용어를 채택하고 이 접근법을 \(\text{ReST}^{\text{EM}\)이라고 부른다. 3절에서 형식적으로 제시하고 있는 강화학습(Dayan and Hinton, 1997; Peters and Schaal, 2007)에 기대-최대화를 적용한 것으로 볼 수 있는 \(\text{ReST}^{\text{EM}}\)을 보인다. 구체적으로 \(\text{ReST}^{\text{EM}\)은 기대-최대화 단계를 번갈아 가며:
+
+1. 생성(E-단계): 언어 모델은 각각의 입력 컨텍스트에 대해 다수의 출력 샘플들을 생성한다. 그런 다음 이진 보상을 사용하여 이러한 샘플을 필터링하여 학습 데이터 세트를 수집한다.
+2. 개선(M-단계): 원본 언어 모델은 이전 생성 단계로부터의 트레이닝 데이터세트에 대해 감독 미세 조정된다. 그런 다음 미세 조정된 모델이 다음 생성 단계에서 사용됩니다.
+
+ReST\({}^{EM}\)은 기계 번역(Gulcehre et al., 2023; Norouzi et al., 2016), 의미 구문 분석(Agarwal et al., 2019), 선호도 정렬(Dong et al., 2023) 및 기본 추론(Yuan et al., 2023; Zelikman et al., 2022)을 포함한 다양한 도메인에 걸쳐 언어 모델을 향상시키는 데 성공했다. 그러나, 선행 연구들은 주로 ReST\({}^{EM}\)을 비교적 작은 언어 모델들(최대 7B 파라미터들)에 적용하였고, 더 큰 모델들에 대해 제한된 확장성이 관찰되었다(Yuan et al., 2023). 이러한 노력을 보완하여, 본 연구는 경쟁 수준의 수학적 문제 해결(MATH)(Hendrycks et al., 2021)과 코드 생성(APPS)(Hendrycks et al., 2021)이라는 두 가지 도전적이고 덜 탐구된 영역에서 인간 생성 데이터와 비교하여 모델 생성 합성 데이터의 효과와 확장성을 조사하는 것을 목표로 한다.
+
+우리의 경험적 연구 결과는 다양한 규모의 PaLM 2 모델에 ReST\({}^{EM}\)을 적용할 때 수학적 추론과 코드 생성 능력 모두에서 상당한 발전을 보여준다(그림 1). 특히, 모델 생성 합성 데이터에 미세 조정된 모델은 인간 작성 데이터에 대해 훈련된 모델에 비해 현저하게 더 큰 성능 이득을 나타낸다(그림 2, 3). 흥미롭게도, ReST\({}^{EM}\)의 반복 횟수를 두 번 초과하면 개선 효과가 감소하여 적은 양의 훈련 문제에 대한 잠재적인 과적합 가능성을 나타낸다(그림 4). 또한, ReST\({}^{EM}\)을 이용하여 미세 조정된 모델들은 pass@k와 다수결 성능을 향상시킨다. 또한, 이러한 미세 조정된 모델은 수학 문제(GSM8K 및 헝가리 HS 결승), 코딩(휴먼에발), 빅벤치 하드 태스크를 포함하여 관련되지만 보류된 벤치마크에서 향상된 성능을 보여준다. 또한 ReST\({}^{EM}\) 미세조정을 위한 모델 생성 솔루션 수, 학습 문제 및 반복의 영향을 조사하기 위해 절제 연구를 수행한다. 전반적으로, 우리의 연구 결과는 인간 데이터에 대한 의존도를 줄이기 위한 유망한 접근법으로 피드백을 통한 자가 훈련을 제안한다.
+
+## 2 Preliminaries
+
+자기회귀 언어 모델은 문맥(또는 소스 입력)이 주어지면 출력 시퀀스 \(\mathbf{y}=(y_{1},y_{2},....y_{r})\) \(\mathbf{x}=(x_{1},x_{2},...x_{L})\)을 생성하며, 여기서 토큰 \(x_{l},y_{t}\)은 고정된 어휘에 속한다. 자동 회귀 생성은 이전에 생성된 토큰을 기반으로 한 번에 토큰을 예측하는 것을 포함한다. 상기 언어 모델이 \(\theta\)에 의해 파라미터화된다고 가정하면, 상기 언어 모델의 조건부 확률 분포는,
+
+그림 1: ReST\({}^{EM}\)을 이용한 자가 훈련은 MATH와 HumanEval의 두 가지 어려운 벤치마크에서 PaLM 2 모델의 테스트 성능을 실질적으로 향상시킨다. 다른 모델에 대한 결과는 이러한 작업에 대한 일반적인 진행에 대해 표시되며 일반적으로 모델 척도의 차이로 인해 비교할 수 없다. GPT-4 결과는 Bubeck 등(2023)으로부터 취해졌다.
+
+generating sequence \(\mathbf{y}\) given \(\mathbf{x}\) is
+
+\[p_{\theta}(\mathbf{y}\mid\mathbf{x})=\prod_{t=1}^{T}p_{\theta}(y_{t}\mid\mathbf{y}_{<t},\mathbf{ x}),\]
+
+(\mathbf{y}_{1:0}=\emptyset\)와 \(\mathbf{y}_{1:t-1}=(y_{1},y_{2},....y_{t-1})\). 표기의 용이성을 위해 \(p(y_{t}|\mathbf{x}):=p(y_{t}|\mathbf{y}_{<t},\mathbf{x})\)를 정의합니다. (t^{th}\) 토큰 \(y_{t}\), \(p(y_{t}|\mathbf{x})\)을 예측할 확률은 온도 \(y\): \(p(y_{t}|\mathbf{x})=\frac{\exp(i_{t}/t)}{\sum_{t=1}^{M}\exp(i_{t}/t)}\), 여기서 \(\mathbf{z}_{t}\)는 토큰 \(y_{t}\)에 대한 로짓 점수이다. 높은 값인 \(y\)은 더 많은 무작위성을 도입하는 반면, 낮은 값은 가장 가능성 있는 단어를 선호함으로써 출력을 더 결정적으로 만든다.
+
+입력 \(\mathbf{x}\) 및 인간 생성 출력 \(\mathbf{y}\)의 데이터 집합 \(\mathcal{D}\)이 주어지면 SFT(supervised fine-tuning)는 음의 로그 가능성 손실을 최소화하여 정책을 학습합니다.
+
+\[\mathcal{L}_{\text{SFT}}(\theta)=-\mathbb{E}_{(\mathbf{x},\mathbf{y})\sim\mathcal{D}} \left[\sum_{t=1}^{T}\log p_{\theta}(y_{t}\mid\mathbf{y}_{1:t-1},\mathbf{x})\right]. \tag{1}\]
+
+또한 결정론적 시퀀스 수준 (또는 터미널) 보상 \(r(\mathbf{x},\mathbf{y})\)에 대 한 액세스를 가정 합니다. 그리고, 강화 학습(RL) 목표는:
+
+\[\mathcal{L}_{\text{RL}}(\theta)=\mathbb{E}_{\mathbf{x}\sim\mathcal{D}}\left[ \mathbb{E}_{\mathbf{y}\sim p_{\theta}(\mathbf{y}|\mathbf{x})}\left[r(\mathbf{x},\mathbf{y})\right] \right].\]\]
+
+정책 기울기와 같은 온라인 RL 방법을 사용하여 \(\mathcal{L}_{\text{RL}}\) 손실을 직접 최적화하려면 교육 중에 여러 번 정책에서 업데이트 및 샘플링이 필요하다. 그러나 새로운 샘플들의 연속적인 흐름에서 미세조정의 계산 비용은 온라인 방법의 제한이 되며, 특히 정책 네트워크의 크기가 수십억 또는 수천억 개의 매개변수로 증가할 때 더욱 그렇다. 우리는 다음 섹션에서 이러한 온라인 RL 접근법에 대한 대안을 논의한다.
+
+## 3 Expectation-Maximization for Reinforced Self-Training
+
+RL에 대한 기대-최대화(EM: Expectation-Maximization)는 먼저 Dayan과 Hinton(1997)의 선행 연구를 기반으로 언어 모델을 사용하여 RL에 대한 EM 기반 프레임워크를 설명한다. 비감소 함수 \(f:\mathbb{R}\rightarrow\mathbb{R}^{+}\)에 대해 \(p(O=1|\mathbf{x},\mathbf{y})\propto f\left(r(\mathbf{x},\mathbf{y})\right)\)와 같은 이진 최적 변수 O를 정의하자. 우리는 관측의 로그 우도 \(O=1\)(높은 보상 획득)를 최대화하고자 한다:
+
+\[\log p(O=1|\mathbf{x}):=\log\sum_{\mathbf{y}}p_{\theta}(\mathbf{y}|\mathbf{x})p(O=1\mid\mathbf{x},\mathbf{y}).\]
+
+그러나 가능한 모든 수열의 합 \(\mathbf{y}\)은 일반적으로 다루기 어렵다. 매개변수 \(\theta\)와 변분분포 \(q(y|\mathbf{x})\)에 대하여 \(\log p(O=1;\mathbf{x})\)를 최대화하는 대신 ELBO \(L(p_{\theta},q)\)을 최대화하는 것을 고려할 수 있다. 구체적으로,
+
+\log\mathbb{E}_{q(\mathbf{y}|\mathbf{x})}\left[\frac{p(O=1\mid\mathbf{x},\bm{y})p_{\theta}(\mathbf{y}\mid\mathbf{x})}\left[\log\frac{p(O=1\mid\mathbf{x},\mathbf{y})p_{\theta}(\mathbf{x})}\left[\log p(O=1\mid\mathbf{x},\mathbf{y})}\right]\qquad\text{(Jensen's inequality)}\left[q(\mathbf{y}\mid\mathbf{x})||p_{\theta}(\mathbf{y}\mid\mathbf{x})\right]-\text{KL}\left[q(\mathbf{x})\right]\] \
+
+방정식 2에 대한 EM 알고리즘(Dempster et al., 1977)은 E-step과 M-step을 번갈아 가며 반복 \(t\)에서 언어 모델 모수는 \(\theta^{t}\)이고 변분 분포는 \(q^{t}\)임을 나타낸다.
+
+* **E-step:**\(q^{t+1}=\arg\max_{q}L(p_{\theta^{t}},q)\). \(L(p_{\theta^{t}},q)\)는 \(KL[q(y|\mathbf{x})||q^{*}(y||\mathbf{x})]\), \(q^{t+1}(y\mid x)\propto q^{*}(\mathbf{y}\mid\mathbf{x}):=p(O=1|\mathbf{x}, \mathbf{y})p_{\theta^{t}}(\mathbf{y}\mid\mathbf{x})\). 따라서, 이 단계는 높은 보상을 얻을 가능성에 기초하여 조건부 언어 모델 분포로부터의 출력 샘플들에 가중치를 부여하는 것과 동등하다.
+* **M 단계:**\(\theta^{t+1}:=\arg\max_{\theta}L(p_{\theta},q^{t+1})=\arg\max_{\theta}\sum_{y}q^{t+1}(\mathbf{y}\mid\mathbf{x})\log p_{\theta}(\mathbf{y}\mid\mathbf{x})\). 이와 같이, 이 단계는 보상 가중된 음의 로그-우도 손실을 최대화하는 것에 대응한다.
+
+위의 단계들 사이의 교대는 ELBO의 단조 개선을 보장한다: \(L(p_{\theta^{t+1}},q^{t+1})\geq L(p_{\theta^{t}},q^{t+1})\geq L(p_{\theta^{t} },q^{t})\).
+
+**음수가 아닌 보상이 있는 EM**. 보상이 음수가 아니고 \(f\)이 id 함수로 설정 된 경우 \(p(O=1|\mathbf{x},\mathbf{y})\propto r(\mathbf{x},\mathbf{y})\)는 \(q^{t+1}(\mathbf{y}\mid\mathbf{x})\propto r(\mathbf{x},\mathbf{y})p_{\theta^{t }}(\mathbf{y}\mid\mathbf{x})\)을 의미 합니다. 이 시나리오에서는 반복 시 M 단계로 인해 업데이트 된 정책 매개 변수 \(\theta^{t+1}\) \(t\)이 다음과 같이 제공 됩니다.
+
+\arg\max_{\theta}\mathbb{E}_{x\sim\mathcal{D}}\left[\mathbb{E}_ {y\sim p_{\theta}^{t}(\mathbf{y}\mid\mathbf{x}})}\left[r(\mathbf{x},\mathbf{y} )\log p_{\theta}(\mathbf{y}\mid\mathbf{x})\right]\right]. \tag{3}\]
+
+위의 식을 \(\mathcal{L}_{\text{RL}}\) 목표와 비교하면 출력 데이터가 샘플링되는 방식인 표준 RL과 EM 기반 RL의 주요 차이점이 드러난다. 표준 RL은 정책을 지속적으로 업데이트하고 이 최신 정책을 사용하여 데이터를 수집합니다. 대조적으로, EM 기반 RL은 이전 반복에서 고정된 샘플링 정책을 사용하여 정책 최적화에서 데이터 수집을 분리한다. EM 기반 접근법에서 이러한 디커플링은 대규모 정책 모델에 대한 더 쉬운 스케일링을 가능하게 한다.
+
+본 논문에서는 EM 프레임워크에 의해 동기화된 ReST\({}^{EM}\)을 Gulcehre 등(2023)에 의해 단순화된 버전 ReST 접근법에 대해 논의한다. 이 방법은 명확성을 위해 ReST\({}^{EM}\)이라 하며, 일반적인 RL 파이프라인에서 데이터 수집(E-step)과 정책 최적화(M-step)를 분리한다. 알고리즘 1은 ReST\({}^{EM}\) 알고리즘을 여러 번의 반복으로 요약하며, 각 반복은 하나의 생성 및 개선 단계에 해당한다. 이하에서 이러한 단계들에 대해 상세히 설명한다.
+
+* 생성 (E 단계): 이 단계에서는 현재 정책 \(p_{\theta}\): \(\mathcal{D}_{i}=\{\(\mathbf{x}^{j},\mathbf{y}^{j})|_{j=1}^{N}\\text{s.t.}\\mathbf{x}^{j} \sim\mathcal{D},\\mathbf{y}\sim p_{\theta}(\mathbf{y}|\mathbf{x}^{j})\\}\)의 출력 시퀀스를 샘플링하여 데이터 세트 \(\mathcal{D}_{i}\)를 생성합니다. 여기서, 입력들은 원래의 데이터세트 \(\mathbf{x}^{j}\sim\mathcal{D}\)로부터 리샘플링된다. \(\mathcal{D}_{i}\)의 출력 시퀀스는 이진 보상 함수 \(r(\mathbf{x},\mathbf{y})\)로 채점된다. Gulcehre et al.(2023)과 달리, 우리는 인간이 생성한 출력으로 \(\mathcal{D}_{i}\)을 증가시키는 것을 삼간다. 이러한 데이터는 항상 학습에 최적이 아닐 수도 있고 쉽게 사용할 수 없기 때문이다. 실험에서는 코드 생성을 위한 프로그램과 수학 문제에 대한 단계별 솔루션을 사용하여 몇 발 프롬프트를 사용하여 언어 모델을 조건화한다.
+* 개선 (M 단계): \(i^{th}\) 반복에서 정책 \(p_{\theta}\)을 미세 조정 하기 위해 생성 단계에서 새 데이터 세트 \(\mathcal{D}_{i}\)를 사용 합니다. Gulcehre 등(2023)과는 달리, 우리는 태스크-특정 오버-피팅을 최소화하고 베이스 모델로부터의 드리프트를 최소화하기 위해 베이스 사전 트레이닝된 언어 모델을 항상 미세 조정한다. 미세조정을 위해 보상 가중 음수 로그우도 손실 \(J(\theta)=\mathbb{E}_{(x,y)\sim\mathcal{D}_{i}}\left[r(\mathbf{x},\mathbf{y})\\log p_{\theta}(\mathbf{y}|\mathbf{x})\right]\)을 최소화한다. 정책이 개선되면 더 나은 품질 샘플의 새 데이터 세트를 다시 한 번 만들 수 있습니다.
+
+_Remark_. 우리의 실험은 Gulcehre 등(2023)에 의해 가정된 바운딩된 실수값 보상과 달리 이진 보상(0 또는 1)을 갖는 문제 해결 설정에 초점을 맞춘다. 구체적으로, 각 Generate 단계에 대해, Gulcehre 등(2023)은 다중 개선 단계를 수행하며, 여기서 각 개선 단계는 함수 \(f(r(\mathbf{x},\mathbf{y}))=r(\mathbf{x},\mathbf{y})>\tau\), 여기서 \(\tau\in\mathbb{R}^{+}\)는 연속적인 M 단계들에서 증가한다. 그러나 이진 보상을 사용하면 \(\tau\in(0,1)\)의 값이 동일한 개선 단계에 해당합니다.
+
+## 4 관련 작업
+
+3절에서 기대-최대화 프레임워크를 사용하여 몇 가지 이전 방법을 인스턴스화할 수 있다. 본 절에서는 방법 및 그 관계를 논의한다.
+
+* **전문가 반복** (ExiT)(Anthony et al., 2017)은 전문가 개선과 정책 증류의 두 단계를 번갈아 수행합니다. 전문가 개선 단계(E-step) 동안, 우리는 전문가 정책이라고 불리는 더 나은 정책으로부터 샘플을 생성하기 위해 기본 정책과 검색 절차를 결합한다. 그런 다음 정책 증류 단계(M-step)에서 이러한 전문가 샘플을 사용하여 감독 방식으로 기본 정책을 훈련하여 전문가 정책과 일치하도록 효과적으로 개선한다. ExiT는 몬테카를로 트리 검색을 사용했지만 ReST의 전문가 정책에서 샘플을 수집하기 위해 단순히 온도 샘플링을 사용한다. 즉, 언어 모델을 사용하여 검색 및 계획 절차를 통해 ExiT 프레임워크를 사용하여 ReST의 E 단계를 개선하는 것은 향후 작업에 흥미로울 것이다. 예를 들어, Huang et al.(2022)은 간단한 수학 추론 문제에서 \(\text{ReST}^{EM}\)의 단일 반복을 구현한다. 그러나, 우리의 설정과 달리, 그들은 정확성 보상에 대한 액세스를 가정하지 않고, 대신에 다수-투표(Wang et al., 2023)를 E-단계 내의 검색 절차로서 사용한다.
+* **Self-Taught Reasoner** (STaR)(Zelikman et al., 2022)는 \(\text{ReST}^{EM}\)의 E 단계에 대한 온도 샘플링 대신 greedy 디코딩을 사용했습니다. 또한 STaR은 온도 샘플링의 대안으로 합리화를 제안했으며, 여기서 언어 모델은 어려운 문제에 대한 올바른 솔루션을 생성하기 위해 입력의 일부로 정답을 제공한다. 그러나 우리의 예비 실험에서 합리화는 정답을 출력하지만 그 추론이 부정확한 거짓 양성 솔루션의 상당한 증가로 이어진다.
+* **거부 샘플링 미세 조정** (RFT) Yuan 등 (2023)은 GSM8K에서 추론 성능을 향상 시키고 단일 생성 (E 단계)을 실행 하 고 \(\text{ReST}^{EM}\)의 개선 (M 단계)에 해당 합니다. RFT는 언어 모델 용량이 증가함에 따라 GSM8K에서 제한된 성능 향상을 보였지만, PaLM 2 모델 용량을 스케일링할 때 더 어려운 APPS 및 MATH 벤치마크에서 더 큰 이득을 달성했다. 또한, \(\text{ReST}^{EM}\)의 다중 반복을 사용하면 더 큰 성능 이득을 얻을 수 있음을 관찰하였다.
+* **반복 최대 가능성** (IML)은 자체 수집 데이터에 대 한 보상 가중 로그 가능성 목표를 사용 하 여 정책을 최적화 합니다. IML은 시맨틱 파싱을 위한 비교적 작은-스케일 언어 모델(Agarwal et al., 2019; Liang et al., 2016), 기계 번역(Wu et al., 2016) 및 단순 수학 추론(Ni et al., 2022)과 함께 잘 수행되는 것으로 나타났다. IML의 각 E-step과 M-step은 \(\text{ReST}^{EM}\)에서와 같이 전체 학습 데이터셋 대신 학습 예제의 미니 배치를 통해 수행된다. IML에서, 학습된 정책은 태스크-특정 과적합으로 나타날 수 있는 초기 사전 훈련된 모델로부터 상당히 분기될 수 있으며, 여기서 모델은 타겟 태스크에 대해 잘 수행하지만 다른 태스크 또는 도메인에 일반화하는 능력을 상실한다. 또한 IML에서 데이터 수집과 정책 최적화의 긴밀하게 결합된 특성은 큰 LM을 사용하여 높은 계산 비용을 초래하여 \(\text{ReST}^{EM}\)보다 훨씬 더 비싸다.
+* **보상 가중 회귀** (RWR)(Peters and Schaal, 2007)는 섹션 3에서 \(p(O=1|x,y)\propto\exp\left(r(x,y)\right)\)로 설정한 EM에 해당 합니다. RWR은 비이진 보상 함수에 쉽게 적용할 수 있으므로 이전에 로봇 제어에 쉽게 적용할 수 있습니다. Norouzi 등(2016)은 기계 번역을 위한 IML의 일반적인 변형을 제안하기 위해 RWR을 기반으로 한다.
+* **보상 순위 미세 조정** (RAFT)(동 등, 2023)은 미니 배치에 대 한 E-step과 M-step 간의 교대로 해석될 수 있으며, 여기서 E-step은 각 입력 컨텍스트에 대해 최대 보상을 사용 하 여 출력 샘플을 사용 합니다. 이진 보상 함수의 경우 RAFT는 IML과 유사하므로 \(\text{ReST}^{EM}\)의 인스턴스화로 볼 수 있다.
+
+## 5 실험 및 분석
+
+실험의 목표는 다음 질문에 답하는 것이다.
+
+1. \(\text{ReST}^{EM}\)이 인간 생성 데이터에 대한 미세 조정보다 얼마나 효과적입니까?
+2. 최적의 성능을 위해 몇 번의 반복이 필요한가? \(\text{ReST}^{EM}\)은 훈련 집합에 얼마나 빨리 과적합으로 이어지는가?
+3. \(\text{ReST}^{EM}\)는 pass@k 및 다수결 투표 성능에 어떻게 영향을 미칩니까?
+4. 특정 작업에 대해 모델 생성 데이터를 사용하여 미세 조정하면 관련 작업으로 긍정적인 이전이 표시되나요? 광범위한 작업 집합에서 미세 조정된 모델을 평가할 때 기본 모델에 비해 성능 저하가 있습니까?
+5. \(\text{ReST}^{EM}\)에서 대부분의 성능 이득을 얻으려면 입력 데이터가 얼마나 필요합니까? \(\text{ReST}^{EM}\)의 반복은 충분한가?
+
+**학습 데이터 세트** 입니다. Hendrycks의 MATH 데이터셋(Hendrycks et al., 2021)과 APPS(Introductory) 데이터셋(Hendrycks et al., 2021)을 이용한 코드 생성(code generation)을 이용하여 수학 문제 해결에 대한 \(\text{ReST}^{EM}\)을 주로 평가한다. MATH 및 APPS(도입부)는 각각 7500 및 2342개의 트레이닝 문제를 포함한다. 모델 출력은 \(\text{ReST}^{EM}\)에 완벽하게 적합하여 자동으로 정확하거나 부정확한 것으로 평가될 수 있기 때문에 이러한 작업을 선택한다. 이 두 데이터 세트는 이진 보상을 제공하며, MATH에서는 모델 생성 답변이 지상 진실 답변을 사용하여 정확성에 대해 쉽게 검증할 수 있는 반면 APPS에서는 테스트 케이스가 생성된 코드가 올바른지 여부를 결정한다.
+
+**모델**. 우리는 PaLM 2-S(Bison), PaLM 2-S*(Codey), PaLM 2-L(Unicorn)을 포함한 실험을 위해 구글 클라우드에 공개 API와 함께 PaLM 2 모델(Google et al., 2023)을 사용한다.
+
+**평가**. 본 논문에서는 MATH와 APPS(Introductory) 데이터셋의 테스트 분할을 사용하여 일반화 성능을 보고한다. 전송 성능 측정을 위해 GSM8K(Cobbe et al., 2021), Hungarian HS finals(Paster, 2023), HumanEval(Chen et al., 2021) 데이터셋을 살펴본다. 또한 일반적인 능력을 평가하기 위해 Big-Bench Hard(Suzgun et al., 2022) 벤치마크를 사용하여 모델을 평가한다. 모든 평가는 달리 명시되지 않는 한 Google 등(2023)의 설정을 따른다.
+
+**구현 세부 정보.** ReST\({}^{EM}\)의 각 반복 동안 MATH 데이터 세트의 경우 32개, APPS 데이터 세트의 경우 64개 등 E 단계에 대해 문제당 고정된 솔루션 수를 생성했습니다. 솔루션을 생성하기 위해 K=40이고 온도가 0.7인 상위 K 샘플링을 사용하여 언어 모델에서 샘플을 채취한다. 그러나 이러한 모델 생성 솔루션을 직접 사용하면 더 쉬운 문제를 해결하기 위해 훨씬 더 정확한 솔루션을 얻을 수 있기 때문에 불균형 데이터 세트를 생성할 수 있다. 이를 완화하기 위해 MATH와 APPS 모두에 대해 10개의 미세 조정 데이터 세트에 포함된 Zelikman 등(2022)이 사용하는 설계 선택인 문제당 최대 솔루션 수에 대한 컷오프 임계값을 도입했다. 이 접근법은 훈련 데이터의 다양성과 더 쉬운 문제에 대한 과적합에 대한 보호를 보장한다. 미세 조정을 위해 모델에 대 한 입력으로 few-shot 프롬프트 (및 질문)를 사용 하 고 모델 생성 솔루션을 대상으로 사용 합니다. 우리는 타겟에 다음 토큰 예측 손실(식 1)만을 적용한다.
+
+### ReST\({}^{EM}\) on MATH and APPS
+
+그림 2와 3은 각각 MATH 및 APPS 데이터 세트에 대해 훈련했을 때 ReST\({}^{EM}\)의 성능을 보여준다. MATH 테스트 세트에 대한 성능 및 GSM8K로의 전송 측면에서 MATH는 ReST\({}^{EM}\)의 다중 반복을 수행함으로써 이점이 있음을 알 수 있다. 반면에 APPS에 대한 이득의 대부분은 첫 번째 반복에서 발생하며 더 많은 반복을 수행하면 APPS와 인간 평가 모두에서 성능의 회귀로 이어진다는 것을 알 수 있다.
+
+흥미롭게도 그림 2와 3은 모델 생성 솔루션에 대한 미세 조정이 특히 PaLM 2-L 모델에 대해 인간이 작성한 솔루션을 사용하는 것보다 훨씬 더 우수함을 보여준다. 이는 Yuan et al.(2023)의 연구 결과와 모델 생성 데이터를 사용하여 LLM을 증류하는 최근 작업과 일치한다(Agarwal et al., 2023; Gu et al., 2023). 그러나 모델 용량을 스케일링할 때 GSM8K에 대한 모델 생성 데이터에서 수익이 감소하는 것을 관찰한 Yuan et al.(2023)과 달리, 우리의 결과는 반대 경향을 제시한다: ReST\({}^{EM}\)은 모델 용량이 증가함에 따라 더 큰 성능 이득을 가져온다. MATH 데이터셋에서 ReST\({}^{EM}\)을 사용한 테스트 정확도 향상은 PaLM 2-S의 경우 5.94%인 반면 더 큰 PaLM 2-L 모델의 경우 6.34%이다. 유사하게, APPS 데이터세트에서 개선 사항은 PaLM 2-L에 대한 6.4%와 비교하여 PaLM 2-S*에 대해 5.6%이다. 이는 더 큰 모델이 훨씬 더 강한 초기 성능으로 시작한다는 사실에 더하여, 이러한 벤치마크에 대한 개선은 일반적으로 기준 성능이 올라갈수록 더 어려워진다.
+
+그림 2: 수학 문제 해결을 위한 \(|\)**ReST\({}^{EM}\) ReST\({}^{EM}\) 반복에 따른 PaLM 2-S* 및 PaLM 2-L에 대한 MATH 및 GSM8K(전송)에 대한 테스트 성능. 또한 인간이 생성한 데이터에 대해 SFT를 통해 미세 조정된 모델의 성능을 기준으로 보고한다. 반복 0은 미리 훈련된 모델 성능에 해당한다. Google 등(2023)에 이어, 우리는 평가를 위해 그리디 디코딩을 사용한다.
+
+**열차 테스트 성능 차이**. 그림 4는 ReST\({}^{EM}\) 반복 횟수에 따라 훈련 집합 성능이 선형적으로 증가하는 반면 테스트 집합 성능은 증가하지 않음을 보여준다. MATH의 경우 첫 번째 반복 후에 테스트 성능 개선이 적고 APPS의 경우 실제로 두 번째 반복에서 성능의 회귀를 관찰한다. 우리는 성능의 퇴행이 과적합으로 인한 것일 가능성이 있다고 의심한다. APPS 데이터 세트는 MATH 데이터 세트의 크기의 약 1/3이기 때문에 이러한 문제로 인해 더 많은 어려움을 겪는다.
+
+### Pass@K 및 MajorityVoting 성능에 영향을 미칩니다.
+
+ReST\({}^{EM}\)을 이용한 미세 조정이 최종 모델의 생성 출력의 다양성에 미치는 영향을 조사하기 위해, 기본 모델에 비해 미세 조정된 PaLM 2-L 모델의 pass@k(Chen et al., 2021) 및 다수결(Wang et al., 2023) 성능을 평가한다.
+
+**Pass@K** 는 문제에 대 한 상위 k 생성 솔루션 중 하나 이상이 올바른, 즉 수학 문제에 대 한 정답을 출력 하거나 코드 생성을 위해 모든 단위 테스트를 통과 하는 확률을 측정 합니다. 그림 5는 pass@K 메트릭에 대한 Palm-2-L 모델의 성능을 보여준다. 미세 조정 후 얻은 ReST\({}^{EM}\) 모델은 모든 K 값에서 더 강하며, 성능 갭은 일반적으로 K=1에서 가장 높다는 것을 알 수 있다.
+
+그림 4: ReST\({}^{EM}\) 반복의 함수로서 PaLM-2-L이 있는 (왼쪽) MATH 및 PaLM-2-S*이 있는 (오른쪽) APPS의 **열차 테스트 성능 간격** 입니다. 테스트 성능을 위해 greedy 디코딩을 사용하는 동안 pass@1 트레이닝 성능 샘플링을 온도 \(=0.7\)로 보고한다.
+
+그림 3: 코드 생성을 위한 **ReST\({}^{EM}\)**. ReST\({}^{EM}\) 반복의 함수로서 PaLM 2-S* 및 PaLM 2-L에 대한 APPS(도입부) 및 HumanEval(전달부)에 대한 시험 성능.
+
+**다수결 투표** 는 먼저 탐욕스러운 경로만 취하는 대신 다양한 추론 경로 집합을 샘플링한 다음 샘플링된 추론 경로를 주변화하여 가장 일관된 답변을 선택합니다. Hendrycks MATH의 경우, Pass@1 성능을 최대화하기 위해 다수 투표를 사용하는 것이 가능하며, 질문당 64개의 샘플을 사용할 때, ReST\({}^{EM}\)으로 미세 조정된 PaLM 2-L은 48.82의 테스트 정확도를 얻는 반면, 기본 모델은 44.02의 테스트 정확도를 얻는 것을 발견했다.
+
+### Ablation Studies
+
+다중 반복의 영향 우리의 결과는 다중 반복이 때때로 기차 세트에 과적합으로 이어질 수 있음을 보여준다(그림 4). 이는 다중 반복이 정말로 필요한지에 대한 의문을 제기한다. 더 큰 데이터 집합을 수집 하 고 ReST\({}^{EM}\)의 단일 반복 수행 하는 것이 더 좋습니까? 이를 조사하기 위해 Hendrycks MATH에 대한 기본 PaLM-2-L 모델을 사용하여 E-step에 대한 ReST\({}^{EM}\)의 단일 반복에서 사용된 문제당 솔루션 수가 3\(\times\)인 데이터 세트를 수집한다. 이 데이터 세트를 사용하여 미세 조정하면 그림 2와 같이 두 번째 반복에서 41%, 세 번째 반복에서 41.9%보다 낮은 40.3%의 pass@1 성능이 나타난다. 이러한 결과는 ReST\({}^{EM}\)의 다중 반복을 수행하는 것이 3배 데이터를 사용한 단일 반복에 비해 더 높은 성능을 유도함을 나타낸다.
+
+ReST\({}^{EM}\)에 필요한 주요 요소 중 하나는 입력 컨텍스트(예: MATH에 대한 질문) 데이터 세트이기 때문에 입력 문제 수의 영향을 평가하는 데 관심이 있다. Hendrycks MATH에 대한 PaLM-2-L 모델을 사용한 데이터 세트 삭제의 결과 그림 6(왼쪽)은 1000개의 MATH 질문만 사용하면 상당한 이득을 얻을 수 있음을 보여주며, 이는 이 방법이 필요한 프롬프트 수에 매우 효율적임을 암시한다. 그러나 2,000개에 비해 4,000개 질문을 사용할 때 성능이 약간 감소하여 미세 조정 과정의 잠재적 분산을 나타낸다. 이상적으로는 이 실험을 여러 번 수행하는 것이 이 분산을 정량화하는 데 도움이 되지만 이는 엄청나게 자원 집약적이다. 전반적으로, ReST\({}^{EM}\)은 샘플 효율성이 우수하며, 데이터셋의 크기가 커질수록 성능이 향상됨을 알 수 있었다.
+
+모델 생성 데이터와 인간 데이터를 비교하면 ReST\({}^{EM}\)의 핵심 강도는 각 문제에 대한 여러 정답을 생성하는 능력이다. 이는 일반적으로 문제당 단일 솔루션만을 제공하는 인간 생성 데이터와 비교하여 가치 있는 추가 학습 데이터를 제공한다. 이것은 그림 2와 3에서 완전히 공정하지 않지만, 다양하고 정확한 솔루션으로 성능을 향상시킬 수 있는 ReST\({}^{EM}\)의 잠재력을 강조한다.
+
+사과 대 사과 비교를 가능하게 하기 위해 다음 연구를 수행한다: 우리는 적어도 하나의 올바른 모델 생성 솔루션이 있는 모든 헨드리크 MATH 질문을 선택하여 결과를 얻는다.
+
+그림 5: **PaLM-2-L 사전 훈련된 모델과 ReST\({}^{EM}\)로 미세 조정된 모델에 대한 Pass@K 결과**입니다. 고정된 수의 샘플 K에 대해 ReST\({}^{EM}\)을 사용한 미세 조정은 Pass@K 성능을 실질적으로 향상시킨다. 우리는 온도를 1.0으로 설정하고 약 5K 질문에서 \(p=0.95\).**로 핵 샘플링을 사용했다. 이 5K 질문에 대해, 우리는 두 가지 미세 조정 실험을 실행한다: 인간이 작성한 해(질문당 1개)를 미세 조정하는 SFT(5K)와 모델 생성 해(질문당 1개)를 무작위로 선택하는 ReST\({}^{*}\)(5K)이다. 그림 6(오른쪽)의 결과는 ReST\({}^{EM}\)이 훨씬 더 제한된 설정에서도 인간 데이터에 대한 미세 조정보다 우수함을 보여준다. 또한, ReST\({}^{*}\)(5K)에 대한 ReST(5K)의 효과는 많은 수의 해를 샘플링하고 ReST\({}^{EM}\)을 여러 번 반복하는 데 더 많은 계산을 소비함으로써 얻을 수 있는 성능의 추가 이득을 강조한다.
+
+### 추론 기능에 영향
+
+**일반 기능.** BIG-Bench는 다양한 필드 및 기능에 걸쳐 LLM의 성능을 조사하는 데 사용할 수 있는 200개 이상의 작업 세트를 제공합니다. BIG-Bench Hard(BBH)(Suzgun et al., 2022)는 Codex 및 PaLM 540B와 같은 LLM의 이전 세대가 평균 인간 평가자 이하에서 수행되는 23개의 BIG-Bench 작업의 서브세트이다. 우리는 Google 등(2023)의 실험 설정을 따르고, 소수의 샷과 연쇄적 사고 촉진을 모두 사용하여 평가한다.
+
+그림 6: **왼쪽** 입니다. MATH에서 데이터 세트 크기(질문 수)의 함수로서 ReST\({}^{EM}\)의 _단일 반복_에 대한 성능입니다. **오른쪽** MATH에서 ReST\({}^{EM}\)과 SFT를 비교한다. SFT는 인간의 데이터를 미세 조정하는 것을 의미하고, ReST\({}^{*}\)는 문제당 하나의 정확한 샘플만을 사용하는 하나의 반복을 갖는 ReST\({}^{EM}\)의 버전을 의미한다. 여기서, ReST는 3번의 반복을 갖는 ReST\({}^{EM}\)을 나타낸다. 각 방법에 대해 괄호 안의 질문 수를 나타낸다.
+
+그림 7: ReST\({}^{EM}\) 모델과 Big-Bench Hard suite의 기본 모델을 비교한다.
+
+그림 7은 \(\text{ReST}^{EM}\)-finetuned 모델의 성능을 보여주고, 이를 기본 PaLM-2 모델과 비교한다. BBH 제품군의 작업에는 큰 저하가 없습니다. 또한, Hendrycks MATH에서 Fine-tuned 모델이 chain-of-thought 프롬프팅(chain-of-thought prompting)을 사용할 때 이 제품군에서 기본 모델보다 훨씬 더 우수한 성능을 보였으며, APPS에서도 Fine-tuned 모델이 약간의 성능 향상을 보였다. 직접 프롬프트를 사용하는 경우 세 모델 모두 유사하게 수행됩니다.
+
+**문제 해결**. 주어진 "현실 세계" 평가 세트에서 수학 문제 해결 능력을 테스트하기 위해, 우리는 Grob과 유사한 2023년 헝가리 고등학교 수학 기말고사 시험의 모델을 평가한다. 우리는 Paster(2023)의 평가 프로토콜을 따른다. 구체적으로, Grob의 1샷 프롬프트를 사용하여 헨드리크 MATH에 \(\text{ReST}^{EM}\)으로 미세 조정된 PaLM 2-L 모델을 평가하고, 온도를 0.1로 사용하여 샘플 솔루션을 평가하고, 검사자가 제공한 루브릭을 사용하여 출력을 수동으로 등급화한다. 평가 결과는 그림 8과 같다. 본 연구에서 제안한 모델은 GPT-4를 제외한 모든 기존 모델의 성능을 능가하는 우수한 성능을 보였다.
+
+## 6 Discussion
+
+본 논문에서는 문제 해결 과제에 대한 LLM의 성능 향상을 위해 \(\text{ReST}^{EM}\)을 통해 보상 함수와 결합된 모델 생성 데이터에 대한 학습을 제안한다. 또한, \(\text{ReST}^{EM}\)이 RL에 대한 기대-최대화의 적용에 이론적으로 근거하고 있음을 입증한다. 수학적 문제 해결과 코드 생성에 대한 \(\text{ReST}^{EM}\)을 평가하고, \(\text{ReST}^{EM}\)이 상대적으로 낮은 계산 비용에서 특히 사전 훈련 비용에 비해 상당한 성능 향상을 제공한다는 것을 보여준다. 실험 결과, \(\text{ReST}^{EM}\)은 다른 작업에 대한 회귀로 이어지지 않는 것으로 나타났다. 이 방법의 장단점을 더 잘 이해하고 데이터 효율성이 매우 높지만 과적합을 피하기 위해 약간의 주의가 필요하다는 것을 찾기 위해 여러 절제를 수행한다.
+
+\(\text{ReST}^{EM}\)과 관련된 여러 가지 제한 사항이 있다. 첫째, 이 방법은 관심있는 임의의 새로운 작업을 위해 (인간으로부터) 수집될 필요가 있는 적당한 크기의 문제들 또는 프롬프트들의 트레이닝 세트를 필요로 한다. 둘째, \(\text{ReST}^{EM}\)은 또한 수동으로 설계되거나 학습된 보상 함수에 대한 접근이 필요하며, 이상적으로는 자동으로 계산될 수 있다. 마지막으로, \(\text{ReST}^{EM}\)은 pass@1 성능에서 상당한 성능 향상을 허용하지만, pass@K와의 갭을 그다지 좁히지 않을 수 있다
+
+도 8: **헝가리 HS 파이널 테스트의 결과 전송. PaLM-2-L을 제외한 다른 모델들에 대한 \(\text{ReST}^{EM}\)을 Paster (2023)에서 얻었다. 수학에 특화된 여러 모델은 널리 사용되는 GSM8K 벤치마크에서는 잘 수행되지만 헝가리 시험에서는 잘 수행되지 않는다. 대조적으로, \(\text{ReST}^{EM}\)으로 미세 조정된 PaLM 2-L 모델은 이 두 벤치마크 모두에서 잘 수행된다.**
+
+동일한 작업(충분히 큰 K)에 대한 성능입니다. 언어 모델의 자체 개선에 대한 향후 연구는 파이프라인의 수동 부분을 자동화하는 데 초점을 맞추고(아마도 언어 모델을 통해서도), pass@K 성능으로 격차를 줄이는 알고리즘 개선을 탐구해야 한다.
+
+## Acknowledgements
+
+우리는 초기 초안에 피드백을 제공한 톰 르 페인에 대해 감사를 표하고 싶습니다. 우리는 또한 유익한 토론을 위해 페릴 베바하니, 알렉산드라 파우스트, 도이나 프레컵, 올리비에 바켐, 슬라브 페트로프를 인정한다.
+
+## Author Contributions
+
+아비, JD, 리샤브가 공동으로 프로젝트를 주도했다. 아비는 훈련 인프라, MATH에 대한 절제 및 실험을 담당했으며 JD는 APPS에 대한 실험을 주도했으며 리샤브는 논문 작성 및 평가를 담당했다.
+
+Ankesh, Piyush, Ethan 및 Behnam은 미네르바 모델에 대한 MATH에 대한 모델 생성 데이터의 효능에 대한 예비 발견을 관찰하고 이 연구에 동기를 부여했다. 피유시는 또한 아비에게 인프라 구축을 도왔다. 피터, 제임스, 재훈, 켈빈은 프로젝트 토론에 참여했습니다. 자샤와 노아는 그 프로젝트를 후원하고 조언했다. 다른 모든 저자는 이 작업에 대한 피드백을 제공했다.
+
+## References
+
+* Agarwal 등(2019) R. Agarwal, C. Liang, D. Schuurmans, M. 노루지 희박하고 지정되지 않은 보상으로부터 일반화하는 학습 _International conference on machine learning_, pages 130-140. PMLR, 2019.
+* Agarwal 등(2023) R. 나가왈 비야드 라모스 Geist, O. Bachem. Gkd: 자동 회귀 시퀀스 모델에 대한 일반화된 지식 증류. _ arXiv preprint arXiv:2306.13649_, 2023.
+* Anthony et al.(2017) T. 안소니 Tian, D. Barber 딥 러닝 및 트리 검색으로 빠르고 느리게 생각 합니다. _ 뉴럴 정보 처리 시스템_, 30, 2017의 발전입니다.
+* Bubeck 등(2023) S. 부벡 찬드라세카란 Eldan, J. Gehrke, E. Horvitz, E. Kamar, P. Lee, Y. T. Lee, Y. Li, S. M. Lundberg, H. Nori, H. Palangi, M. T. Ribeiro, and Y. 장 인공지능의 Spark: GPT-4를 사용한 초기 실험. _CoRR_, abs/2303.12712, 2023. doi: 10.48550/ARXIV.2303.12712. URL [https://doi.org/10.48550/arXiv.2303.12712](https://doi.org/10.48550/arXiv.2303.12712)
+* Chen et al.(2021) M. 진진투렉 Yuan, H. P. de Oliveira Pinto, J. Kaplan, H. Edwards, Y. 부르다남 조셉, G. 브록맨 A. 레이, R. 부리규거 Petrov, H. Khlaaf, G. Sastry, P. Mishkin, B. Chan, S. 그레이 엔 라이더 파블로프 카이저 Bavarian, C. Winter, P. Tillet, F. P. Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. H. Guss, A. Nichol, A. Paino, N. 테작제탕일바부슈킨 발라지 제인우 Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. 나이트엠 브런디지 무라티 Mayer, P. Welinder, B. McGrew, D. Amodei, S. 맥캔들리, I. 서츠키버, W. 자렘바 코드에 대해 학습 된 대규모 언어 모델을 평가 합니다. _ arXiv preprint arXiv:2107.03374_, 2021.
+* Cobbe et al.(2021) K. 코베 고사라주 바이에른 진현준 카이저 플래퍼트, J. 투렉, J. 힐튼, R. 나카노, C. 헤세, J. 슐만 검증자를 학습하여 수학 단어 문제를 해결합니다. _ arXiv preprint arXiv:2110.14168_, 2021.
+
+* Dayan and Hinton (1997) P. Dayan and G. E. Hinton. 기대-최대화를 강화 학습에 사용합니다. _ Neural Computation_, 9(2):271-278, 1997).
+* Dempster 등(1977) A. P. Dempster, N. M. Laird, and D. B. Rubin. em 알고리즘을 통한 불완전한 데이터의 최대 가능성 _ Journal of the royal statistical society: series B(methodological)_, 39(1):1-22, 1977.
+* Dong et al.(2023) H. Dong, W. 시옹덕고얄 판석 장대근 Shum, T. 장 Raft: 생성 기초 모델 정렬을 위해 순위가 매겨진 보상. _ arXiv preprint arXiv:2304.06767_, 2023.
+* Google et al.(2023) Google, R. 안일아엠다이 피라트 존슨 셰이커리, E 타로파, P 베일리, Z Chen, et al. Palm 2 기술 보고서. _ arXiv preprint arXiv:2305.10403_, 2023.
+* Gu et al.(2023) Y. 구락 동화위 황 대용량 언어 모델의 지식 증류. _ arXiv preprint arXiv:2306.08543_, 2023.
+* Gulcehre 등(2023) C. Gulcehre, T. L. Paine, S. 스리니바산 코니슈코바 Weerts, A. Sharma, A. Siddhant, A. Ahern, M. Wang, C. Gu, et al. Reinforced self-training (rest) for language modeling. _ arXiv preprint arXiv:2308.08998_, 2023.
+* Hendrycks 등(2021a) D. Hendrycks, S. 바사르트 카다바스 Mazeika, A. Arora, E. Guo, C. Burns, S. Puranik, H. He, D. Song, et al. Measuring coding challenge competence with apps. _ arXiv preprint arXiv:2105.09938_, 2021a.
+* Hendrycks 등(2021b) D. Hendrycks, C. Burns, S. 카다바스 아로라 Basart, E. Tang, D. Song, and J. Steinhardt. 수학 데이터세트로 수학 문제 풀이를 측정하는 단계 _ arXiv preprint arXiv:2103.03874_, 2021b.
+* Huang et al.(2022) J. Huang, S. S. Gu, L. 허영 우엑스 왕호유 대형 언어 모델은 자체 개선할 수 있습니다. _ CoRR_, abs/2210.11610, 2022. doi: 10.48550/ARXIV.2210.11610. URL [https://doi.org/10.48550/arXiv.2210.11610](https://doi.org/10.48550/arXiv.2210.11610)
+* Liang et al. (2016) C. Liang, J. Berant, Q. Le, K. D. Forbus, N. 라오스 신경 기호 기계: 수퍼비전이 약한 프리베이스에서 의미 분석기를 학습합니다. _ arXiv preprint arXiv:1611.00020_, 2016.
+*Ni 등(2022) A. Ni, J. P. Inala, C. Wang, A. Polozov, C. Meek, D. Radev, and J. Gao. 자체 샘플링된 올바르고 부분적으로 올바른 솔루션으로 수학 추론을 학습합니다. _The 11번째 International Conference on Learning Representations_, 2022.
+* Norouzi et al.(2016) M. 노루지 벵지오 제이틀리 슈스터영 Wu, D. Schuurmans, et al. Reward augmented maximum likelihood for neural structured prediction. _ 신경 정보 처리 시스템_, 29, 2016의 발전
+* OpenAI(2023) OpenAI. Gpt-4 기술 보고서, 2023년
+* Paster(2023) K. 더 빨리 [https://huggingface.co/datasets/keirp/hungarian_national_hs_finals_exam] (https://huggingface.co/datasets/keirp/hungarian_national_hs_finals_exam), 2023.
+* Peters and Schaal (2007) J. Peters and S. 샬 운영 공간 제어를 위한 보상 가중 회귀에 의한 강화 학습. _Proceedings of the 24th international conference on Machine Learning_, pages 745-750, 2007.
+* Suzgun 등(2022) M. 수즈건 비늘, N. 샤를리 게르만 Tay, H. W. Chung, A. Chowdhery, Q. V. Le, E. H. Chi, D. Zhou, et al. Challenging big-bench tasks and whether the chain-of-thought can solve them. _ arXiv preprint arXiv:2210.09261_, 2022.
+
+* Wang 등(2023) X. Wang, J. Wei, D. Schuurmans, Q. V. Le, E. H. Chi, S. 나랑, A. 차우더리, D. 저우 자기일관성은 언어 모델에서 사고 추론의 사슬을 향상시킨다. _The 11번째 International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023. URL [https://openreview.net/pdf?id=1PL1NIMMrw](https://openreview.net/pdf?id=1PL1NIMMrw).
+* Wu 등(2016) Y. 우민 슈스터 진규범 노루지 맥커리 윤규근 조택 가오경 Macherey, et al. Google's neural machine translation system: Bridging the gap between human and machine translation. _ arXiv preprint arXiv:1609.08144_, 2016.
+* Yuan 등(2023) Z. Yuan, H. Yuan, C. Li, G. Dong, C. Tan, and C. Zhou. 대용량 언어 모델을 사용 하 여 수학적 추론 학습에 대 한 크기 조정 관계 _ arXiv preprint arXiv:2308.01825_, 2023.
+* Zelikman et al.(2022) E. Zelikman, Y. 우정무, N. 굿맨 스타: 추론과 함께 부트스트래핑 추론. _ 신경 정보 처리 시스템_, 35:15476-15488, 2022.
