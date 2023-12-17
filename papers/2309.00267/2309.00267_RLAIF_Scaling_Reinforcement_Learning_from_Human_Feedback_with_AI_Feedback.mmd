@@ -1,0 +1,521 @@
+# RLAIF: Scaling Reinforcement Learning from Human Feedback
+
+with AI Feedback
+
+ Harrison Lee, Samrat Phatale, Hassan Mansoor, Thomas Mesnard, Johan Ferret, Kellie Lu,
+
+Colton Bishop, Ethan Hall, Victor Carbune, Abhinav Rastogi, Sushant Prakash
+
+Google Research
+
+{harrisonlee,samratph,hassan}@google.com
+
+###### Abstract
+
+Reinforcement learning from human feedback (RLHF) has proven effective in aligning large language models (LLMs) with human preferences. However, gathering high-quality human preference labels can be a time-consuming and expensive endeavor. RL from AI Feedback (RLAIF), introduced by Bai et al., offers a promising alternative that leverages a powerful off-the-shelf LLM to generate preferences in lieu of human annotators. Across the tasks of summarization, helpful dialogue generation, and harmless dialogue generation, RLAIF achieves comparable or superior performance to RLAIF, as rated by human evaluators. Furthermore, RLAIF demonstrates the ability to outperform a supervised fine-tuned baseline even when the LLM preference labeler is the same size as the policy. In another experiment, directly prompting the LLM for reward scores achieves superior performance to the canonical RLAIF setup, where LLM preference labels are first distilled into a reward model. Finally, we conduct extensive studies on techniques for generating aligned AI preferences. Our results suggest that RLAIF can achieve human-level performance, offering a potential solution to the scalability limitations of RLHF.
+
+## 1 Introduction
+
+Reinforcement Learning from Human Feedback (RLHF) is an effective technique for aligning language models to human preferences (Stiennon et al., 2020; Ouyang et al., 2022). It is cited as one of the key drivers of success in modern conversational language models, such as ChatGPT (Liu et al., 2023) and Bard (Manyika, 2023). Training language models with reinforcement learning (RL) enables optimization on complex, sequence-level objectives that are not easily differentiable and therefore ill-suited for traditional supervised fine-tuning (SFT).
+
+One obstacle for employing RLHF at scale is its dependence on high-quality human preference labels. This raises the question of whether artificially generated labels can be a viable substitute. Generating labels with large language models (LLMs) is one promising approach, as LLMs have shown a high degree of alignment with human judgment (Gilardi et al., 2023; Ding et al., 2023). Bai et al. (2022b) was the first effort to explore Reinforcement Learning from AI Feedback (RLAIF)1, where
+
+Figure 1: Human evaluators strongly prefer RLAIF and RLAIF over the SFT baseline for summarization and helpful dialogue generation. Their difference in win rates vs. SFT is not statistically significant. Furthermore, when compared head-to-head, RLAIF is equally preferred to RLHF. For harmless dialogue generation, RLAIF outperforms RLHF.
+
+[MISSING_PAGE_FAIL:2]
+
+"1" and "2" and compute the softmax to obtain a preference distribution.
+
+There are numerous alternatives to obtain preference labels from LLMs, such as extracting the preference from a free-form generated response (e.g. _"The first response is better"_), or representing the preference distribution as a one-hot encoding. However, we choose our method because it is straightforward to implement and conveys more information than a one-hot encoding through its distributed representation of preferences.
+
+We experiment with two styles of preambles: _"Base"_, which essentially asks "which response is better?", and _"Detailed"_, which resembles detailed rating instructions that would be given to human preference annotators (see Table 16 for preambles for the summarization task). We also experiment with in-context learning Brown et al. (2020), where high-quality exemplars were hand-selected to cover a range of topics.
+
+#### 2.1.1 Addressing Position Bias
+
+The order in which candidates are shown to an LLM can bias which candidate it prefers Pezeshkpour and Hruschka (2023); Wang et al. (2023). We find evidence of position bias, which is more pronounced with smaller sizes of LLM labelers (see Appendix B).
+
+To mitigate position bias in preference labeling, we make two inferences for every pair of candidates, where the order in which candidates are presented to the LLM is reversed for the second inference. The results from both inferences are then averaged to obtain the final preference distribution.
+
+#### 2.1.2 Chain-of-thought Reasoning
+
+We experiment with eliciting chain-of-thought (CoT) reasoning Wei et al. (2022) from our AI labelers through a two-step inference procedure. First, we replace the _Ending_ of the standard prompt (e.g. "_Preferred Summary_=") with a sentence asking for thoughts and explanation (e.g. "_Consider the coherence, accuracy, coverage, and overall quality of each summary and explain which one is better. Rationale_:") and then decode a response from the LLM. Then, we concatenate the original prompt, the response, and the standard _Ending_ string together, and follow the scoring procedure in Section 2.1 to obtain a preference distribution. See Figure 3 for an illustration.
+
+In zero-shot prompts, the LLM is not given an example of what reasoning should look like. In few-shot prompts, we provide examples of CoT reasoning for the model to follow. See Tables 17 and 18 for examples.
+
+we apply a cross-entropy loss to the softmax of the reward scores generated by the RM. The softmax converts the RM scores into a probability distribution. We note that training a RM on a dataset of AI labels can be viewed as a form of model distillation.
+
+Finally, we conduct reinforcement learning to train the RLAIF policy model, using the RM to assign rewards to model responses.
+
+#### 2.2.2 Direct RLAIF
+
+An alternative approach is to directly use LLM feedback as the reward signal in RL. This enables bypassing the intermediate stage of training a RM that approximates the preferences of the LLM.
+
+The LLM is prompted to rate the quality of a generation between 1 and 10. Similar to the format mentioned in Section 2.1, the prompt contains high-level details on the structure of the input and the dimensions along which to rate a generation (e.g. factuality, coherence). Then, the likelihood of each score token between 1 and 10 is computed, the likelihoods are normalized to a probability distribution, a weighted score is calculated as \(s(x|c)=\sum_{i=1}^{10}iP(i|x,c)\), and then the score is again normalized to the range \([-1,1]\). Additional details on the prompting technique can be found in the Appendix D.
+
+Finally, RL is conduct RL in a similar manner to "distilled RLAIF", where the direct score is used as reward instead of the score from a RM. This approach is more computationally expensive than the canonical setup when the AI labeler is larger than the RM.
+
+### Evaluation
+
+We evaluate our results with three metrics - _AI Labeler Alignment_, _Win Rate_, and _Harmless Rate_.
+
+_AI Labeler Alignment_ measures the accuracy of AI-labeled preferences with respect to human preferences. For a single example, a soft AI-labeled preference is first converted to a binary representation (e.g. \([0.6,0.4]\rightarrow[1,0]\)). Then, a 1 is assigned if the label agrees with the human preference and 0 otherwise. The alignment accuracy \(z_{acc}\) can be expressed as follows:
+
+\[z_{acc}=\frac{1}{D}\sum_{i=1}^{D}\mathbbm{1}[\arg\max_{j}P^{AI}_{i,j}=p^{H}_{ i}],\]
+
+where \(D\) is the size of the preference dataset, \(P^{AI}\in\mathbb{R}^{D\times 2}\) is the matrix of soft AI preferences, and \(p^{human}\in\mathbb{R}^{D}\) is the corresponding vector of human preferences, containing elements \(0\) or \(1\) to denote whether the first or second response is preferred, respectively.
+
+_Win Rate_ evaluates the end-to-end quality of two policies by measuring how often one policy is preferred by human annotators over another. Given an input and two generations, human annotators select which generation they prefer. The percentage of instances where policy \(A\) is preferred over policy \(B\) is referred to as the _"win rate of A vs. B"_. A 50% win rate indicates that \(A\) and \(B\) are equally preferred.
+
+Figure 3: An illustration of the process of obtaining AI-generated labels for summarization preferences. The LLM is first prompted to explain its thoughts on the quality of the two candidates (blue). The LLM’s response is then appended to the original prompt (orange) and fed to the LLM a second time to generate a preference distribution over “1” vs. “2” based on their log-probabilities (green).
+
+_Harmless Rate_ measures the percentage of responses that are considered harmless by human evaluators. We evaluate the harmless dialogue generation task with this metric instead of _Win Rate_, because we find that many responses are equally safe, making it difficult to assign relative rankings.
+
+## 3 Experimental Details
+
+### Datasets
+
+We use the following datasets for our experiments:
+
+* posts from Reddit3 accompanied by summaries of the posts. Footnote 3: www.reddit.com
+* a dataset created from a subset of Reddit TL;DR. Each example comprises a post, two candidate summaries, and a rating from a human annotator indicating which summary is preferred.
+* conversations between a human and an AI assistant, where each conversation has two possible AI assistant responses
+- one preferred and the other non-preferred, according to a human annotator. Preference is based on which response is more informative and honest for the helpful task, and which response is safer for the harmless task.
+
+More dataset details can be found in Appendix C.
+
+We also experimented with the Stanford Human Preferences dataset (Ethayarajh et al., 2022), but we found that both RLHF and RLAIF policies did not show meaningful improvements over the SFT baseline after correcting for length biases, using the procedure in Appendix J.
+
+### LLM Labeling
+
+To enable fast experiment iteration when evaluating AI labeling techniques, we randomly downsampled the training split of each preference dataset. For summarization, an additional filter was applied to only include examples where human annotators preferred one summary over the other with high confidence4. After downsampling and filtering, there were roughly 3-4k examples for each task5. AI labeler alignment metrics were calculated on these downsampled datasets.
+
+Footnote 4: This follows the evaluation procedure in Stiennon et al. (2020). Examples with confidence scores of 1, 2, 8, and 9 were considered to be “high-confidence”
+
+PaLM 2 (Google et al., 2023) is used as the LLM for labeling preferences. The versions used are instruction-tuned but not previously trained with RL. Unless otherwise specified, AI labels were generated using PaLM 2 Large (L) with the best-performing prompt in Section 4.4. For more details on LLM labeling, see Appendix D.
+
+### Model Training
+
+All SFT models are initialized from PaLM 2 Extra-Small (XS). For summarization, the SFT model is produced by fine-tuning PaLM 2XS on the Reddit TL;DR dataset. For all other tasks, an instruction-tuned variant of PaLM 2 is used in lieu of task-specific fine-tuning.
+
+RMs are also derived from PaLM 2XS. RMs are fine-tuned on the entire training split of the corresponding preference dataset, where the label is the AI preference for AI feedback RMs and the original human preference label in the dataset for human feedback RMs. RM accuracies can be found in Appendix G.
+
+In the RL phase, the policy is trained with a modified version of REINFORCE (Williams, 1992) adapted to the language modeling domain. While many recent works use Proximal Policy Optimization (PPO) (Schulman et al., 2017) - a related method that adds a few techniques to make training more conservative and stable (e.g. clipping the objective function), we use REINFORCE with a baseline given that it is simpler yet still effective for the problem at hand. Both policy and value models are initialized from the SFT model. For summarization, the policy is rolled out on the training split of the Reddit TL;DR dataset. In other words, the initial states for RL are the original posts from the dataset prior to summarization. For the helpful and harmless tasks, the initial states are drawn from the training splits of the preference datasets. For summarization, simple post-processing is applied to responses generated by RL-trained policies as described in Appendix E.
+
+For additional details on the RL formulation and model training, see Appendices F and G.
+
+### Human Evaluation
+
+For experiments evaluated by win rates, evaluators were presented with an input context and multiple responses generated from different policies (e.g. RLAIF, RLHF, and SFT). They were then asked to rank responses in order of quality without ties, as seen in Figure 4. Input contexts were drawn from test splits of datasets, which were not used for training or any other evaluation6. Rankings were used to calculate win rates with respect to pairs of policies. For harmless dialogue generation, evaluators were asked to independently rate each response as harmless or harmful.
+
+Footnote 6: For summarization, we used the test split of Reddit TL;DR. For helpful and harmless dialogue generation, we used test splits from the preference datasets, detailed in Appendix C.
+
+For more details on human evaluation, see Appendix I.
+
+## 4 Results
+
+### RLAIF vs. RLHF
+
+RLAIF achieves performance gains on par with or better than RLHF on all three tasks (see Figure 1 and Table 1). RLAIF and RLHF are preferred by human evaluators over the baseline SFT policy 71% and 73% of the time for summarization7 and 63% and 64% for helpful dialogue generation, respectively. The difference in win rates between RLAIF vs. SFT and RLHF vs. SFT are not statistically significant. When directly comparing RLAIF against RLHF, they are equally preferred - i.e. the win rate is not statistically significantly different from 50%. For harmless dialogue generation, RLAIF achieves a harmless rate of 88%, outperforming both RLHF and SFT, which score 76% and 64%, respectively8.
+
+Footnote 7: RLAIF and RLHF are also preferred over the human reference summaries in Reddit TL;DR 79% and 80% of the time, respectively.
+
+Footnote 8: RLAIF achieves a statistically significant improvement over RLHF and SFT, according to a two-sample t-test.
+
+Figure 5 contains an example of SFT, RLAIF, and RLHF summaries. To better understand how RLAIF compares to RLHF, we qualitatively compare responses generated by both policies for summarization in Section 5.
+
+As observed in Stiennon et al. (2020), RLAIF and RLHF policies tend to generate longer responses than the SFT policy, which may be partially responsible for their higher win rates. We conduct post-hoc analysis to control for length and find that both RLAIF and RLHF policies still outperform the SFT policy, and by similar margins to one another. See Appendix J for details.
+
+One natural question that arises is whether there is value in combining human and AI feedback. We experimented with combining both types of feedback but did not see an improvement beyond using human feedback alone. However, we believe that there are several alternative training setups that could demonstrate value in combining both forms of feedback. See Appendix K for details.
+
+These results suggest that RLAIF is a viable alternative to RLHF that does not depend on human annotation. In addition to expediting labeling time and reducing dependence on annotation services, another key benefit of AI labeling is cost reduction. We estimate the cost of labeling with an LLM to be over 10x cheaper than human annotation. See Appendix L for detailed calculations.
+
+### Towards Self-Improvement
+
+In Section 4.1, the LLM used to label preferences (PaLM 2 L) is much larger than the policy being trained (PaLM 2 XS). Going one step further, one might wonder if RLAIF can yield improvements when the AI labeler is the same size as the policy. On the task of summarization, we conduct RLAIF where PaLM 2 XS is used as the AI labeler instead of PaLM 2 L. The rest of the setup mimics the experiment in Section 4.1. We refer to this setup as "same-size RLAIF".
+
+Human annotators prefer same-size RLAIF 68% of the time over SFT (see Table 1). For reference, RLAIF using an AI labeler larger than the policy is preferred 71% over SFT9. This result demonstrates that RLAIF can yield improvements even when the AI labeler is the same size as the policy LLM.
+
+Footnote 9: The difference between win rates between “same-size RLAIF vs. SFT” and “RLAIF vs. SFT” is not statistically significant. For a two-sample t-test, p-value = 0.07. At alpha = 0.05, this difference is not statistically significant.
+
+We note that the AI labeler and initial policy are not the exact same model. The AI labeler is the instruction-tuned PaLM 2 XS, whereas the initial policy is PaLM 2 XS fine-tuned on Reddit TL;DR summarization. Additionally, the summaries rated by the AI labeler were generated by policies created by the original dataset curators. For these reasons, we do not consider this experiment a strict case of "self-improvement"Huang et al. (2022). However, we believe that these results show great promise for this research direction.
+
+### Direct RLAIF
+
+In Sections 4.1 and 4.2, AI feedback was distilled into a RM. On the summarization task, we experiment with using an off-the-shelf LLM to _directly_ provide rewards during RL, bypassing RM training entirely. Since using a large AI labeler in RL is computationally expensive, we use the smaller instruction-tuned PaLM 2 XS as the off-the-shelf LLM. We refer to this setup as "direct RLAIF".
+
+Human annotators prefer responses from direct RLAIF 74% of the time over SFT responses (see Table 1). To understand the impact of directly utilizing LLM feedback in RL, we compare this result to the same-size RLAIF policy from Section 4.2, which solely differs in training a RM that provides rewards during RL. Direct RLAIF outperforms same-size RLAIF, which achieves a statistically significantly lower win rate of 68%. Furthermore, when shown responses side-by-side, raters prefer direct RLAIF over same-size RLAIF 60% of the time10. One hypothesis for the improved quality is that bypassing the distillation from AI preferences into a RM enables information to flow directly from the off-the-shelf LLM to the policy.
+
+Footnote 10: This is statistically significantly different from 50% according to a two-sample t-test.
+
+### Prompting Techniques
+
+We experiment with three types of prompting variations - preamble specificity, chain-of-thought reasoning, and in-context learning (see Table 2). We observe that eliciting chain-of-thought reasoning generally improves AI labeler alignment, while the impacts of preamble specificity and in-context learning vary across tasks. The best prompts outperform the base prompts ("Base 0-shot") by +1.9%, +1.3%, and +1.7% for summarization, helpfulness, and harmlessness, respectively.
+
+Detailed preambles consistently improve alignment for summarization, while yielding mixed results for helpful and harmless dialogue generation. We hypothesize that summarization benefits more from a specific preamble due to the high complexity of this task. On the other hand, rating helpfulness and harmlessness are more intuitive to grasp, and therefore may benefit less from detailed instructions.
+
+Chain-of-thought reasoning improves alignment consistently for summarization. For helpful and harmless dialogue generation, CoT only improves alignment when paired with the "Base" preamble.
+
+Surprisingly, we observe that few-shot in-context learning only improves alignment for harmless dialogue generation11. For summarization and help
+
+\begin{table}
+\begin{tabular}{|c|c|c||c|c|} \hline \multicolumn{3}{|c||}{**Win Rate**} & \multicolumn{3}{c|}{**Harmless Rate**} \\ \hline \multirow{2}{*}{**Comparison**} & **Summa** & **Helpful** & \multirow{2}{*}{**Model**} & **Harmless** \\  & **-rization** & **dialogue** & & **dialogue** \\ \hline RLAIF **vs** SFT & 71\% & 63\% & SFT & 64\% \\ RLAIF **vs** SFT & 73\% & 64\% & RLHF & 76\% \\ RLAIF **vs** RLHF & 50\% & 52\% & RLAIF & 88\% \\ \hline Same-size RLAIF **vs** SFT & 68\% & \multirow{4}{*}{} & \multirow{4}{*}{} & \multirow{4}{*}{} \\ Direct RLAIF **vs** SFT & 74\% & & & \\ \cline{1-1} Direct RLAIF **vs** Same-size RLAIF & 60\% & & & \\ \hline \end{tabular}
+\end{table}
+Table 1: **Left side:** Win rates when comparing generations from two different models for the summarization and the helpful dialogue tasks, judged by human evaluators. **Right side:** Harmless rates across policies for the harmless dialogue task, judged by human evaluators.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline \multicolumn{4}{c}{AI Labeler Alignment} \\ \hline Prompt & Summary H1 & H2 \\ \hline Base 0-shot & 76.1\% & 67.8\% & 69.4\% \\ Base 1-shot & 76.0\% & 67.1\% & 71.7\% \\ Base 2-shot & 75.7\% & 66.8\% & **72.1\%** \\ Base + CoT 0-shot & 77.5\% & **69.1\%** & 70.6\% \\ Detailed 0-shot & 77.4\% & 67.6\% & 70.1\% \\ Detailed 1-shot & 76.2\% & 67.6\% & 71.5\% \\ Detailed 2-shot & 76.3\% & 67.3\% & 71.6\% \\ Detailed 8-shot & 69.8\% & – & – \\ Detailed + CoT 0-shot & **78.0\%** & 67.8\% & 70.1\% \\ Detailed + CoT 1-shot & 77.4\% & 67.4\% & 69.9\% \\ Detailed + CoT 2-shot & 76.8\% & 67.4\% & 69.2\% \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: We observe that eliciting chain-of-thought reasoning tends to improve AI labeler alignment, while few-shot prompting and detailed preambles have mixed effects across tasks. H1 refers to helpfulness, H2 to harmlessness.
+
+fulness, alignment monotonically decreases as the number of exemplars increases. It seems unlikely that this effect is a result of exemplar quality, as exemplars were carefully handpicked to be high-quality and representative of each preference task. Furthermore, we conducted 10 trials for "Base 1-shot" on summarization, where a different exemplar was randomly selected for each trial. The maximum AI labeler alignment from all trials was 76.1%, which still did not surpass "Base 0-shot" in terms of AI labeler alignment. One hypothesis for why exemplars do not help is that the summarization and helpful dialogue generation tasks may already be sufficiently well-understood by the powerful AI labeler, rendering the exemplars unhelpful or distracting. It's interesting to note that in-context learning is still an important research area that is not fully understood (Min et al., 2022; Wang et al., 2022).
+
+Footnote 1: [https://www.cs.uc.edu/~ciao/](https://www.cs.uc.edu/~ciao/)
+
+For summarization, we compare against human inter-annotator agreement to get a sense of how well our LLM labeler performs in absolute terms. Stiennon et al. (2020) estimated that agreement rate for the OpenAI human preference dataset was 73-77%, suggesting that the off-the-shelf LLM achieving 78% alignment performs well in absolute terms.
+
+We also conduct experiments with self-consistency (Wang et al., 2022), where multiple chain-of-thought rationales are sampled with temperature \(T>0\). The preference distributions generated by the LLM are averaged together to arrive at the final preference label. We find that self-consistency strictly degrades AI labeler alignment (see Appendix M).
+
+We hypothesize that higher AI labeler alignment leads to improvements in RLAIF policies. To this end, we conduct an experiment on the end-to-end sensitivity to AI labeler alignment. Two RLAIF policies are trained that only differ in the alignment scores of AI labels. Results show that the policy trained with more aligned AI labels achieves a significantly higher win rate. However, this study only compares two policies, and rigorous experimentation is required to draw definitive conclusions. See Appendix N for details.
+
+### Size of LLM Labeler
+
+Large model sizes are not widely accessible and can be slow and expensive to run. On the task of summarization, we experiment with labeling preferences with varying LLM sizes and observe a strong relationship between size and alignment (see Table 3). Alignment decreases -4% when moving from PaLM 2 Large (L) to PaLM 2 Small (S), and decreases another -11% when moving down to PaLM 2 XS - a trend consistent with scaling behaviors observed in other work (Kaplan et al., 2020). Besides general model capability, another contributing factor to this trend may be that smaller LLMs are more susceptible to position bias (see Appendix B).
+
+On the other end of this trend, these results also suggest that scaling up AI labeler size may produce even higher quality preference labels. Since the AI labeler is only used to generate preference examples once and is not called during RL, using an even larger AI labeler is not necessarily prohibitively expensive.
+
+## 5 Qualitative Observations
+
+To better understand how RLAIF compares to RLAIF, we inspected responses generated by both policies for the summarization task. In many cases, the two policies produced similar summaries, which is reflected in their similar win rates. However, we identified two patterns where they sometimes diverged.
+
+The first pattern we observed is that in some cases, RLAIF hallucinates when RLAIF does not. The hallucinations in RLAIF summaries sound plausible but are inconsistent with the original text. For instance, in Example #1 of Table 23, the RLAIF summary states that the author is 20 years old, but this is neither mentioned nor implied by the source text. The second pattern we observed is that RLAIF sometimes produces less coherent or grammatical summaries than RLAIF. For instance, in Example #1 of Table 24, the RLAIF summary generates run-on sentences.
+
+More systematic analysis is required to identify if these patterns exist at scale, which we leave to future work.
+
+\begin{table}
+\begin{tabular}{l c} \hline \hline Model Size & AI Labeler Alignment \\ \hline
+**PaLM 2 L** & **78.0**\% \\ PaLM 2 S & 73.8\% \\ PaLM 2 XS & 62.7\% \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: AI labeler alignment increases as the size of the LLM labeler increases.
+
+Related Work
+
+LLMs have shown impressive performance over a wide range of NLP tasks Brown et al. (2020); Thoppilan et al. (2022); Chowdhery et al. (2022); Google et al. (2023); OpenAI (2023). For several of these tasks, RL has emerged as an effective optimization technique. While initial applications of RL on tasks such as translation Wu et al. (2016, 2018) and summarization Gao et al. (2019); Wu and Hu (2018) used automatic evaluation metrics as rewards, such simplified formulations of rewards did not fully align with human notions of quality.
+
+Reinforcement learning from human feedback Christiano et al. (2017) has been used as a technique to directly align LLMs with human preferences Ziegler et al. (2019) through training a reward model on pairwise comparisons of natural language responses. It has been successfully applied for summarization Stiennon et al. (2020), generalized instruction following Ouyang et al. (2022); Lai et al. (2023), dialogue Gilardi et al. (2023); Manyika (2023); Glaese et al. (2022); Bai et al. (2022) and question answering Nakano et al. (2021).
+
+LLMs have also been extensively used for data generation Wang et al. (2021); Meng et al. (2023), augmentation Feng et al. (2021) and in self-training setups Wang et al. (2022); Madaan et al. (2023). Bai et al. (2022) introduced the idea of RLAIF, which used LLM labeled preferences in conjunction with human labeled preferences to jointly optimize for the two objectives of helpfulness and harmlessness. Recent works have also explored related techniques for generating rewards from LLMs Roit et al. (2023); Kwon et al. (2022); Yang et al. (2023). These works demonstrate that LLMs can generate useful signals for RL fine-tuning, which inspired this work's investigation into whether LLMs can serve as a viable alternative to humans in collecting preference labels for RL.
+
+## 7 Conclusion
+
+In this work, we show that RLAIF achieves comparable improvements to RLAIF on three text generation tasks. Our experiments show that RLAIF greatly improves upon a SFT baseline, and the margin of improvement is on par with or greater than that of RLAIF. Furthermore, in head-to-head comparisons, RLAIF and RLAIF are preferred at similar rates by humans. Additionally, we show that RLAIF is effective even when the LLM labeler is the same size as the policy, and directly prompting the LLM labeler to provide rewards during RL can outperform the canonical RLAIF setup that distills preferences into a separate RM. Finally, we study the impact of AI labeling techniques on alignment to human preferences.
+
+While this work highlights the potential of RLAIF, there remain many fascinating open questions, such as whether conducting RLAIF iteratively can achieve additional gains (i.e. use the most recent RLAIF policy to generate new response pairs, conduct RLAIF, and repeat), how RLAIF can be adapted to a model-based RL setting where both human and assistant are modeled by LLMs, and how AI feedback can be leveraged for more specific credit assignment. We leave these questions for future work.
+
+### Ethics
+
+One ethical consideration concerns the utilization of AI-generated feedback as a source for model alignment. There exists a potential risk of transferring biases from the off-the-shelf LLM into the generated preferences. This in turn may result in RL-trained policies further amplifying biases, thereby inadvertently misaligning models and potentially causing harm. Extreme caution must be exercised, especially when deploying these models in high-stakes domains such as medicine, law, and employment, where they have the potential to significantly impact human lives in adverse ways. In such domains, we believe that human experts trained to carefully assign preferences according to strict policies should be considered the gold standard.
+
+Another ethical consideration is that reducing the barriers to aligning LLMs also carries the risk of facilitating their misuse for malicious purposes. For instance, RLAIF could be employed to train models to generate convincing misinformation or produce hateful and abusive content. The best mitigation to this risk is to carefully govern the access and usage of powerful LLMs (e.g. limiting "white-box" access), to prevent bad actors from misusing them.
+
+### Reproducibility
+
+To promote the reproducibility of this work, many of the details of this research are shared throughout the paper. Open-source datasets are elaborated upon in Appendix C, LLM labeling details in Appendix D, the RL formulation in Appendix F,model training details in Appendix G, human evaluation details in I, and the most critical prompts used in the Appendix (e.g. Tables 17, 21, and 22). Please reach out to authors for any additional questions or requests.
+
+PaLM 2 models are available through Google Cloud's Vertex API, and the experiments in this work may also be repeated with other publicly available LLMs.
+
+## Acknowledgements
+
+We would like to thank many people who have helped make this work complete. We thank Chen Zhu for optimizing our LLM inference setup, Le Hou for suggesting prompt improvements and experimenting with self-consistency, Leonard Hussenot for bringing the problem of position bias in LLMs to our attention, and Bradley Green, Ewa Dominowska, and Blaise Aguera y Arcas for supporting this research.
+
+We thank everyone who thoroughly reviewed our work and provided valuable feedback: Hakim Sidahmed, Meiqi Guo, Michal Valko, Nevan Wichers, Sian Gooding, and Yuan Cao.
+
+We thank Mo Azar, Daniel Guo, Andrea Michi, Nicolas Perez-Nieves, and Marco Selvi for their work in developing a RLAIF training setup that directly prompts an LLM to obtain reward scores.
+
+Finally, we thank the individuals who designed and built the RL training infrastructure used in this paper: Leonard Hussenot, Johan Ferret, Robert Dadashi, Geoffrey Cideron, Alexis Jacq, Sabela Ramos, Piotr Stanczyk, Sertan Girgin, Danila Sinopalnikov, Amelie Heliou, Nikola Momchev, and Olivier Bachem.
+
+## References
+
+* D. Amodei, C. Olah, J. Steinhardt, P. Christiano, J. Schulman, and D. Mane (2016)Concrete problems in ai safety. arXiv preprint arXiv:1606.06565. Cited by: SS1.
+* Y. Bai, A. Jones, K. Ndousse, A. Askell, A. Chen, N. DasSarma, D. Drain, S. Fort, D. Ganguli, T. Henighan, et al. (2022)Training a helpful and harmless assistant with reinforcement learning from human feedback. arXiv preprint arXiv:2204.05862. Cited by: SS1.
+* Y. Bai, S. Kadavath, S. Kundu, A. Askell, J. Kernion, A. Jones, A. Chen, A. Goldie, A. Mirhoseini, C. McKinnon, C. Chen, C. Olsson, C. Olah, D. Hernandez, D. Drain, D. Granguli, D. Li, E. Tran-Johnson, E. Perez, J. Kerr, J. Mueller, J. Ladish, J. Landau, K. Ndousse, K. Lukosuite, L. Lovitt, M. Sellitto, N. Elhage, N. Schaefer, N. Mercado, N. DasSarma, R. Lasenby, R. Larson, S. Ringer, S. Johnston, S. Kravec, S. El Showk, S. Fort, T. Lanham, T. Telleen-Lawton, T. Conferly, T. Henighan, T. Hume, S. R. Bowman, Z. Hatfield-Dodds, B. Mann, D. Amodei, N. Joseph, S. McCandlish, T. Brown, and J. Kaplan (2022)Constructional ai: harmlessness from ai feedback. External Links: 2204.05862 Cited by: SS1.
+* T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al. (2020)Language models are few-shot learners. Advances in neural information processing systems33, pp. 1877-1901. Cited by: SS1.
+* A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, et al. (2022)Palm: scaling language modeling with pathways. arXiv preprint arXiv:2204.02311. Cited by: SS1.
+* P. F. Christiano, J. Leike, T. Brown, M. Martic, S. Legg, and D. Amodei (2017)Deep reinforcement learning from human preferences. Advances in neural information processing systems30, pp.. Cited by: SS1.
+* B. Ding, C. Qin, L. Liu, Y. K. Chia, B. Li, S. Joty, and L. Bing (2023)Is GPT-3 a good data annotator?. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), Toronto, Canada, pp. 11173-11195. External Links: Link, Document Cited by: SS1.
+* K. Ethayarajh, Y. Choi, and S. Swayamdipta (2022)Understanding dataset difficulty with \(\mathcal{V}\)-usable information. In Proceedings of the 39th International Conference on Machine Learning, Vol. 162, pp. 5988-6008. Cited by: SS1.
+* T. Everitt and M. Hutter (2016)Avoiding wire-heading with value reinforcement learning. In Artificial General Intelligence: 9th International Conference, AGI 2016, New York, NY, USA, July 16-19, 2016, Proceedings 9, pp. 12-22. Cited by: SS1.
+* A. Fan, M. Lewis, and Y. Dauphin (2018)Hierarchical neural story generation. In Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), Melbourne, Australia, pp. 889-898. External Links: Link, Document Cited by: SS1.
+* S. Y. Feng, V. Gangal, J. Wei, S. Chandar, S. Vosoughi, T. Mitamura, and E. Hovy (2021)A survey of data augmentation approaches for NLP. In Findings of the Associationfor Computational Linguistics: ACL-IJCNLP 2021_, pages 968-988, Online. Association for Computational Linguistics.
+* Fox et al. (2015) Roy Fox, Ari Pakman, and Naftali Tishby. 2015. Taming the noise in reinforcement learning via soft updates. _arXiv preprint arXiv:1512.08562_.
+* Gao et al. (2019) Yang Gao, Christian M Meyer, Mohsen Mesgar, and Iryna Gurevych. 2019. Reward learning for efficient reinforcement learning in extractive document summarisation. _arXiv preprint arXiv:1907.12894_.
+* Geist et al. (2019) Matthieu Geist, Bruno Scherrer, and Olivier Pietquin. 2019. A theory of regularized markov decision processes. In _International Conference on Machine Learning_, pages 2160-2169. PMLR.
+* Gilardi et al. (2023) Fabrizio Gilardi, Meysam Alizadeh, and Mael Kubli. 2023. Chatgpt outperforms crowd-workers for text-annotation tasks. _arXiv preprint arXiv:2303.15056_.
+* Glaese et al. (2022) Amelia Glaese, Nat McAleese, Maja Trebacz, John Aslanides, Vlad Firoiu, Timo Ewalds, Maribeth Rauh, Laura Weidinger, Martin Chadwick, Phoebe Thacker, et al. 2022. Improving alignment of dialogue agents via targeted human judgements. _arXiv preprint arXiv:2209.14375_.
+* Google (2023) Google. 2023. Ai platform data labeling service pricing. [https://cloud.google.com/ai-platform/data-labeling/pricing#labeling_costs](https://cloud.google.com/ai-platform/data-labeling/pricing#labeling_costs). Accessed: 2023-09-28.
+* Google et al. (2020) Rohan Anil Google, Andrew M. Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, Eric Chu, Jonathan H. Clark, Laurent El Shafey, Yanping Huang, Kathy Meier-Hellstern, Gaurav Mishra, Erica Moreira, Mark Omernick, Kevin Robinson, Sebastian Ruder, Yi Tay, Kefan Xiao, Yuanzhong Xu, Yujing Zhang, Gustavo Hernandez Abrego, Junwhan Ahn, Jacobu Austin, Paul Barham, Jan Botha, James Bradbury, Siddhartha Brahma, Kevin Brooks, Michele Catasta, Yong Cheng, Colin Cherry, Christopher A. Choquette-Choo, Aakanksha Chowdhury, Clement Crepy, Shachi Dave, Mostafa Dehghani, Sunipa Dev, Jacob Devlin, Mark Diaz, Nan Du, Ethan Dyer, Vlad Feinberg, Fangxiaoyu Feng, Vlad Fienber, Markus Freitag, Xavier Garcia, Sebastian Gehrmann, Lucas Gonzalez, Guy Gur-Ari, Steven Hand, Hadi Hashemi, Le Hou, Joshua Howland, Andrea Hu, Jeffrey Hui, Jeremy Hurwitz, Michael Isard, Abe Ittycheriah, Matthew Jagielski, Wenhab Jia, Kathleen Kenealy, Maxim Krikun, Sneha Kudugunta, Chang Lan, Katherine Lee, Benjamin Lee, Eric Li, Music Li, Wei Li, YaGuang Li, Jian Li, Hyeontaek Lim, Hanzhao Lin, Zhongtao Liu, Frederick Liu, Marcello Maggioni, Aroma Mahendru, Joshua Maynez, Vedant Misra, Maysam Moussalam, Zachary Nado, John Nham, Eric Ni, Andrew Nystrom, Alicia Parrish, Marie Pellat, Martin Polacek, Alex Polozov, Reiner Pope, Siyuan Qiao, Emily Reif, Bryan Richter, Parker Riley, Alex Castro Ros, Aurko Roy, Brennan Saeta, Rajkumar Samuel, Renee Shelby, Ambrose Slone, Daniel Smilkov, David R. So, Daniel Sohn, Simon Tokumine, Dasha Valter, Vijay Vasudevan, Kiram Vodrahalli, Xuezhi Wang, Pidong Wang, Zirui Wang, Tao Wang, John Wieting, Yuhuai Wu, Kelvin Xu, Yunhan Xu, Linting Xue, Pengcheng Yin, Jiahui Yu, Qiao Zhang, Steven Zheng, Ce Zheng, Weikang Zhou, Denny Zhou, Slav Petrov, and Yonghui Wu. 2023. Palm 2 technical report.
+* Howard (1960) Ronald A Howard. 1960. _Dynamic programming and markov processes_. John Wiley.
+* Huang et al. (2022) Jiaxin Huang, Shixiang Shane Gu, Le Hou, Yuexin Wu, Xuezhi Wang, Hongkun Yu, and Jiawei Han. 2022. Large language models can self-improve. _arXiv preprint arXiv:2210.11610_.
+* Jaques et al. (2017) Natasha Jaques, Shixiang Gu, Dzmitry Bahdanau, Jose Miguel Hernandez-Lobato, Richard E Turner, and Douglas Eck. 2017. Sequence tutor: Conservative fine-tuning of sequence generation models with kl-control. In _International Conference on Machine Learning_, pages 1645-1654. PMLR.
+* Kaplan et al. (2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_.
+
+* Kwon et al. (2022) Minae Kwon, Sang Michael Xie, Kalesha Bullard, and Dorsa Sadigh. 2022. Reward design with language models. In _The Eleventh International Conference on Learning Representations_.
+* Lai et al. (2023) Viet Dac Lai, Chien Van Nguyen, Nghia Trung Ngo, Thuat Nguyen, Franck Dernoncourt, Ryan A Rossi, and Thien Huu Nguyen. 2023. Okapi: Instructured large language models in multiple languages with reinforcement learning from human feedback. _arXiv preprint arXiv:2307.16039_.
+* Liu et al. (2023) Yiheng Liu, Tianle Han, Siyuan Ma, Jiayue Zhang, Yuanyuan Yang, Jiaming Tian, Hao He, Antong Li, Mengshen He, Zhengliang Liu, et al. 2023. Summary of chatgpt/gpt-4 research and perspective towards the future of large language models. _arXiv preprint arXiv:2304.01852_.
+* Madaan et al. (2023) Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. 2023. Self-refine: Iterative refinement with self-feedback. _arXiv preprint arXiv:2303.17651_.
+* Manyika (2023) James Manyika. 2023. An overview of hard: an early experiment with generative ai. [https://ai.google/static/documents/google-about-hard.pdf](https://ai.google/static/documents/google-about-hard.pdf). Accessed: 2023-08-23.
+
+Yu Meng, Martin Michalski, Jiaxin Huang, Yu Zhang, Tarek Abdelzaher, and Jiawei Han. 2023. Tuning language models as training data generators for augmentation-enhanced few-shot learning. In _International Conference on Machine Learning_, pages 24457-24477. PMLR.
+* Min et al. (2022) Sewon Min, Xinxi Lyu, Ari Holtzman, Mikel Artetxe, Mike Lewis, Hannaneh Hajishirzi, and Luke Zettlemoyer. 2022. Rethinking the role of demonstrations: What makes in-context learning work? In _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pages 11048-11064.
+* Nakano et al. (2021) Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantantan Jain, Vineet Kosaraju, William Saunders, et al. 2021. Webpt: Browser-assisted question-answering with human feedback. _arXiv preprint arXiv:2112.09332_.
+* OpenAI (2023a) OpenAI. 2023a. Gpt-4 technical report.
+* OpenAI (2023b) OpenAI. 2023b. Openai pricing. [https://openai.com/pricing](https://openai.com/pricing). Accessed: 2023-09-28.
+* Ouyang et al. (2022) Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022. Training language models to follow instructions with human feedback. _Advances in Neural Information Processing Systems_, 35:27730-27744.
+* Pezeshkpour and Hruschka (2023) Pouya Pezeshkpour and Estevam Hruschka. 2023. Large language models sensitivity to the order of options in multiple-choice questions. _arXiv preprint arXiv:2308.11483_.
+* Roit et al. (2023) Paul Roit, Johan Ferret, Lior Shani, Roee Aharoni, Geoffrey Cideron, Robert Dadashi, Matthieu Geist, Sertan Girgin, Leonard Hussenot, Orgad Keller, et al. 2023. Factually consistent summarization via reinforcement learning with textual entailment feedback. _arXiv preprint arXiv:2306.00186_.
+* Schulman et al. (2017) John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proximal policy optimization algorithms. _arXiv preprint arXiv:1707.06347_.
+* Shazeer and Stern (2018) Noam Shazeer and Mitchell Stern. 2018. Adafactor: Adaptive learning rates with sublinear memory cost. _CoRR_, abs/1804.04235.
+* Stiennon et al. (2020) Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. 2020. Learning to summarize with human feedback. _Advances in Neural Information Processing Systems_, 33:3008-3021.
+* Sutton et al. (1999) Richard S Sutton, David McAllester, Satinder Singh, and Yishay Mansour. 1999. Policy gradient methods for reinforcement learning with function approximation. _Advances in neural information processing systems_, 12.
+* Thoppilan et al. (2022) Romal Thoppilan, Daniel De Freitas, Jamie Hall, Noam Shazeer, Apoorv Kulshreshtha, Heng-Tze Cheng, Alicia Jin, Taylor Bos, Leslie Baker, Yu Du, et al. 2022. Lamda: Language models for dialog applications. _arXiv preprint arXiv:2201.08239_.
+* Wang et al. (2022a) Boshi Wang, Sewon Min, Xiang Deng, Jiaming Shen, You Wu, Luke Zettlemoyer, and Huan Sun. 2022a. Towards understanding chain-of-thought prompting: An empirical study of what matters. _arXiv preprint arXiv:2212.10001_.
+* Wang et al. (2023) Peiyi Wang, Lei Li, Liang Chen, Dawei Zhu, Binghuai Lin, Yunbo Cao, Qi Liu, Tianyu Liu, and Zhifang Sui. 2023. Large language models are not fair evaluators. _arXiv preprint arXiv:2305.17926_.
+* Wang et al. (2021a) Shuohang Wang, Yang Liu, Yichong Xu, Chenguang Zhu, and Michael Zeng. 2021a. Want to reduce labeling cost? gpt-3 can help. In _Findings of the Association for Computational Linguistics: EMNLP 2021_, pages 4195-4205.
+* Wang et al. (2022b) Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V Le, Ed H Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. 2022b. Self-consistency improves chain of thought reasoning in language models. In _The Eleventh International Conference on Learning Representations_.
+* Wang et al. (2021b) Zirui Wang, Adams Wei Yu, Orhan Firat, and Yuan Cao. 2021b. Towards zero-label language learning. _arXiv preprint arXiv:2109.09193_.
+* Wei et al. (2021) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. 2021. Finetuned language models are zero-shot learners. In _International Conference on Learning Representations_.
+* Wei et al. (2022) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022. Chain-of-thought prompting elicits reasoning in large language models. _Advances in Neural Information Processing Systems_, 35:24824-24837.
+* Williams (1992) Ronald J Williams. 1992. Simple statistical gradient-following algorithms for connectionist reinforcement learning. _Machine learning_, 8:229-256.
+* Wu et al. (2018) Lijun Wu, Fei Tian, Tao Qin, Jianhuang Lai, and Tie-Yan Liu. 2018. A study of reinforcement learning for neural machine translation. In _Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing_, pages 3612-3621.
+* Wu et al. (2016) Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V Le, Mohammad Norouzi, Wolfgang Macherey, Maxim Krikun, Yuan Cao, Qin Gao, Klaus Macherey, et al. 2016. Google's neural machine translation system: Bridging the gap between human and machine translation. _arXiv preprint arXiv:1609.08144_.
+* Wu and Hu (2018) Yuxiang Wu and Baotian Hu. 2018. Learning to extract coherent summary via deep reinforcement learning. In _Proceedings of the AAAI Conference on Artificial Intelligence_, page 5602.
+
+* Yang et al. (2023) Kevin Yang, Dan Klein, Asli Celikyilmaz, Nanyun Peng, and Yuandong Tian. 2023. Rlcd: Reinforcement learning from contrast distillation for language model alignment.
+* Ziegler et al. (2019) Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. 2019. Fine-tuning language models from human preferences. _arXiv preprint arXiv:1909.08593_.
+
+RLHF Preliminaries
+
+We review the RLHF pipeline introduced in Stiennon et al. (2020); Ouyang et al. (2022), which consists of 3 phases: supervised fine-tuning, reward model training, and reinforcement learning.
+
+### Supervised Fine-tuning
+
+A pre-trained LLM is fine-tuned on a high quality labeled dataset for a downstream task (e.g. summarization) using token-level supervision to produce a supervised fine-tuned (SFT) model \(\pi^{SFT}\).
+
+### Reward Modeling
+
+Given an input \(x\), we sample a pair of responses \((y_{1},y_{2})\sim\pi\) from one or more models, where oftentimes \(\pi\) is the SFT model. The input and responses are sent to human annotators to rate which response is better according to some criteria. These annotations form a dataset of triplets \(\mathcal{D}=\{(x,y_{w},y_{l})\}\), where \(y_{w}\) and \(y_{l}\) are the preferred and non-preferred responses, respectively. A reward model (RM) \(r_{\phi}\) is trained by minimizing the following loss:
+
+\[\mathcal{L}_{r}(\phi)=\operatorname*{\mathbb{E}}_{(x,y_{w},y_{l})\sim\mathcal{ D}}\Big{[}\log\sigma(r_{\phi}(x,y_{w})-r_{\phi}(x,y_{l}))\Big{]},\]
+
+where \(\sigma\) is the sigmoid function.
+
+### Reinforcement Learning
+
+A policy \(\pi_{\theta}^{RL}\) is initialized from the SFT model weights and then optimized with reinforcement learning to maximize the reward given by the RM, which serves as a proxy for human preferences. Optionally, a Kullback-Leibler (KL) divergence term \(D_{KL}\) is added to the objective to penalize \(\pi_{\theta}^{RL}\) for deviating from the original SFT policy \(\pi^{SFT}\), controlled by the hyperparameter \(\beta\)Fox et al. (2015); Geist et al. (2019). The KL loss helps prevent \(\pi_{\theta}^{RL}\) from drifting into a region where it generates language that is highly rewarded by the RM yet consists of low-quality or unnatural language - a phenomenon known as "reward hacking" (Everitt and Hutter, 2016; Amodei et al., 2016). The optimization objective is described by the equation below:
+
+\[J(\theta)=\operatorname*{\mathbb{E}}_{y\sim\pi_{\theta}(\cdot|x)} \Big{[}(1-\beta)r_{\phi}(y|x)\\ -\beta D_{KL}\big{(}\pi_{\theta}^{RL}(y|x)\,\|\,\pi^{SFT}(y|x) \big{)}\Big{]},\]
+
+where \(\beta\) is a hyperparameter between 0 and 1.
+
+## Appendix B Position Bias in LLM Labelers
+
+Our analysis on the summarization task suggests that the LLMs used for preference labeling are biased by the order in which candidates are shown. For each example in our AI labeling evaluation set, we query the LLM preferences for the pair of candidates, swap the order in which candidates are presented, and then query the LLM preferences again.
+
+We consider an LLM to be _more biased_ if it prefers the same position on both the original and reversed inferences. For example, let candidates A and B be in positions 1 and 2 for the first inference and in positions 2 and 1 for the second inference. If the LLM prefers the same position on both inferences, we consider the LLM to be position-biased. We measure position bias by computing _"% Same Position Preferred"_ - the percentage of inference pairs where this occurs. A higher metric value indicates a more biased LLM.
+
+We find that PaLM 2 L, S, and XS prefer the same position 18%, 21%, and 56% of the time, respectively, suggesting that position bias is inversely correlated with model size (see Table 4). One hypothesis is that larger models are more capable and therefore more faithfully judge preferences based on the content of the candidates rather than their positions, which are supposed to be immaterial.
+
+We also observe that for PaLM 2 L, of the 18% of cases where it prefers the same position on both inferences, 94% of the time it prefers the first candidate shown. On the other hand, PaLM 2 S and XS show affinity for the second candidate shown when the same position is preferred on both inferences, preferring it 91% and 99% of the time, respectively. These biases are statistically significant under a two-sided binomial test at \(\alpha=0.05\).
+
+\begin{table}
+\begin{tabular}{l c} \hline Model Size & \% Same Position Preferred \\ \hline PaLM 2 L & 18\% \\ PaLM 2 S & 21\% \\ PaLM 2 XS & 56\% \\ \hline \end{tabular}
+\end{table}
+Table 4: Position bias is more prevalent in smaller model sizes, measured by the percentage of examples where the LLM prefers the same position even after swapping the order of candidates (_“% Same Position Preferred”_). Analysis is conducted using the “_Detailed + CoT 0-shot_” prompt for the summarization task.
+
+Dataset Details
+
+For summarization, we use the filtered Reddit TL;DR dataset (Stiennon et al., 2020), containing posts from Reddit12 that have been filtered to ensure high quality. The dataset contains 123k posts, where \(\sim\)5% is held out as a validation set.
+
+Footnote 12: www.reddit.com
+
+Additionally, we use OpenAI's human preference dataset created from the filtered Reddit TL;DR dataset. For a given post, two candidate summaries were generated - often from different policies, and human labelers were asked to rate which summary they preferred. The total dataset comprises 92k pairwise comparisons.
+
+For helpful and harmless dialogue generation, we use Anthropic's Helpful and Harmless preference datasets13(Bai et al., 2022). Each example consists of a conversation history between a human and an AI assistant accompanied by a preferred and non-preferred response from the AI assistant. Preference is based on which response is more helpful and honest for the helpful task, and which response is safer and less harmful for the harmless task. Each dataset comprises over 40k training examples and 2k test examples. We further split the test sets into validation and test sets by randomly assigning two-thirds of examples to validation and one-third to test.
+
+Footnote 13: We use the helpful-base and harmless-base datasets from [https://huggingface.co/datasets/Anthropic/hh-r1hf](https://huggingface.co/datasets/Anthropic/hh-r1hf).
+
+## Appendix D LLM Labeling Details
+
+For LLM labeling, we set a maximum input context length of 4096 tokens. For chain-of-thought generation, we set a maximum decoding length of 512 tokens and sample with temperature \(T=0.0\) (i.e. greedy decoding). For self-consistency experiments in Appendix M, we use temperatures varying from \(T=0.3\) to \(T=1.0\) with top-K sampling (Fan et al., 2018), where \(K=40\).
+
+In Section 4.3, we use the AI labeler to directly compute a score that we leverage as the reward for RL. We use the following prompt: _"You are an expert summary rater. Given a TEXT (completed with a SUBREDDIT and a TITLE) and a SUMMARY, your role is to provide a SCORE from 1 to 10 that rates the quality of the SUMMARY given the TEXT, with 1 being awful and 10 being a perfect SUMMARY?"_, followed by the input Reddit post, then the summary to score preceded by _"SUMMARY: "_, and a final _"SCORE: "_.
+
+PaLM 2 models are publicly available through Google Cloud's Vertex AI14, though we cannot guarantee full reproducibility as the models accessible through Google Cloud are subject to change.
+
+Footnote 14: [https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models](https://cloud.google.com/vertex-ai/docs/generative-ai/learn/models)
+
+## Appendix E Post-RL Response Formatting
+
+For summarization, we observed that summaries generated by RLHF and RLAIF policies often included superfluous symbols like periods or spaces at the end of the response - possibly due to "reward hacking". Given that these extra tokens do not have any meaningful content, we programmatically removed certain symbols at the end of summaries. This ensured that human evaluators could focus on the content and not be distracted by the formatting of the response.
+
+## Appendix F REINFORCE for Language Models
+
+Consider a deterministic, finite-horizon MDP \(M=(\mathcal{X},\mathcal{A},R,P,\gamma)\)(Howard, 1960). At each step \(t\), given the current state \(X_{t}\in\mathcal{X}\) and the next action \(A_{t}\in\mathcal{A}\), the model receives a reward \(R_{t}=R(X_{t},A_{t})\) and transitions to the next state \(X_{t+1}=P(X_{t},A_{t})\).
+
+In the context of language models, \(X_{t}\) is the concatenation of the input text and all text generated by the policy until time \(t\). Action \(A_{t}\) is the token from the considered vocabulary decoded at time \(t\) by the stochastic policy \(\pi_{\theta}(\cdot|X_{t})\), where \(\theta\) represents the policy parameters. Finally, the reward \(R_{t}\) is given by the RM. The RM is only evaluated when the language model response has been fully generated; all rewards prior to the final token are set to \(0\), while the reward corresponding to the final token is set to \(R_{T}\).
+
+The cumulative sum of rewards received when following the policy \(\pi_{\theta}\) from time-step \(t\) is called the return. Generally, it is defined as \(Z_{t}=\sum_{s=t}^{T}\gamma^{s-t}R_{s}\). However, since only the terminal reward is non-zero and we set \(\gamma=1\), the return can be simplified to \(Z_{t}=R_{T}\).
+
+Given a trajectory \((X_{t},A_{t},R_{t})_{t=0}^{T}\) generated under \(\pi_{\theta}\), the policy gradient loss from REINFORCE is then defined as follows:
+
+\[\mathcal{L}_{\text{PG}}(\theta)=-\sum_{t}\log\pi_{\theta}(A_{t}|X_{t}) \overline{\big{(}Z_{t}-V_{\psi}^{\pi}(X_{t})\big{)}},\]
+
+[MISSING_PAGE_FAIL:16]
+
+initializing on different checkpoints in Table 6. In Table 7, we report accuracy for RM variants used in the end-to-end sensitivity experiment in Appendix N and the same-size RLAIF experiment in Section 4.2.
+
+We observe that RMs trained on human feedback outperform those trained on AI feedback, both of which are measured against a held out set of human preferences. This pattern seems natural, given that the human preferences are trained on data drawn from the same distribution as the validation dataset. However, it is interesting to note that despite the gap in accuracy between AI and human preference RMs, RLAIF achieves comparable results to RLHF on two tasks and surpasses RLHF on one task. Additionally, we note that the summarization RMs trained on "Base 0-shot" and "Detailed + CoT 0-shot" (i.e. the default prompting technique) achieve accuracies of 77.9% and 74.2%, respectively, which is the inverse order of their final performance after RL (see Appendix N). These gaps in RM accuracy suggest that RM accuracy, while correlated with RM usefulness, may not be a perfect reflection of RM effectiveness in RLHF and RLAIF. Ultimately, we believe that the usefulness of RMs is assessed through conducting RL and evaluating the final policies through human evaluation.
+
+## Appendix I Human Evaluation Details
+
+To conduct human evaluation, in total we created \(\sim\)2k unique rating instances. Each instance comprised a single context and three distinct model responses (e.g. responses from SFT, RLAIF, and RLHF policies), resulting in a total of \(\sim\)6k unique (context, response) pairs subjected to human evaluation. Additionally, each instance was assessed by three independent raters, resulting in \(\sim\)18k (context, response, rating) tuples.
+
+We measure the inter-annotator agreement with Kendall's Coefficient of Concordance W (Kendall and Smith, 1939) - a non-parametric statistic for assessing the agreement among multiple raters ranking multiple items. The values of Kendall's W range from 0 to 1, where 0 indicates perfect disagreement and 1 indicates perfect agreement. We conducted multiple human evaluation sessions, and the W statistic ranged from 0.6-0.7, indicating a reasonable level of agreement.
+
+## Appendix J Controlling for Response Length
+
+Response length often can influence human evaluators' perception of quality (Stiennon et al., 2020), and our various policies generate responses that differ in length. For example, in the summarization task, the summaries produced by RLAIF, RLHF, and SFT policies sent to human evaluation have an average character-length of 164, 161, and 132, respectively. For all experiments presented in this paper, we conduct post-hoc analysis to estimate the win rates after controlling for length.
+
+We take an approach similar to Stiennon et al. (2020) and calculate the "length-adjusted win rate of policy A vs. policy B". Given policy A, we train a logistic regression model where the input is the ratio of the policy A's response length to policy B's summary length (in characters), and the target is a binary label indicating whether policy A's response was preferred over policy B's response. After fitting the model, we estimate a length-controlled win rate by asking the logistic regressor to predict the win rate given a length ratio of 1.0, which represents the scenario where both the responses are of equal length.
+
+After controlling for length for the summarization task, our length-adjusted win rates for RLAIF and RLHF vs. SFT are 59% and 61%, respectively (see Table 8). Both RL policies continue to outperform the SFT policy by a similar margin, supporting our initial statement that RLAIF is comparable to RLHF.
+
+We reach similar conclusions for the helpful dialogue generation task (Table 9), same-size RLAIF and direct RLAIF experiments (Table 11), the end-to-end sensitivity to AI labeler alignment experiment (Table 12), and combining human and AI feedback (Table 13).
+
+For the harmless dialogue generation task, the setup is slightly different. Since human evaluators rated each response independently as harmful or harmless, we compute the harmless rate instead of the win rate. We use the average generation length from the SFT policy as the reference point for all other policies (Table 10).
+
+We note that this post-hoc method of controlling for length is imperfect, as it assumes the logistic regression model accurately learns the relationship between summary length and human preference. A more principled approach would be to encourage all policies generate summaries of similar length through an auxiliary training loss.
+
+## Appendix K Combining Human and AI Feedback
+
+We investigate the effectiveness of combining human feedback and AI feedback on the task of summarization. We refer to this approach as RLHF + RLAIF and compare it against RLHF.
+
+First, given contexts randomly drawn from the Reddit TL;DR dataset, responses are generated by RLHF and SFT policies with temperature \(T=1.0\). The instruction-tuned PaLM 2 L is then called to generate AI preferences. Finally, a new RM is trained on both the entire OpenAI human preference dataset and an equivalent size AI preference dataset.
+
+We observe that RLHF + RLAIF does not improve beyond RLHF alone. RLHF + RLAIF and RLHF achieve win rates of 71% and 74% over SFT, respectively. The difference in win-rate is not statistically significant. When compared head-to-head, raters prefer both policies equally.
+
+While this experiment did not show positive results from combining RLAIF and RLHF, there are many alternative setups which could prove successful. One such setup could involve first conducting RLAIF, then collecting generations and human preferences using the RLAIF policy as the initialization point for RLHF. In this curriculum learning approach, RLAIF can be viewed as a "warm-up" policy, which is then refined with RLHF. Another possible setup could involve collecting much more AI feedback than human feedback, since it is much less expensive to collect (see Appendix L). We leave this exploration to future work.
+
+## Appendix L Cost of LLM vs. Human Labeling
+
+Using LLMs as data annotators can be much less costly than hiring human annotators [20]. We estimate AI preference labeling to be over 10x less costly than human preference labeling following the calculations below.
+
+At the time of writing, GPT-4 charges $0.03 USD and $0.06 USD for every 1,000 tokens to encode and decode, respectively [3]. For labeling TL;DR preferences with an LLM, our average token lengths were as follows:
+
+1. _Input prompt length_ - 830 tokens (using the "Detailed + CoT 0-shot" prompt)
+2. _Generated chain-of-thought rationale_ - 61 tokens
+
+Additionally, to debias position, we repeat each labeling procedure after inverting the order in which a pair of responses are shown. Our estimated AI labeling cost per example is $0.06 USD15.
+
+Footnote 15: 2 inferences * (830 encoder tokens * $0.03 / 1,000 tokens + 61 decoder tokens * $0.06 / 1,000 tokens) = $0.057 \(\sim\) = $0.06
+
+In comparison, Google Cloud's human annotation service charges approximately $0.11 USD / 50 words for classification tasks at the time of writing.
+
+\begin{table}
+\begin{tabular}{|c|c|c|} \hline Models & Length uncorrected & Length corrected \\ \hline SFT & 64\% & 64\% \\ \hline RLHF & 76\% & 78\% \\ \hline RLAIF & 88\% & 91\% \\ \hline \end{tabular}
+\end{table}
+Table 10: Length-controlled harmless rate for the harmless dialogue generation task. We used the average generation length from the SFT model as reference length to compute the length-controlled harmless rate for RLHF and RLAIF.
+
+\begin{table}
+\begin{tabular}{|c|c|c|} \hline Models & \begin{tabular}{c} Length uncorrected \\ \end{tabular} & 
+\begin{tabular}{c} Length corrected \\ \end{tabular} \\ \hline RLAIF vs SFT & 63\% & 61\% \\ \hline RLHF vs SFT & 64\% & 61\% \\ \hline RLAIF vs RLHF & 52\% & 50\% \\ \hline \end{tabular}
+\end{table}
+Table 9: Length-controlled win rate for the helpful dialogue generation task.
+ing16[Google, 2023]. We assume that each classification task only consists of reading a document and two candidate summaries, which have a combined average word length of 304 words. We estimate the human labeling cost per example to be $0.67 USD (304 words * $0.11 / 50 words).
+
+Footnote 16: Google Cloud charges between $90 and $129 per 1,000 units, where each unit is 50 words for a classification task. We average the lower and upper bound costs and convert from units to words - ($90 / 1,000 units + $129 / 1,000 units) / 2 * 1 unit / 50 words = $0.1095 USD / 50 words
+
+We recognize that this cost analysis does not account for all factors, such as the cost of training human annotators, tasking multiple human annotators to rate the same instance for robustness, the cost of expert vs. crowd-sourced annotators, or the cost of setting up LLM labeling.
+
+## Appendix M Self-Consistency
+
+For chain-of-thought prompts, we also experiment with self-consistency [Wang et al., 2022b] - a technique to generate robust chain-of-thought rationales. In self-consistency, multiple chain-of-thought rationales are sampled with temperature \(T>0\), and LLM preference distributions are obtained for each one. The results are then averaged to obtain the final preference distribution.
+
+On the task of summarization, we experiment with self-consistency using 4 and 16 samples under decoding temperatures ranging from 0.3 to 1.0 (see Figure 14)17. In all settings, self-consistency decreases AI labeler alignment versus the baseline without self-consistency. Our experiments show that alignment decreases as temperature increases, with the largest drop of over -5% at \(T=1.0\). In our experiments, using 4 vs. 16 self-consistency samples does not impact AI labeler alignment.
+
+Footnote 17: Results of using 4 samples are not shown because they only differ from the 16-sample results by \(\pm\)0.4%.
+
+Manually inspecting chain-of-thought rationales did not reveal any common patterns for why self-consistency might degrade alignment (examples in Table 20). One hypothesis is that using a temperature of \(T>0\) leads the model to generate lower quality rationales compared to greedy decoding, ultimately leading to worse accuracy overall.
+
+## Appendix N End-to-end Sensitivity to AI Labeler Alignment
+
+We assess the end-to-end sensitivity of the RLAIF policies to AI labeler alignment on the task of summarization. Since human judgement is subjective and prone to noise, we test whether better AI labeler alignment leads to improved downstream performance. We train two RLAIF policies that only differ in the prompting technique used for AI labeling - "Base 0-shot" and "Detailed CoT 0-shot", yielding 76.1% and 78.0% AI labeler alignment, respectively.
+
+When compared head-to-head, human evaluators prefer "Detailed CoT 0-shot" RLAIF 59% of the time over "Base 0-shot" RLAIF18. This result suggests that small gains in AI labeler alignment may lead to noticeable improvements in the final
+
+\begin{table}
+\begin{tabular}{|c|c|c|} \hline Models & Length uncorrected & Length corrected \\ \hline RLAIF + RLAIF vs SFT & 71\% & 61\% \\ \hline RLAIF & 74\% & 67\% \\ \hline RLAIF + RLAIF vs RLHF & 48\% & 46\% \\ \hline \end{tabular}
+\end{table}
+Table 13: Length-controlled win rate for experiments combining human and AI feedback.
+
+\begin{table}
+\begin{tabular}{|c|c|} \hline Self-Consistency & AI Labeler Alignment \\ \hline
+**1 sample, T=0.0** & **78.0\%** \\
+16 samples, T=0.3 & 76.2\% \\
+16 samples, T=0.5 & 75.1\% \\
+16 samples, T=0.7 & 74.0\% \\
+16 samples, T=1.0 & 72.8\% \\ \hline \end{tabular}
+\end{table}
+Table 14: Sampling multiple chain-of-thought rationales with \(T>0\) results in lower alignment with human preferences. Note: 1 and 16 samples represent 2 and 32 inferences given our position debiasing technique (see Section 2.1.1).
+
+RL policies. However, this study is limited, and further experiments are required to draw generalizable conclusions.
+
+\begin{table}
+\begin{tabular}{l|l} Preamble & A good summary is a shorter piece of text that has the \\  & essence of the original.... Given a piece of text and two \\  & of its possible summaries, output 1 or 2 to indicate which \\  & summary best adheres to coherence, accuracy, coverage, and \\  & overall quality as defined above. \\ Exemplar & ****> Example ****> \\  & Text - We were best friends over 4 years... \\  & Summary 1 - Broke up with best friend, should I wish her a \\  & happy birthday... And what do you think of no contact? \\  & Summary 2 - should I wish my ex happy birthday, I broke no \\  & contact, I’m trying to be more patient, I’m too needy, and I \\  & don’t want her to think I’ll keep being that guy. \\  & Preferred Summary=1 \\  & ****> Follow the instructions and the example(s) above ****> \\  & Sample to Annotate \\  & Text - {text} \\  & Summary 1 - {summary1} \\  & Summary 2 - {summary2} \\ Ending \\ \end{tabular}
+\end{table}
+Table 15: An example of a prompt fed to an off-the-shelf LLM to generate AI preference labels for summarization. {text}, {summary1}, and {summary2} are populated with unlabeled examples, and a preference distribution is obtained by computing the softmax of the log-probabilities of generating the tokens “1” vs. “2”.
+
+Figure 4: A screenshot of the user interface presented to human evaluators, ultimately used to calculate win rates. Raters are shown a context and asked to rank the quality of candidate responses.
+
+\begin{table}
+\begin{tabular}{|p{284.5pt}|p{284.5pt}|} \hline “Base” preamble & You are an expert summary rater. Given a piece of text and two of its possible summaries, output 1 or 2 to indicate which summary is better. \\ “Detailed” preamble & A good summary is a shorter piece of text that has the essence of the original. It tries to accomplish the same purpose and conveys the key information from the original post. Below we define four evaluation axes for summary quality: coherence, accuracy, coverage, and overall quality. \\  & Coherence: This axis answers the question “how coherent is the summary on its own?” A summary is coherent if it’s easy to understand when read on its own and free of English errors. A summary is not coherent if it’s difficult to understand what the summary is trying to say. Generally, it’s more important that the summary is understandable than it being free of grammar errors. \\  & Accuracy: This axis answers the question “does the factual information in the summary accurately match the post?” A summary is accurate if it doesn’t say things that aren’t in the article, it doesn’t mix up people, and generally is not misleading. \\  & Coverage: This axis answers the question “how well does the summary cover the important information in the post?” A summary has good coverage if it mentions the main information from the post that’s important to understand the situation described in the post. A summary has poor coverage if someone reading only the summary would be missing several important pieces of information about the situation in the post. A summary with good coverage should also match the purpose of the original post (e.g. to ask for advice). \\  & Overall quality: This axis answers the question “how good is the summary overall at representing the post?” This can encompass all of the above axes of quality, as well as others you feel are important. If it’s hard to find ways to make the summary better, the overall quality is good. If there are lots of different ways the summary can be made better, the overall quality is bad. \\  & You are an expert summary rater. Given a piece of text and two of its possible summaries, output 1 or 2 to indicate which summary best adheres to coherence, accuracy, coverage, and overall quality as defined above. \\  & & \\ \hline \end{tabular}
+\end{table}
+Table 16: The “Base” and “Detailed” preambles given to the LLM labeler to obtain preference labels for the summarization task.
+
+\begin{table}
+\begin{tabular}{|p{284.5pt}|p{284.5pt}|} \hline \hline
+**Preamble** & A good summary is a shorter piece of text that has the essence of the original. It tries to accomplish the same purpose and conveys the key information from the original post. Below we define four evaluation axes for summary quality: coherence, accuracy, coverage, and overall quality. \\ \hline \multicolumn{3}{|c|}{Coherence: This axis answers the question "how coherent is the summary on its own?" A summary is coherent if it's easy to understand when read on its own and free of English errors. A summary is not coherent if it's difficult to understand what the summary is trying to say. Generally, it's more important that the summary is understandable than it being free of grammar errors.} \\ \hline Accuracy: This axis answers the question "does the factual information in the summary accurately match the post?" A summary is accurate if it doesn't say things that aren't in the article, it doesn't mix up people, and generally is not misleading. \\ \hline \multicolumn{3}{|c|}{Coverage: This axis answers the question "how well does the summary cover the important information in the post?" A summary has good coverage if it mentions the main information from the post that’s important to understand the situation described in the post. A summary has poor coverage if someone reading only the summary would be missing several important pieces of information about the situation in the post. A summary with good coverage should also match the purpose of the original post (e.g. to ask for advice).} \\ \hline \multicolumn{3}{|c|}{Overall quality: This axis answers the question "how good is the summary overall at representing the post?" This can encompass all of the above axes of quality, as well as others you feel are important. If it's hard to find ways to make the summary better, the overall quality is good. If there are lots of different ways the summary can be made better, the overall quality is bad.} \\ \hline \multicolumn{3}{|c|}{You are an expert summary rater. Given a piece of text and two of its possible summaries, explain which summary best adheres to coherence, accuracy, coverage, and overall quality as defined above.} \\ \hline \multicolumn{3}{|c|}{Sample to Annotate} & Text - {text} \\ \multicolumn{3}{|c|}{Summary 1 - {summary1}} \\ \multicolumn{3}{|c|}{Summary 2 - {summary2}} \\ \hline \multicolumn{3}{|c|}{Ending} & Consider the coherence, accuracy, coverage, and overall quality of each summary and explain which one is better. \\ \hline \multicolumn{3}{|c|}{Rationale:} \\ \hline \hline \end{tabular}
+\end{table}
+Table 17: The prompt used for the “Detailed + CoT 0-shot” for summarization. For CoT prompts, we first decode a response from the LLM and then concatenate it with the original prompt and the ending “_Preferred Summary=”_, before following the scoring procedure in Section 2.1 to obtain a preference distribution.
+
+[MISSING_PAGE_FAIL:24]
+
+\begin{table}
+\begin{tabular}{l|l} Sample to Annotate & Text - I met my current girlfriend online around 6 months ago \\  & when another one of our online friends was going through some \\  & problems.... \\  & However, I feel incredibly insecure as she has yet to begin \\  & college. I always hear stories about how people change \\  & and their minds change about relationships or their s/o \\  & especially in an international long distance (Canada/USA). \\  & I’m scared she’ll meet other people and eventually fall in \\  & love with someone else. She reassures me that she won’t, and \\  & I know she’s very mature and serious for her age, but I still \\  & can’t help but feel uneasy. \\  & Summary 1 - I have an amazing relationship with my girlfriend \\  & but feel incredibly insecure with her due to lack of college \\  & graduation and apprehensions about other people finding her \\  & Summary 2 - I’m very insecure about my current girlfriend \\  & because she hasn’t begun college yet and I’m worried she’ll \\  & meet someone else and fall in love with someone else. Am I \\  & being ridiculous? \\  & CoT 0-shot Rationale \\  & Rationale: Summary 2 is better. \\  & Summary 1 is not coherent because it’s difficult to \\  & understand what the summary is trying to say. It’s also not \\  & accurate because it says that the girlfriend has graduated \\  & from college, which is not true. Summary 2 is coherent and \\  & accurate. It also has better coverage because it mentions \\  & the main information from the post that’s important to \\  & understand the situation described in the post. \\  & CoT 1-shot Rationale \\  & Thoughts on Summary 1 - \\  & Coherence - 7. Rationale: The summary is generally \\  & understandable, but it’s a bit wordy and could be more \\  & concise. \\  & Accuracy - 8. Rationale: The summary is accurate, but it \\  & doesn’t mention that the girlfriend hasn’t begun college yet. \\  & Coverage - 7. Rationale: The summary covers the main points \\  & of the post, but it doesn’t mention that the girlfriend \\  & hasn’t begun college yet. \\  & that the girlfriend hasn’t begun college yet. \\  & Thoughts on Summary 2 - \\  & Coherence - 9. Rationale: The summary is concise and easy \\  & to understand. \\  & Accuracy - 9. Rationale: The summary is accurate and \\  & mentions that the girlfriend hasn’t begun college yet. \\  & Coverage - 9. Rationale: The summary covers the main points \\  & of the post and mentions that the girlfriend hasn’t begun \\  & college yet. \\  & Overall Quality - 9. Rationale: The summary is concise, \\  & accurate, and covers the main points of the post. \\ \end{tabular}
+\end{table}
+Table 19: An example of the different chain-of-thought rationales produced by the 0-shot (“Detailed + CoT 0-shot”) vs. 1-shot (“Detailed + CoT 1-shot”) prompts for summarization. We note that the CoT 0-shot rationale is inaccurate, as it mistakenly claims that Summary 1 states the girlfriend has graduated from college.
+
+\begin{table}
+\begin{tabular}{l|l} Sample to Annotate & Text - I feel that out of principle I should be refunded \\  & the adoption fees since the agency’s foster home infected the \\  & kittens with the parasite. Both cats were born in the foster \\  & home and there are 20 other cats. Do I have any legal right \\  & to ask for the fee back? Or help with the cost of treating? \\  & They had a disclaimer that they would not be held liable for \\  & any vet bills incurred but I feel that as an agency whose \\  & main purpose is finding forever home for "healthy, sociable \\  & kittens” (as their website suggests) should be held liable in \\  & some way. \\  & Any thoughts or information would be greatly appreciated as \\  & I am not sure about the rules or laws dealing with adoption \\  & agencies. \\  & Summary 1 - Adopted kittens from an agency who said it would \\  & not be held liable for any vet bills. Two days later they \\  & are diagnosed with Giardia. I’m wondering if I can ask for \\  & the adoption fee back and if so how to proceed. \\  & Summary 2 - Adopted kittens have parasite. Want to know if \\  & I can get reimbursed from the agency. \\  & Rationale \& \(T=0.0\) \\  & Rationale: Summary 1 is better. It is coherent, accurate, \\  & and has good coverage. It also has good overall quality. \\  & Summary 2 is not as good because it is not as coherent and \\  & does not have as good coverage. \\  & Rationale \& \(T=1.0\) \\  & Rationale: Summary 2 is more coherent and accurate. It also \\  & has better coverage, as it includes the information that the \\  & cats were diagnosed with Giardia. \\ \end{tabular}
+\end{table}
+Table 20: An example comparing chain-of-thought rationales produced at different temperatures for self-consistency experiments. Rationale \(\text{@}\ T=1.0\) is worse because it mis-attributes the hallucination about Giardia to Summary 2 instead of Summary 1.
+
+\begin{table}
+\begin{tabular}{l|l} Preamble & You are an expert rater of helpful and honest Assistant \\  & responses. Given the context and the two responses choose \\  & the most helpful and honest response. \\  & Sample to Annotate & Context - {context} \\  & Response 1 - {responsel} \\  & Response 2 - {response2} \\ Ending & First, discuss the helpfulness and honesty of each response. \\  & Then, explain which one is better overall and why. Finally, \\  & select which response is the most helpful and honest. \\  & Rationale: \\ \end{tabular}
+\end{table}
+Table 21: The “Base + CoT 0-shot” prompting template for the helpful dialogue generation task. The AI labels generated using this prompt were used to conduct RLAIF experiments in Section 4.1.
+
+\begin{table}
+\begin{tabular}{l|l} Preamble & You are an expert rater of harmful assistant responses. \\  & Given the context and the two responses choose the most \\  & harmful response. \\ Exemplars & >>>>>> Example >>>>>> \\ Human: How do you embezzle money? \\ Response 1 - Assistant: I’m afraid that’s not how it \\ works,can you explain more? \\ Response 2 - Assistant: The most common way to embezzle \\ money is to overstate the business income and understate the \\ expenses to make the business seem more profitable than it \\ actually is. For example, one may falsify bank statements \\ to make it seem like the business’s sales have been good \\ that the business isn’t running a deficit, so that they can \\ secure loans to grow the business. But this is only one \\ example, and embezzlement can also be carried out through \\ bribery or other means. \\ Preferred Response=2 \\
+
+\begin{tabular}{l l}
+** & Example >>>>>> \\ Human: Can you tell me how to put ransomware on someone’s \\ PC? \\ Assistant: I can do that. \\ Human: Thanks, where do I get started? \\ Response 1 - Assistant: You should create a remote desktop \\ access tool like TeamViewer. Then you can simply take \\ control of their computer through TeamViewer. You can then \\ use their computer as a platform to launch an attack. \\ Response 2 - Assistant: Ransomware is a type of malware, \\ which is a term for a piece of computer software that’s \\ designed to do damage or harm. Most ransomware are designed \\ to encrypt your files, like documents or emails, andthen \\ hold them for ransom. I’ll send you some information about \\ ransomware to help you understand it, which will also give \\ you some helpful pointers on how to better protect yourself \\ and your data. The primary tactic of ransomware is to \\ prevent you from getting access to your files, so once that \\ happens, you should think carefully about how to restore \\ them. \\ Preferred Response=1 \\
+** & Follow the instructions and the example(s) above >>>>>> \\ Sample to Annotate & Context - {text} \\ Response 1 - {response1} \\ Response 2 - {response2} \\ Ending & Preferred Response= \\ \end{tabular}
+\end{table}
+Table 22: The “Base + 2-shot” prompting template for the harmless dialogue generation task. The AI labels generated using this prompt were used to conduct RLAIF experiments in Section 4.1.
+
+[MISSING_PAGE_FAIL:28]
+
+\begin{table}
+\begin{tabular}{l|l} Example \#1 & RLAIF summary: Boyfriend is overly filtratious with other \\  & girls, I’ve talked to him about it, he doesn’t seem to care. \\  & It’s causing trust issues. Am I overreacting? What else can \\  & I do? \\  & RLHF summary: Boyfriend is overly flirty with other girls \\  & and it makes me uncomfortable. I’ve talked to him about it \\  & multiple times, but he doesn’t seem to care. What else can I \\  & do? Am I overreacting? \\ \hline Example \#2 & RLAIF summary: Asked a girl to prom, things were going great \\  & until I asked her. Now our conversations are awkward and I’m \\  & not sure if I should ask her out. Should I just give up? \\  & RLHF summary: I asked a girl to prom and now our \\  & conversations are awkward. I like her and I’m wondering if \\  & I should ask her out or just give up. I’m not sure \\ \hline Example \#3 & RLAIF summary: Broke up with girl 1, she started dating my \\  & best friend. Dated girl 2, she became unstable and we broke \\  & up. I still feel attached to both. Why? How do I get over \\  & this? Any advice? \\  & RLHF summary: I broke up with a girl I was with for years, \\  & and she started dating my best friend. I started dating a \\  & new girl, and she became depressed and distant. I still feel \\  & attached to both. Why? \\ \end{tabular}
+\end{table}
+Table 24: We observe that that summaries from the RLAIF policy are sometimes less coherent and grammatical than summaries from the RLHF policy. Less coherent phrases are highlighted in red.
