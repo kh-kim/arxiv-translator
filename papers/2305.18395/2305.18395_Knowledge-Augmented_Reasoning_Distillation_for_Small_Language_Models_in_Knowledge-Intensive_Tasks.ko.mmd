@@ -1,0 +1,665 @@
+# 지식 집약 작업에서 소규모 언어 모델을 위한 지식 확장 추론 증류
+
+ Minki Kang\({}^{1,2}\)1, **Seanie Lee\({}^{2}\)**, **Jinheon Baek\({}^{2}\)**, **Kenji Kawaguchi\({}^{3}\)**, **Sung Ju Hwang\({}^{2,4}\)**
+
+\({}^{1}\)KRAFTON, \({}^{2}\)KAIST, \({}^{3}\)National University Singapore, \({}^{4}\)DeepAuto.ai
+
+{zzxc1133, lsnfamily02, jinheon.baek}@kaist.ac.kr,
+
+kenji@comp.nus.edu.sg, sjhwang82@kaist.ac.kr
+
+AITRICS에서 작업했습니다. \ ({}^{\dagger}\) 코드는 [https://github.com/Nardien/KARD](https://github.com/Nardien/KARD)에서 사용할 수 있습니다.
+
+###### Abstract
+
+LOM(Large Language Models)은 지식에 대한 복합적인 이해를 필요로 하는 지식 집약적 추론 작업에서 유망한 성능을 보여주었다. 그러나 실제 응용에 LLM을 배치하는 것은 높은 계산 요구 사항과 데이터 프라이버시에 대한 우려로 인해 어려울 수 있다. 기존 연구들은 레이블링된 데이터로 미세 조정하거나 LLM을 증류하여 태스크별 소형 언어 모델(LMs)을 구축하는 데 초점을 맞추었다. 그러나 이러한 접근 방식은 필요한 지식을 암기하는 데 있어 작은 LM의 제한된 용량으로 인해 지식 집약적 추론 작업에 적합하지 않다. 암기에 대 한 이론적 분석에 동기 부여 된 **K**nowledge-**A**ugmented **R**easoning **D**istillation (**KARD)** 은 작은 Lm을 미세 조정 하 여 외부 지식 베이스에서 검색 된 증강 된 지식을 사용 하 여 LLM에서 얻은 근거를 생성 하는 새로운 방법입니다. 또한, 근거 생성과 관련된 문서를 얻기 위한 신경 순위 조정기를 추가로 제안한다. 우리는 KARD가 도전적인 지식 집약적 추론 데이터 세트, 즉 MedQA-USMLE, StrategyQA 및 OpenbookQA에 대해 작은 T5 및 GPT 모델의 성능을 크게 향상시킨다는 것을 경험적으로 보여준다. 특히, 250M T5 모델은 MedQA-USMLE 및 StrategyQA 벤치마크 모두에서 12배 더 큰 매개변수를 갖는 미세 조정된 3B 모델에 비해 우수한 성능을 달성한다.
+
+## 1 Introduction
+
+LOM(Large Language Models) [5; 8]은 인-컨텍스트 학습을 통해 다양한 도메인에 걸쳐 다양한 작업에 탁월했다. 최근, LLM의 파라미터들의 수를 스케일링하는 것이 그들의 지식 인코딩 및 추론 능력을 상당히 향상시키는 것으로 나타났다[54;24]. 더욱이, 이러한 LLM은 상당한 깊이의 도메인 지식과 추론을 필요로 하기 때문에 매우 도전적인 전문 도메인의 지식 집약적 태스크에 대해 현저한 성능을 달성하였다[34;48]. 예를 들어, 도 1의 상단에서, 의학적 질문에 답하는 것은 도메인 지식과 추론 능력을 모두 필요로 한다. LLM은 환자가 증상에 따라 ALS가 있을 가능성이 있음을 이해하고 SOD1이 운동 뉴런 질환의 주요 원인임을 인식해야 한다. 또한 SOD1의 돌연변이가 증상과 매우 관련이 있다는 지식에 대해 추론할 필요가 있다.
+
+효과에도 불구하고 LLM을 배포하는 것은 특히 실제 응용 프로그램에서 여전히 어려울 수 있다. 첫째, 예측을 하기 위해 LLM을 활용하는 것은 계산적으로 비용이 많이 든다. GPT3-175B 모델을 로딩하기 위해서는 326GB GPU 메모리가 필요하다[11]. 또한, LLM의 배포는 대부분의 생산 등급 LLM[5; 44; 8; 43]이 블랙박스 방식으로 작동하기 때문에 잠재적으로 프라이버시 누출의 위험을 제기한다. 즉, 사용자는 LLM의 파라미터에 접근할 수 없고 일부 응용 프로그램 인터페이스를 통해 출력에만 접근할 수 있다. 결과적으로 도메인별 지식이 필요한 문제를 해결하도록 조정된 _화이트박스 소형 언어 모델_의 필요성은 계속 향상될 것이다. 모델 배포의 상기 과제를 해결하기 위해, 이전 작업[33; 17; 38; 12; 18]은 _추론 증류_를 통해 큰 모델의 추론 능력을 작은 모델로 이전하는 것을 제안했다(그림 1 좌측 참조). 특히 LLM을 활용하여 고품질의 근거를 생성하고 작은 LM을 미세 조정하여 LLM에서 얻은 근거를 생성한다. 이러한 추론 증류는 복잡한 추론 능력(예를 들어, 산술 및 기호 추론[10; 55])을 필요로 하는 태스크에 대한 작은 LM의 성능을 향상시킨다. 이러한 관찰에 기초하여, 우리는 연구 질문을 제기한다: "특정 지식이 필요한 작업에서 질문에 답하는 이유를 묻는 작업에 대해 추론 증류를 통해 LLM의 도메인 지식과 추론 능력을 모두 전달할 수 있는가?"
+
+기존의 추론 증류는 적은 수의 매개변수로 인해 문제를 해결하는 데 필요한 지식을 기억하는 능력이 제한적이기 때문에 이러한 지식 집약적 추론 작업을 해결하는 데 차선책이다. 이는 특정 과제 관련 지식을 주입하면서 LLM의 추론 능력을 더 작은 LM으로 증류하는 방법을 개발하도록 동기를 부여한다. 구체적으로, 외부 지식 베이스(KB)에서 검색된 지식을 비모수 메모리로 작은 LM을 증강하고, 비모수 메모리가 학습 데이터를 잘 기억하기 위해 비트 수를 줄일 수 있음을 이론적으로 보여준다.
+
+이 직관과 이론적 분석을 기반으로 지식 집약적 추론 작업을 위해 지식을 주입하는 동안 LLM의 추론 능력을 작은 LM으로 전달할 수 있는 **KARD(Knowledge-Augmented Reasoning Distillation)** 를 제안합니다. 구체적으로, 외부 지식 베이스(예를 들어, 위키피디아)로부터 근거를 생성하기 위한 관련 지식을 포함하는 구절을 획득하기 위해 리트리버[46]를 활용한다. 그런 다음 작은 LM을 미세 조정하여 질문과 검색된 문서를 기반으로 LLM에서 얻은 근거를 생성하고 답변을 예측한다.
+
+훈련 중에, 논리적 근거를 질의로 사용하는 것은 논리적 근거를 생성하기 위한 관련 지식을 검색하는 데 도움이 된다. 그러나, 추론 동안, 질의로서 질문에 의존하는 것은 불량한 검색을 초래할 수 있다. 그림 1과 같이 질문과 함께 검색된 구절은 근거를 생성하는 것과 관련이 없다. 이 문제를 완화 하기 위해 _신경 순위 조정기_ 를 도입 하 여 근거 생성에 유용 한 구절의 우선 순위를 지정 하 여 질문을 쿼리로 사용 하 여도 관련 문서의 검색을 보장 합니다.
+
+KARD의 유효성을 검증하기 위해, 지식 증강 없이 소수의 문맥 학습, 미세 조정 및 추론 증류에 비해 의학 질의 응답(QA)(MedQA-USMLE [23]), 다단계 사실적 QA(StrategyQA [14]), 상식 추론(OpenbookQA [39]) 데이터 세트에 대한 소형 LMs(OPT [20; 59] 및 T5 [45; 53])의 성능이 유의하게 향상되었음을 경험적으로 보여준다. 또한, 광범위한 분석을 통해 KARD가 학습 데이터와 모델 크기 측면에서 효율적임을 알 수 있다. 구체적으로, 250M 모델의 KARD는 미세 조정된 3B 모델보다 높은 정확도를 달성하고, 780M 모델의 전체 학습 데이터의 4분의 1에서만 KARD가 미세 조정을 능가한다.
+
+연구 결과는 다음과 같다.
+
+* 큰 LM에서 근거를 생성하기 위해 작은 LM을 미세 조정하는 것은 지식 집약적 추론 작업에 충분하지 않으며 비모수 외부 지식 기반이 작은 LM의 지식 부족을 보완하는 데 중요한 역할을 한다는 것을 보여줍니다.
+* 또한, 지식 집약적 추론 작업에서 합리적 근거를 생성하기 위한 적절한 구절을 얻기 위해 리랭커를 도입하여 기존 검색 방법의 한계를 해결한다.
+
+그림 1: **개념**. 상단의 지식 집약적 추론 작업(의료 QA[23])의 예입니다. 아래에서는 기존 추론 증류와 비교하여 KARD의 개념적 예시를 제공합니다. 오른쪽에서는 외부 KB에서 근거와 질문을 사용하여 검색된 구절의 예를 제공합니다. **
+
+* 널리 사용되는 의료, 다단계 사실 및 상식 QA 벤치마크 데이터 세트에서 제안된 KARD가 소형 LM의 성능을 크게 향상시킨다는 것을 경험적으로 보여줍니다.
+
+## 2 관련 작업
+
+대형 언어 모델 대형 언어 모델(LLM)은 다양한 작업에 걸쳐 인상적인 기능을 보여주었습니다. 주목할 만한 강점 중 하나는 지식을 암기하고 그 지식을 활용하여 지식 집약적 추론 과제를 해결하는 능력이다. 예를 들어, GPT-3.5[44], Med-PaLM[48], ChatGPT[29], GPT-4[43]와 같은 LLM은 도전적인 의학 질의 응답 과제인 미국 의료 면허 시험(USMLE)[23]에서 유망한 성능을 보여 합격 점수를 큰 차이로 능가했다[41]. 그러나 이러한 모델의 대부분은 블랙박스(API를 통해 액세스할 수 있음)에 있고 계산 비용이 많이 들기 때문에 오프라인 및 프라이버시에 민감한 환경에서 LLM을 배포하는 것은 여전히 어렵다. 따라서 지식 집약적 추론 작업을 위해 LLM의 기능을 활용할 수 있는 대체 솔루션이 필요하다.
+
+LLMs로부터의 추론 증류 최근 작업[33; 17; 38; 12; 18]은 LLMs의 추론 능력을 작은 LMs로 증류하려고 시도했는데, 여기서 추론 능력은 CoT(Chain-of-Thought) 프롬프팅(예를 들어, _단계별로 생각하자_)을 통해 LLMs가 추론 태스크에서 더 잘 수행할 수 있게 하는 _출현 속성_이다. [28; 55]. 그러나 산술이나 기호 추론 과제와는 달리 이전 연구 [33; 17]에서는 정확한 근거를 생성하기 위해 사실적 지식이 중요한 지식 집약적 추론 과제 [14]에 대해 추론 증류가 덜 효과적이라는 것을 보여주었다. 따라서 외부 지식 베이스에서 검색된 문서로 작은 LM을 추가하여 모델이 지식을 활용하여 정답으로 이어지는 더 나은 근거를 생성할 수 있도록 한다.
+
+Knowledge-Augmented LMsKnowledge-Augmented LMs는 외부 지식 베이스(KB: External Knowledge Base)를 활용하여 고유의 지식을 보완하였다[16; 32; 3; 22; 58]. 외부 지식을 통합하기 위한 하나의 일반적인 접근법은 입력 질의[7]에 기초하여 위키피디아와 같은 KB로부터 관련 구절을 검색하는 것이다. 정확한 증거를 검색하는 것은 정확한 답변과 사실적으로 근거된 근거를 생성하는 데 중요하다. 그러나 기존 연구에서는 지식에 대한 복잡한 추론을 필요로 하는 태스크에 대해 지식 증강 LM의 사용을 탐구하지 않았다. 최근 BehnamGhader et al. [1]은 기존의 검색 증강 LM의 추론 능력을 조사한 결과, 기존의 검색기 [25]는 지식 집약적 추론 작업을 해결하기 위해 관련 구절을 검색하기에 불충분하다는 것을 발견했다. 이러한 한계를 해결하기 위해, 우리는 질의에 주어진 LLM에 의해 생성된 근거와 관련된 패시지를 우선순위화하는 근거 생성을 위한 재순위자를 제안한다. 이 접근법은 리랭킹자가 일반 쿼리를 사용하는 대신 추론을 위해 더 관련 있는 구절을 검색하도록 안내하는 근거를 사용하기 때문에 리트리버를 위한 지식 증류의 한 형태로 볼 수 있다.
+
+## 3 동기: 지식 증설이 기억화에 미치는 영향
+
+대용량 언어 모델은 학습 데이터를 암기하는 것으로 알려져 있으며[6; 49], 모델의 크기가 증가함에 따라 암기 용량이 증가하는 것으로 입증된다[27; 57]. 이전 작업 [4]는 언어 문제에서 잘 수행하려면 훈련 데이터의 암기가 실제로 필요하다는 것을 보여주었다. 이러한 결과는 (1) 학습 데이터를 암기할 수 없고 (2) 암기가 잘 수행되어야 하기 때문에 (지식 증강이 없는) 작은 언어 모델을 사용한 추론 증류가 성능을 저하시킬 것임을 시사한다. 이 절에서는 외부 지식 베이스(KB)를 검색기와 함께 비모수 메모리로 사용하면 성능이 좋은 데 필요한 암기량이 줄어들어 작은 모델을 사용할 수 있음을 보여준다.
+
+### 지식 확장 없는 배경
+
+우리는 Brown et al. [4]에서 사용된 것과 동일한 문제 설정을 채택한다. 작업 분포 \(P\sim q\)는 메타 분포 \(q\)에서 추출된다. 훈련 데이터셋 \(X=((Z_{i},Y_{i}))_{i=1}^{n}\)과 테스트 샘플 \((Z,Y)\)은 \(X\sim P^{\otimes n}\)과 \((Z,Y)\sim P\)으로 그려진다. 여기서, \(Z\)은 입력(즉, 심볼들의 시퀀스)이고, \(Y\)은 레이블(즉, 예측될 다음 심볼)이다. 표본크기 \(n\)에 따른 메타분포 \(q\)에 대한 학습알고리즘 \(\mathcal{A}\)의 전체오차는 다음과 같이 정의된다.
+
+\[\mathrm{err}_{q,n}(\mathcal{A})=\Pr_{\begin{subarray}{c}P\sim q,X\sim P^{ \otimes n},\\ (Z,Y)\sim P\end{subarray}}(M(Z)\neq Y\text{ where }M=\mathcal{A}(X))\]
+
+\(q\)과 \(n\)이 주어졌을 때, 이 전체 오류를 최소화하는 최적의 학습기 \(\mathcal{A}_{\mathrm{OPT}}\)이 존재한다. 본문에서는 추상화된 언어문제 즉, 기호손상 없는 Brown et al. [4]의 본문(상세내용은 [4] 또는 **부록 A.1** 참조문자열 \(\{c_{j}\}_{j=1}^{N}\), \(c_{j}\sim\mathrm{Uniform}\left(\{0,1\}^{d}\right)\)을 고려한 다음 기호예측문제를 채택하였다. 이러한 설정 하에서, Brown et al. [4]는 임의의 알고리즘 \(\mathcal{A}\)이 \(\epsilon\)-suboptimality를 달성하기 위해 \(nd\) 비트의 트레이닝 데이터를 암기할 필요가 있음을 증명하였다. 여기서 \(I\)은 상호 정보를 나타낸다:
+
+**정리 1** (Brown et al. [4]).: _Let \(N=n\). 그리고, \(\epsilon=o(1)\)에 대한 \(\epsilon=o(1)\)에 대한 \(I(X;\mathcal{A}(X)|P)=\Omega(nd)\)을 만족하는 학습 알고리즘 \(\mathcal{A}\)은 \(\operatorname{err}_{q,n}(\mathcal{A})\leq\operatorname{err}_{q,n}(\mathcal{A}_{\mathrm{OPT}})+\epsilon\)을 만족하는 학습 알고리즘 \(\mathcal{A}\)을 생성한다.
+
+### Knowledge-Augmentation을 사용한 메모리화
+
+정리 1에서 \(d\)은 KB의 크기에 해당한다. 따라서 KB의 크기가 작으면 작은 모델은 \(\Omega(nd)\) 정보를 암기하여 모든 KB를 잘 기억할 수 있음을 보여준다. 그러나 KB의 크기가 크면 작은 모델은 \(\Omega(nd)\) 정보를 기억할 수 없기 때문에 큰 모델을 작은 모델로 교체할 때 성능이 크게 떨어질 것으로 예상된다. 이 부분에서는 지식 증대가 \(\Omega(nd)\) 비트의 암기 요구량을 \(O(n\log_{2}(N+R))\) 비트의 암기 요구량으로 감소시켜 작은 모델을 사용할 수 있음을 보여준다.
+
+비모수 검색기와 함께 KB를 사용하는 추론 알고리즘 \(\varphi\)을 다음과 같이 고려한다.
+
+\[\operatorname{err}_{q,n}^{\varphi}(\mathcal{A})=\Pr_{\begin{subarray}{c}P \sim q,X\sim P^{\otimes n}\\ (Z,Y)\sim P\end{subarray}}(\varphi(Z,M,S)\neq Y\text{ where }M=\mathcal{A}(X))\]
+
+추론 알고리즘 \(\varphi\)은 학습 가능한 매개 변수가 없고 학습 알고리즘 \(M=\mathcal{A}(X)\)과 \(S\)로 표시된 KB의 결과를 기반으로 예측을 하는데 다음과 같이 정의된다. 작업 인스턴스 \(P\sim q\)이 주어졌을 때, 우리는 KB를 선택한다. 즉, \(|S|=N+R\)과 \(\{c_{j}\}_{j=1}^{N}\subseteq S\) 여기서, \(R\)은 이 작업에 대해 되돌릴 수 없는 추가 참조의 수 \(P\); 즉, 최상의 시나리오에서 \(R=0\)이다.
+
+정리 2는 지식 증대가 정리 1과 같은 문제 설정 하에서 \(\epsilon\)-suboptimality를 얻기 위해 암기량을 \(nd\)에서 \(\min(N,n)m\) 비트로 줄인다는 것을 보여준다.
+
+**정리 2**.: _(\varphi,\mathcal{A})\) 추론 및 학습 알고리즘의 쌍이 있습니다. \(\epsilon>0\), \(\operatorname{err}_{q,n}^{\varphi}(\mathcal{A})\leq\operatorname{err}_{q,n}(\mathcal{A}_{\mathrm{OPT}})+\epsilon\) 및 \(I(X;\mathcal{A}(X)|P)=O(\min(N,n)m) 여기서 \(m=\log_{2}((1-\frac{N-1}{N})^{n})\frac{(N+R)^{2}-(N+R)}{2\epsilon})\leq\log_{2}(\frac{(N+R)^{2}}{2\epsilon})\)._
+
+\(n=N\) 및 \(\epsilon=o(1)\)를 사용 하면 \(I(X;\mathcal{A}(X)|P)=O(\min(N,n)m)=O(n\log_{2}(N+R))\) (증명은 **부록 A.2** 참조)가 있습니다. 따라서, 지식 증대는 잘 수행되기 위해 필요한 암기량을 \(nd\) 비트에서 \(n\log_{2}(N+R)\) 비트로 줄일 수 있음을 보여준다.
+
+## 4 Knowledge-Augmented reasoninging Distillation
+
+본 논문에서는 (1) LMM(Large Language Models)을 활용하여 블랙박스 API로 근거를 생성하는 추론 증류(Knowledge-Augmented Reasoning Distillation)와, (2) 지식베이스(Knowledge Base, KB)로부터 근거와 지식을 질의로 검색하여 효과적인 근거를 생성하는 재순위 학습(Reranker training)의 두 가지 학습 과정으로 구성된 지식증강 추론 증류(Knowledge-Augmented Reasoning Distillation, KARD)를 제안한다. 우리의 접근법은 그림 2에 나와 있다.
+
+### 작은 모델에 외부 지식을 사용 하 여 합리성을 생성 하도록 교육 합니다.
+
+LLMs을 이용한 합리적 생성 문제 설정에서는 대상 태스크에 대한 훈련 데이터셋 \(((\mathbf{x}_{i},\mathbf{y}_{i}))_{i=1}^{n}\)이 주어지며, 여기서 \(\mathbf{x}_{i}\)은 입력 시퀀스(QA에서 질문)이고 \(\mathbf{y}_{i}\)은 레이블(QA에서 답변)이라고 가정한다. 추가적으로, 블랙-박스 API[5; 8; 44; 43; 42]를 통해 액세스가능한 LLM들이 존재한다. 즉, LLM의 파라미터와 아키텍처는 알려지지 않았으며 LLM에 의해 생성된 텍스트 시퀀스에만 액세스할 수 있다. 고품질의 근거를 생성하는 능력은 LLMs[55; 28]의 창발적 능력으로 알려져 있기 때문에 우리는 그러한 능력을 추론 증류를 사용하여 작은 언어 모델로 옮기고 싶다. 먼저, 학습 데이터 포인트에 대한 적절한 \(l\)이론을 도출하기 위해 LLM(\mathbf{r}_{ij}=\texttt{LLM}(\mathbf{p},\mathbf{x}_{i},\mathbf{y}_{i})\)을 이용한다. 모든 \(i\in[n]\coloneqq\{1,\ldots,n\}\)과 \(j\in[l]\)에 대해 \(\mathbf{r}\)은 생성된 유리이고 \(\mathbf{p}\)은 체인-of-thought 프롬프트 [55; 28; 48]이다.
+
+이합에 대한 작은 모델들을 미세 조정하여 작은 언어 모델 \(p_{\theta}\)을 훈련 가능한 파라미터 \(\theta\)으로 미세 조정하여 LLM으로부터 얻은 이론적 이론 \(\mathbf{r}_{ij}\)과 질문 \(\mathbf{x}_{i}\)을 주어 대답 \(\mathbf{y}_{i}\)을 생성한다. 즉, 논거를 생성하기 전에 먼저 생성해야 하는 논거 \(\mathbf{r}_{ij}\)과 답 \(y_{i}\)의 수열의 음의 로그우도를 최소화한다.
+
+\[\mathcal{L}_{\texttt{distill}}(\theta)=-\frac{1}{n\cdot l}\sum_{i=1}^{n}\sum_{ j=1}^{l}\log p_{\theta}(\mathbf{r}_{ij},\mathbf{y}_{i}|\mathbf{x}_{i}) \ 태그{1}\]직관적으로, 그 근거는 질문과 연관된 답변 뒤에 있는 추론에 대한 더 깊고 포괄적인 이해를 제공하며, 이는 작은 모델이 질문에 정확하게 답하도록 더 잘 안내한다[18]. 이전 연구[33; 17; 38; 12; 18]에서도 LLM이 생성한 이론적 근거를 활용하여 작은 모델이 다양한 추론 작업에서 탁월하도록 했지만, 작은 LM을 사용하여 지식 집약적 작업에 대한 이론적 근거를 생성하려면 추가 주의가 필요하다. 앞서 섹션 3에서 설명한 바와 같이, 작은 모델을 갖지만 지식 증강이 없는 추론 증류는 작은 모델을 갖는 훈련 데이터를 암기할 수 없고[57;27] 언어 과제에서 더 나은 수행을 위한 암기의 필요성으로 인해 근거 생성의 품질을 저하시킬 수 있다[4]. 따라서, 높은 품질의 이론적 근거를 생성하기 위한 작은 LM의 능력을 향상시키기 위해 외부 기억으로부터의 외재적 지식으로 이론적 근거를 생성해야 한다.
+
+정리 2에 의해 동기화된 외부 지식베이스를 통합하여, 작은 LM의 암기 능력을 지원하기 위해 수백만 개 이상의 문서들로 구성된 말뭉치인 외부 지식베이스(KB)로부터 구절을 검색하는 방법을 제안한다. KB로부터 관련 문서를 획득하는 것은 주어진 질문에 대한 정답으로 이어지는 고품질 근거를 생성하기 위해 소규모 LM을 훈련시키는 데 중요하다. 오픈-도메인 QA 태스크[7]에서 행해진 바와 같이, 희소 검색기 BM25를 갖는 주어진 질의에 대한 관련 통로들의 세트를 검색한다[46]. LLM에 의해 생성된 논리 \(\mathbf{r}_{ij}\)과 가장 관련성이 높은 문서를 얻기 위해, 우리는 논리 \(\hat{\mathcal{D}}_{ij}=\texttt{topk}(\rho(\mathbf{d}|\mathbf{r}_{ij};\mathcal{D}),k)\subset\mathcal{D}\)을 질의로 이용한다. 여기서, \(\rho\)는 질의와의 관련성을 기반으로 문서를 채점하는 검색기 \(\mathbf{d}\in\mathcal{D}\)를 의미하고, \(\texttt{topk}\)은 상위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위-위 마지막으로, 검색된 문서 \(\hat{\mathcal{D}}_{ij}\)을 소형 LM 미세조정에 활용하여 논리 \(\mathbf{r}_{ij}\)을 생성하고 질문에 대한 답 \(\mathbf{y}_{i}\)을 다음과 같이 사용한다.
+
+\[\mathcal{L}_{\texttt{distill-KB}}(\theta)=-\frac{1}{n\cdot l}\sum_{i=1}^{n} \sum_{j=1}^{l}\log p_{\theta}(\mathbf{r}_{ij},\mathbf{y}_{i}|\mathbf{x}_{i},\hat{\mathcal{ D}}_{ij}), \tag{2}\]
+
+여기서 논리와 답은 수학식 1과 같이 순차적으로 생성된다.
+
+### 합리적 생성을 위한 학습 신경망 Reranker
+
+나머지 문제는 추론 시간에 그 근거를 질의로 사용할 수 없다는 것이다. 그 대안으로 리트리버로 구절 집합을 검색하기 위한 질의로 유리음 \(\mathbf{r}_{ij}\) 대신 질문 \(\mathbf{x}_{i}\)을 사용할 수 있다. 그러나 질의로 입력된 \(\mathbf{x}_{i}\)에 의해 검색된 상위 \(k\) 구절에는 정확한 근거를 생성하기 위한 관련 정보가 포함되어 있다는 보장은 없다. 세부적으로, 질의로서 질문을 기반으로, 검색기는 충분히 큰 \(k\)이지만 \(k\ll K\)을 갖는 유리들을 생성하기 위한 관련 문서들을 포함하는 일련의 구절들을 획득할 수 있다. 그러나 추론 시 지식 증대를 위해 필요한 문서들은 낮은 순위로 할당될 수 있으며, 따라서 추론 시 지식 증대를 위해 선택되지 않을 수 있다. 이러한 문제를 해결하기 위해, 본 논문에서는 신경망 리랭커 \(f_{\phi}\)[26]를 파라미터 \(\phi\)로 활용하여 검색기에서 검색된 구절 집합의 순위를 재조정하여 추론 시간에 더 많은 관련 문서를 얻을 수 있도록 제안한다.
+
+신경 순위 조정기를 훈련시키기 위해 우리는 각 질문에 대한 지상 진실 구절을 수동으로 구성할 수 있다. 그러나, 우리는 리랭커 훈련을 위한 지상 진리 통과를 위한 현실적인 환경을 가정한다.
+
+그림 2: **KARD 개요.** (왼쪽, § 4.1) 지식 강화 추론 증류의 훈련(상단) 및 추론(하단) 그림입니다. 여기서 훈련 중에 작은 LM은 훈련 데이터와 근거에 의해 검색된 지식이 주어지면 근거를 생성하도록 학습합니다. (오른쪽, § 4.2) 재순위자 훈련(상단) 및 추론(하단)의 일러스트레이션. 리랭커는 근거와 관련된 지식을 가진 구절의 우선순위를 정하는 법을 배운다.
+
+는 주어지지 않는다. 대신, 리랭킹자는 리트리버가 논리 \(\mathbf{r}_{ij}\)을 질의로 사용하여 단락 \(\mathbf{d}\in\mathcal{D}\)을 어떻게 점수화하는지를 모방하도록 훈련한다. 구체적으로, 먼저 검색기 \(\rho\)를 이용하여 \(\tilde{\mathcal{D}}_{ij}=\texttt{topk}(\rho(\mathbf{d}|\mathbf{r}_{ij};\mathcal{D}), \kappa_{1})\bigcup\texttt{topk}(\rho(\mathbf{d}|\mathbf{x}_{i};\mathcal{D}),\kappa_{2})\)에서 \(\kappa_{1}\)과 \(\kappa_{2}\)는 후보 문서의 수이다 (그림 2는 \(\kappa_{2}=0\)인 경우이다). 그런 다음 문서의 점수 \(\rho\(\mathbf{d}|\mathbf{r}_{ij};\mathcal{D})\)를 \(\tilde{\mathcal{D}}_{ij}\)에서 정규화하고, 이를 \(Q(\mathbf{d}|\mathbf{r}_{ij})\)으로 표기한다. 이와 유사하게 재순위자 \(f_{\phi}\)를 사용하여 주어진 질문 \(\mathbf{x}_{i}\)으로 \(\tilde{\mathcal{D}}_{ij}\)의 각 문서를 채점하고 \(P_{\phi}(\mathbf{d}|\mathbf{x}_{i})\으로 표기된 점수를 정규화한다. Hyperparameters \(\tau_{1},\tau_{2}>0\)을 사용하여 정규화를 위한 softmax를 다음과 같이 사용합니다.
+
+\[Q(\mathbf{d}|\mathbf{r}_{ij};\mathcal{D})/\tau_{1 })}}{\sum_{\mathbf{d}^{\prime}\in\tilde{\mathcal{D}}_{ij}\exp{(\rho(\mathbf{d}^{ \prime}|\mathbf{r}_{ij};\mathcal{D})/\tau_{1})}},\;P_{\phi}(\mathbf{d}|\mathbf{x})=\frac{ \exp(f_{\phi}(\mathbf{d},\mathbf{x}_{i})/\tau_{2})}{\sum_{\mathbf{d}^{\prime}\in\tilde{ \mathcal{D}}_{ij}\exp(f_{\phi}(\mathbf{d}^{\prime},\mathbf{x}_{i})/\tau_{2})},\]
+
+여기서 \(\mathbf{d}\in\tilde{\mathcal{D}}_{ij}\). 마지막으로 \(Q(\mathbf{d}|\mathbf{r}_{ij})\)와 \(P_{\phi}(\mathbf{d}|\mathbf{x}_{i})\): KL 발산을 최소화한다.
+
+\[\mathcal{L}_{\texttt{rerank}}(\phi)=\frac{1}{n\cdot l}\sum_{i=1}^{n}\sum_{j=1} ^{l}D_{\mathrm{KL}}(Q(\mathbf{d}|\mathbf{r}_{ij})\|P_{\phi}(\mathbf{d}|\mathbf{x}_{i}))). \tag{3}\]
+
+직관적으로 목적함수는 재순위자가 논리 \(\mathbf{r}_{ij}\)과 유사한 지문에 더 높은 점수를 부여하도록 유도한다. 목적 \(\mathcal{L}_{\texttt{distill-KB}}(\theta)\)와 \(\mathcal{L}_{\texttt{rerank}}(\phi)\)는 모두 독립적이므로 작은 LM과 재순위자를 공동으로 업데이트할 필요가 없다.
+
+### Inference
+
+훈련 후, 파라미터 \(\theta^{*}\in\operatorname*{argmin}_{\theta}\mathcal{L}_{\texttt{distill-KB}}(\theta)\)를 갖는 소형 LM과 파라미터 \(\phi^{*}\in\operatorname*{argmin}_{\phi}\mathcal{L}_{\texttt{rerank}}(\phi)\)를 갖는 리 랭커를 얻는다. 실험 시간에는 검색기 \(\rho\)와 \(\kappa^{*}=100\)을 이용하여 후보 문서 \(\tilde{\mathcal{D}}_{*}=\texttt{topk}(\rho(\mathbf{d}|\mathbf{x}_{*};\mathcal{D}), \kappa^{*})\) 집합을 얻는다. 그런 다음 모든 문서 \(d\in\tilde{\mathcal{D}}_{*}\)와 \(f_{\phi^{*}\)를 재순위화하고, 상위\(k) 관련 문서 \(\mathbf{x}_{*}\)을 다음과 같이 선택한다. \(\hat{\mathcal{D}}_{*}=\texttt{topk}(\{f_{\phi^{*}}(\mathbf{d},\mathbf{x}_{*})\mid\mathbf{d}\in\tilde{\mathcal{D}}_{*}\,k)\). 마지막으로, 이론 \(\mathbf{r}_{*}=\operatorname*{argmax}_{\mathbf{r}}p_{\theta^{*}}(\mathbf{r}|\mathbf{x}_{*}, \hat{D}_{*})\)과 정답 \(\mathbf{y}_{*}=\operatorname*{argmax}_{\mathbf{y}}p_{\theta^{*}}(\mathbf{y}|\mathbf{r}_{*}, \mathbf{x}_{*},\hat{\mathcal{D}}_{*})\)을 생성한다.
+
+## 5 Experiments
+
+Task와 Dataset 실험에서는 지식에 대한 추론 능력과 특정 영역의 복합 지식을 모두 요구하는 지식 집약적 추론 작업에 초점을 맞춘다. 기본 벤치마크로는 의료 객관식 질문 데이터 세트인 **MedQA-USMLE**[23]을 사용합니다. 데이터 세트에는 미국 의료 면허 시험의 12,723개의 4옵션 객관식 질문 응답 문제가 포함되어 있다. 이 데이터 세트는 98%의 질문이 여러 증거 소스에 걸쳐 광범위한 전문 도메인별 지식과 복잡한 추론 능력이 필요한 환자 사례를 제시하여 현실적인 임상 설정을 시뮬레이션하기 때문에 방법을 평가하는 데 가장 적합하다. 접근 방식을 추가로 검증하기 위해 정교한 다단계 추론 기술과 다양한 도메인에서 뒷받침하는 증거를 수집하는 기능을 요구하는 2,780개의 예/아니오 질문을 포함하는 **StrategyQA**[14] 데이터 세트를 사용합니다. 또한 4가지 객관식 옵션이 포함된 5,957개의 초등 수준 과학 질문으로 구성된 **OpenbookQA**[39] 데이터 세트를 사용하여 상식 추론에 대한 접근 방식을 검증합니다.
+
+기준선 우리는 우리의 방법을 관련 기준선과 비교한다. **Few-shot In-context Learning** (ICL)은 몇 가지 학습 샘플을 프롬프트로 사용 하 여 예측을 수행 합니다 [5]. **Few-shot ICL + Chain-of-Thought** (CoT)는 chain-of-thought 프롬프팅을 활용하여 근거를 생성하고 근거를 기반으로 답변을 생성합니다. [28]. **미세 조정** 은 미리 훈련 된 모델을 미세 조정 하 여 질문만 제공 된 답변을 생성 하는 것을 참조 합니다. 위의 기준선의 성능은 추론 또는 외부 지식에 대한 외재적 안내 없이 학습 데이터만을 사용하여 지식 집약적 추론 작업을 해결하는 작은 언어 모델의 능력을 나타낸다.
+
+외부 지식의 영향을 평가하기 위해 **지식 확장** 모델로 표시되는 지식 기반(위키피디아)에서 검색된 문서로 위의 세 가지 기준선을 추가합니다. 지식 증강을 위해 학습 시간과 추론 시간 모두에 질문과 함께 검색된 지문을 추가한다. 이러한 기준선은 외부 지식이 각 기준선의 성능을 얼마나 향상시킬 수 있는지 이해하는 데 도움이 된다. 또한 KARD를 지식 증강 없이 표준 **추론 증류** 와 비교 합니다. [33; 17; 38; 12; 18].
+
+**오라클** 모델로서 더 나은 지식을 입력으로 받는 KARD의 변형을 제공합니다. 특히, 추론 시간에 LLM에 의해 생성된 금의 근거를 질의로 하여 검색된 구절인 은문서를 KARD에 증강한다. 이 모델은 신경 리랭커 성능의 상한을 나타낸다. 또한, 추론에서 LLM의 이론적 근거를 갖는 소형 명령어 미세 조정 언어 모델(Flan-T5 [53] 및 OPT-IML [20])을 직접 제공하여 고품질 이론적 근거를 갖는 소형 모델에 대한 성능 이득의 상한을 평가한다.
+
+언어 모델 모든 실험을 위해 Flan-T5[9]를 포함하는 T5 모델[45], OPT-IML[20]을 포함하는 OPT 모델[59]을 사용한다. 리랭커의 경우 LinkBERT 모델[56]을 사용한다. 교사 LLM은 독점 API를 통해 GPT-3.5-turbo(ChatGPT)[42]를 사용한다.
+
+자세한 실험 설정은 **부록 B** 를 참조하세요.
+
+### Experimental Results
+
+표 1은 KARD가 인코더-디코더(Flan-T5) 및 디코더 전용(OPT) 언어 모델 모두에서 MedQA-USMLE 데이터세트에서 모든 베이스라인보다 일관되게 우수함을 보여준다. 놀랍게도 KARD는 MedQA-USMLE 데이터 세트의 미세 조정 기준선에 비해 2억 5천만 개의 매개변수를 갖는 플란-T5 기본 모델의 상당한 성능 이득에서 알 수 있듯이 더 작은 모델에 상당한 긍정적인 영향을 나타낸다. 모델 크기 분석과 관련해서는 5.3절을 참고하기 바란다. KARD의 영향은 사전 훈련과 미세 조정 시 더 큰 모델이 지식을 더 잘 암기할 수 있기 때문에 모델의 크기가 커질수록 감소한다. 또한 지식 증대는 추론 증류뿐만 아니라 소수의 샷 체인 사고 및 미세 조정에서도 일관되게 성능을 향상시킨다는 것을 경험적으로 보여준다. 이 경험적 증거는 지식 증강이 소규모 모델의 성능을 향상시킨다는 섹션 3의 이론적 분석을 뒷받침한다는 점에 주목할 필요가 있다. 또한, BM25를 사용한 검색에 비해 랭커가 모든 크기에 대해 일관되게 모델의 성능을 향상시킴을 알 수 있었다. 은 지식(오라클)을 사용한 실험 결과로부터 더 많은 관련 문서를 검색하여 모델이 고품질 근거를 생성하는 데 도움이 될 수 있는 개선의 여지가 있다.
+
+또한 표 2의 StrategyQA 및 OpenbookQA 데이터셋에 대한 추가 실험 결과를 제시한다. 다시 한 번, KARD는 두 데이터셋을 사용한 실험에서 모든 기준선보다 성능이 우수하다. 특히 MedQA-USMLE에 비해 StrategyQA와 OpenbookQA의 몇 번 샷 방법은 T5의 문맥 내 학습 능력이 부족하기 때문에 무작위 추측과 유사한 성능을 보인다[9]. 나아가, 미세 조정
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline  & \multicolumn{2}{c}{**MetagQA-USMLE** (Flan-T5 [53])} & \multicolumn{2}{c}{**MedQA-USMLE** (OPT [20, 59])} \\ \cline{2-6}
+**Method** & Base (250M) & Large (780M) & XL (3B) & 350M & 1.3B-IML \\ \hline
+**Few-shot** & 23.49 & 31.50 & 35.66 & 27.42 & 29.14 \\
+**Few-shot + Chain-of-Thought (CoT)** & 25.22 & 32.21 & 32.99 & 25.06 & 26.39 \\ _Knowledge-Augmented Few-shot + CoT_ & 31.34 & 32.60 & 34.41 & 25.84 & 28.75 \\
+**Fine-tuning** & 30.71 & 34.49 & 37.39 & 26.47 & 25.77 \\ _Knowledge-Augmented Fine-tuning_ & 33.39 & 37.71 & 39.12 & 25.84 & 28.67 \\ _Reasoning Distillation_ & 31.05 & 34.40 & 39.62 & 34.26 & 29.43 & 34.30 \\
+**KARD (ours, BM25)** & 33.14 & 31.87 & 39.63 & 47.27 & 30.79 & 35.48 \\
+**KARD (ours, Renker)** & **38.15\(\pm\)**39 & **44.59\(\pm\)**47 & **48.94\(\pm\)**32 & **32.86\(\pm\)**11.12 & **38.83\(\pm\)**46 \\ \hline
+**KARD (Silver Knowledge, Oracle)** & 40.30 & 49.80 & 53.50 & 35.90 & 42.18 \\
+**CoT from ChatGPT (Teacher, Oracle)** & 61.59 & 65.51 & 67.16 & - & 50.27 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: Flan-T5 [53] 및 OPT [20, 59] 모델을 사용 하는 **MedQA-USMLE** 데이터 세트에 대 한 실험 결과입니다. 추론 증류 방법에 대한 3가지 다른 실행으로 정확도의 평균과 표준 편차를 보고한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline  & \multicolumn{2}{c}{**StrategyQA** (T5 [45])} & \multicolumn{2}{c}{**OpenbookQA** (T5 [45])} \\ \cline{2-6}
+**Method** & Base & Large & XL & Base & Large & XL \\ \hline
+**Few-shot** & 48.47 & 48.47 & 51.67 & 23.00 & 27.60 & 25.00 \\
+**Few-shot + CoT** & 48.47 & 48.31 & 48.76 & 27.60 & 27.40 & 27.80 \\
+**\(K\)Few-shot + CoT** & 48.47 & 48.91 & 48.76 & 27.60 & 27.60 & 27.80 \\
+**Fine-tuning** & 52.26 & 56.33 & 51.53 & 54.00 & 62.00 & 74.60 \\ _KA Fine-tuning_ & 52.11 & 58.81 & 53.38 & 53.80 & 64.60 & 73.80 \\
+**Fexamine Distillation** & 55.50\(\pm\) & 64.93 & 55.48 & 58.74 & 65.13 & 77.00 \\
+**KARD (ours, RN2)** & 55.90\(\pm\) & 65.94 & 58.48 & 58.93\(\pm\)**56.13 & 64.05 & 78.00 \\
+**KARD (ours, Renker)** & **56.57\(\pm\)**32 & **66.04\(\pm\)**40.00 & **70.55\(\pm\)**81 & **59.33\(\pm\)**1 & **66.40\(\pm\)**16.78 & **78.53\(\pm\)**32 \\ \hline
+**KARD (Silver Kn, Oracle)** & 57.50 & 65.65 & 27.34 & 63.00 & 72.40 & 82.00 \\
+**CoT from ChatGPT (\(\textit{Concle}^{\dagger}\))** & 66.38 & 67.10 & 72.05 & 58.60 & 78.80 & 87.80 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: T5 모델을 사용 하 여 **StrategyQA** 및 **OpenbookQA** 데이터 세트에 대 한 실험 결과 [45]. \ (\dagger\)는 동일한 크기의 Flan-T5를 사용한 실험을 나타낸다. 우리는 표 1과 같은 실험 결과를 보고한다.
+
+T5-XL on StrategyQA는 테스트 데이터에 일반화하지 못하기 때문에 성능이 떨어진다. 반면에 추론 증류는 두 데이터 세트에서 모든 다른 크기에 걸쳐 모델의 성능을 향상시킨다. 우리의 KARD는 추론 증류 기준선에 비해 성능 개선을 추가로 산출하여 두 데이터 세트에서 지식 증대의 효과를 보여준다.
+
+### Analysis
+
+DAPT 도메인-적응 사전-훈련(DAPT) [15]에 대한 실험은 특정 도메인에 사전-훈련 언어 모델(PLM)을 적응시켜 이에 대한 작업을 효과적으로 해결하는 유용한 전략이며, 이는 대규모 도메인-특정 텍스트 코퍼스 상에서 PLM을 추가로 사전-훈련시킴으로써 수행된다[2, 30, 37]. DAPT가 증류 전에 관련 도메인별 데이터에 대한 훈련을 추가로 수행함으로써 도메인별 지식 집약적 작업에서 추론 증류를 위한 PLM의 능력을 향상시킬 수 있는지 관찰하는 것이 흥미롭기 때문에 DAPT의 모델로 실험을 수행한다. 구체적으로, 두 개의 중간 규모의 생의학 말뭉치인 Pubmed abstracts와 MedWiki [35]에서 Flan-T5 Base 모델을 각각 사전 훈련한다. 그런 다음 추론 증류 및 KARD를 추가 사전 훈련된 매개변수가 있는 PLM에 적용한다. 그림 3에서 우리는 Pubmed의 DAPT가 추론 증류의 성능을 약간 향상시킨다는 것을 관찰한다. 반면, KARD는 DAPT보다 성능 향상에 더 크게 기여한다. 이 결과는 KARD가 DAPT에 비해 지식 집약적 추론 작업에서 뚜렷한 이점을 제공한다는 것을 나타낸다.
+
+데이터셋 및 모델 크기에 대한 효율성 훈련 데이터 및 모델 크기 측면에서 KARD의 효율성을 검증하기 위해 훈련 데이터 및 모델 매개변수의 수를 변화시키면서 MedQA-USMLE 데이터 세트에 대한 테스트 정확도를 측정한다. 그림 3(a)와 같이, 우리의 KARD는 적은 수의 학습 데이터만을 사용하여 제안된 KARD 메커니즘으로 LLM의 추론 능력을 효과적으로 전달할 수 있다. 또한, 학습 데이터의 수를 증가시킬 때 나이브 미세 조정과 KARD 사이의 간격이 훨씬 더 커지며, 이는 LLM으로부터 지식 증강 증류를 위한 더 많은 학습 데이터를 사용하여 KARD의 유효성을 잠재적으로 증가시킬 수 있음을 확인시켜준다. 또한 KARD는 _샘플 효율_이라는 점에 주목할 필요가 있다. 25\(\%\)의 훈련 데이터를 사용하여 KARD는 전체 데이터에서 동일한 모델보다 더 나은 성능을 보였다.
+
+모델 크기 측면에서의 효율성은 그림 3(b)와 같이 250M 파라미터를 갖는 KARD가 3B 파라미터를 갖는 미세 조정 모델(14배 더 큼)보다 높은 정확도를 달성한다. 더욱이, 780M 파라미터를 갖는 KARD는 11B 인-컨텍스트 학습 기준선을 능가한다. 이러한 결과는 KARD를 사용하는 소형 LM이 LLM보다 훨씬 적은 계산 비용을 요구하지만 성능이 우수하기 때문에 자원 제한 설정에서 KARD의 상당한 실용적 이점을 보여준다.
+
+MedQA-USMLE에서 리랭커의 성능을 평가하기 위해 LLM에 의해 생성된 근거를 기반으로 검색된 상위 3개의 은 문서를 지면으로 간주한다.
+
+그림 4: **(a) 학습 데이터의 효율성 및 (b) 모델 크기.** MedQA-USMLE에서 Flan-T5 Large를 사용 하는 학습 데이터의 수 또는 Flan-T5 XXL의 몇 번 샷 인 컨텍스트 학습 성능을 포함 하는 매개 변수의 수를 변경 하 여 미세 조정 기준선과 KARD를 비교 합니다 (11B). **(c)** 은 문서를 지상 진리로 간주 하 여 BM25 및 재배치자가 검색 한 문서에서 **Hits@k** 를 측정 합니다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline  & \multicolumn{2}{c}{**Beranker**} \\ Rationales & Base & Large \\ \hline \(l=3\) & 30.09 & 35.43 \\ \(l=5\) & 32.13 & 39.04 \\ \(l=10\) & 32.91 & 41.79 \\ \hline \hline \end{tabular} \begin{tabular}{l c c} \hline \hline  & \multicolumn{2}{c}{**Flan-T5 Base**} \\ Passages & Base & Large \\ \hline \(\kappa^{*}=20\) & 36.45 & 43.91 \\ \(\kappa^{*}=50\) & 36.06 & 44.23 \\ \(\kappa^{*}=100\) & 36.76 & 45.25 \\ \hline \hline \end{tabular}
+\begin{tabular}{l c c} \hline \hline  & \multicolumn{2}{c}{**Flan-T5 Base**} \\ Passages & BM25 & Reranker \\ \hline \(k=1\) & 32.91 & 36.76 \\ \(k=2\) & 32.84 & 37.71 \\ \(k=3\) & 32.36 & 37.39 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 근거 다양성에 대한 분석.
+
+truth, and measure Hits@k on the documents retrieved by BM25 and reranker with \(\kappa^{*}=100\). 그림 3(c)에서 리랭커는 BM25보다 훨씬 더 나은 Hits@k를 달성한다. 이 결과는 리랭커가 테스트 시간에 정확한 근거를 생성하는 데 도움이 되는 구절의 우선 순위를 성공적으로 학습하여 지식 집약적 추론 작업에 대한 성능 향상으로 이어진다는 것을 나타낸다.
+
+Ho 등(2017)에 따른 훈련 중 합리수, 작은 언어 모델 훈련에서 다양한 추론을 용이하게 하기 위해 각 훈련 샘플에 대해 여러 합리수를 생성한다. 표 3에서 MedQA-USMLE 데이터 세트를 사용하여 Flan-T5 기반 및 대형 모델 모두에 대한 훈련 중 이론적 다양성의 영향을 제시한다. 훈련 데이터당 유리수의 수가 증가함에 따라 성능도 향상되어 다중 유리수를 사용하는 것의 이점을 보여준다. 그러나 유리수의 수가 5에서 10으로 증가하면 성능 이득이 작아진다. 이는 10을 초과하는 더 다양한 유리수를 사용하는 것이 적어도 MedQA-USMLE 데이터 세트에서 상당한 추가 개선을 가져오지 않을 수 있음을 시사한다.
+
+Reranker에 대한 후보 문서 수 재순위자가 질문의 적합성 점수를 부여하는 후보 문서 집합(\(\kappa^{*}\))의 크기를 결정하는 것은 중요하다. 표 4에서 우리는 MedQA-USMLE에 대한 플란-T5 기본 모델과 대형 모델 모두의 성능을 \(\kappa^{*}\)을 변화시키면서 제시한다. 그 결과 후보 문서의 수를 늘리는 것이 유리한 것으로 나타났으며, 이는 리랭킹자가 광범위한 범위의 후보 문서를 고려할 수 있기 때문이다.
+
+심지어 LLM들을 추론하기 위해 사용되는 패시지의 수(Number of Passages Used for Inference even LLMs)는 무관한 문맥에 의해 쉽게 산만해지는 경향이 있다(Zhu et al., 2017). 따라서 추론 중에 단순히 더 많은 구절을 추가하는 것은 관련 지식이 선택되지 않는 경우 반드시 성능을 향상시키지는 않을 수 있다. 표 5에서는 추론 시 KARD에 사용된 패스 수(섹션 4.3의 \(k\)가 Flan-T5 Base와 MedQA-USMLE에 미치는 영향을 제시한다. 재순위자를 사용하지 않은 KARD(BM25)의 성능은 \(k\)이 증가함에 따라 감소하는 것을 관찰하였다. 이 결과는 추가 구절을 사용하는 것이 항상 더 나은 근거를 생성하는 결과를 초래하는 것은 아님을 의미한다. 반면에 재순위자가 있는 두 통로(\(k=2\))를 사용하는 것이 단일 통로(\(k=1\))보다 더 좋다. 이 결과는 재순위자가 BM25보다 더 적합한 지식을 효과적으로 선택함으로써 MedQA-USMLE 벤치마크의 성능 향상에 기여함을 나타낸다.
+
+정성적 분석 표 6에서 우리는 KARD에 의해 생성된 근거를 추론 증류가 있지만 지식 증강이 없는 기준 모델에 의한 근거와 비교하는 예를 제공한다. MedQA-USMLE 데이터 세트에서 하나의 샘플을 선택하고 Flan-T5 XL 모델을 사용하여 근거를 생성한다. 지식 증강이 없는 모델은 주어진 지시와 질문에 기초하여 그럴듯해 보이는 근거를 생성한다. 그러나 Glucocorticoid가 Graves병의 1차 치료법이라는 잘못된 환각을 발생시킨다. 그 결과 (B) Methimazole의 정답을 예측하지 못한다. 이와는 대조적으로 KARD로 모델을 미세 조정하면 Methimazole이 Graves병의 가장 좋은 단일 치료법임을 나타내는 검색된 지식에 의해 뒷받침되는 정확한 근거를 생성한다. 결과적으로 정답을 성공적으로 예측합니다. 이 예는 관련 지식을 통합하여 정확한 근거를 생성하기 위한 KARD 방법의 효율성을 강조하며, 이는 지식 집약적 추론 벤치마크에 대한 질문 응답 성능을 향상시킨다.
+
+\begin{table}
+\begin{tabular}{p{113.8pt} p{113.8pt} p{113.8pt}} \hline \hline
+**Question:** A 29-year-old woman presents to the clinic after several months of weight loss. She noticed a 6.8 kg (15 IB) unintentional weight loss over the preceding several months. She has not changed her diet or exercise habits. She also reports reuding with her boyfriend over the temperature of their shared apartment, as she always reaffirmed him does. The vital signs include: heart rate 110min and blood pressure 14678 mm Hg. The physical exam is notable for warm and slightly most skin. Which of the following is the best single treatment option for this patient? (A) Glucocorticoids (B) Methimazole (C) Propranolol (D) Radioidine therapy & **Outputs** \\ \hline
+**Reasoning Distillation (without knowledge)** & _No knowledge_ & The patient’s symptoms are consistent with hyperthyroidism, specifically Graves’ disease. Glucocorticoids in the first-line treatment for Graves’ disease. Preliminary role, propranolol, and radioize therapy can be used as objective treatment. Answer: A \\ \hline
+**KARD** & Hyperthyroidism (...) The best single treatment option for (Ours, reranker) & The symptoms and physical exam findings suggest by, perthyroidism, specifically Graves’ disease. The best single treatment option for Graves’ disease is mentioned soikh and radioidine therapy can also be used, but they are not the best option in this case. Propranolol can help control synthesis. Glucocorticoids and radioidine therapy can also be used, but they are not the best option. Answer: B \\ \hline \hline \end{tabular}
+\end{table}
+표 6: Flan-T5 XL을 사용한 MedQA-USMLE에서의 추론 증류와 비교하여, KARD의 합리적 생성 예. 답은 파란색이다. 생성된 근거에서 환각을 노란색으로 표시하고 생성된 근거에서 사실적으로 올바른 진술과 구절에서 뒷받침하는 사실을 빨간색으로 강조합니다. **
+
+## 6 Discussion
+
+### 검색 확장 생성과의 비교
+
+RAG(Retrieval-Augmented Generation) [32]는 주로 지식 집약적 태스크(예를 들어, 오픈 도메인 QA)를 해결하는 것에 초점을 맞추고, 여기서 정확한 지식 검색은 더 높은 성능을 달성하는 데 중요하다. 방법론 측면에서 KARD와 RAG의 주요 차이점은 RAG가 질문을 쿼리로 활용하고 생성기와 검색기를 공동으로 미세 조정한다는 것이다. 추론 증류에서 RAG에 대한 KARD의 이점을 정량적으로 분석하기 위해 MedQA-USMLE의 Flan-T5 베이스와 StrategyQA의 T5 베이스를 베이스 LMs로 사용하고 RAG의 훈련 가능한 검색기로 DPR [25]를 사용하는 본 실험에서 사용한 두 데이터 세트를 사용하여 추론 증류에 대한 RAG 실험을 수행한다. 표 7에서 실험 결과는 추론 증류에서 RAG를 사용하는 것이 KARD보다 낮은 정확도를 달성한다는 것을 보여주며, 이는 우리의 KARD가 추론 증류에 더 맞춤화된 접근법임을 보여준다.
+
+### 실패 사례 분석
+
+표 1에서 Flan-T5 XL에서 랭커가 있는 KARD와 MedQA-USMLE에서 ChatGPT 간에 상당한 차이를 볼 수 있다. 우리의 조사는 ChatGPT가 성공하는 동안 방법이 실패한 샘플을 조사하여 이러한 격차의 원인을 이해하는 데 중점을 둔다. 우리는 해당 사례에서 30개의 샘플을 수집하고 두 그룹으로 분류한다. 첫 번째 그룹은 순위자가 올바른 근거를 생성하는 것과 관련된 문서를 얻지 못한 경우로 구성된다. 두 번째 그룹은 검색된 문서에서 관련 지식에 액세스할 수 있음에도 불구하고 작은 언어 모델이 올바른 근거를 생성하지 못하고 잘못된 예측을 하는 경우를 포함한다. 30개의 표본 중 15개는 첫 번째 범주에 속하고 나머지 15개는 두 번째 범주에 속한다. 이 관찰은 지식 집약적 추론 작업에서 작은 언어 모델의 성능을 향상시키기 위해 검색기와 증류 방법 모두에서 추가 개선이 필요함을 나타낸다.
+
+### Limitations
+
+KARD를 통해 지식 집약적 추론 작업에 대한 소규모 LM의 성능이 크게 향상되었음을 보여주었다. 그러나 우리 연구의 한계를 인정하는 것이 중요하다. 첫째, 방법론의 측면에서, 우리의 지식 증강의 효과는 외부 지식 기반에서 검색된 문서의 품질에 크게 의존한다. 표 1 및 그림 3(c)에 표시된 바와 같이, 우리의 리랭커는 더 나은 지식을 검색함으로써 작은 모델의 성능을 실질적으로 향상시킨다. 모델 크기가 증가함에 따라 BM25와 리랭커 간의 성능 격차가 감소함에도 불구하고 리랭커가 검색한 문서와 실버 지식 사이에는 여전히 상당한 차이가 있다. 이것은 리랭킹자가 큰 LM에 대한 지식을 증가시킬 수 있는 중요한 구절을 놓칠 수 있음을 나타낸다. 따라서 더 나은 근거를 생성하기 위해서는 검색 방법의 추가 발전이 필요하며, 이는 대규모 언어 모델에도 중요한 연구 과제로 남아 있기 때문이다[13]. 둘째, 실험과 관련하여, 우리는 제한된 계산 예산을 감안할 때 3B 미만의 매개변수를 갖는 비교적 작은 LM에 대한 접근법을 테스트했다. 그러나 KARD와 함께 GPT-3 [5; 44] 또는 LLaMA [50; 51]과 같은 상대적으로 더 큰 언어 모델의 사용을 탐구하는 것은 향후 연구에 유망한 방향일 수 있다.
+
+## 7 Conclusion
+
+본 연구에서는 지식 및 추론 능력을 모두 요구하는 지식 집약적 추론 작업에 대한 작은 언어 모델(LMs)의 능력을 향상시키는 지식 증강 추론 증류(KARD)를 제안하였다. 우리의 접근법에는 큰 LMs에서 이치를 생성하고 이러한 이치에 대해 작은 LM을 미세 조정하는 동시에 비모수 기억에서 외부 지식을 사용하여 작은 LM을 증가시키는 것이 포함된다. 우리의 이론적 분석은 작은 LM의 암기 요구량을 줄이는 데 있어 외부 메모리의 효과를 입증함으로써 우리의 방법에 동기를 부여한다. 경험적 실험을 통해 KARD가 미세 조정 및 추론 증류와 같은 전통적인 접근법보다 성능이 우수하여 도메인별 지식에 대한 포괄적인 이해가 필요한 추론 작업에서 작은 LM을 개선하는 경로를 제공한다는 것을 보여주었다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline  & \multicolumn{2}{c}{**MedQA StrategyQA**} \\ \hline _KA_ Fine-tuning & 33.39 & 52.11 \\ RAG + RD & 24.84 & 54.24 \\ KARD (_Rranker_) & **38.15** & **56.57** \\ \hline \hline \end{tabular}
+\end{table}
+표 7: (Flan-)T5 염기를 갖는 추론 증류(RD)에 대한 RAG를 포함하는 실험 결과이다.
+
+## Acknowledgements
+
+이 작업은 제1저자가 AITRICS에서 일하는 동안 이루어졌다. 논문을 개선하는 데 도움이 된 이 강욱과 익명의 평론가들의 통찰력 있는 논평과 제안에 감사드린다. 이 작업은 한국 정부(MSIT)가 지원하는 정보통신기획평가원(IITP) 교부금 AITRICS(No. 2019-0-00075, 인공 지능 대학원 프로그램(KAIST), No. RS-2022-00187238, 효율적인 사전 교육을 위한 대용량 한국어 모델 기술 개발, No.2022-0-0071, 한국연구재단(NRF)은 한국 정부(MSIT)가 지원하는 보조금(No. RS-2023-00256259 및 NRF-2018R1A5A1059921) 및 삼성전자(IO201214-08145-01).
+
+## References
+
+*[1]Parishad BehnamGhader, Santiago Miret, and Siva Reddy. 리트리버 증강 언어 모델을 추론할 수 있습니까? 검색기와 언어 모델 사이의 비난 게임. _ arXiv preprint arXiv:2212.09146_, 2022. URL [https://doi.org/10.48550/arXiv.2212.09146](https://doi.org/10.48550/arXiv.2212.09146)
+* [2] Elliot Bolton, David Hall, Michihiro Yasunaga, Tony Lee, Chris Manning, and Percy Liang. Biomedlm. [https://crfm.stanford.edu/2022/12/15/pubmedgpt.html](https://crfm.stanford.edu/2022/12/15/pubmedgpt.html).
+* [3] Sebastian Borgeaud, Arthur Mensch, Jordan Hoffmann, Trevor Cai, Eliza Rutherford, Katie Millican, George van den Driessche, Jean-Baptiste Lespiau, Bogdan Damoc, Aidan Clark, Diego de Las Casas, Aurelia Guy, Jacob Menick, Roman Ring, Tom Hennigan, Saffron Huang, Loren Maggiore, Chris Jones, Albin Cassirer, Andy Brock, Michela Paganini, Geoffrey Irving, Oriol Vinyals, Simon Osindero, Karen Simonyan, Jack W. Rae, Erich Elsen, and Laurent Sifre. Improving language models by retrieving from trillions of tokens. In _International Conference on Machine Learning, ICML_, pages 2206-2240, 2022.
+* [4] Gavin Brown, Mark Bun, Vitaly Feldman, Adam Smith, and Kunal Talwar. When is memorization of irrelevant training data necessary for high-accuracy learning? In _Proceedings of the 53rd annual ACM SIGACT symposium on theory of computing_, pages 123-132, 2021.
+* [5] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In Hugo Larochelle, Marc'Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020.
+* [6] Nicholas Carlini, Daphne Ippolito, Matthew Jagielski, Katherine Lee, Florian Tramer, and Chiyuan Zhang. Quantifying memorization across neural language models. In _The Eleventh International Conference on Learning Representations_, 2023.
+* 8월 4일, 볼륨 1: 긴 페이퍼_, 페이지 1870-1879. 계산 언어학 협회, 2017. URL [https://doi.org/10.18653/v1/P17-1171](https://doi.org/10.18653/v1/P17-1171).
+* [8] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunipa Dev, Henryk Michalewski, Xavier Garcia, Vedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Hyeontaek Lim, Barret Zoph, Alexander Spiridonov, Ryan Sepassi, David Dohan, ShivaniAgrawal, Mark Omernick, Andrew M. Dai, Thanumalayan Sankaranarayana Pillai, Marie Pellat, Aitor Lewkowycz, Erica Moreira, Rewon Child, Oleksandr Polozov, Katherine Lee, Zongwei Zhou, Xuezhi Wang, Brennan Saeta, Mark Diaz, Orhan Firat, Michele Catasta, Jason Wei, Kathy Meier-Hellstern, Douglas Eck, Jeff Dean, Slav Petrov, and Noah Fiedel. PaLM: Scaling language modeling with pathways. _arXiv preprint arXiv:2204.02311_, 2022. URL [https://doi.org/10.48550/arXiv.2204.02311](https://doi.org/10.48550/arXiv.2204.02311).
+* Chung et al. [2022] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, Albert Webson, Shixiang Shane Gu, Zhuyun Dai, Mirac Suzgun, Xinyun Chen, Aakanksha Chowdhery, Sharan Narang, Gaurav Mishra, Adams Yu, Vincent Y. Zhao, Yanping Huang, Andrew M. Dai, Hongkun Yu, Slav Petrov, Ed H. Chi, Jeff Dean, Jacob Devlin, Adam Roberts, Denny Zhou, Quoc V. Le, and Jason Wei. Scaling instruction-finetuned language models. _arXiv preprint arXiv:2210.11416_, 2022. URL [https://doi.org/10.48550/arXiv.2210.11416](https://doi.org/10.48550/arXiv.2210.11416).
+* Cobbe et al. [2021] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021. URL [https://arxiv.org/abs/2110.14168](https://arxiv.org/abs/2110.14168).
+* Frantar et al. [2023] Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. OPTQ: Accurate quantization for generative pre-trained transformers. In _The Eleventh International Conference on Learning Representations_, 2023. URL [https://openreview.net/forum?id=tcbBPnfwxS](https://openreview.net/forum?id=tcbBPnfwxS).
+* Fu et al. [2023] Yao Fu, Hao Peng, Litu Ou, Ashish Sabharwal, and Tushar Khot. Specializing smaller language models towards multi-step reasoning. _arXiv preprint arXiv:2301.12726_, 2023. URL [https://doi.org/10.48550/arXiv.2301.12726](https://doi.org/10.48550/arXiv.2301.12726).
+* Gao et al. [2022] Luyu Gao, Zhuyun Dai, Panupong Pasupat, Anthony Chen, Arun Tejasvi Chaganty, Yicheng Fan, Vincent Y. Zhao, Ni Lao, Hongrae Lee, Da-Cheng Juan, and Kelvin Guu. Rarr: Researching and revising what language models say, using language models, 2022.
+* Geva et al. [2021] Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot, Dan Roth, and Jonathan Berant. Did aristotle use a laptop? A question answering benchmark with implicit reasoning strategies. _Trans. Assoc. Comput. Linguistics_, 9:346-361, 2021. URL [https://doi.org/10.1162/tacl_a_00370](https://doi.org/10.1162/tacl_a_00370).
+* Gururangan et al. [2020] Suchin Gururangan, Ana Marasovic, Swabha Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, and Noah A. Smith. Don't stop pretraining: Adapt language models to domains and tasks. In Dan Jurafsky, Joyce Chai, Natalie Schluter, and Joel R. Tetreault, editors, _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, ACL 2020, Online, July 5-10, 2020_, pages 8342-8360. Association for Computational Linguistics, 2020. URL [https://doi.org/10.18653/v1/2020.acl-main.740](https://doi.org/10.18653/v1/2020.acl-main.740).
+* Guu et al. [2020] Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Ming-Wei Chang. Retrieval augmented language model pre-training. In _Proceedings of the 37th International Conference on Machine Learning, ICML 2020, 13-18 July 2020, Virtual Event_, volume 119 of _Proceedings of Machine Learning Research_, pages 3929-3938. PMLR, 2020.
+* Ho et al. [2023] Namygu Ho, Laura Schmid, and Se-Young Yun. Large language models are reasoning teachers. In _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 14852-14882, Toronto, Canada, July 2023. Association for Computational Linguistics.
+* Hsieh et al. [2023] Cheng-Yu Hsieh, Chun-Liang Li, Chih-kuan Yeh, Hootan Nakhost, Yasuhisa Fujii, Alex Ratner, Ranjay Krishna, Chen-Yu Lee, and Tomas Pfister. Distilling step-by-step! outperforming larger language models with less training data and smaller model sizes. In _Findings of the Association for Computational Linguistics: ACL 2023_, pages 8003-8017, Toronto, Canada, July 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.findings-acl.507. URL [https://aclanthology.org/2023.findings-acl.507](https://aclanthology.org/2023.findings-acl.507).
+* Hu et al. [2022] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In _International Conference on Learning Representations_, 2022. URL [https://openreview.net/forum?id=nZeVKeeFYf9](https://openreview.net/forum?id=nZeVKeeFYf9).
+
+* Iyer et al. [2022] Srinivasan Iyer, Xi Victoria Lin, Ramakanth Pasunuru, Todor Mihaylov, Daniel Simig, Ping Yu, Kurt Shuster, Tianlu Wang, Qing Liu, Punit Singh Koura, Xian Li, Brian O'Horo, Gabriel Pereyra, Jeff Wang, Christopher Dewan, Asli Celikyilmaz, Luke Zettlemoyer, and Ves Stoyanov. OPT-IML: scaling language model instruction meta learning through the lens of generalization. _arXiv preprint arXiv:2212.12017_, 2022. URL [https://doi.org/10.48550/arXiv.2212.12017](https://doi.org/10.48550/arXiv.2212.12017).
+* Izacard et al. [2022] Gautier Izacard, Mathilde Caron, Lucas Hosseini, Sebastian Riedel, Piotr Bojanowski, Armand Joulin, and Edouard Grave. Unsupervised dense information retrieval with contrastive learning. _Transactions on Machine Learning Research_, 2022. ISSN 2835-8856. URL [https://openreview.net/forum?id=jKN1pX17b0](https://openreview.net/forum?id=jKN1pX17b0).
+* Izacard et al. [2023] Gautier Izacard, Patrick Lewis, Maria Lomeli, Lucas Hosseini, Fabio Petroni, Timo Schick, Jane Dwivedi-Yu, Armand Joulin, Sebastian Riedel, and Edouard Grave. Atlas: Few-shot learning with retrieval augmented language models. _Journal of Machine Learning Research_, 24(251):1-43, 2023. URL [http://jmlr.org/papers/v24/23-0037.html](http://jmlr.org/papers/v24/23-0037.html).
+* Jin et al. [2020] Di Jin, Eileen Pan, Nassim Oufatole, Wei-Hung Weng, Hanyi Fang, and Peter Szolovits. What disease does this patient have? A large-scale open domain question answering dataset from medical exams. _arXiv preprint arXiv:2009.13081_, 2020. URL [https://arxiv.org/abs/2009.13081](https://arxiv.org/abs/2009.13081).
+* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_, 2020.
+* Karpukhin et al. [2020] Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick S. H. Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, and Wen-tau Yih. Dense passage retrieval for open-domain question answering. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing, EMNLP 2020, Online, November 16-20, 2020_, pages 6769-6781. Association for Computational Linguistics, 2020.
+* Khattab and Zaharia [2020] Omar Khattab and Matei Zaharia. 콜버트: BERT에 대한 맥락화된 후기 상호작용을 통한 효율적이고 효과적인 통과 검색. 지미 엑스 Huang, Yi Chang, Xueqi Cheng, Jaap Kamp, Vanessa Murdock, Ji-Rong Wen, and Yiqun Liu, editors, _Proceedings of the 43th International ACM SIGIR conference on Research and Development in Information Retrieval, SIGIR 2020, Virtual Event, China, July 25-30, 2020, pages 39-48. ACM, 2020.
+* Kim et al. [2023] Junghwan Kim, Michelle Kim, and Barzan Mozafari. Provable memorization capacity of transformers. In _The Eleventh International Conference on Learning Representations_, 2023.
+* Kojima et al. [2022] Takeshi Kojima, Shixiang Shane Gu, Michel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. _Advances in neural information processing systems_, 35:22199-22213, 2022.
+* Kung et al. [2022] Tiffany H. Kung, Morgan Cheatham, Arielle Medenilla, Czarina Sillos, Lorie De Leon, Camille Elepano, Maria Madriaga, Rimel Agagabao, Giezel Diaz-Candido, James Maningo, and Victor Tseng. Performance of chatppt on usmle: Potential for ai-assisted medical education using large language models. _medRxiv_, 2022. doi: 10.1101/2022.12.19.22283643. URL [https://www.medrxiv.org/content/early/2022/12/21/2022.12.19.22283643](https://www.medrxiv.org/content/early/2022/12/21/2022.12.19.22283643).
+* Lee et al. [2020] Jinhyuk Lee, Wonjin Yoon, Sungdong Kim, Donghyeon Kim, Sunkyu Kim, Chan Ho So, and Jaewoo Kang. BioBERT: a pre-trained biomedical language representation model for biomedical text mining. _Bioinform._, 36(4):1234-1240, 2020. URL [https://doi.org/10.1093/bioinformatics/btz682](https://doi.org/10.1093/bioinformatics/btz682).
+* Lester et al. [2021] Brian Lester, Rami Al-Rfou, and Noah Constant. The power of scale for parameter-efficient prompt tuning. In Marie-Francine Moens, Xuanjing Huang, Lucia Specia, and Scott Wen-tau Yih, editors, _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, EMNLP 2021, Virtual Event / Punta Cana, Dominican Republic, 7-11 November, 2021_, pages 3045-3059. Association for Computational Linguistics, 2021. URL [https://doi.org/10.18653/v1/2021.emmlp-main.243](https://doi.org/10.18653/v1/2021.emmlp-main.243).
+
+* Lewis et al. [2020] Patrick S. H. Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Kuttler, Mike Lewis, Wen-tau Yih, Tim Rocktaschel, Sebastian Riedel, and Douwe Kiela. Retrieval-augmented generation for knowledge-intensive NLP tasks. In Hugo Larochelle, Marc'Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020.
+* LI et al. [2022] SHYANG LI, Jianshu Chen, Yelong Shen, Zhiyu Chen, Xinlu Zhang, Zekun Li, Hong Wang, Jingu Qian, Baolin Peng, Yi Mao, Wenhu Chen, and Xifeng Yan. Explanations from large language models make small reasoners better. _ArXiv_, abs/2210.06726, 2022.
+* Lievin et al. [2022] Valentin Lievin, Christoffer Egeberg Hother, and Ole Winther. Can large language models reason about medical questions? _arXiv preprint arXiv:2207.08143_, 2022. doi: 10.48550/arXiv. 2207.08143. URL [https://doi.org/10.48550/arXiv.2207.08143](https://doi.org/10.48550/arXiv.2207.08143).
+* Lievin et al. [2023] Valentin Lievin, Andreas Geert Motzfeldt, Ida Riis Jensen, and Ole Winther. Variational open-domain question answering. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 20950-20977. PMLR, 2023. URL [https://proceedings.mlr.press/v202/lievin23a.html](https://proceedings.mlr.press/v202/lievin23a.html).
+* Loshchilov and Hutter [2019] Ilya Loshchilov and Frank Hutter. 비결합 중량 감소 규칙화. _7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019_, 2019. URL [https://openreview.net/forum?id=Bkg6RiCqY7](https://openreview.net/forum?id=Bkg6RiCqY7).
+* Luo et al. [2022] Renqian Luo, Lial Sun, Yingce Xia, Tao Qin, Sheng Zhang, Hoifung Poon, and Tie-Yan Liu. BioGPT: generative pre-trained transformer for biomedical text generation and mining. _Briefings in Bioinformatics_, 23(6):bbac409, 2022.
+* Magister et al. [2023] Lucie Charlotte Magister, Jonathan Mallinson, Jakub Adamek, Eric Malmi, and Aliaksei Severyn. Teaching small language models to reason. In _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers)_, pages 1773-1781, Toronto, Canada, July 2023. Association for Computational Linguistics.
+* 2018년 11월 4일_, 2381-2391페이지. Association for Computational Linguistics, 2018. URL [https://doi.org/10.18653/v1/d18-1260](https://doi.org/10.18653/v1/d18-1260).
+* Moor et al. [2023] Michael Moor, Oishi Banerjee, Zahra Shakeri Hossein Abad, Harlan M. Krumholz, Jure Leskovec, Eric J. Topol, and Pranav Rajpurkar. Foundation models for generalist medical artificial intelligence. _Nature_, 616:259-265, 2023. URL [https://doi.org/10.1038/s41586-023-05881-4](https://doi.org/10.1038/s41586-023-05881-4).
+* Nori et al. [2023] Harsha Nori, Nicholas King, Scott Mayer McKinney, Dean Carignan, and Eric Horvitz. Capabilities of GPT-4 on medical challenge problems. _arXiv preprint arXiv:2303.13375_, 2023.
+* OpenAI[2022] OpenAI. chatgpt를 소개합니다. [https://openai.com/blog/chatgpt] (https://openai.com/blog/chatgpt), 2022.
+* OpenAI [2023] OpenAI. GPT-4 기술 보고서. _ arXiv preprint arXiv:2303.08774_, 2023. URL [https://doi.org/10.48550/arXiv.2303.08774](https://doi.org/10.48550/arXiv.2303.08774)
+* Ouyang et al. [2022] Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike, and Ryan Lowe. Training language models to follow instructions with human feedback. _arXiv preprint arXiv:2203.02155_, 2022. URL [https://doi.org/10.48550/arXiv.2203.02155](https://doi.org/10.48550/arXiv.2203.02155).
+
+* Raffel et al. [2020] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _J. Mach. Learn. Res._, 21:140:1-140:67, 2020.
+* Robertson and Zaragoza[2009] Stephen Robertson and Hugo Zaragoza. 확률적 관련성 프레임워크: BM25 이상. _ 찾았어요 트렌드 인포 Ret._ , 3(4):333-389, 2009).
+* Shi et al. [2023] Freda Shi, Xinyun Chen, Kanishka Misra, Nathan Scales, David Dohan, Ed H Chi, Nathanael Scharli, and Denny Zhou. Large language models can be easily distracted by irrelevant context. In _International Conference on Machine Learning_, pages 31210-31227. PMLR, 2023.
+* Singhal et al. [2022] Karan Singhal, Shekoofeh Azizi, Tao Tu, S. Sara Mahdavi, Jason Wei, Hyung Won Chung, Nathan Scales, Ajay Kumar Tanwani, Heather Cole-Lewis, Stephen Pfohl, Perry Payne, Martin Seneviratne, Paul Gamble, Chris Kelly, Nathaneal Scharli, Aakanksha Chowdhery, Philip Andrew Mansfield, Blaise Aguera y Arcas, Dale R. Webster, Gregory S. Corrado, Yossi Matias, Katherine Chou, Juraj Gottweis, Nenad Tomasev, Yun Liu, Alvin Rajkomar, Joelle K. Barral, Christopher Semturs, Alan Karthikesalingam, and Vivek Natarajan. Large language models encode clinical knowledge. _arXiv preprint arXiv:2212.13138_, 2022. URL [https://doi.org/10.48550/arXiv.2212.13138](https://doi.org/10.48550/arXiv.2212.13138).
+* Tirumala et al. [2022] Kushal Tirumala, Aram Markosyan, Luke Zettlemoyer, and Armen Aghajanyan. Memorization without overfitting: Analyzing the training dynamics of large language models. _Advances in Neural Information Processing Systems_, 35:38274-38290, 2022.
+* Touvron et al. [2023] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023. URL [https://doi.org/10.48550/arXiv.2302.13971](https://doi.org/10.48550/arXiv.2302.13971).
+* Touvron et al. [2022] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton-Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony Hartshorn, Saghar Hosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihaylov, Pushkar Mishra, Igor Molybog, Yixin Nie, Andrew Poulton, Jeremy Reizenstein, Rashi Rungta, Kalyan Saladi, Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subramanian, Xiaoqing Ellen Tan, Binh Tang, Ross Taylor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng Yan, Iliyan Zarov, Yuchen Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurelien Rodriguez, Robert Stojnic, Sergey Edunov, and Thomas Scialom. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023. URL [https://doi.org/10.48550/arXiv.2307.09288](https://doi.org/10.48550/arXiv.2307.09288).
+* Wang et al. [2022] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V Le, Ed H. Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. In _The Eleventh International Conference on Learning Representations_, 2023.
+* Wei et al. [2022] Jason Wei, Maarten Bosma, Vincent Y. Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. Dai, and Quoc V. Le. Finetuned language models are zero-shot learners. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022._ OpenReview.net, 2022. URL [https://openreview.net/forum?id=gEZrGCozdqR](https://openreview.net/forum?id=gEZrGCozdqR).
+* Wei et al. [2022] Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. Emergent abilities of large language models. _Transactions on Machine Learning Research_, 2022. ISSN 2835-8856. Survey Certification.
+* Wei et al. [2022] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed H Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. In _Advances in Neural Information Processing Systems_, 2022.
+
+* Yasunaga et al. [2022] Michihiro Yasunaga, Jure Leskovec, and Percy Liang. Linkbert: Pretraining language models with document links. In Smaranda Muresan, Preslav Nakov, and Aline Villavicencio, editors, _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2022, Dublin, Ireland, May 22-27, 2022_, pages 8003-8016. Association for Computational Linguistics, 2022. URL [https://doi.org/10.18653/v1/2022.acl-long.551](https://doi.org/10.18653/v1/2022.acl-long.551).
+* Yun et al. [2019] Chulhee Yun, Suvrit Sra, and Ali Jadbabaie. Small relu networks are powerful memorizers: a tight analysis of memorization capacity. _Advances in Neural Information Processing Systems_, 32, 2019.
+* Zhang et al. [2023] Jianyi Zhang, Aashiq Muhamed, Aditya Anantharaman, Guoyin Wang, Changyou Chen, Kai Zhong, Qingjun Cui, Yi Xu, Belinda Zeng, Trishul Chilimbi, and Yiran Chen. Reaugkd: Retrieval-augmented knowledge distillation for pre-trained language models. In Anna Rogers, Jordan L. Boyd-Graber, and Naoaki Okazaki, editors, _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), ACL 2023, Toronto, Canada, July 9-14, 2023_, pages 1128-1136. Association for Computational Linguistics, 2023. URL [https://doi.org/10.18653/v1/2023.acl-short.97](https://doi.org/10.18653/v1/2023.acl-short.97).
+* Zhang et al. [2022] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona T. Diab, Xian Li, Xi Victoria Lin, Todor Mihaylov, Myle Ott, Sam Shleifer, Kurt Shuster, Daniel Simig, Punit Singh Koura, Anjali Sridhar, Tianlu Wang, and Luke Zettlemoyer. OPT: open pre-trained transformer language models. _arXiv preprint arXiv:2205.01068_, 2022. URL [https://doi.org/10.48550/arXiv.2205.01068](https://doi.org/10.48550/arXiv.2205.01068).
+
+## 부록 A 동기: 지식 증설이 기억화에 미치는 영향
+
+### 추가 세부 정보 및 논의
+
+우리는 [4]의 본문에서 기호 손상 없이 참조 문자열 \(c_{j}\sim\mathrm{Uniform}\left(\{0,1\}^{d}\right)\)을 고려한 추상화된 언어 문제, 즉 다음 기호 예측 문제를 채택하였다. 이 문제에서 임의의 과정 \(P\sim q\)은 모든 \(j\in[N]\): 집합 \(\{c_{j}\}_{j=1}^{N}\)에 대해 \(c_{j}\sim\mathrm{Uniform}\left(\{0,1\}^{d}\right)\)과 같이 무작위로 균일하게 그림으로 \(c_{j}\in\{0,1\}^{d}\)을 정의한다. 그리고 랜덤 과정 \((Z,Y)\sim P\)은 샘플링 \(j\sim\mathrm{Uniform}\left([N]\right)\)과 \(\ell\sim\mathrm{Uniform}\left(\{0,1,2,\ldots,d-1\}\right)\)과 \(Z=(j,c_{j}(1:\ell))\)과 \(Y=c_{j}(\ell+1)\)을 설정함으로써 정의된다. 여기서 \(c_{j}(1:l)\)은 \(c_{j}\)의 첫 번째 \(l\) 심볼을 나타내고 \(c_{j}(l+1)\)은 \(c_{j}\)의 첫 번째 심볼을 나타낸다. 훈련 데이터 \(X\sim P^{\otimes n}\)에는 동일한 과정에 의해 생성된 \((Z_{i},Y_{i}))_{i=1}^{n}\)이 독립적으로 포함되어 있다 \(n\)
+
+추론 알고리즘 \(\varphi\)은 \(|S|=N+R\)과 \(\{c_{j}\}_{j=1}^{N}\subseteq S\)로 표시된 KB를 사용한다는 것을 기억하라. 여기서, \(S\)은 집합이고 _not_ 순서이므로 각 \(s\in S\)의 식별자 \(j\)과 각 \((Z,Y)\)이 주어졌을 때 어떤 \(s\in S\)이 유용한지 알 수 없다. 따라서, 이는 여전히 훈련 데이터 \(X\)에서 일부 정보를 학습하고 암기해야 한다.
+
+정리 2에서 \(N\)(또는 \(R\))은 검색기에서 추출할 KB의 유용한(또는 유용한) 문서의 수이다. 따라서 \(N+R\)은 검색할 수 있는 문서의 총 수이다. \(N+R\)이 증가함에 따라 테스트 시간에 가장 좋은 매칭을 얻기 위해 훈련 데이터의 더 많은 정보를 암기해야 한다. 정리 2는 로그율 \(\log_{2}(N+R)\)에서만 이러한 증가가 발생함을 보여준다. 따라서 KB(\(d\))의 크기가 검색기에 의해 검색될 수 있는 선택의 수의 로그(\(\log_{2}(N+R)\))보다 클 때 개선할 수 있다.
+
+또한, 정리 1과 달리 학습 크기 \(n\)가 유용한 문서 수 \(N\)보다 빠른 속도로 증가할 때, 정리 2에서는 \(n\)에 대한 의존성을 제거하고 \(I(X;\mathcal{A}(X)|P)=O(N\log_{2}(N+R))\)를 가질 수 있다. 이것은 우리의 증명이 [4]의 증명과 달리 각 기준 \(c_{j}\)당 싱글톤 훈련 샘플을 가질 확률이 높다는 것에 의존하지 않기 때문이다.
+
+### Theorem 2 증명
+
+증명: \(\epsilon>0\)과 \(m=\log_{2}((1-(\frac{N-1}{N})^{n})\frac{(N+R)^{2}-(N+R)}{2\epsilon})\)으로 하자. 하위 집단에 대한 분포가 균일하기 때문에,
+
+\[\mathrm{err}_{q,n}^{\varphi}(\mathcal{A})=\sum_{j=1}^{N}\Pr(Q_{j})\Pr(E_{0}| Q_{j})=\frac{1}{N}\sum_{j=1}^{N}\Pr(E_{0}|Q_{j}),\]
+
+여기서, \(E_{0}\)은 \(\varphi(Z,\mathcal{A}(X),S)\neq Y\)의 사건이고, \(Q_{j}\)은 표본 \((Z,Y)\sim P\)의 하위 모집단이 \(j\)인 사건이다. \(E_{1}^{j}\)은 테스트 샘플 \((Z,Y)\sim P\)의 하위 집단 \(j\)에 적어도 하나의 트레이닝 데이터 샘플(\((Z_{i},Y_{i})\in X\))을 갖는 이벤트라고 하자. 그럼
+
+\[\mathrm{Pr}(E_{0}|Q_{j})=\Pr(E_{1}^{j}|Q_{j})\Pr(E_{0}|Q_{j},E_{1}^{j})+\Pr( \bar{E}_{1}^{j}|Q_{j})\Pr(E_{0}|Q_{j},\bar{E}_{1}^{j})\]
+
+여기서 \(\bar{E}_{1}^{j}\)은 \(E_{1}^{j}\)의 보완이다. 하위집단 \(j\)에서 훈련표본의 길이를 \(\ell_{x}^{j}\)으로, 시험표본의 길이를 \(\ell_{t}^{j}\)으로 나타낸다. (E_{2}^{j}\)는 하위 집단 \(j\)의 적어도 하나의 훈련 샘플에 대한 \(\ell_{x}^{j}\geq m\)의 이벤트이고, \(E_{3}^{j}\)는 하위 집단 \(j\)의 적어도 하나의 훈련 샘플에 대한 \(\ell_{t}^{j}<\ell_{x}^{j}\)의 이벤트라고 하자. 그럼
+
+n}^{\varphi}(\mathcal{A})= \frac{1}{N}\sum_{j=1}^{N}\Pr(E_{1}^{j}|Q_{j},E _{1}^{j})\Pr(E_{0}|Q_{j},E_{1}^{j},E_{2}^{j})\Pr(\bar{E}_{2}^{j} |Q_{j},E_{1}^{j})\Pr(E_{3}^{j}|Q_{j},E_{1}^{j},E_{1}^{j},E_{1}^{j})\Pr(\bar{E}_{3}^{j}|Q_{j},E_{1}^{j},E_{2}^{j})\Pr(E_{0} |Q_{j},E_{1}^{j},Ebar{E}_{2}^{j})\Pr(E_{0} |Q_{j},E_{1}^{j},Ebar{E}_{2}
+
+Therefore,
+
+\[\operatorname{err}_{q,n}^{\varphi}(\mathcal{A})-\operatorname{err}_{q,n}( \mathcal{A}_{\mathrm{OPT})\] \[\leq\frac{1}{N}\sum_{j=1}^{N}\Pr(E_{1}^{j}|Q_{2}^{j}|Q_{j},E_{1}^{j},E_{2}^{j})\] \[\quad+\frac{1}{N}\sum_{j=1}^{N}\Pr(E_{1}^{j}|Q_{j},E_{1}^{j})\Pr(E_{3}^{j}|Q_{j},E_{1}^{j},\bar{E}_{2}^{j})\Pr(E_{0}|Q_{j},E_{1}^{j},\bar{E}_{2}^{j},\bar{E}_{3}^{j})
+
+여기서 \(\mathcal{T}=\{\{s,s^{\prime}\}|s,s^{\prime}\in S,s\neq s^{\prime}\}\) \(m=\log_{2}((1-(\frac{N-1}{N})^{n})^{\frac{(N+R)^{2}-(N+R)}{2\epsilon}})\) 이후,
+
+\[\Pr(E_{0}|Q_{j},E_{1}^{j},E_{2}^{j}) \leq\frac{(N+R)^{2}-(N+R)}{2}\frac{1}{(1-(\frac{N-1}{N})^{n})^{ \frac{(N+R)^{2}-(N+R)}{2\epsilon}}}\] \[=\frac{\epsilon}{1-(\frac{N-1}{N})^{n}}.\] 이것을 수학식 4에 플러그인하는 단계,
+
+\[\operatorname{err}_{q,n}^{\varphi}(\mathcal{A})-\operatorname{err}_{q,n}( \mathcal{A}_{\mathrm{OPT}})\leq\frac{1}{N}\sum_{j=1}^{N}\Pr(E_{1}^{j}|Q_{j}) \Pr(E_{2}^{j}|Q_{j},E_{1}^{j})\frac{\epsilon}{1-(\frac{N-1}{N})^{n}}.\]
+
+\(\Pr(E_{2}^{j}|Q_{j},E_{1}^{j})\leq 1\) 및 \(\Pr(E_{1}^{j}|Q_{j})=1-\Pr(\bar{E}_{1}^{j}|Q_{j}^{j})=1-(\frac{N-1}{N})^{n}\)이므로,
+
+\[\operatorname{err}_{q,n}^{\varphi}(\mathcal{A})-\operatorname{err}_{q,n}( \mathcal{A}_{\mathrm{OPT}})\leq\frac{1}{N}\sum_{j=1}^{N}\epsilon=\epsilon.\]
+
+위의 \(\mathcal{A}\)과 \(\varphi\)의 구성으로부터 최대 \(\min(N,n)\)의 훈련 샘플에는 \(m+1\) 비트만 필요하기 때문에 \(\epsilon>0\)의 경우 \(\operatorname{err}_{q,n}^{\varphi}(\mathcal{A})-\operatorname{err}_{q,n}(\mathcal{A}_{\mathrm{OPT}})\leq\epsilon\)을 얻을 수 있다.
+
+## 부록 B 구현 세부 정보
+
+교사 LLM은 GPT-3.5-turbo (ChatGPT)[42]를 공개 API를 통해 사용한다. 우리는 표 11, 12, 13에서 이론적 생성을 위해 사용한 프롬프트를 보여준다. 구체적으로 MedQA-USMLE의 경우 Singhal et al. [48], StrategyQA 및 OpenbookQA의 경우 Chain-of-thought 프롬프트 Kojima et al. [28]의 명령어와 5-shot 예제를 활용한다. 우리는 LLM을 사용하여 각 훈련 샘플에 대해 여러 \(l\)의 근거를 생성한다. 이를 통해 다양한 이론적 근거를 가진 소규모 LM을 훈련할 수 있다. 또한, 학습 집합에서 잘못된 유리들을 제거하기 위해 필터링 방법[17]을 사용하지만, 잘못된 예측으로 이어지는 유리들을 필터링하기 위해 작은 Flan-T5 베이스를 사용한다.
+
+모든 실험을 위해 AdamW 최적화기 [36]와 학습률 \(10^{-4}\)을 사용하여 배치 크기가 32인 3개의 에폭에 대한 작은 언어 모델을 미세 조정했다. 각 모델은 미세 조정을 위해 최대 96GB GPU 메모리를 4개의 NVIDIA TITAN RTX GPU로 활용합니다. StrategureQA 및 OpenbookQA 실험에서 Flan-T5는 명령어 튜닝 동안 두 데이터 세트에서 미세 조정되기 때문에 해당 테스트 세트로 인한 잠재적인 데이터 오염을 방지하기 위해 Flan-T5 대신 T5 모델을 사용한다. KARD 학습 시 지식 증대를 위해 사용되는 문서의 수는 MedQA-USMLE와 StrategyQA의 경우 \(k=1\), OpenbookQA의 경우 \(k=3\)으로 설정하였으며, 구체적으로 각 학습 샘플과 함께 검색기 \(\rho\)에서 검색된 문서를 추가하여 학습을 위한 입력을 구성하였다. KARD 훈련에서 사용된 입력 및 출력의 예는 표 14 및 표 15를 참조한다. 데이터셋의 열차 테스트 분할은 MedQA-USMLE [23]과 OpenbookQA [39]에 대한 공식 분할을 사용한다. 전략 QA의 경우 Ho 등 [17]에 따라 훈련 세트를 \(7:3\) 비율로 분할하여 사내 테스트 세트를 구축했다.
+
+추론 연쇄 사상 및 추론 증류와 같이 이론적 생성을 필요로 하는 방법의 경우 추론 중에 자기 일관성[52]이라는 기법을 사용한다. 구체적으로, 각 질문에 대해, 모델은 추론 동안 다수의 근거들 및 대응하는 예측들을 생성한 후, 예측들 중 최종 답변을 선택하기 위한 다수 투표가 뒤따른다.
+
+RetrieverWe는 위키피디아를 모든 데이터 세트에 대한 외부 지식 기반으로 사용한다. 검색기 \(\rho\)은 용어 빈도 기반 희소 검색 방법인 BM25 [46]을 사용한다. BM25를 구현하기 위해 재현 가능한 정보 검색 프레임워크를 제공하는 피세리니 라이브러리2를 사용한다.
+
+각주 2: [https://github.com/castorini/pyserini](https://github.com/castorini/pyserini)
+
+Reranker를 구현하기 위해 ColBERT[26]에서 사용된 채점 방법을 채택한다. MedQA-USMLE 및 StrategyQA에 대한 백본 언어 모델로는 BioLinkBERT-base와 LinkBERT-base [56]을 각각 사용한다. 리 랭커 트레이닝을 위해, 효율적인 트레이닝을 위해 LoRA[19]를 활용한다. 하이퍼파라미터는 \(\tau_{1}=1\)과 \(\tau_{2}=100\)으로 설정하였다. 모든 데이터 세트에 대해 AdamW 최적화기와 학습률 \(10^{-4}\)을 사용하여 배치 크기가 16인 3개의 에폭에 대한 리랭커를 학습한다. MedQA-USMLE는 \(\kappa_{1}=8,\kappa_{2}=0\), StrategyQA와 OpenbookQA는 \(\kappa_{1}=4,\kappa_{2}=4\)으로 설정하였다.
+
+섹션 5.3** DAPT를 사용한 실험에서 추론 증류 전에 추가 사전 훈련의 영향을 평가하기 위해 도메인 적응형 사전 훈련[15]을 수행한다. 우리는 원래 T5 및 프롬프트 튜닝 논문에서 논의된 LM 목표에 대해 Flann-T5 기본 모델을 추가로 사전 훈련한다[45; 31]. 우리는 이 실험을 위해 두 개의 다른 말뭉치를 사용한다. 하나는 PubMed에 업로드된 생의학 논문에서 추출한 1.8개의 초록을 포함하는 PubMed 초록 3이다. 또 다른 하나는 생명의학 지식을 포함하는 위키피디아 구절의 하위 집합인 MedWiki이다[35]. 또한, AdamW 최적화기와 학습률 \(10^{-4}\)을 이용하여 배치 크기가 128인 3개의 에폭에 대한 모델을 학습하였다.
+
+각주 3: [https://huggingface.co/datasets/ywchoi/pubmed_abstract_0](https://huggingface.co/datasets/ywchoi/pubmed_abstract_0)
+
+## 부록 C More Analysis
+
+### Retriever 및 Knowledge Base
+
+주요 실험에서 BM25[46]를 검색기로 사용하고 위키피디아를 지식 기반으로 사용한다. 이러한 선택과 관련하여 몇 가지 질문이 발생합니다. (1) 조밀한 검색기를 사용하는 것이 희박한 검색기보다 더 많은 이점을 제공합니까? (2) 영역별 지식베이스를 활용하는 것이 일반 지식베이스보다 더 많은 이점을 제공하는가?
+
+이러한 문제를 해결하기 위해 검색기 및 지식 기반 선택에 대한 분석을 수행한다. 먼저, 외부 지식 베이스를 전문 지식이 포함된 공개된 의학 논문의 초록으로 구성된 Pubmed 초록 말뭉치4로 대체한다. 한편, 지식베이스는 위키피디아(Wikipedia)로 유지하지만, BM25 검색기는 오픈 도메인 질의 응답 태스크에서 인기 있는 고밀도 검색기 중 하나인 DPR[25]로 대체한다.
+
+각주 4: [https://pubmed.ncbi.nlm.nih.gov/](https://pubmed.ncbi.nlm.nih.gov/)
+
+<표 8>에서는 분석 결과를 제시한다. 우리는 PubMed의 사용이 위키피디아에 비해 성능 향상을 가져오지 않는다는 것을 관찰한다. PubMed의 은 지식을 사용하는 것이 위키피디아의 은 지식을 사용하는 것보다 우수한 성능을 산출한다는 점을 고려할 때 리랭커와 PubMed 코퍼스를 통합하는 것이 잠재적으로 추가 개선을 가져올 수 있다고 추측하지만, 향후 작업으로 남겨둔다. 더욱이, DPR을 사용하는 것은 오히려 성능 저하를 초래한다. 우리는 DPR이 주로 개방형 QA 작업을 위해 설계되기 때문에 특정 작업에 일반화하는 데 어려움을 겪을 수 있다고 가정한다. 콘트리버[21]와 같은 보다 적응력 있는 검색기를 사용하는 것이 더 큰 이점을 제공할 수 있다는 것은 그럴듯하지만, 우리는 또한 이것을 향후 연구를 위한 수단으로 남겨둔다.
+
+### \(\kappa_{1}\) and \(\kappa_{2}\) for Reranker Training
+
+리랭커의 훈련(본 논문의 4.2절에 기술된 바와 같이)에서, 리랭커는 근거와 관련된 지문의 우선순위를 정하는 것을 배운다. 후보 집합의 구절들의 점수 \(\rho(\mathbf{d}|\mathbf{r}_{ij};\mathcal{D})\)를 소프트맥스를 통해 정규화한다. 따라서, 재순위자 \(f_{\phi}\)는 훈련 중에 후보 집합의 구절들 간의 상대적인 점수 \(f_{\phi}(\mathbf{d},\mathbf{x}_{i})\)를 학습한다. 계산적 제약들로 인해, 후보 세트 내의 통로들의 수는 제한된다. 결과적으로 각 후보집합 \(\tilde{\mathcal{D}}_{ij}\)에 어떤 구절이 포함되어야 하는지를 결정할 필요가 있다.
+
+후보 구절에 대한 두 가지 잠재적 출처가 있다. 한 가지 방법은 논리 \(r_{ij}\)을 질의로 사용하여 후보 구절을 검색하는 것이고, 다른 방법은 질문(입력 데이터) \(\mathbf{x}_{i}\)을 질의로 사용하는 것이다. 이는 순위자에게 추가 정보를 제공할 수 있기 때문에 두 접근법 모두에서 후보 구절을 결합하는 것을 고려하는 것이 직관적이다. 구체적으로, 리랭커는 질문과 유사도가 높은 지문과 유사도가 높은 지문의 차이를 학습할 수 있다.
+
+\begin{table}
+\begin{tabular}{c c c c} \hline \hline  & \multicolumn{3}{c}{**Flan-T5 Base**} \\ \cline{3-4} Retiever & Wikipedia & Pubmed \\ \hline BM25 & 33.14 & 31.58 \\ DPR & 29.77 & - \\ Reranker & **38.15** & **36.84** \\ \hline Silver (oracle) & 40.30 & 45.48 \\ \hline \hline \end{tabular}
+\end{table}
+표 8: 리트리버에 대한 분석.
+
+합리적이지 이 트레이닝 셋업은 리랭킹자가 추론 시간 동안 질문으로부터 검색된 구절들 중 근거와 더 관련성이 높은 구절들을 질의로서 우선순위화할 수 있게 한다.
+
+구현에서는 후보 크기를 8로 고정하면서 하이퍼파라미터 \(\kappa_{1}\)과 \(\kappa_{2}\)을 조정하여 후보 집합의 구성을 제어할 수 있다. 표 9에서는 Flan-T5 기반 모델로 태스크 정확도를 측정하여 두 값이 리랭커 성능에 미치는 영향을 분석한다. 우리는 후보 집합을 구성하기 위해 질문과 관련된 구절에만 의존하는 것이 어떤 구절이 근거와 효과적으로 관련이 있는지 배우는 리랭커의 능력을 방해하기 때문에 실행 가능한 접근법이 아님을 관찰한다.
+
+### KARD 훈련에 사용되는 지식(\(\hat{\mathcal{D}}_{ij}\))
+
+소형 LM에 대한 추론 능력을 향상시키기 위해서는 소형 LM이 큰 언어 모델에서 얻은 근거를 생성하는 데 도움이 되는 적절한 지식을 포함하는 구절을 검색하는 것이 중요하다. 주어진 근거와 관련된 구절을 검색하는 데 초점을 맞추어, 근거 자체를 검색을 위한 질의로 활용하는 것이 직관적이다. 이 직관을 경험적으로 검증하기 위해, 우리는 훈련 중에 질문을 검색의 질의로 사용하고, \(\texttt{topk}(\rho(\mathbf{d}|\mathbf{x}_{i};\mathcal{D}),k)\)로 표기된 구절을 검색한다. 표 10에서 훈련 중 질문과 관련된 지문을 사용하는 것이 실제로 성능 저하로 이어진다는 경험적 증거를 제시하는데, 이러한 지문은 근거를 생성하는 데 필요한 지식을 포함할 가능성이 매우 낮기 때문이다.
+
+### 실패 사례 예제
+
+본 논문의 6.1절에서는 고장 사례에 대한 분석을 제공한다. 이 섹션에서는 실패 사례의 각 범주에 대한 예를 보여준다.
+
+첫 번째 범주는 리랭킹자가 근거를 생성하는 데 필요한 관련 지식을 검색하지 못하는 경우를 포함한다. <표 16>에서는 제1범주에 해당하는 실패 사례의 예를 제시한다. 이 예에서, 리랭커는 정확한 근거를 생성하는 데 필요한 관련 패시지를 검색하지 못한다. 따라서 소형 언어 모델(LM)은 환각을 포함하는 근거를 생성하는데, 이는 사실적으로 잘못된 알레르기 결막염에 가장 적합한 치료법으로 따뜻한 압축을 제안한다.
+
+두 번째 범주는 재순위자가 ChatGPT로부터 금의 근거로부터 얻은 은의 통로인 관련 통로를 성공적으로 회수한 경우이다. 표 17에 예시된 예에서, 검색된 구절은 답변 옵션들 중 하나인 폐 혼동에 관한 정보를 포함한다. 작은 LM이 주어진 통과를 정확하게 이해한다면, 상승된 폐 모세관 쐐기 압력과 트로포닌은 폐 혼동과 관련이 없고 오히려 심장 타박상과 관련이 있기 때문에 폐 혼동이 정답이 아님을 인식해야 한다. 그러나 KARD로 교육을 받았음에도 불구하고 작은 LM은 이러한 지식을 기반으로 추론하지 못하여 잘못된 근거가 생성된다.
+
+또한, 전략QA에서 실패한 사례의 예도 제공한다. MedQA-USMLE와 달리 StrategyQA의 실패 사례는 대부분 리랭커가 실패하는 첫 번째 범주에 속한다. 이는 StrategyQA 질문이 답하기 위해 복잡하고 다양한 지식의 출처를 필요로 하는 경우가 많기 때문이다.
+
+표 18에서는 첫 번째 범주에 해당하는 예를 제시한다. 질문은 파워퍼프 걸스의 색채 구성뿐만 아니라 아제르바이잔 깃발의 배경색에 대한 지식을 요구한다. 그러나 재순위자는 일본의 깃발과 관련된 구절을 검색하여 주어진 질문에 답하는 데 도움이 되지 않는다.
+
+<표 19>에서는 StrategyQA에서 보기 드문 두 번째 범주에 속하는 경우를 보여준다. 이 예에서, 리랭커는 인간 천골에서 융합된 척추의 수에 관한 정보를 포함하는 통로를 성공적으로 검색한다. 그러나 소규모 LM은 검색된 구절을 이해할 수 없기 때문에 질문에 답하지 못한다. 더욱이, 질문은 알래스카 말라뮤트의 천골에 있는 융합된 척추의 수에 대한 추가 지식을 필요로 하기 때문에, 특히 작은 LM이 이 특정 도메인에 대한 고유 지식이 부족한 경우 이용 가능한 지식만으로 질문에 답하는 것은 어렵다.
+
+Broader Impact
+
+제안된 방법은 지식 집약적 추론을 포함하는 태스크에서 작은 언어 모델의 성능을 향상시키는 것을 목표로 한다. 본 논문의 섹션 5에서 입증된 바와 같이, 우리의 방법은 의료 분야와 같은 전문적인 지식이 필요한 영역에서 유익하다.
+
+그러나 실제 임상 응용 분야에서 우리의 방법과 함께 작은 언어 모델을 사용할 때 주의를 기울이는 것이 중요하다. 본 논문의 섹션 6과 섹션 C.4에서 명시적으로 언급했듯이 이러한 모델은 사실적으로 잘못된 진술을 생성할 가능성이 있다. 따라서 제안된 방법을 사용하여도 이러한 맥락에서 작은 언어 모델을 사용할 때 철저한 주의와 세심한 고려가 필요하다.
+
+실제 임상 환경에서 광범위하게 검증되지 않은 대규모 언어 모델도 주의해서 사용해야 한다는 점에 주목할 필요가 있다. 부정확한 정보를 생성할 수 있는 가능성은 다양한 언어 모델에 걸쳐 존재하며 임상 사이트에서의 배포는 신중한 고려와 검증으로 접근해야 한다[48; 41; 40].
+
+**질문:** 22세 남성 마라톤 선수는 장거리 달리기를 할 때 오른쪽 갈비뼈 통증을 호소 하 여 사무실에 제시 합니다. 신체 검사에서 정상적인 심장 및 폐 소견과 오른쪽 갈비뼈 4-5에서 호기 기능 장애가 나타난다. 직접적인 방법으로 이 기능 장애를 교정하는 데 가장 유용한 근육군이나 근육군은 다음과 같다.
+
+(A) anterior scalene (B) latissimus dorsi (C) pectoralis minor (D) quadratus lumborum
+
+**Answer:** (C)
+
+설명: 우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 옵션 중 3번째에서 5번째 갈비뼈의 외부 표면에서 작은 가슴 근육 출처만 있다.
+
+**질문:** 36세 남성이 3주 동안 요통의 병력이 있는 사무실에 나타납니다. 그는 최근의 트라우마를 부인하지만, 자신의 일을 위해 하루에 여러 번 트럭을 들락날락 한다고 말한다. 엎드린 자세에서 환자를 검사하면 왼쪽의 깊은 천골 고랑, 오른쪽의 후방 하부 측면 각도, 압박 시 자유롭게 스프링하는 요천골 접합부가 나타난다. 상기 가장 가능성 있는 진단은,
+
+(A) 좌측-좌측 천골 비틀림 (B) 좌측-우측 천골 비틀림 (C) 우측 편측 천골 굴곡 (D) 우측-우측 천골 비틀림
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 왼쪽의 깊은 고랑, 오른쪽의 후방 ILA, 음성 스프링 테스트를 통해 오른쪽에서 오른쪽 천골 비틀림을 시사한다. 다른 모든 옵션에는 오른쪽에 깊은 고랑이 있습니다.
+
+**질문:** 44세 남성이 3일의 인후통, 비생산적인 기침, 콧물 및 전두통의 병력으로 인해 사무실에 옵니다. 그는 아침에 두통이 더 심하고 이부프로펜이 약간의 안정을 준다고 말한다. 그는 숨이 가쁘지 않았다. 병력은 눈에 띄지 않는다. 그는 진통제로 이부프로펜 외에 다른 약은 복용하지 않는다. 활력 징후는 온도 37.4degC(99.4degF), 맥박 88/분, 호흡 18/분 및 혈압 120/84 mm Hg이다. 콧구멍을 검사하면 홍반성 점막이 나타난다. 인후를 검사한 결과 후두엽에 홍반과 여포 림프구 증식이 나타났다. 눈에 띄는 자궁경부 선병증은 없다. 폐는 청진하기에 명확하다. 다음 중 이 환자의 증상의 가장 가능성 있는 원인은 무엇인가?
+
+(A) 알레르기 비염 (B) 엡스타인-바 바이러스 (C) 마이코플라스마 폐렴 (D) 라이노바이러스
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 증상, 특히 두통은 가장 가능성이 높은 원인이 라이노바이러스임을 시사한다. 엡스타인-바 바이러스는 림프절 부종을 일으키지만 눈에 띄는 자궁경부 선병증은 없다. 청진상 폐는 마이코플라스마 폐렴이 아님을 알 수 있다.
+
+**질문:** 이전에 건강했던 32세 여성이 남편이 자동차 사고로 사망한 지 8개월 후에 의사에게 옵니다. 그 이후로, 그녀는 식욕이 떨어지고 잠드는 데 어려움을 겪었다. 그녀는 종종 슬프고 자주 운다고 말한다. 그녀는 집을 떠나기 전에 문 잠금 장치를 다섯 번 재점검했고, 사용하기 전에 화장지 다섯 장을 정확히 세야 했습니다. 그녀는 항상 완벽주의자였지만 이러한 충동과 의식은 새롭다고 말한다. 약물 요법은 다음 신경 전달 물질 중 어떤 것을 대상으로 해야 하는가?
+
+(A) 도파민(B) 글루타메이트(C) 노르에피네프린프린(D) 세로토닌
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 환자는 슬프고 옵션 중 도파민과 세로토닌만이 긍정적인 감정을 증가시키는 데 도움이 될 수 있다. 세로토닌은 소화 및 신진대사에 영향을 미쳐 환자의 식욕 감소와 수면 곤란에 도움을 줄 수 있다.
+
+**질문:** 42세 남성이 2주 후에 부신 절제술을 받기 전에 수술 전 평가를 위해 사무실에 옵니다. 한 달 전, 그는 자동차 충돌 후 오른쪽 옆구리 통증으로 응급실에서 치료를 받았다. 당시 혈압은 160/100 mm Hg였으며 복부의 CT 스캔에서 부수적인 10 cm 왼쪽 부신 종괴가 나타났다. 전체 혈구 수, 혈청 전해질 농도 및 간 기능 검사를 포함한 실험실 연구 결과는 기준 범위 내에 있었다. 그렇지 않으면 환자는 건강했고 혈압이 상승했다는 말을 들은 적이 없었다. 그는 약을 먹지 않는다. 2주 전 사무실에 대한 후속 방문에서 소변 모르테나프린과 메타네프린 및 혈장 알도스테론 농도가 상승했다고 밝혔다. 환자는 부신 절제술을 권하는 외과의사에게 의뢰되었다. 오늘날 활력 징후는 온도 36.6degC(97.9degF), 맥박 100/분, 호흡 14/분, 혈압 170/95 mm Hg이다. 신체 검사는 유의미한 결과를 공개하지 않는다. 초기 수술 전 준비에는 다음 중 어느 것을 사용한 치료가 포함되어야 한다.
+
+(A) 라베탈롤 (B) 염화칼륨 (C) 니페디핀 (D) 페녹시벤즈아민의 부하량
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 증상과 부신 종괴는 갈색세포종을 의미하고 혈압은 고혈압을 나타낸다. 페녹시벤즈아민은 갈색세포종에 의한 고혈압 치료에 사용된다.
+
+**질문:** [질문] **답변:** [답변] **설명:**
+
+\begin{table}
+\begin{tabular}{p{284.5pt}} \hline The following are multiple-choice questions about medical knowledge. Generate a detailed step-by-step explanation for each question and answer. \\
+**질문:** 22세 남성 마라톤 선수는 장거리 달리기를 할 때 오른쪽 갈비뼈 통증을 호소 하 여 사무실에 제시 합니다. 신체 검사에서 정상적인 심장 및 폐 소견과 오른쪽 갈비뼈 4-5에서 호기 기능 장애가 나타난다. 직접적인 방법으로 이 기능 장애를 교정하는데 가장 유용한 근육군이나 근육군은 무엇인가? \\
+
+(A) anterior scalene (B) latissimus dorsi (C) pectoralis minor (D) quadratus lumborum
+
+**Answer:** (C)
+
+설명: 우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 옵션 중 3번째 갈비뼈에서 5번째 갈비뼈의 외부 표면에서 작은 가슴근 출처만 있다. \\
+**질문:** 36세 남성이 3주 동안 요통의 병력이 있는 사무실에 나타납니다. 그는 최근의 트라우마를 부인하지만, 자신의 일을 위해 하루에 여러 번 트럭을 들락날락 한다고 말한다. 엎드린 자세에서 환자를 검사하면 왼쪽의 깊은 천골 고랑, 오른쪽의 후방 하부 측면 각도, 압박 시 자유롭게 스프링하는 요천골 접합부가 나타난다. 가장 가능성이 높은 진단은 \\
+
+(A) 좌측-좌측 천골 비틀림 (B) 좌측-우측 천골 비틀림 (C) 우측 편측 천골 굴곡 (D) 우측-우측 천골 비틀림
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 왼쪽의 깊은 고랑, 오른쪽의 후방 ILA, 음성 스프링 테스트를 통해 오른쪽에서 오른쪽 천골 비틀림을 시사한다. 다른 모든 옵션에는 오른쪽에 깊은 고랑이 있습니다. \\
+**질문:** 44세 남성이 3일의 인후통, 비생산적인 기침, 콧물 및 전두통의 병력으로 인해 사무실에 옵니다. 그는 아침에 두통이 더 심하고 이부프로펜이 약간의 안정을 준다고 말한다. 그는 숨이 가쁘지 않았다. 병력은 눈에 띄지 않는다. 그는 진통제로 이부프로펜 외에 다른 약은 복용하지 않는다. 활력 징후는 온도 37.4degC(99.4degF), 맥박 88/분, 호흡 18/분 및 혈압 120/84 mm Hg이다. 콧구멍을 검사하면 홍반성 점막이 나타난다. 인후를 검사한 결과 후두엽에 홍반과 여포 림프구 증식이 나타났다. 눈에 띄는 자궁경부 선병증은 없다. 폐는 청진하기에 명확하다. 다음 중 이 환자의 증상의 가장 유력한 원인은 무엇인가? \\
+
+(A) 알레르기 비염 (B) 엡스타인-바 바이러스 (C) 마이코플라스마 폐렴 (D) 라이노바이러스
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 증상, 특히 두통은 가장 가능성이 높은 원인이 라이노바이러스임을 시사한다. 엡스타인-바 바이러스는 림프절 부종을 일으키지만 눈에 띄는 자궁경부 선병증은 없다. 청진상 폐는 마이코플라스마 폐렴이 아님을 시사한다.
+
+**질문:** 이전에 건강했던 32세 여성이 남편이 자동차 사고로 사망한 지 8개월 후에 의사에게 옵니다. 그 이후로, 그녀는 식욕이 떨어지고 잠드는 데 어려움을 겪었다. 그녀는 종종 슬프고 자주 운다고 말한다. 그녀는 집을 떠나기 전에 문 잠금 장치를 다섯 번 재점검했고, 사용하기 전에 화장지 다섯 장을 정확히 세야 했습니다. 그녀는 항상 완벽주의자였지만 이러한 충동과 의식은 새롭다고 말한다. 약초 요법은 다음 신경 전달 물질 중 어느 것을 대상으로 해야 합니까? \\
+
+(A) 도파민(B) 글루타메이트(C) 노르에피네프린프린(D) 세로토닌
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 환자는 슬프고 옵션 중 도파민과 세로토닌만이 긍정적인 감정을 증가시키는 데 도움이 될 수 있다. 세로토닌은 또한 소화 및 신진대사에 영향을 미치며, 이는 환자의 식욕 감소와 수면 곤란에 도움이 될 수 있다.
+
+**질문:** 42세 남성이 2주 후에 부신 절제술을 받기 전에 수술 전 평가를 위해 사무실에 옵니다. 한 달 전, 그는 자동차 충돌 후 오른쪽 옆구리 통증으로 응급실에서 치료를 받았다. 당시 혈압은 160/100 mm Hg였으며 복부의 CT 스캔에서 부수적인 10 cm 왼쪽 부신 종괴가 나타났다. 전체 혈구 수, 혈청 전해질 농도 및 간 기능 검사를 포함한 실험실 연구 결과는 기준 범위 내에 있었다. 그렇지 않으면 환자는 건강했고 혈압이 상승했다는 말을 들은 적이 없었다. 그는 약을 먹지 않는다. 2주 전 사무실에 대한 후속 방문에서 소변 모르테나프린과 메타네프린 및 혈장 알도스테론 농도가 상승했다고 밝혔다. 환자는 부신 절제술을 권하는 외과의사에게 의뢰되었다. 오늘날 활력 징후는 온도 36.6°C(97.9°F), 맥박 100분, 호흡 14분, 혈압 170/95 mm Hg이다. 신체 검사는 유의미한 결과를 공개하지 않는다. 초기 수술 전 준비에는 다음 중 어느 것을 사용한 치료가 포함되어야 하나요? \\
+
+(A) 라베탈롤 (B) 염화칼륨 (C) 니페디핀 (D) 페녹시벤즈아민의 부하량
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 증상과 부신 종괴는 갈색세포종을 의미하고 혈압은 고혈압을 나타낸다. 페녹시벤즈아민은 갈색세포종에 의한 고혈압 치료에 사용된다.
+
+**질문:** [질문] **답변:** [답변] **설명:**
+
+\begin{table}
+\begin{tabular}{p{284.5pt}} \hline The following are multiple-choice questions about medical knowledge. Generate a detailed step-by-step explanation for each question and answer. \\
+**질문:** 22세 남성 마라톤 선수는 장거리 달리기를 할 때 오른쪽 갈비뼈 통증을 호소 하 여 사무실에 제시 합니다. 신체 검사에서 정상적인 심장 및 폐 소견과 오른쪽 갈비뼈 4-5에서 호기 기능 장애가 나타난다. 직접적인 방법으로 이 기능 장애를 교정하는데 가장 유용한 근육군이나 근육군은 무엇인가? \\
+
+(A) anterior scalene (B) latissimus dorsi (C) pectoralis minor (D) quadratus lumborum
+
+**Answer:** (C)
+
+설명: 우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 옵션 중 3번째 갈비뼈에서 5번째 갈비뼈의 외부 표면에서 작은 가슴근 출처만 있다. \\
+**질문:** 36세 남성이 3주 동안 요통의 병력이 있는 사무실에 나타납니다. 그는 최근의 트라우마를 부인하지만, 자신의 일을 위해 하루에 여러 번 트럭을 들락날락 한다고 말한다. 엎드린 자세에서 환자를 검사하면 왼쪽의 깊은 천골 고랑, 오른쪽의 후방 하부 측면 각도, 압박 시 자유롭게 스프링하는 요천골 접합부가 나타난다. 가장 가능성이 높은 진단은 \\
+
+(A) 좌측-좌측 천골 비틀림 (B) 좌측-우측 천골 비틀림 (C) 우측 편측 천골 굴곡 (D) 우측-우측 천골 비틀림
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 왼쪽의 깊은 고랑, 오른쪽의 후방 ILA, 음성 스프링 테스트를 통해 오른쪽에서 오른쪽 천골 비틀림을 시사한다. 다른 모든 옵션에는 오른쪽에 깊은 고랑이 있습니다. \\
+**질문:** 44세 남성이 3일의 인후통, 비생산적인 기침, 콧물 및 전두통의 병력으로 인해 사무실에 옵니다. 그는 아침에 두통이 더 심하고 이부프로펜이 약간의 안정을 준다고 말한다. 그는 숨이 가쁘지 않았다. 병력은 눈에 띄지 않는다. 그는 진통제로 이부프로펜 외에 다른 약은 복용하지 않는다. 활력 징후는 온도 37.4°C(99.4°F), 맥박 88/분, 호흡 18/분 및 혈압 120/84 mm Hg이다. 콧구멍을 검사하면 홍반성 점막이 나타난다. 인후를 검사한 결과 후두엽에 홍반과 여포 림프구 증식이 나타났다. 눈에 띄는 자궁경부 선병증은 없다. 폐는 청진하기에 명확하다. 다음 중 이 환자의 증상의 가장 유력한 원인은 무엇인가? \\
+
+(A) 알레르기 비염 (B) 엡스타인-바 바이러스 (C) 마이코플라스마 폐렴 (D) 라이노바이러스
+
+**Answer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 증상, 특히 두통은 가장 가능성이 높은 원인이 라이노바이러스임을 시사한다. 엡스타인-바 바이러스는 림프절 부종을 일으키지만 눈에 띄는 자궁경부 선병증은 없다. 청진상 폐는 마이코플라스마 폐렴이 아님을 시사한다.
+
+**질문:** 이전에 건강했던 32세 여성이 남편이 자동차 사고로 사망한 지 8개월 후에 의사에게 옵니다. 그 이후로, 그녀는 식욕이 떨어지고 잠드는 데 어려움을 겪었다. 그녀는 종종 슬프고 자주 운다고 말한다. 그녀는 집을 떠나기 전에 문 잠금 장치를 다섯 번 재점검했고, 사용하기 전에 화장지 다섯 장을 정확히 세야 했습니다. 그녀는 항상 완벽주의자였지만 이러한 충동과 의식은 새롭다고 말한다. 약초 요법은 다음 신경 전달 물질 중 어느 것을 대상으로 해야 합니까? \\
+
+(A) 도파민(B) 글루타메이트(C) 노르에피네프린프린(D) 세로토닌
+
+**Asswer:** (D)
+
+**설명:** 도움말은 약물에 대 한 위키피디아 기사를 참조 합니다. 는,
+
+\begin{table}
+\begin{tabular}{p{142.3pt}} \hline \hline The following are multiple choice questions (with answers). Generate a detailed step-by-step explanations for each question and answer. \\ \hline The following are multiple choice questions (with answers). Generate a detailed step-by-step explanations for each question and answer. \\ \hline
+**질문:** 태양은 (A) 강아지가 새로운 기술을 배우고 (B) 아이들이 성장하고 늙어가는 (C) 꽃을 꽃병 (D) 식물에서 발아, 개화 및 시들음 \\
+**답변:** (D) \\
+**Explanation:** We refer to basic knowledge about the effects of sun on living organisms. The sun provides the energy required for photosynthesis in plants, which allows them to sprout, bloom, and eventually wilt. The other options are not related to the effects of the sun. \\ \hline
+**질문:** 러쉬모어 산에서 멀리 떨어져 있을 때 (A) 산은 매우 가까워 보입니다 (B) 산은 지루합니다 (C) 산은 가까이에서와 동일하게 보입니다 (D) 산은 사진보다 작아 보입니다 \\
+**답변:** (D) \\
+**Explanation:** This question requires some basic knowledge about perspective and the way our eyes perceive distance. When we stand miles away from an object like Mount Rushmore, it appears smaller than it does in photographs because our eyes are capturing a smaller visual angle. Option (A) is incorrect because if the mountains seemed very close, we would not be standing miles away. Option (B) is subjective and not related to perceptual phenomena. Option (C) is untrue because when we are up close to Mount Rushmore, we can see details that we cannot see from far away. \\ \hline
+**질문:** 음식이 위장에서 감소하면 (A) 정신이 소화하는 데 시간이 필요합니다 (B) 내가 말한 것을 소화하는 데 시간이 걸립니다 (C) 영양소가 해체되고 있습니다 (D) 독자의 소화는 작업의 본문입니다 \\
+**답변:** (C) \\
+**Explanation:** This question requires basic knowledge about the digestive system. When food is in the stomach, it is broken down and deconstructed into nutrients that can be absorbed by the body. Option (A) is incorrect because the mind is not directly involved in the digestive process. Option (B) is a play on words and not related to digestion. Option (D) is a reference to a literary magazine and not related to the digestive process. \\ \hline
+**Question:** [question] Answer: [answer] Explanation:** \\ \hline \hline \end{tabular}
+\end{table}
+표 13: OpenbookQA[39]. 3-shot Chain-of-Thought prompt for rationale generation with ChatGPT[42].
+
+\begin{table}
+\begin{tabular}{p{142.3pt}} \hline \hline The following are multiple choice questions (with answers). Generate a detailed step-by-step explanation for each question and answer. \\ \hline
+**질문:** 태양은 (A) 강아지가 새로운 기술을 배우고 (B) 아이들이 성장하고 늙어가는 (C) 꽃을 꽃병 (D) 식물에서 발아, 개화 및 시들음 \\
+**답변:** (D) \\
+**Explanation:** We refer to basic knowledge about the effects of sun on living organisms. The sun provides the energy required for photosynthesis in plants, which allows them to sprout, bloom, and eventually wilt. The other options are not related to the effects of the sun. \\ \hline
+**질문:** 러쉬모어 산에서 멀리 떨어져 있을 때 (A) 산은 매우 가까워 보입니다 (B) 산은 지루합니다 (C) 산은 가까이에서와 동일하게 보입니다 (D) 산은 사진보다 작아 보입니다 \\
+**답변:** (D) \\
+**Explanation:** This question requires some basic knowledge about perspective and the way our eyes perceive distance. When we stand miles away from an object like Mount Rushmore, it appears smaller than it does in photographs because our eyes are capturing a smaller visual angle. Option (A) is incorrect because if the mountains seemed very close, we would not be standing miles away. Option (B) is subjective and not related to perceptual phenomena. Option (C) is untrue because when we are up close to Mount Rushmore, we can see details that we cannot see from far away. \\ \hline
+**질문:** 음식이 위장에서 감소하면 (A) 정신이 소화하는 데 시간이 필요합니다 (B) 내가 말한 것을 소화하는 데 시간이 걸립니다 (C) 영양소가 해체되고 있습니다 (D) 독자의 소화는 작업의 본문입니다 \\
+**답변:** (C) \\
+**Explanation:** This question requires basic knowledge about the digestive system. When food is in the stomach, it is broken down and deconstructed into nutrients that can be absorbed by the body. Option (A) is incorrect because the mind is not directly involved in the digestive process. Option (B) is a play on words and not related to digestion. Option (D) is a reference to a literary magazine and not related to the digestive process. \\ \hline
+**Question:** [question] Answer: [answer] Explanation:** \\ \hline \hline \end{tabular}
+\end{table}
+표 12: StrategyQA[14]. 0-shot Chain-of-Thinking 프롬프트[28] ChatGPT와 함께 근거 생성을 위한 프롬프트[42].
+
+**INPUT:**
+
+다음은 의료 지식에 대한 객관식 질문입니다. 각 질문에 대한 단계별 설명을 생성한다:
+
+**질문:** 임신 22주에 23세 임산부가 배뇨 시 화상을 입습니다. 그녀는 그것이 하루 전에 시작되었고 더 많은 물을 마시고 크랜베리 추출물을 복용했음에도 불구하고 악화되고 있다고 말한다. 그렇지 않으면 그녀는 기분이 좋아지고 임신을 위해 의사가 뒤따른다. 환자의 체온은 97.7\({}^{\circ}\)F (36.5\({}^{\circ}\)C), 혈압은 122/77 mmHg, 맥박은 80/분, 호흡은 19/분, 산소 포화도는 실내 공기에서 98%이다. 신체 검사는 늑골각 압통과 자궁이 없는 것으로 유명하다. 다음 중 이 환자에게 가장 좋은 치료법은 무엇입니까?
+
+A. Ampicillin B. Cetraixone C. Doxycycline D. Nitrofurantoin
+
+**지식:** 요로 감염입니다. 요로 감염은 신장 감염의 위험 증가로 인해 임신 중 더 우려된다. 임신 중 높은 프로게스테론 수치는 요관과 방광의 근육 긴장 감소 위험을 높이며, 이는 소변이 요관을 타고 신장 쪽으로 역류할 가능성이 더 높다. 임산부는 무증상 세균뇨의 위험이 증가하지 않지만, 세균뇨가 존재하는 경우 신장 감염의 위험이 25-40%이다. 따라서 소변 검사에서 감염의 징후가 나타나는 경우, 심지어 증상이 없는 경우에도 치료가 권장된다. 세팔렉신 또는 니트로푸란토인은 일반적으로 임신 시 안전한 것으로 간주되기 때문에 일반적으로 사용된다. 임신 중 신장 감염은 조산 또는 자간전증(발작을 유발할 수 있는 임신 중 고혈압 및 신장 기능 장애 상태)을 초래할 수 있다. 일부 여성들은 임신 중에 계속 돌아오는 요로감염을 가지고 있으며 현재 이러한 감염을 가장 잘 치료하는 방법에 대한 연구가 충분하지 않다.
+
+**Explanation:**
+
+**OUTPUT:**
+
+우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 환자는 임신 중이고, 이는 태아에 대한 위해의 위험 때문에 치료 옵션을 제한한다. 니트로푸란토인은 임신에 사용하기에 안전한 것으로 간주되며 단순 요로 감염에 효과적인 치료법이다. 암피실린과 세프트리악손은 일반적으로 요로감염 치료에 사용되지 않으며 독시사이클린은 임신 중 금기이다.
+
+**Answer:** D
+
+**INPUT:**
+
+다음은 객관식 질문입니다. 각 질문에 대한 단계별 설명을 생성한다:
+
+**질문:** 하와이의 요리가 비건에게 적합한가요?
+
+A. 그래 B. 아니
+
+**지식:** Mariana 제도의 요리입니다. 마리아나 제도의 요리는 주로 돼지고기, 가금류, 말고기 및 기타 육상 포유류의 고기를 포함한 육류 요리로 구성된다. 소비되는 일부 인기 있는 육상 동물에는 박쥐, 쥐, 쥐 및 도마뱀이 포함된다. 섬에 있는 대부분의 요리는 코코넛 오일로 요리됩니다. 자연스럽게, 섬의 주변 해역은 해산물을 또 다른 인기 있는 옵션으로 만듭니다. 일부 해산물에는 해삼, 고래 고기, 다양한 생선이 포함됩니다. 마리아나 섬의 요리는 이웃인 파파나, 하와이, 미국 요리의 영향을 많이 받는다고 한다.마리아나의 요리도 매우 국제적이다. 사람들은 김치 같은 많은 아시아 요리를 즐깁니다.
+
+**Explanation:**
+
+**OUTPUT:**
+
+하와이 요리에는 일반적으로 많은 해산물, 돼지고기 및 기타 유형의 고기가 포함됩니다. 이 재료는 동물성 재료이기 때문에 비건에게는 적합하지 않습니다. 과일, 야채, 곡물과 같은 하와이 요리에 식물성 옵션이 있을 수 있지만 대부분의 요리는 비건 친화적이지 않습니다. 따라서, 정답은 (B) 아니오이다.
+
+**Answer:** B
+
+\begin{table}
+\begin{tabular}{l} \hline
+**INPUT:** \\ 다음은 객관식 질문입니다. 각 질문에 대한 단계별 설명을 생성한다:
+
+**질문:** 하와이의 요리가 비건에게 적합한가요?
+
+A. 그래 B. 아니
+
+**지식:** Mariana 제도의 요리입니다. 마리아나 제도의 요리는 주로 돼지고기, 가금류, 말고기 및 기타 육상 포유류의 고기를 포함한 육류 요리로 구성된다. 소비되는 일부 인기 있는 육상 동물에는 박쥐, 쥐, 쥐 및 도마뱀이 포함된다. 섬에 있는 대부분의 요리는 코코넛 오일로 요리됩니다. 자연스럽게, 섬의 주변 해역은 해산물을 또 다른 인기 있는 옵션으로 만듭니다. 일부 해산물에는 해삼, 고래 고기, 그리고 다양한 생선이 포함됩니다. 마리아나 섬의 요리는 이웃 파파나, 하와이, 미국 요리의 영향을 많이 받는다고 한다.마리아나의 요리 또한 매우 국제적이다. 사람들은 김치 같은 많은 아시아 요리를 즐깁니다.
+
+**Explanation:**
+
+**OUTPUT:**
+
+하와이 요리에는 일반적으로 많은 해산물, 돼지고기 및 기타 유형의 고기가 포함됩니다. 이 재료는 동물성 재료이기 때문에 비건에게는 적합하지 않습니다. 과일, 야채, 곡물과 같은 하와이 요리에 식물성 옵션이 있을 수 있지만 대부분의 요리는 비건 친화적이지 않습니다. 따라서, 정답은 (B) 아니오이다.
+
+**Answer:** B
+
+\end{table}
+표 14: MedQA-USMLE [23]의 KARD(training)에 대한 입력 및 출력 예시.
+
+**질문**: 35세 남성이 지난 일주일 동안 가렵고 물이 많은 눈으로 인해 의사에게 옵니다. 그는 또한 이 기간 동안 하루에 여러 번 재채기를 하고 있다. 그는 1년 전 봄 즈음에 비슷한 에피소드를 가졌다. 그는 철 결핍성 빈혈과 강직성 척추염을 가지고 있다. 현재 약물로는 황산제일철, 인공 눈물 방울, 인도메타신 등이 있다. 그는 초등학교 교사로 일한다. 그의 활력 징후는 정상 범위 내에 있다. 시력은 교정 없이 20/20입니다. 신체 검사에서 양측 결막 주입과 수분이 배출되는 것으로 나타났다. 동공은 3mm이고 동일하며 빛에 반응합니다. 안구의 전방을 검사하는 것은 주목할 만한 일이 아니다. 다음 중 어떤 것이 가장 적절한 치료인가요? (A) 에리트로마이신 오일제(B) **케토피엔 점안제** (C) 온압착제(D) 플루오로메톨론 점안제
+
+우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 증상은 알레르기 결막염을 암시하며, 가장 적절한 치료는 편안함과 완화를 위한 따뜻한 압박이다. 세균성 결막염에는 에리트로마이신 연고가, 녹내장에는 케토이피엔 안약이, 건성안에는 플루오로메톨론 안약이 쓰인다. Answer: C
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline
+**Question**: A 35-year-old man comes to the physician because of itchy, watery eyes for the past week. He has also been sneezing multiple times a day during this period. He had a similar episode 1 year ago around springtime. He has iron deficiency anemia and ankylosing spondylitis. Current medications include ferrous sulfate, artificial tear drops, and indomethacin. He works as an elementary school teacher. His vital signs are within normal limits. Visual acuity is 20/20 without correction. Physical examination shows bilateral conjunctival injection with watery discharge. The pupils are 3 mm, equal, and reactive to light. Examination of the anterior chamber of the eye is unremarkable. Which of the following is the most appropriate treatment? (A) Erythromycin oiltment (B) **Kettoffien eye drops** (C) Warm compresses (D) Fluorometholone eye drops \\ \hline \hline \end{tabular}
+\begin{tabular}{l l} \hline \hline
+**KARD** & **Mansonella perstans**. 2001년 5월 차드 남부의 고운디선교병원 외래에 36세 남자가 입원하여 좌측 눈의 시각장애, 안구 및 복부 소양감, 복통을 호소하였다. 그는 이전에 "M. 퍼스탄스"에 대해 DEC로 치료받은 적이 있다. 감염은 그의 방문 5개월 전에 발생했다. 오전 11시에 혈액 샘플을 채취하고 기엠사 용액으로 염색된 두꺼운 혈액 필름으로 현미경으로 검사했다. 두꺼운 혈액 필름은 “M. perstans”의 존재를 드러냈다. 그리고 다른 기생충은 발견되지 않았다. 그는 3\(\%\)의 호산구를 가지고 있었다. 시력검사 결과 좌안은 4/10로, 우안은 9/10로 시력이 감소하였다. (...) \\
+**Gold** & **Emedastine. Emedastine (trade name Emadine)** is a second generation antihistamine used in eye drops to alleviate the symptoms of allergic conjunctivitis. It acts as a H receptor antagonist. It works by blocking the action of histamine that causes allergic symptoms. It is used in form of the difumarate. The emedastine difumarate is a white, crystalline, water-soluble fine powder. Emedastine eye drops is usually applied twice a day to the affected eye. When the patients with allergic conjunctivitis were treated with 0.05\(\%\) emedastine difumarate ophthalmic solution for six weeks, the signs and symptoms such as redness, itching and swelling of the eyes were relieved. Emedastine appears to be devoid of effects on adrenergic, dopaminergic and serotonin receptors. This drug was developed by Alcon, which is global medical company specializing in eye care products.** \\ \hline \hline \end{tabular}
+\end{table}
+표 16: **MedQA-USMLE Example of Failure Case (_first category_). Flan-T5 XL 모델과 KARD 및 재배치기에서 생성된 출력을 ChatGPT의 금 정확한 근거와 비교한다. 답은 파란색이다. 생성된 근거에서 환각을 노란색으로 표시하고 생성된 근거에서 사실적으로 올바른 진술과 구절에서 뒷받침하는 사실을 빨간색으로 강조합니다. **
+
+**질문:** 27세 남성이 자동차 충돌 후 응급실에 제출합니다. 환자는 충돌 시 머리의 앞좌석 무구속 운전자였다. 환자의 심초음파(ECG)는 동성 빈맥에 대해서만 주목할 만하다. 그의 체온은 99.5\({}^{\circ}\)F (37.5\({}^{\circ}\)C), 혈압은 107/58 mmHg, 맥박은 120/분, 호흡은 17/분, 산소 포화도는 실내 공기에서 98\(\%\)이다. 환자는 링거 젖산염 용액 2 리터와 모르핀을 투여받는다. 초기 정밀 검사는 환자의 폐 모세관 쐐기 압력과 트로포닌이 상승했음을 보여준다. 그 환자는 현재 가슴 통증을 호소하고 있다. 신체검사는 흉벽에 삐걱거리는 불편한 젊은이로 유명하다. 다음 중 가장 가능성이 높은 진단은 무엇입니까? **(A) 심장 타박상** (B) 출혈 (C) 폐 타박상 (D) 타코쓰보 심근병증
+
+**Retrieved Passage**
+
+**Outputs**
+
+**KARD**
+
+**폐 타박상**. 폐 타박상으로도 알려진 폐 타박상은 흉부 외상으로 인한 폐의 멍이다. 모세혈관 손상의 결과로 혈액과 다른 체액이 폐 조직에 축적된다. 과량의 유체는 가스 교환을 방해하여 잠재적으로 부적절한 산소 수준(저산소증)을 유발한다. 폐 손상의 또 다른 유형인 폐 열상과 달리 폐 타박상은 폐 조직의 절단 또는 파열을 포함하지 않는다. 폐 타박상은 일반적으로 둔기에 의해 직접 유발되지만 관통 외상과 관련된 폭발 부상 또는 충격파로 인해 발생할 수도 있다. 제1차 세계대전과 제2차 세계대전 동안 폭발물을 사용함으로써, 폭발로 인한 폐 타박상이 여전히 인식되었다. 1960년대에 민간인에서의 발생은 더 넓은 인정을 받기 시작했으며, 이 경우 일반적으로 교통사고로 인해 발생한다. 안전 벨트와 에어백을 사용하면 차량 탑승자의 위험을 줄일 수 있습니다. 진단은 부상의 원인을 연구하고 신체 검사와 흉부 방사선 촬영을 통해 이루어진다. 대표적인 징후와 증상으로는 흉통, 혈액 기침 등 신체적 외상의 직접적인 영향뿐만 아니라 청색증 등 신체가 충분한 산소를 공급받지 못하고 있다는 징후도 있다. 타박상은 종종 지지적인 보살핌으로 저절로 치유된다.
+
+**Gold**
+
+폐 타박상 폐 타박상으로도 알려진 폐 타박상은 흉부 외상으로 인한 폐의 멍이다. 모세혈관 손상의 결과로 혈액과 다른 체액이 폐 조직에 축적된다. 과량의 유체는 가스 교환을 방해하여 잠재적으로 부적절한 산소 수준(저산소증)을 유발한다. 폐 손상의 또 다른 유형인 폐 열상과 달리 폐 타박상은 폐 조직의 절단 또는 파열을 포함하지 않는다. 폐 타박상은 일반적으로 둔기에 의해 직접 유발되지만 관통 외상과 관련된 폭발 부상 또는 충격파로 인해 발생할 수도 있다. 제1차 세계 대전과 제2차 세계 대전 동안 폭발물을 사용함으로써, 폭발로 인한 폐 타박상이 인식되었다. 1960년대에 민간인에서의 발생은 더 넓은 인정을 받기 시작했으며, 이 경우 일반적으로 교통사고로 인해 발생한다. 안전 벨트와 에어백을 사용하면 차량 탑승자의 위험을 줄일 수 있습니다. 진단은 부상의 원인을 연구하고 신체 검사와 흉부 방사선 촬영을 통해 이루어진다. 전형적인 징후와 증상에는 청색증과 같은 물리적 외상의 직접적인 영향이 포함된다. 타박상은 종종 지지적인 보살핌으로 저절로 치유된다.
+
+우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 자동차 충돌과 상승된 폐 모세관 쐐기 압력 및 트로포닌에서 앞좌석 비구속 운전자의 병력은 폐 혼동을 가장 가능성 있는 진단으로 시사한다. 심장 타박상이나 출혈은 ECG 변화 및 ECG 변화와 같은 추가 증상을 다른 패턴으로 제시했을 것이며, 타코츠보 심근병증은 일반적으로 흉부 외상이나 ECG 변화와 관련이 없다. 정답 C
+
+**Gall**
+
+우리는 도움을 위해 의학에 관한 위키피디아 기사를 참조한다. 환자의 높은 트로포닌과 폐 모세혈관 쐐기 압력과 흉벽 위의 흉통 및 타박상은 자동차 충돌과 같은 둔기 흉부 외상으로 인해 발생할 수 있는 심장 타박상을 시사한다. 출혈은 증가된 트로포닌과 폐 모세혈관 쐐기 압력을 일으키지 않을 것이다. 폐 타박상은 호흡기 증상을 일으킬 것이다. 타코츠보 심근병증은 가능성이 있지만 환자의 외상 이력을 고려할 때 가장 가능성 있는 진단은 아니다. 답변: A
+
+\begin{table}
+\begin{tabular}{p{42.7pt} p{284.5pt}} \hline \hline
+**Question:** A 27-year-old man presents to the emergency department after a motor vehicle collision. The patient was the front seat unrestrained driver in a head on collision. The patient’s echocardiogram (ECG) is notable only for sinus tachycardia. His temperature is 99.5\({}^{\circ}\)F (37.5\({}^{\circ}\)C), blood pressure is 107/58 mmHg, pulse is 120/min, respirations are 17/min, and oxygen saturation is 98\(\%\) on room air. The patient is given 2 liters of Ringer lactate solution and morphine. Initial workup demonstrates that the patient’s pulmonary capillary wedge pressure and troponins are elevated. The patient is currently complaining of chest pain. Physical exam is notable for an uncomfortable young man with tropising over his chest wall. Which of the following is the most likely diagnosis? **(A) Cardiac contusion** (B) Hemorrhage (C) Pulmonary contusion (D) Takotsubo cardiomyopathy \\ \hline \hline \end{tabular}
+\end{table}
+표 17: **MedQA-USMLE 예제 실패 사례(두 번째 범주).** Flan-T5 XL 모델에서 생성된 출력을 KARD 및 재배치기와 ChatGPT의 골드 올바른 근거를 비교합니다. 답은 파란색이다. 우리는 생성된 근거에서 환각을 노란색으로 표시하고, 생성된 근거에서 사실적으로 올바른 진술과 구절에서 그 뒷받침 사실을 빨간색으로 강조한다.
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline
+**Question**: Could the Powerpuff Girls make the background to the Azerbaijan flag? (**A**) yes (B) no \\ \hline \hline
+**KARD** & Flag of Japan. Two recently designed national flags resemble the Japanese flag. In 1971, Bangladesh gained independence from Pakistan, and it adopted a national flag that had a green background, charged with an off-centered red disc that contained a golden map of Bangladesh. The current flag, adopted in 1972, dropped the golden map and kept everything else. The Government of Bangladesh officially calls the red disc a circle; the red color symbolizes the blood that was shed to create their country. The island nation of Palau uses a flag of similar design, but the color scheme is completely different. While the Government of Palau does not cite the Japanese flag as an influence on their national flag, Japan did administer Palau from 1914 until 1944. (...) \\ \hline
+**Gold** & Flag of Azerbaijan. The national flag of Azerbaijan consists of three horizontal stripes of equal width, from top to bottom: flight blue, red, and green. In the center are a white crescent and eight-pointed star. The basic description of the flag, along with the ratio, can be found in the Constitution of Azerbaijan, which was adopted 12 November 1995: \\ \hline \hline \end{tabular}
+\end{table}
+표 18: **StrategyQA Example of Failure Case (_first category_). Flan-T5 XL 모델과 KARD 및 재배치기에서 생성된 출력을 ChatGPT의 금 정확한 근거와 비교한다. 답은 파란색이다. 생성된 근거에서 환각을 노란색으로 표시하고 생성된 근거에서 사실적으로 올바른 진술과 구절에서 뒷받침하는 사실을 빨간색으로 강조합니다. **
+
+\begin{table}
+\begin{tabular}{l p{142.3pt} p{142.3pt}} \hline \hline
+**Question**: Do human sacrums have more fused vertebrae than an Alaskan Malamute? (**A**) **yes** (B) no \\ \hline \hline \multirow{3}{*}{**KARD**_(Ours, reranker)_} & **Retrieved Passage** & **Outputs** \\ \hline
+**KARD**_(Ours, reranker)_ & Sacrum. The sacrum ( or ; plural: ”sacra” or ”sacrums”;) in human anatomy is a large, triangular bone at the base of the spine, that forms by the fusing of sacral vertebrae S1-S5 between 18 and 30 years of age. & First, we need to understand what the sacrum is and how it is related to fused vertebrae. The sacrum is a triangular bone located at the base of the spine in humans. Next, we need to understand how vertebrae are fused. In the human spine, there are six fused vertebrae (S1, S2, S3, S4), while in the Alaskan Malamute, there are only two fused vertebrae (S3-S4). Now, we can compare the fused vertebrae in the human sacrum with those of the Alaskan Malamute. The human sacrum has six fused vertebrae, while the Alaskan Malamute has five fused vertebrae. Therefore, the answer to the question is (B) no, human sacrums do not have more fused vertebrae than an Alaskan Malamute. Answer: B \\ \hline \multirow{3}{*}{**Gold**_(Oracle)_} & **Axial skeleton. At birth the majority of humans have 33 separate vertebrae. However, during normal development several vertebrae fuse together, leaving a total of 24, in most cases. The confusion about whether or not there are 32-34 vertebrae stems from the fact that the two lowest vertebrae, the sacrum and the cocyx, are single bones made up of several smaller bones which have fused together. This is how the vertebrae are counted: 24 separate vertebrae and the sacrum, formed from S fused vertebrae and the cocyx, formed from 3-5 fused vertebrae. If you count the cocyx and sacrum each as one verteba, then there are 26 vertebrae. If the fused vertebrae are all counted separately, then the total number of vertebrae comes to between 32 and 34.** \\ \hline \hline \end{tabular}
+\end{table}
+표 19: **전략 QA 실패 사례 _(두 번째 범주)_ 입니다. Flan-T5 XL 모델과 KARD 및 리랭커에서 생성된 출력을 ChatGPT의 금 이론적 근거와 비교한다. 답은 파란색이다. 우리는 생성된 근거에서 환각을 노란색으로 표시하고, 생성된 근거에서 사실적으로 올바른 진술과 구절에서 그 뒷받침 사실을 빨간색으로 강조한다.
