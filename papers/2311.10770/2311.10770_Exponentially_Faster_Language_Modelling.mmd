@@ -1,0 +1,165 @@
+# Exponentially Faster Language Modeling
+
+Peter Belcak and Roger Wattenhofer
+
+ETH Zurich
+
+{belcak,wattenhofer}@ethz.ch
+
+###### Abstract
+
+Language models only really need to use an exponential fraction of their neurons for individual inferences.
+
+As proof, we present UltraFastBERT, a BERT variant that uses 0.3% of its neurons during inference while performing on par with similar BERT models. UltraFastBERT selectively engages just 12 out of 4095 neurons for each layer inference. This is achieved by replacing feedforward networks with fast feedforward networks (FFFs).
+
+While no truly efficient implementation currently exists to unlock the full acceleration potential of conditional neural execution, we provide high-level CPU code achieving 78x speedup over the optimized baseline feedforward implementation, and a PyTorch implementation delivering 40x speedup over the equivalent batched feedforward inference.
+
+We publish our training code, benchmarking setup, and model weights.1
+
+Footnote 1: [https://github.com/pbelcak/UltraFastBERT](https://github.com/pbelcak/UltraFastBERT)
+
+## 1 Introduction
+
+Feedforward layers hold the majority of the parameters of large language models (Brown et al., 2020; Anil et al., 2023). However, not all of their neurons need to be engaged in the computation of the feedforward layer output at inference time for every input.
+
+For a generally accessible proof, we present UltraFastBERT, a variant of the BERT architecture (Devlin et al., 2018) that replaces feedforward layers with fast feedforward networks. In terms of downstream performance, UltraFastBERT performs on par with other BERT-like models that are similar in size and undergo similar training procedures. The intermediate layers of UltraFastBERT are, however, exponentially faster by design: given a feedforward (FF) and a fast feedforward (FFF) network, each with \(n\) neurons, the time complexity of a forward pass through the FFF is \(\mathcal{O}\left(\log_{2}n\right)\) instead of \(\mathcal{O}\left(n\right)\) as for FF. This is a consequence of the fact that FFFs organize their neurons into a balanced binary tree, and execute only one branch of the tree conditionally on the input.
+
+Performing inference on an FFF amounts to performing conditional matrix multiplication (CMM), in which the rows of the input dot with the columns of neural weights one at a time, and the weight column to proceed with is chosen depending on the output of the previous dot-product operation. In this manner, all neurons are used only by some inputs and no input needs more than just a handful of neurons to be handled by the network. This is in contrast with dense matrix multiplication (DMM), which lies at the heart of the traditional feedforward networks, and which computes the dot products of all rows with all columns.
+
+No native, efficient implementation of conditional matrix multiplication exists, and no popular deep learning framework offers any interface that could be used to implement it besides a high-level simulation. We therefore provide a set of CPU implementations based on pointer-batched matrix multiplication routines of the BLAS library. In a later section, we give a comparison between CPU and GPU implementations at various levels of optimization and note that while there already is clear evidence of significant acceleration, there is potential for more.
+
+The role of attention.A large body of literature already addresses the topic of speeding up the execution of the attention mechanism. We note that for a BERT-base-sized model with the usual pre-training context size of 128 (Devlin et al., 2018), the per-token inference cost of its attention to all other tokens amounts to only a little more than the cost of 128-neuron feedforward network inference. We therefore leave the attention layers untouched and focus solely on the intermediate layers hosting the feedforward networks.
+
+Points of comparison.BERT-base feedforward networks consist of 3072 neurons. This is not close to any power of two, and so in the design of UltraFastBERT, we round this number to 4095 - the number of nodes in a balanced binary tree of maximum depth 11. In this frame of reference, UltraFastBERT uses only 1/256 (0.04%) of the 3072 BERTbase neurons for inference. Nevertheless, UltraFastBERT iself consists of 4095 neurons, and so uses 1/341 (0.03%) of its neurons for inference.
+
+When reporting model performance on downstream tasks in Section 3.3, we give both a 3072-neuron and a 4095-neuron baseline for completeness.
+
+Why only 78x and not 341x speedup?Dense matrix multiplication is the most optimized mathematical operation in the history of computing. A tremendous effort has been put into designing memories, chips, instruction sets, and software routines that execute it as fast as possible. Many of these advancements have been - be it for their complexity or for competitive advantage - kept confidential and exposed to the end user only through powerful but restrictive programming interfaces.
+
+Therefore, despite having no need for new hardware, we are still forced to rely on combining high-level linear-algebraic routines to implement CMM, hence the reduction in the speedup. We elaborate on this in Section 3.
+
+Reproducibility.We share the weights of our best model. While we do not provide an efficient PyTorch or TensorFlow implementation of CMM, the fact that only 12 neurons are used in the inference of UltraFastBERT can be verified simply by masking out the output of all but the chosen neurons, and we give the code for this.
+
+Takeaways.
+* We present UltraFastBERT, a BERT-like model that has 4095 neurons but selectively uses only 12 (0.03%) for inference.
+* We finetune UltraFastBERT for standard downstream tasks and find that it performs on par with its BERT peers.
+* We provide a naive implementation of the conditional matrix multiplication that underlies fast feedforward network inference. We find that it leads to a 78x speedup over the natively optimized dense matrix multiplication.
+* Through UltraFastBERT and the already considerable speedups by simple FFF implementations, we demonstrate the considerable potential of conditional neural execution in language modelling.
+
+## 2 Model
+
+### Architecture
+
+Our architectural starting point is the crammedBERT architecture (Geiping & Goldstein, 2023), which we implement to the letter in all but the nature of intermediate layers. There, the feedforward networks contained in the intermediate layers of the crammedBERT transformer encoder are replaced with fast feedforward networks (Belcak & Wattenhofer, 2023).
+
+We make the following simplifying changes to the original fast feedforward networks:
+
+1. _Remove all differences between leaf and non-leaf nodes._ In particular, we use the same (GeLU) activation function across all nodes, equip all nodes with output weights, and remove all output biases.
+2. _Fix the leaf size to 1._
+3. _Allow multiple FFF trees in parallel._ We allow for multiple FFF trees to jointly compute the intermediate layer outputs. This is achieved by summing the outputs of the individual trees and presenting the sum as the intermediate layer output.
+
+We denote a model with \(K\) trees of depth \(D+1\) by appending a suffix to the model name, i.e. UltraFastBERT-\(K\)x\(D\). Note that for consistency with our inference code, we consider a tree with no edges to have depth \(0\) - hence the tree with maximum depth \(D\) has depth \(D+1\). A BERT-base-sized model with the traditional feedforward layer of width 3072 is then just a special case of UltraFastBERT, namely UltraFastBERT-3072x0.
+
+While we share only our fastest model, we train a full range of increasingly deeper and narrower models, starting from UltraFastBERT-3072x0 and proceeding with UltraFastBERT-1536x1, UltraFastBERT-512x2, etc..
+
+### Training
+
+We follow the final training procedure of crammedBERT (Geiping & Goldstein, 2023), namely disabling dropout in pretraining and making use of the 1-cycle triangular learning rate schedule. By default, we train every model for 1 day on a single A6000 GPU, except for the final UltraFastBERT-1x11-long model, which we train 2 times longer using the same regime for slightly better downstream performance.
+
+### Downstream Performance
+
+#### 2.3.1 Setup
+
+We finetune all UltraFastBERT models for the RTE, MRPC, SST, STS-B, MNLI, QQP, QNLI, and CoLA tasks of the GLUE benchmark (Wang et al., 2018) and report evaluation scores as in Geiping & Goldstein (2023) for consistency. In short, this approach amounts to finetuning for 5 epochs with learning rate \(4\times 10^{-5}\) across all tasks.
+
+We find that UltraFastBERT models finetuned in this manner for CoLA end up being undertrained if only 5 training epochs are used. Therefore, we extend the number of CoLA finetuning epochs to 15. This leads to little to no improvement for the baseline crammedBERT models but has a significant impact on the CoLA performance of UltraFastBERTs.
+
+#### 2.3.2 Results
+
+The results of our finetuning are listed in Table 1.
+
+We see that UltraFastBERT variants trained for 1 day on a single A6000 GPU all retain at least 96.0% of the GLUE downstream predictive performance of the original BERT-base model (Devlin et al., 2018). We also observe that the performance decreases with the increasing depth of the FFFs. Note, however, that the majority of the performance decrease due to the increasing depth is caused by only a single task - CoLA. This behaviour has previously been observed in the literature and is in line with other work trying to compress BERT behaviour into smaller models (Sun et al., 2019; Turc et al., 2019; Mukherjee et al., 2021). If we disregard CoLA, at least 98.6% of the predictive performance is preserved by all UltraFastBERT model.
+
+Furthermore, we see that save from CoLA, our best model - UltraFastBERT-1x11-long - performs on par with the original BERT-base model while using only 0.3% of its own neurons, which amounts to a mere 0.4% of BERT-base neurons. We make the weights of this model public.
+
+## 3 Inference
+
+If the purpose of the above part was to report the finding that only very few neurons are needed per inference, it is the goal of this section to adopt the engineering perspective and outline how this can be taken advantage of on the implementation front.
+
+Fast feedforward networks as a part of large language models have a huge acceleration potential. To indicate the sort of speedup ballpark one could hope for, take GPT-3 (Brown et al., 2020), the first large language model widely lauded for the plausibility of its outputs. The feedforward networks of each transformer layer of GPT-3 consist of 49152 neurons. If trainable, this network could be replaced with a fast feedforward network of maximum depth 15, which would
+
+\begin{table}
+\begin{tabular}{l|c c|c c c c c c c|c|c} \hline \hline Model & \(N_{\text{T}}\) & \(N_{\text{I}}/N_{\text{T}}\) & RTE & MRPC & STSB & SST-2 & MNLI & QNLI & QQP & Avg & CoLA & Avg \\ \hline \multicolumn{10}{l}{**Baselines**} \\ \hline crammedBERT-3072 & 4095 & 100.0\% & 58.8 & 87.6 & 85.2 & 91.9 & 82.8 & 90.4 & 89.0 & 83.6 & 45.0 & 79.3 \\ crammedBERT-4095 & 3072 & 100.0\% & 57.6 & 89.1 & 85.9 & 91.9 & 81.3 & 90.9 & 87.6 & 83.2 & 47.9 & 79.3 \\ \hline \multicolumn{10}{l}{**UltraFastBERTs**} \\ \hline UltraFastBERT-3072x0 & 3072 & 100.0\% & 56.7 & 88.9 & 86.3 & 92.3 & **82.9** & **92.3** & 88.0 & **83.8** & **48.4** & **79.9** \\ UltraFastBERT-1536x1 & 4608 & 66.6\% & 55.2 & **89.4** & 85.0 & 91.9 & 82.2 & 90.1 & 89.0 & 83.1 & 47.5 & 79.2 \\ UltraFastBERT-512x2 & 3584 & 42.9\% & 59.2 & 87.7 & 86.0 & 89.9 & 81.9 & 90.3 & 89.3 & 83.3 & 46.2 & 79.2 \\ UltraFastBERT-256x3 & 3840 & 26.7\% & 54.2 & 87.4 & 85.9 & 91.6 & 81.6 & 90.0 & 89.1 & 82.7 & 48.0 & 78.8 \\ UltraFastBERT-128x4 & 3968 & 16.1\% & 58.4 & 87.5 & **87.2** & **92.3** & 81.2 & 89.9 & **90.0** & 83.5 & 45.9 & 79.3 \\ UltraFastBERT-64x5 & 4032 & 9.5\% & 55.7 & 89.0 & **87.2** & 91.4 & 81.6 & 90.2 & 89.4 & 83.3 & 46.1 & 79.1 \\ UltraFastBERT-32x6 & 4064 & 5.5\% & 57.6 & 88.2 & 86.1 & 91.2 & 81.0 & 89.2 & 88.3 & 82.8 & 40.6 & 78.1 \\ UltraFastBERT-16x7 & 4080 & 3.1\% & 55.5 & 89.0 & 86.7 & 88.9 & 80.1 & 89.4 & 86.9 & 82.1 & 41.5 & 77.6 \\ UltraFastBERT-8x8 & 4088 & 1.8\% & 56.2 & 88.4 & 85.4 & 88.7 & 80.6 & 89.3 & 86.4 & 81.9 & 32.7 & 76.5 \\ UltraFastBERT-4x9 & 4092 & 1.0\% & 53.8 & 85.9 & 85.7 & 89.6 & 81.9 & 89.3 & 88.0 & 82.0 & 31.8 & 76.4 \\ UltraFastBERT-2x10 & 4094 & 0.5\% & **59.9** & 88.8 & 85.3 & 87.4 & 79.9 & 89.2 & 86.1 & 82.0 & 35.4 & 76.9 \\ UltraFastBERT-1x11 & **4095** & **0.3\%** & 57.8 & 88.1 & 86.1 & 89.7 & 80.2 & 89.3 & 87.1 & 82.3 & 37.1 & 77.3 \\ \hline \multicolumn{10}{l}{**Final Model**} \\ \hline UltraFastBERT-1x11-long & 4095 & 0.3\% & 60.7 & 87.5 & 86.4 & 89.9 & 81.3 & 89.7 & 87.6 & 83.0 & 35.1 & 77.7 \\ \hline \multicolumn{10}{l}{**External Baselines**} \\ \hline OpenAI GPT & 3072 & 100\% & 56.0 & 82.3 & 80.0 & 91.3 & 81.4 & 87.4 & 70.3 & 78.8 & 45.4 & 75.1 \\ DistilBERT & 3072 & 100\% & 59.9 & 87.5 & 86.9 & 91.3 & 82.2 & 89.2 & 71.3 & 81.2 & 52.1 & 77.6 \\ BERT-base & 3072 & 100\% & 66.4 & 88.9 & 85.8 & 93.5 & 83.4 & 90.5 & 71.2 & 83.0 & 51.3 & 79.6 \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: The results of various language models on the GLUE-dev test sets. \(N_{\text{T}}\) denotes the number of neurons available for training, \(N_{\text{I}}/N_{\text{T}}\) the proportion of neurons that are used for a single inference. “Avg” denotes the average score of all the task results to the left of the column. **Emphasis** marks the best crammed 1-day UltraFastBERT performance for the given column. OpenAI GPT, DistilBERT, and BERT-base refer to models reported in Radford et al. (2018); Sanh et al. (2019); Devlin et al. (2018).
+
+contain 65536 neurons but use only 16 for inference. This amounts to about **0.03%** of GPT-3's neurons.
+
+At the center of this promise sits the operation of conditional matrix multiplication, with its pseudocode given below, and with our future efforts focused on its efficient implementation.
+
+### Algorithm
+
+Belcak and Wattenhofer (2023) gives recursive pseudocode for FFF inference. We list the pseudocode for CMM and the consecutive inference for FFFs, with modifications as per Section 2.1. In Algorithm 1, \(B\) denotes the batch size, \(H\) the layer input width (transformer hidden dimension), \(2^{D}-1\) is the number of neurons, and \(M_{\star,k},M_{l,\star}\) denote the \(k\)-th column and \(l\)-th row of \(M\), respectively. The result of the \(>\)-comparison in CMM is assumed to be an integer \(\in\{0,1\}\).
+
+### Compatibility
+
+One may ask whether the conditionality introduced by the use of CMM does not make FFFs incompatible with the processes and hardware already in place for dense matrix multiplication and deep learning more broadly. In short, the answer is "No, it does not, save for some increased caching complexity."
+
+Single-threaded _CPU_ DMM as a part of feedforward inference relies on sequential execution of multiplication and accumulation (MAC) instructions. As such, CPUs, especially edge CPUs, stand to benefit the most easily from the replacement of DMM with CMM as seen in UltraFastBERT, simply because fewer executions of the per-element MAC instructions are needed to compute layer output. In spite of the apparent use of conditionality, which is commonly associated with branching in CPU code, the "neural branching" seen in CMM manifests itself only as an addition of a memory offset to the relevant pointers. Hence, instruction branch prediction is never engaged to facilitate CMM conditionality. In order to make full use of weight caching to speed up the access to weights, the CPU might need to be hinted to load only relevant columns of the weight matrix and only one at a time. Since CMM continues to perform row-column dot products, vector single-instruction-multiple-data (SIMD) parallel processing remains a viable option for speeding up device-specific inference implementations.
+
+The implicitly multi-threaded _GPU_ DMM computation makes extensive use of the single-instruction-multiple-threads (SIMT) approach behind modern GPUs by executing the same MAC instructions in each thread, just on different patches of the matrices. As above, note that this readily carries over to CMM since the conditionality represented by proceeding to different columns of the weight matrices affects only the offset to the memory used, and not which, if, or how many times the MAC instructions are executed. Nevertheless, efficient DMM implementations distribute the matrix multiplication workload (the pairs of matrix patches to be multiplied) in a manner that maximizes the use of distributed cache so that the accesses to the global device memory, being significantly slower than accessing cache, are limited. To achieve its full potential with respect to the DMM baseline, any efficient implementation of CMM
+
+\begin{table}
+\begin{tabular}{l|r r r r|r r r} \hline \hline  & & \multicolumn{3}{c|}{CPU Implementation} & \multicolumn{3}{c}{GPU Implementation} \\ \hline Model & Limit & Level 1 & Level 2 & Level 3 & Native fused & Pytorch BMM & Naive CUDA \\ \hline BERT-base-4095 & 1.00x & 1.00x & 1.00x & 1.00x & 1.00x & 1.00x & 1.00x \\ BERT-base-3072 & 1.33x & 1.55x & 1.74x & 1.39x & 1.33x & 1.61x & 1.82x \\ UltraFastBERT-1x11 & **341.25x** & **130.7** & **255.1** & - & - & **39.45x** & **117.83x** \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: The results of the inference acceleration evaluation. **Emphasis** highlights the best “fair comparison” performance.
+
+has to explicitly manage its caching in a way that is optimal for tree traversal, and not patched dense matrix multiplication. This can be done by always pre-loading the weights of the relevant sub-trees or by using DMM patching strategies but discarding intermediate results from the results of patch margins where not needed. Either way, it remains to be a challenge to make these optimizations without intimate (and often confidential) knowledge of the implementation's target device.
+
+### Inference Performance
+
+We compare the speed of several available FF/FFF inference implementations.
+
+Implementations.For CPU inference, we use the Math Kernel Library available as a part of the Intel oneAPI.
+
+* **Level 1** implementation is the implementation constructed using only BLAS Level 1 routines and BLAS-like Level 1 extensions, namely the vector-vector dot product and scalar-vector product.
+* **Level 2** implementation uses batched BLAS Level 2 routines and BLAS-like Level 1 extensions, namely the batched matrix-vector multiplication and batched scalar-vector product.
+* **Level 3** implementation uses the (non-batched) BLAS Level 3 matrix-matrix multiplication. This is the fastest CPU implementation for FF, but no such implementation can be provided at this time for FFF due to the vector-level sparsity of CMM not being supported by the library.
+
+For the GPU implementations, we use either PyTorch kernels or custom CUDA kernels.
+
+* **Native fused** implementation uses the native fused feedforward layer kernel. Note that this is the fastest GPU implementation for FF layers but again, no such kernel currently exists for FFFs due to the nature of CMM.
+* **BMM** implementation uses the batched matrix multiplication and activation kernels for both FFs and FFFs. In the case of FFFs, we extensively use vector copying at each step of tree descent to simulate conditionality.
+* **Naive CUDA** implementation is our custom CUDA kernel code for both FFs and FFFs, performing fused DMM/CMM and activation on the level of vector/matrix elements, executed as a PyTorch extension.
+
+Methodology.For CPU inference, we perform 250 forward passes per entry on Intel(R) Core(TM) i7-6700HQ CPUs under Intel MKL v2023.2.0, using 64-bit variants of all routines. We report the mean time taken by single inference, noting that the value of the standard deviation always lay well under 2% of the mean. For GPU inference, we perform 1000 forward passes per entry on NVIDIA RTX A6000 GPUs under CUDA v11.7 and PyTorch 2.0.1. We measure the GPU time and report the mean time taken, with the standard deviation again well under 2% of the mean in all cases. We take batch size \(B=128\times 128\) (equivalent to the BERT pretraining context token batch size) and hidden dimension \(H=768\).
+
+Results.Table 2 lists the performance comparison of feed-forward and fast feedforward layers as they appear in BERT-base and UltraFastBERT-1x11. Each column of the table lists the relative inference FFF-over-FF implementation speedups _when using the same linear-algebraic routine primitives_.
+
+The two entries missing Table 2 are for the currently unavailable BLAS Level 3 and Native fused implementations of FFFs.
+
+Further comparisons.All of the speedups reported in Table 2 give "fair comparisons", meaning that in each case, both the FF and FFF implementation used exactly the same primitive linear-algebraic operations. One may also be interested in knowing how the best implementations of FFF currently fair against the best implementations of FF, even though the ones for FF use primitives unavailable for FFF. On CPU, the Level 1 and Level 2 implementations of FFF perform inference **48x and 78x** faster than the fastest (Level 3) implementation of FF, respectively. On GPU, the PyTorch BMM implementation of FFF delivers a **3.15x** speedup over the fastest (Native fused) implementation of FF.
+
+### Future outlook
+
+The broad strokes for starting efficient implementation of FFF inference have already been painted as a part of the PyTorch library. Hybrid vector-level sparse tensors, if fully supported for singular and batched matrix multiplication, would suffice to implement CMM and FFF inference as in Algorithm 1.
+
+A further native implementation of CMM as a part of device-specific Intel MKL/NVIDIA cuBLAS code would stand a real chance of fully delivering on the promise of 341-fold speedup.
+
+## 4 Conclusion
+
+We present UltraFastBERT, a modified version of the (crammed)BERT architecture that uses fast feedforward instead of feedforward networks in its intermediate layers. UltraFastBERT serves as proof that large language models only really need to engage an exponential fraction of their parameters to perform individual inferences. UltraFastBERT-1x11, our deepest model with the highest promise of acceleration, uses only 0.3% of its neurons during inference and already achieves a 78x CPU speedup over the inference time of the corresponding feedforward layer. With a theoretical speedup promise of 341x at the scale of BERT-base models, we hope that our work will inspire an effort to implement primitives for conditional neural execution as a part of device programming interfaces.
+
+## References
+
+* Anil et al. (2023) Anil, R., Dai, A. M., Firat, O., Johnson, M., Lepikhin, D., Passos, A., Shakeri, S., Taropa, E., Bailey, P., Chen, Z., et al. Palm 2 technical report. _arXiv preprint arXiv:2305.10403_, 2023.
+* Belcak & Wattenhofer (2023) Belcak, P. and Wattenhofer, R. Fast feedforward networks. _arXiv preprint arXiv:2308.14711_, 2023.
+* Brown et al. (2020) Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.
+* Devlin et al. (2018) Devlin, J., Chang, M.-W., Lee, K., and Toutanova, K. Bert: Pre-training of deep bidirectional transformers for language understanding. _arXiv preprint arXiv:1810.04805_, 2018.
+* Geiping & Goldstein (2023) Geiping, J. and Goldstein, T. Cramming: Training a language model on a single gpu in one day. In _International Conference on Machine Learning_, pp. 11117-11143. PMLR, 2023.
+* Mukherjee et al. (2021) Mukherjee, S., Awadallah, A. H., and Gao, J. Xtremedistill-transformers: Task transfer for task-agnostic distillation. _arXiv preprint arXiv:2106.04563_, 2021.
+* Radford et al. (2018) Radford, A., Narasimhan, K., Salimans, T., Sutskever, I., et al. Improving language understanding by generative pre-training. 2018.
+* Sanh et al. (2019) Sanh, V., Debut, L., Chaumond, J., and Wolf, T. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. _arXiv preprint arXiv:1910.01108_, 2019.
+* Sun et al. (2019) Sun, S., Cheng, Y., Gan, Z., and Liu, J. Patient knowledge distillation for bert model compression. _arXiv preprint arXiv:1908.09355_, 2019.
+* Turc et al. (2019) Turc, I., Chang, M.-W., Lee, K., and Toutanova, K. Well-read students learn better: On the importance of pre-training compact models. _arXiv preprint arXiv:1908.08962_, 2019.
+* Wang et al. (2018) Wang, A., Singh, A., Michael, J., Hill, F., Levy, O., and Bowman, S. R. Glue: A multi-task benchmark and analysis platform for natural language understanding. _arXiv preprint arXiv:1804.07461_, 2018.
