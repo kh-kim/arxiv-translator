@@ -1,0 +1,362 @@
+# LoftQ: LoRA-Fine-Tuning-Aware Quantization for Large Language Models
+
+Yixiao Li\({}^{**}\), Yifan Yu\({}^{**}\), Chen Liang, Pengcheng He,
+
+위즈 첸 투오 자오 니코스 카람파츠자키스
+
+리, 유, 량, 자오는 조지아 공대에 소속되어 있다. He, Karampatzizakisand Chen은 Microsoft Azure와 제휴합니다. yixiaoli@gatech.edu, yyu429@gatech.edu 및 tourzhao@gatech.edu.equal 기여는 특히 리소스가 종종 제약되고 많은 사용자 간에 공유될 필요가 있는 실제 배치에서 동일하다.
+
+사전 트레이닝된 모델들의 광범위한 저장 요건들을 완화하기 위해, 양자화는 피벗 압축 기법(Zafrir et al., 2019; Shen et al., 2020; Bai et al., 2022; Dettmers et al., 2022)으로서, 고정밀 수치 값들을 값들의 이산 세트로 변환하는 역할을 한다. 전형적으로, 원래 16비트 플로트 포맷으로 저장된 모델 파라미터는 양자화를 통해 4비트 정수 포맷으로 변환되어, 스토리지 오버헤드가 실질적으로 75% 감소된다. 추가적으로, 양자화된 사전-훈련된 모델들을 다운스트림 태스크들에 효율적으로 적응시키는 것을 용이하게 하기 위해, LoRA(Low-Rank Adaptation)는 실행가능한 접근법이다(Hu 등, 2021). 이 기법은 전통적으로 고정밀 사전 훈련 모델에 적용되는 매개변수 효율적인 미세 조정 방법이다. 완전히 미세 조정된 가중치와 미리 훈련된 가중치 간의 차이가 낮은 순위 특성을 나타낸다는 가설에 기초한다. 이를 통해 이러한 차이를 낮은 순위의 행렬을 사용하여 나타낼 수 있다. 결과적으로 원래 미리 훈련된 가중치는 변경되지 않은 상태로 유지되며 적응은 이러한 낮은 순위 행렬에만 국한되어 효과적인 작업 적응을 가능하게 한다.
+
+사전 훈련된 모델을 양자화할 때, 실무자들은 종종 주로 양자화 기술에 집중하여, 부주의하게 후속 LoRA 미세 조정의 중요성을 무시한다(Dettmers et al., 2023; Diao et al., 2023). 예를 들어, QLoRA는 LoRA에서 사용되는 픽스업 초기화(Zhang et al., 2019)를 계승하며, 이 픽스업 초기화(Dettmers et al., 2023)는 양자화된 사전-훈련된 모델에 제로 초기화된 로우-랭크 어댑터(섹션 2.3 참조)를 부착한다. 2비트 레짐과 같은 저비트 상황에서 특히 두드러지는 시나리오인 원래 고정밀 수의 근사화 동안 양자화에 의해 도입된 불가피한 불일치는 LoRA 미세 조정의 초기화에 부정적인 영향을 미칠 수 있다. 그림 0(a)에 예시된 바와 같이, QLoRA에 의해 획득된 양자화된 사전 훈련 모델은 3 비트 레벨 이하에서 심각한 열화를 나타낸다. 초기화의 이러한 편차는 종종 열등한 미세 조정 성능을 초래한다. 그림 0(b)와 같이 QLoRA 적용 시 양자화 비트가 감소함에 따라 미세 조정 성능이 떨어진다. 더욱이, QLoRA가 3 비트 레벨 이하에서 실패한다는 것은 주목할 만하다.
+
+이 문서에서는 **Lo**RA-**F**ine-**T**uning-aware **Q**uantization(LoftQ)이라는 새로운 양자화 프레임워크를 소개합니다. 양자화 및 LoRA 미세 조정이 필요한 사전 훈련 모델을 위해 특별히 설계되었습니다. 이 프레임워크는 원래 고정밀 사전 훈련된 가중치를 공동으로 근사화하기 위해 양자화와 함께 작동하는 저순위 근사화를 적극적으로 통합한다. 이 시너지 효과는 그림 2와 같이 원래 사전 훈련된 가중치와의 정렬을 크게 향상시킨다. 결과적으로, 우리의 방법은 후속 LoRA 미세 조정을 위한 유리한 초기화 포인트를 제공하여 다운스트림 작업의 개선을 유도한다.
+
+우리는 NLU, 질의 응답, 요약 및 NLG와 같은 다운스트림 작업에 대한 광범위한 실험을 수행하여 양자화 프레임워크를 평가한다. 실험들은 LoftQ가 모든 정밀 레벨들에 걸쳐 QLoRA보다 일관되게 우수하다는 것을 보여준다. 예를 들어, 4비트 양자화를 통해 XSum(Narayan et al., 2018) 및 CNN/DailyMail(Hermann et al., 2015)에 대해 Rouge-1에서 각각 1.1 및 0.8 이득을 달성한다. LoftQ는 특히 저비트 시나리오에서 탁월하며 다양한 양자화 방법으로 효과적으로 작동한다. 예를 들어, 2-비트 NormalFloat 및 2-비트 균일 양자화 둘 다로 MNLI(Wang et al., 2019)에서 8% 이상의 이득을 달성하고 SQuADv1.1(Rajpurkar et al., 2016)에서 10% 이상의 이득을 달성한다. 우리는 우리의 접근법이 QLoRA보다 더 나쁜 성능을 보이는 것을 보지 못했다.
+
+도 1: 상이한 비트를 갖는 QLoRA 성능. **왼쪽:** WikiText-2에서 LLAMA-2-13b의 QLoRA 초기화 **오른쪽:** WikiText-2 언어 모델링 작업의 LLAMA-2-13b에 QLoRA를 적용 합니다. 복잡성이 작을수록 성능이 향상됩니다.
+
+그림 2: LoRA 초기화와 원래의 사전 훈련된 가중치 행렬 사이의 초기화 불일치는 스펙트럼 규범과 차이의 프로베니우스 규범으로 설명된다. 위 그림의 가중치 행렬은 BART-large에서 랜덤하게 선택된다. 초기화는 QLoRA 및 LoftQ에 의해 얻어지며, 균일 및 NormalFloat 양자화 방법은 2-비트 및 4-비트 레벨 모두에서 적용된다. LoftQ는 특히 2비트 수준에서 불일치를 성공적으로 완화한다.
+
+Background
+
+### Transformer Models
+
+변압기 모델은 계층들의 시퀀스를 포함하고, 여기서 각 계층은 두 개의 하위 계층들, 즉 MHA(multi-head self-attention) 및 FFN(fully connected feed forward network)으로 구성된다(Vaswani et al., 2017). 입력 \(X\in\mathbb{R}^{n\times d}\), 여기서 \(n\)은 시퀀스 길이이고 \(d\)은 모델의 숨겨진 차원이므로 MHA는 \(h\) 주의 헤드를 병렬로 계산 합니다.
+
+\[\text{MHA}(X)=\text{Concat}(\text{head}_{1},...,\text{head}_{h})W _{o},\] \[\text{where}\ \ \ \ \ \text{head}_{i}= \text{Softmax}(XW_{q_{i}}(XW_{k_{i}})^{\top}/\sqrt{d_{h}})XW_{v_{ i}}\ \ \text{for}\ \ \ i=1,...,h,\]
+
+여기서 \(W_{q_{i}}, W_{k_{i}}, W_{v_{i}}\in\mathbb{R}^{d\times d_{h}}\)은 질의, 키, 값 행렬이고, \(W_{o}\in\mathbb{R}^{d\times d}\)은 출력 행렬이고, \(d_{h}=d/h\)이다. FFN은 두 개의 선형 변환과 활성화 함수로 구성되며, \(\text{FFN}(X)=\sigma(XW_{f_{1}}+b_{1})W_{f_{2}}+b_{2}\), 여기서 \(W_{f_{1}}\in\mathbb{R}^{d\times d_{m}}\), \(W_{f_{2}\in\mathbb{R}^{dm}\times d}\), \(\sigma(\cdot)\)는 활성화 함수이다. 잔차 연결을 사용하고 계층 정규화를 수행합니다.
+
+### Quantization
+
+**양자화.** 32비트 부동 소수점 번호와 같은 고정밀 번호가 주어지면 \(X^{\text{HP}}\in\mathbb{R}\), \(N\)-비트 양자화는 정수 \(X^{\text{INT}}\in\{0,1,...,2^{N}-1\}\)로 인코딩합니다. 이러한 과정은 다음과 같이 표현될 수 있다.
+
+\[X^{\text{INT}}=\text{round}\left((2^{N}-1)F\left(X^{\text{HP}} \right)\right), \tag{1}\]
+
+여기서 \(F(\cdot)\colon\mathbb{R}\mapsto[0,1]\)은 정규화 함수이다. 균일 양자화는 \(F(X)=(X-X_{\text{min}})/(X_{\text{max}}-X_{\text{min}})\)를 가정한다. Dettmers 등(2023)은 4-비트 NormalFloat Quantization(NF4)을 제안한다. 이는 \(X\sim\mathcal{N}(0,\sigma^{2})\)와 \(F(X)=\Phi(X/\sigma)\)를 가정하며, 여기서 \(\Phi(\cdot)\)는 표준정규분포의 누적분포함수이다.
+
+**Dequantization.** 조회 테이블 \(\mathcal{T}\) 여기서
+
+\[\mathcal{T}[i]=F^{-1}\left(\frac{i}{2^{N}-1}\right),i=0,1,...,2^{N}-1, \tag{2}\]
+
+정수 \(X^{\text{INT}\)을 시뮬레이션된 고정밀 대응물 \(X^{\text{D}\in\mathbb{R}\)으로 디코딩하는 데 사용된다. 따라서, 역양자화는 다음과 같이 표현될 수 있다.
+
+\[X^{\text{D}}=\mathcal{T}[X^{\text{INT}}]. \tag{3}\]
+
+**Matrices에 대한 시뮬레이션된 양자화.** 양자화된 표현 간에 직접 곱셈을 수행할 수 있지만 행렬에 대한 시뮬레이션된 양자화를 적용하는 것이 일반적입니다 (Bai et al., 2020; Shen et al., 2020). 그곳에서, 양자화된 가중치 행렬들은 메모리에 인코딩된 정수들로서 저장되고, 곱셈 연산들에 관여할 때 룩업 테이블에 의해 시뮬레이트된 고정밀 행렬들로 일시적으로 역양자화된다. 시뮬레이션된 양자화에서, 고정밀 매트릭스로부터 시뮬레이션된 고정밀 매트릭스로의 맵을 분석하기만 하면 된다. 이 과정을 \(q_{N}(\cdot)\colon\mathbb{R}^{m\times n}\mapsto\mathbb{R}^{m\times n}_{N}\), 여기서 \(\mathbb{R}_{N}:\{\mathcal{T}[i]\in\mathbb{R}|0\leq i<2^{N}\}\)으로 나타낸다.
+
+### Low-Rank Adaptation
+
+LoRA(Hu et al., 2021)는 동결된 사전 훈련된 가중치 행렬 \(W\)에 부착된 두 개의 작은 가중치 행렬 \(A\) 및 \(B\)을 업데이트한다. 따라서 선형 변환 \(Y=XW\)은 다음과 같이 재구성된다.
+
+\[Y=XW+XAB^{\top}, \tag{4}\]
+
+여기서 \(X\in\mathbb{R}^{n\times d_{1}},W\in\mathbb{R}^{d_{1}\times d_{2}},A\in\mathbb{R}^{d_{1}\times r},B\in\mathbb{R}^{d_{2}\times r}\), 및 \(r\ll\min\{d_{1},d_{2}\}\)이다. 처음에는,
+
+\[A\sim\mathcal{N}(0,\sigma^{2}),\;B=0, \tag{5}\]
+
+미리 훈련된 웨이트에 정렬되도록 합니다. 미세조정을 하는 동안, \(W\)은 고정되고 \(A\) 및 \(B\)은 일부 SGD-타입 최적화 방법에 의해 업데이트된다.
+
+저순위 어댑터 \(A\)와 \(B\)가 양자화된 백본 \(Q=q_{N}(W)\)에 부착되어 (5)로 초기화되면 양자화에 의해 도입된 불일치로 인해 시작 가중치 \(Q+AB^{\top}\)가 미리 훈련된 가중치 \(W\)와 더 이상 동일하지 않다는 점에 주목할 필요가 있다.
+
+## 3 Method
+
+LLM을 위한 양자화 프레임워크인 **LoRA**-Fine**-Tuning** 인식 **Q**uantization(LoftQ)을 제안합니다. 대안적으로, 양자화 및 저순위 근사를 적용하여 원래의 미리 훈련된 가중치들을 근사화한다. 이 양자화 프레임워크는 LoRA 미세 조정을 위한 유망한 초기화를 제공하여 QLoRA의 양자화 불일치를 완화하고 다운스트림 태스크에서 일반화를 크게 향상시킨다.
+
+### LoRA-Aware Quantization
+
+LoRA 미세조정의 초기화를 위해 \(N\)-비트 양자화 가중치 \(Q\in\mathbb{R}_{N}^{d_{1}\times d_{2}}\)와 저순위 근사치 \(A\in\mathbb{R}^{d_{1}\times r},B\in\mathbb{R}^{d_{2}\times r}\)를 사용하여 고정밀 사전 훈련 가중치 \(W\in\mathbb{R}^{d_{1}\times d_{2}}\)를 근사한다. 구체적으로, 미세 조정 전에, 다음 목적을 최소화함으로써 네트워크를 초기화한다:
+
+\[\min_{Q,A,B}\left\|W-Q-AB^{\top}\right\|_{F}, \tag{6}\]
+
+여기서 \(\left\|\cdot\right\|_{F}\)는 Frobenius norm을 나타낸다. 이 목적(6)은 양자화된 백본 \(Q\)과 저순위 어댑터 \(A,B\)의 초기 값을 공동으로 최적화하여 LoRA 미세 조정을 고려한다. 반대로, 실무자들은 일반적으로 미리 훈련된 가중치 \(W\)를 양자화된 가중치 \(Q\)로 변환하여 후속 LoRA 미세 조정 과정을 무시한다. 이러한 감독은 양자화 불일치로 인해 발생하는 다운스트림 작업에서 주목할 만한 성능 저하를 초래한다.
+
+### Alternating Optimization
+
+우리는 양자화와 특이값 분해(SVD)를 번갈아 가면서 (6)의 최소화 문제를 해결한다. 우선, 우리는 \(A_{0}\)과 \(B_{0}\)을 0으로 설정한다.
+
+**양자화**. \(t\)번째 단계에서는 이전 단계에서 미리 훈련된 원래 가중치 \(W\)와 낮은 순위의 근사치 \(A_{t-1}B_{t-1}^{\top}\)의 차이를 양자화하여 양자화된 가중치 \(Q_{t}\)를 얻는다.
+
+\[Q_{t}=q_{N}(W-A_{t-1}B_{t-1}^{\top}), \tag{7}\]
+
+여기서, \(q_{N}(\cdot)\)은 고정밀 가중치 매트릭스를 양자화된 매트릭스에 매핑한다.
+
+제안된 알고리즘은 서로 다른 양자화 함수 \(q_{N}(\cdot)\)와 호환됨을 보인다. 우리는 NF4와 섹션 4의 균일 양자화를 예로 적용한다. 또한 고정된 \(A_{t-1}B_{t-1}^{\top}\을 고려할 때 \(Q_{t}\)은 (6)의 최소화에 대한 정확한 해는 아니지만 효율적인 근사치임을 언급하였다.
+
+**SVD**. \(t\)-번째 양자화된 가중치 \(Q_{t}\)를 구한 후, \(R_{t}=W-Q_{t}\)으로 표시된 양자화의 잔차에 SVD를 인가한다.
+
+\[R_{t}=\sum_{i=1}^{d}\sigma_{t,i}u_{t,i}v_{t,i}^{\top}, \tag{8}\]
+
+where \(d=\min\{d_{1},d_{2}\}\), \(\sigma_{t,1}\geq\sigma_{t,2}\geq...\ geq\sigma_{t,d}\)는 \(R_{t}\), \(u_{t,i}\)'s와 \(v_{t,i}\)'s의 특이값은 \(R_{t}\)의 좌, 우 특이벡터이다. 그런 다음 \(A_{t}B_{t}^{\top}\)에 의한 \(R_{t}\)의 순위-\(r\) 근사치를 얻는다. 여기서
+
+\[A_{t}=[\sqrt{\sigma_{t,1}}u_{t,1},...,\sqrt{\sigma_{t,r}}u_{t,r}],\] \[B_{t}=[\sqrt{\sigma_{t,1}}v_{t,1},...,\sqrt{\sigma_{t,r}}v_{t,r}]. \tag{9}\]
+
+알고리즘 1에서 그 방법을 요약한다. \(T=1\)은 QLoRA에 의해 얻어지는 정확한 양자화 가중치이고, 낮은 순위의 근사치 \(A_{1},B_{1}\)은 양자화 잔차 \(W-Q_{1}\)의 SVD에 의해 얻어지는 특별한 경우이다. \(T=1\)은 QLoRA에 의해 얻어지는 정확한 양자화 가중치이고, 낮은 순위의 근사치 \(A_{1},B_{1}\)은 양자화 잔차 \(W-Q_{1}\)의 SVD에 의해 얻어지는 특별한 경우이다. \ (T=1\)은 양자화 불일치를 완화시키기에 충분하고, 교번 최적화는 미리 훈련된 가중치 \(W\)에 더 가까운 초기화를 찾는 것을 돕고, 이는 성능을 더욱 향상시킨다(섹션 3 참조).
+
+우리는 LoftQ가 개별 가중치 행렬에 적용되므로 병렬로 실행될 수 있기 때문에 계산 비용이 무시할 수 있다고 지적한다. 또한 LoftQ를 미리 훈련된 모델에 한 번만 적용하고 LoftQ에서 얻은 초기화를 다른 다운스트림 작업에 대해 재사용할 수 있음을 언급한다.
+
+### LoRA Fine-tuning 적용
+
+LoftQ에 의해 구해진 \(Q_{T}\in\mathbb{R}_{N}^{d_{1}\times d_{2}}\)을 (1)의 정수 행렬 \(M\)과 (2)의 룩업 테이블 \(\mathcal{T}\)을 이용하여 저장한다. 백본을 정수 행렬 \(M\)으로 초기화하고 LoftQ로 얻은 \(A_{T},B_{T}\)으로 저순위 어댑터를 초기화한다.
+
+```
+1 : 미리 훈련된 가중치 \(W\), 목표 순위 \(r\), \(N\)-비트 양자화 함수 \(q_{N}(\cdot)\), 교번 단계 \(T\)
+2: 초기화 \(A_{0}\gets 0,B_{0}\gets 0\)
+3:for t=1 to \(T\)do
+4: 양자화된 가중치 \(Q_{t}\gets q_{N}(W-A_{t-1}B_{t-1}^{\top})\)의 획득
+5: (9)에 의해 저순위 근사치 \(A_{t},B_{t}\leftarrow\text{SVD}(W-Q_{t})\)를 구함
+6:endfor
+7:\(Q_{T},A_{T},B_{T}\)
+```
+
+**알고리즘 1** LoftQ
+
+LoRA 미세 조정 동안, 우리는 정수 가중치 \(M\)을 동결하고 AdamW (Loshchilov and Hutter, 2017)와 같은 효율적인 최적화 알고리즘을 사용하여 낮은 순위의 어댑터를 최적화한다. 순방향 전파에서 정수 가중치 \(M\)는 (3)에 설명된 대로 룩업 테이블에 의해 시뮬레이션된 고정밀 가중치 \(Q_{T}\)로 일시적으로 역양자화된다. 역전파에서 기울기와 최적화기 상태는 낮은 순위의 어댑터 \(A,B\)와 관련이 있으며, 이는 상당한 훈련 비용을 감소시킨다.
+
+## 4 Experiments
+
+우리는 NLU와 NLG 태스크에 대한 우리의 방법을 평가한다. DeBERTaV3-base(He et al., 2021), BART-large(Lewis et al., 2019), LLAMA-2 series(Touvron et al., 2023)를 양자화하기 위해 LoftQ를 적용한다.
+
+**구현 세부 정보.** LoRA 변형의 이전 작업(Zhang et al., 2023; He et al., 2021)에 이어 모든 백본 가중치 매트릭스를 동결하고 모든 계층의 MHA 및 FFN의 가중치 매트릭스에 저순위 어댑터를 추가합니다. 우리는 낮은 순위의 어댑터에 의해 부착된 가중치 행렬을 양자화한다. 이 문서에 사용 되는 모든 양자화된 모델 및 어댑터는 [https://huggingface.co/LoftQ](https://huggingface.co/LoftQ)에서 사용할 수 있습니다. 우리의 구현은 공개적으로 이용 가능한 _Huggingface Transformers_ 코드-베이스(Paszke 등, 2019)를 기반으로 한다. 모든 실험은 NVIDIA A100 GPU에서 수행된다.
+
+**양자화 방법.** LoftQ가 다른 양자화 기능과 호환됨을 입증하기 위해 두 가지 양자화 방법을 적용합니다.
+
+* _균일 양자화_ 는 고전적인 양자화 방법이다. 연속된 구간을 \(2^{N}\)개의 범주로 균등하게 분할하고 역양자화를 위한 국부 최대 절대값을 저장한다.
+* _NF4_ 및 그 2비트 변이체 _NF2_는 QLoRA(Dettmers et al., 2023)에서 사용되는 양자화 방법이다. 그들은 고정밀 값들이 가우시안 분포로부터 도출된다고 가정하고, 이 값들을 동일한 확률을 갖는 이산 슬롯들에 맵핑한다.
+
+모든 모델에 대해 2-비트 및 4-비트 양자화를 수행하여 4-비트 및 2-비트 수준에서 각각 25-30% 및 15-20%의 압축률을 달성한다. 모든 모델에 대한 압축률 및 훈련 가능한 매개변수 비율은 부록 A에 자세히 설명되어 있다.
+
+**기준.** LoftQ를 다음 기준 방법과 비교 합니다. * _전체 미세 조정_은 미리 훈련 된 모델을 다운스트림 작업에 적용 하는 가장 일반적인 접근 방식입니다. 모델은 미리 훈련된 가중치로 초기화되고 모든 파라미터는 SGD형 최적화 방법을 통해 업데이트된다.
+* _전체 정밀 LoRA (LoRA)_ 는 16 비트 수를 사용 하 여 백본을 저장 하 고 낮은 순위의 어댑터만 최적화 하는 작업 적응을 위한 경량 방법입니다. 적응기는 LoftQ와 같은 행렬에 적용된다.
+* _QLoRA_는 백본이 저비트 레짐으로 양자화되는 것을 제외하고 _LoRA_와 유사합니다. 저순위 어댑터는 (5)를 사용하여 초기화되고 LoftQ와 동일한 행렬에 적용된다.
+
+### Encoder-only Model: DeBERTaV3
+
+**모델 및 데이터 세트.** LoftQ를 사용하여 DeBERTaV3-base(He et al., 2021)를 양자화한 다음, finetune하고 GLUE(일반 언어 이해 평가) 벤치마크(Wang et al., 2019), SQuADv1.1(Rajpurkar et al., 2016) 및 ANLI(Nie et al., 2019)에서 모델을 평가합니다. GLUE의 구체적인 작업은 부록 C에 나와 있다. 이전 작업(Zhang et al., 2023)에 따라 실험에서 WNLI를 제외한다.
+
+**구현 세부 정보.** \(\{1\times 10^{-5},5\times 10^{-5},1\times 10^{-4}\,5\times 10^{-4}\}\)에서 학습 속도를 선택합니다. 우리는 전체 백본을 양자화합니다. GLUE, SQuADv1.1 및 ANLI가 비교적 쉬운 NLU 작업임을 감안할 때, 우리는 또한 더 높은 압축 효율을 위해 임베딩 계층을 양자화한다. 우리는 2-비트 및 4-비트 레벨 모두에서 LoftQ 및 QLoRA에 대해 NormalFloat 및 균일 양자화를 적용한다. 우리는 순위가 낮은 어댑터에 16번과 32번을 사용한다. 훈련 에포크 및 배치 크기와 같은 더 많은 구현 세부 사항은 부록 D.2에 나와 있다.
+
+**주요 결과.** 표 1 및 표 2는 각각 NF2 및 균일 양자화에 의한 GLUE, SQuADv1.1 및 ANLI 데이터 세트에 대한 2비트 양자화에 대한 결과를 요약합니다. 우리의 방법은 다른 순위, 양자화 방법 및 데이터 세트와 관련하여 모든 설정에서 QLoRA보다 일관되게 우수하다. 균일 양자화(표 2)를 사용할 때, 우리의 방법은 MNLI-m에서 88.0%의 정확도를 달성하여 QLoRA 기준선을 8% 능가한다. SST 및 SQuADv1.1과 같은 태스크의 경우 2비트 수준에서 전체 미세 조정 성능에 접근한다. 4비트 양자화 실험 결과는 LoftQ와 QLoRA 모두 완전 미세 조정에 가까운 성능을 달성하기 때문에 부록 D.1에 나와 있다.
+
+또한 저비트 레짐에서 QLoRA에 비해 안정적이다. 예를 들어, QLoRA는 양자화 방법과 순위 모두에 대해 CoLA에 수렴하지 못하는 반면, LoftQ는 모든 경우에 수렴하여 순위 32에서 균일한 양자화를 사용하여 60.5의 점수를 달성한다. LoftQ는 미리 훈련된 가중치의 시작점을 효과적으로 보존함으로써 견고하고 향상된 성능을 일관되게 달성하는 능력이 두드러진다.
+
+### Encoder-Decoder Model: BART
+
+**모델 및 데이터 세트.** BART 대형 모델(Lewis et al., 2020)을 LoftQ로 양자화한 다음, 일반적으로 사용되는 두 요약 데이터 세트(XSum(Narayan et al., 2018) 및 CNN/DailyMail(Hermann et al., 2015)에서 모델을 세분화하고 평가합니다.
+
+**구현 세부 정보.** 인코더 및 디코더 계층 모두의 MHA 및 FFN의 가중치 행렬에 LoftQ를 적용 합니다. 우리는 요약 작업에 대한 메트릭인 ROUGE 1/2/L 점수를 보고한다(Lin, 2004). 2-비트 및 4-비트 시나리오 모두에서 양자화 실험을 수행한다. 우리는 2-비트 및 4-비트 시나리오 모두에서 NormalFloat와 균일한 양자화를 모두 실험한다. 각각의 정밀도에서, 풀 정밀도 LoRA 기준선(Zhang et al., 2023)과의 공정한 비교를 위해 8 및 16과 동일한 랭크를 선택한다. 자세한 구성은 부록 E를 참조하십시오.
+
+**주요 결과.** 표 3은 XSum 및 CNN/DailyMail 테스트 세트에 대한 4비트 양자화 실험 결과를 요약한 것입니다. 우리의 방법은 두 순위 모두에서 QLoRA보다 일관되게 우수하다.
+
+\begin{table}
+\begin{tabular}{c|c|c c c c c c c c c} \hline \hline
+**Rank** & **Method** & **MNLI** & **QNLI** & **RTE** & **SST** & **MRPC** & **CoLA** & **QQP** & **STSB** & **SQuAD** & **ANLI** \\  & & m / mm & Acc & Acc & Acc & Matt & Acc & P/S Corr & EM/F1 & Acc \\ \hline \hline - & Full FT & 90.5/90.6 & 94.0 & 82.0 & 95.3 & 89.5/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\ \hline \multirow{2}{*}{16} & LoRA & 90.4/90.5 & 94.6 & 85.1 & 95.1 & 89.9/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\  & & LoftQ & **87.4**/**95.1** & **86.6** & **61.4** & **90.2** & **83.8**/**88.6** & **37.4** & **90.3**/**86.9** & **87.1**/**86.9** & **81.5**/**88.6** & **47.1** \\ \hline \multirow{2}{*}{32} & QLoRA & 78.5/78.7 & 80.4 & 56.7 & 86.9 & 73.8/82.7 & N.A. & 87.1/82.7 & 83.6/83.3 & 64.6/73.8 & N.A. \\  & LoftQ & **86.0**/**86.1** & **89.9** & **61.7** & **92.0** & **83.6**/**87.2** & **47.5** & **91.0**/**87.9** & **87.5**/**87.0** & **82.9**/**89.8** & **49.0** \\ \hline \hline \end{tabular}
+\end{table}
+표 1: GLUE 개발 세트, SQuADv1.1 개발 세트, **NF2 양자화** 를 사용 하는 ANLI 테스트 세트에 대 한 DeBERTaV3 기반 모델의 2 비트 LoftQ를 사용 하는 결과입니다. 우리는 4개의 씨앗에 대한 중앙값을 보고한다. _ NA_는 모델이 수렴하지 않음을 나타낸다. 각 데이터 세트에 대한 최상의 결과는 **볼드** 에 표시됩니다.
+
+\begin{table}
+\begin{tabular}{c|c|c c c c c c c c c} \hline \hline
+**Rank** & **Method** & **MNLI** & **QNLI** & **RTE** & **SST** & **MRPC** & **CoLA** & **QQP** & **STSB** & **SQuAD** \\  & & m / mm & Acc & Acc & Acc & Acc & Matt & Acc & P/S Corr & Em/F1 \\ \hline \hline - & Full FT & 90.5/90.6 & 94.0 & 82.0 & 95.3 & 89.5/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\ \hline \multirow{2}{*}{16} & LoRA & 90.4/90.5 & 94.6 & 85.1 & 95.1 & 89.9/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\  & & LoftQ & **87.4**/**90.5** & 94.6 & 85.1 & 95.1 & 89.9/93.6 & 69.9 & 92.0/89.4 & 91.7/91.1 & 87.3/93.1 \\ \hline \multirow{2}{*}{16} & QLoRA & 76.5/76.3 & 83.8 & 56.7 & 86.6 & 75.7/84.7 & N.A. & 87.1/82.6 & 83.5/83.4 & 69.5/77.6 \\  & LoftQ & **87.3**/**87.1** & **90.6** & **61.1** & **94.0** & **87.0**/**90.6** & **59.1** & **90.9**/**88.0** & **87.9**/**87.6** & **84.4**/**91.2** \\ \hline \multirow{2}{*}{32} & QLoRA & 79.9/79.5 & 83.7 & 57.8 & 86.9 & 76.5/84.5 & N.A. & 88.6/84.7 & 84.1/84.0 & 71.6/80.2 \\  & LoftQ & **88.0**/**88.1** & **92.2** & **63.2** & **94.7** & **87.5**/**91.2** & **60.5** & **91.3**/**88.3** & **89.5**/**89.2** & **85.2**/**91.6** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: GLUE 개발 세트, SQuADv1.1 개발 세트에 대한 DeBERTaV3 기반 모델의 2비트 LoftQ를 사용한 결과 **균일 양자화** 를 사용합니다. 우리는 4개의 씨앗에 대한 중앙값을 보고한다. _ NA_는 모델이 수렴하지 않음을 나타낸다. 각 작업에 대 한 최상의 결과는 **볼드** 에 표시 됩니다.
+
+datasets. Xsum에서 두 순위 모두 완전 정밀 LoRA를 능가합니다. 이 예기치 않은 결과를 섹션 5에서 논의할 것이다. 2비트 양자화 결과는 표 4에 나와 있다. 우리의 관찰은 LoftQ가 합리적인 결과에 수렴하는 반면 QLoRA는 수렴하지 않는다는 NLU 실험과 일치한다. 이는 초기화 갭을 줄임으로써 우리의 방법이 강압적이라는 것을 나타낸다.
+
+\begin{table}
+\begin{tabular}{c|c|c c} \hline \hline
+**Rank** & **Method** & **XSum** & **CNN/DailyMail** \\ \hline \multirow{3}{*}{8} & QLoRA & N.A. & N.A. \\  & LoftQ & 39.63/16.65/31.62 & 42.24/19.44/29.04 \\ \hline \multirow{3}{*}{16} & QLoRA & N.A. & N.A. \\  & LoftQ & 40.81/17.85/32.80 & 42.52/19.81/39.51 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: **NF2 양자화** 를 사용 하 여 XSum 및 CNN/DailyMail에서 BART-large의 2 비트 LoftQ를 사용 하는 결과 _ NA_는 모델이 수렴하지 않음을 나타낸다. ROUGE-1/2/L를 보고하면 높을수록 좋습니다. 우리는 5개 이상의 씨앗의 중앙값을 보고한다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c c} \hline \hline
+**Quantization** & **Rank** & **Method** & **XSum** & **CNN/DailyMail** \\ \hline \multirow{3}{*}{Full Precision} & - & Lead-3 & 16.30/1.60/11.95 & 40.42/17.62/36.67 \\  & & Full FT & 45.14/22.27/37.25 & 44.16/21.28/40.90 \\ \cline{2-5}  & 8 & LoRA & 43.40/20.20/35.20 & 44.72/21.58/41.84 \\  & 16 & LoRA & 43.95/20.72/35.68 & 45.03/21.84/42.15 \\ \hline \multirow{3}{*}{NF4} & 8 & QLoRA & 42.91/19.72/34.82 & 43.10/20.22/40.06 \\  & & LoftQ & **44.08/20.72/35.89** & **43.81/20.95/40.84** \\ \cline{2-5}  & 16 & QLoRA & 43.29/20.05/35.15 & 43.42/20.62/40.44 \\  & & LoftQ & **44.51/21.14/36.18** & **43.96/21.06/40.96** \\ \hline \multirow{3}{*}{Uniform} & 8 & QLoRA & 41.84/18.71/33.74 & N.A. \\  & & LoftQ & **43.86/20.51/35.69** & **43.73/20.91/40.77** \\ \cline{1-1} \cline{2-5}  & 16 & QLoRA & 42.45/19.36/34.38 & 43.00/20.19/40.02 \\ \cline{1-1}  & & LoftQ & **44.29/20.90/36.00** & **43.87/20.99/40.92** \\ \hline \hline \end{tabular}
+\end{table}
+표 3: XSum 및 CNN/DailyMail에서 BART-large의 4비트 LoftQ를 사용한 결과. ROUGE-1/2/L, 높을수록 좋습니다. _ Lead-3_는 처음 3개의 문장을 요약으로 선택하는 것을 의미합니다. _ NA_는 모델이 수렴하지 않음을 나타낸다. _ Full FT_는 모든 파라미터들이 튜닝되는 full fine-tuning을 지칭한다. 우리는 5개 이상의 씨앗의 중앙값을 보고한다.
+
+### Decoder-only Model: LLAMA-2
+
+**모델 및 데이터 세트.** LoftQ를 사용하여 LLAMA-2-7b 및 LLAMA-2-13b(Touvron 등, 2023)를 양자화합니다. 그런 다음 GSM8K(Cobbe et al., 2021) 및 WikiText-2(Merity et al., 2016)의 두 NLG 데이터 세트에 대해 모델을 미세 조정하고 평가한다. 데이터 세트에 대한 자세한 내용은 부록 F를 참조하십시오.
+
+**구현 세부 정보.** 마찬가지로 모든 계층의 MHA 및 FFN의 가중치 행렬에 LoftQ를 적용합니다. 위키텍스트-2 평가에서는 당혹감을 보고한다. GSM8K 평가에서는 생성된 해에서 수치 답안을 추출한 후 이를 이용하여 정확도를 계산한다. NF2와 NF4 모두 실험을 진행합니다. 자세한 구성은 부록 F를 참조하십시오.
+
+**주요 결과.** 표 5는 WikiText-2 및 GSM8K 데이터 세트에서 2 비트, 4 비트 및 혼합 정밀 NormalFloat 양자화 방법을 사용 하 여 LLAMA-2-7b 및 LLAMA-2-13b에 대 한 실험을 요약 합니다. WikiText-2에서는 두 모델 모두에서 모든 양자화 정밀도 설정에서 일관되게 QLoRA보다 성능이 우수하다. QLoRA가 수렴하지 못하는 어려운 2비트 정밀도를 다룰 때, LoftQ는 7.85의 복잡도를 달성한다. GSM8K에서, 본 방법은 상이한 모델 크기 및 양자화 정밀도 레벨에 걸쳐 QLoRA에 비해 더 우수하거나 파 성능을 달성한다. 예를 들어, 이 방법은 QLoRA가 수렴하지 않는 2비트 정밀도를 사용하여 20.9%의 정확도를 달성한다.
+
+우리는 LoftQ가 LLAMA-2-13b를 갖는 GSM8K에서 완전 정밀 LoRA보다 우수함을 발견한다. 한 가지 가능한 설명은 정규화 부족으로 인해 완전 정밀 LoRA 미세 조정에 과적합이 발생한다는 것이다. 따라서, 우리는 GSM8K에서 무게 감쇄를 갖는 완전 정밀 LoRA를 수행한다. 표 5로부터, 정규화는 LLAMA-2-13b 완전 정밀 LoRA 미세 조정을 돕지만, LLAMA-2-7b에서는 실패한다. 이것은 LLAMA-2-13b가 과적합되기 쉽고 양자화가 그러한 과적합을 극복하기 위한 암시적 규칙화를 갖는다는 것을 나타낸다.
+
+성능과 정밀도 사이의 맞춤형 트레이드오프를 제공하기 위해 처음 4개의 레이어에 있는 행렬은 4비트를 사용하여 양자화되고 나머지 행렬은 2비트로 남아 있는 혼합 정밀 양자화를 탐구한다. LLAMA-2-7b를 사용한 GSM8K 데이터 세트에서 놀라운 5.9% 정확도 부스트와 LLAMA-2-13b를 사용한 12.7% 부스트를 목격했다. 이 결과는 복잡한 혼합 정밀 양자화 시나리오에 대한 LoftQ의 잠재력을 강조한다.
+
+### Analysis
+
+**대체 최적화의 효과.** 대체 최적화의 효과를 확인 하 고 다른 모델에 대 한 하이퍼 매개 변수로서 최상의 값 \(T\)을 찾기 위해 서로 다른 교대 단계 \(T\)를 사용 하 여 실험을 수행 합니다. 모든 작업과 모델에서 교번 최적화가 최소한의 교번 단계에도 상당한 개선을 가져온다는 것을 관찰했다. 이는 양자화된 가중치와 미리 훈련된 가중치 사이의 불일치를 빠르게 좁혀 우리의 방법을 쉽게 적용할 수 있음을 시사한다. 예를 들어, 본 논문에서 제안하는 방법은 MNLI-m 데이터셋에서 5번의 번갈아 가기를 사용하여 88.0%의 정확도를 보였고, 1번의 번기를 사용하여 21.14 Rouge-2 점수를 얻었다. 흥미로운 사실은 특정 지점을 넘어 교대 단계를 증가시키면 수익이 감소하는 경향이 있다는 것이다. 우리는 갭이 작아질수록 각 단계에서 갭을 일관되게 최소화하기 위해 교번 최적화가 더 어려워지기 때문에 이러한 현상이 발생하는 것으로 의심한다. 이 문제는 양자화 방법에 의해 도입된 고유한 오류 때문에 나타난다. 그럼에도 불구하고, 그림 3의 결과는 우리의 방법이 교번 단계 \(T\)에 민감하지 않으며 다운스트림 미세 조정 성능을 일관되게 향상시킬 수 있음을 나타낸다.
+
+## 5 Discussion
+
+교번 최적화에서 양자화 또는 SVD로 시작?** 교번 최적화에 대한 대체 알고리즘은 먼저 낮은 순위의 근사치 \(A_{t},B_{t}\)을 구한 다음 알고리즘 1에서 라인 3과 라인 4를 스위칭하여 양자화된 가중치 \(Q_{t}\)을 구하는 것이다. 우리는 이것이 (6)에서 여전히 목적을 공동으로 최소화하기 때문에 유효한 대체 방법이라는 점에 주목한다. 표 6은 이러한 대체 방법의 성능을 요약한 것이다. 주목할 점은 대체 방법이 기본 버전보다 나쁨에도 불구하고 여전히 QLoRA보다 훨씬 더 우수하다는 것이다. 이 관찰은 더 가까운 성과를 달성함으로써 성능 개선의 가능성을 강조한다.
+
+\begin{table}
+\begin{tabular}{c c|c c c c} \hline \hline \multirow{2}{*}{**Method**} & \multirow{2}{*}{**Bit**} & \multicolumn{2}{c}{**LLAMA-2-7b**} & \multicolumn{2}{c}{**LLAMA-2-13b**} \\  & & **WikiText-2\(\downarrow\)** & **GSM8K\(\uparrow\)** & **WikiText-2\(\downarrow\)** & **GSM8K\(\uparrow\)** \\ \hline LoRA & 16 & 5.08 & 36.9 & 5.12 & 43.1 \\ LoRA+Reg & 16 & – & 34.4 & – & 45.3 \\ \hline QLoRA & 4 & 5.70 & **35.1** & 5.22 & 39.9 \\ LoftQ & 4 & **5.24** & 35.0 & **5.16** & **45.0** \\ \hline QLoRA & 3 & 5.73 & 32.1 & 5.22 & 40.7 \\ LoftQ & 3 & **5.63** & **32.9** & **5.13** & **44.4** \\ \hline QLoRA & 2.5 & N.A. & N.A. & 19.39 & N.A. \\ LoftQ & 2.5 & 5.78 & **31.1** & 5.22 & **41.1** \\ \hline QLoRA & 2.25 & N.A. & N.A. & N.A. & N.A. \\ LoftQ & 2.25 & **6.13** & **26.5** & **5.45** & **38.1** \\ \hline QLoRA & 2 & N.A & N.A. & N.A. & N.A. \\ LoftQ & 2 & **7.85** & **20.9** & **7.69** & **25.4** \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 위키텍스트-2 및 GSM8K 상의 LLAMA-2 시리즈에 대해 NormalFloat를 사용한 LoftQ의 결과. 3/2.5/2.25-비트는 혼합-정밀 양자화를 나타낸다: 처음 16/8/4 레이어들에 대해 4-비트 정밀도 및 나머지 레이어들에 대해 2-비트 정밀도. 우리는 위키텍스트-2에 대한 당혹감과 GSM8K에 대한 정확도를 보고한다. 낮은 순위의 어댑터의 순위는 64입니다. _N.A._ 는 모델이 수렴 하지 않음을 나타냅니다. 우리는 5개의 무작위 종자 이상의 중앙값을 보고한다.
+
+저 정밀도 체제 내에서 미리 훈련된 가중치의 근사화.
+
+## 6 관련 작업
+
+**QAT(Quantization-Aware Training)** 는 다운스트림 작업에서 적응된 양자화된 모델을 얻는 데 자주 사용됩니다 (Peri 등, 2020; Liu 등, 2023). 양자화와 전체 모델 미세 조정을 동시에 포함합니다. 그러나 QAT는 그래디언트 및 최적화 상태와 같은 막대한 훈련 비용이 필요하다. 더욱이 양자화된 가중치의 기울기를 계산하는 것은 어렵다. 우리의 방법은 LoRA의 도움으로 앞서 언급한 문제를 회피하여 다운스트림 작업 적응을 위한 가벼운 접근법을 제공한다.
+
+**PTQ(Post-Training Quantization)** 는 인기 있는 양자화 프레임워크(Frantar et al., 2022; Xiao et al., 2023)의 카테고리로서, 태스크 적응을 위해서도 사용될 수 있다. 고정밀도를 보정합니다.
+
+\begin{table}
+\begin{tabular}{c c|c c c} \hline \hline \multirow{2}{*}{**Method**} & \multirow{2}{*}{**Rank**} & **MNLI** & **QNLI** & **SST2** \\  & & m / mm & Acc & Acc \\ \hline Full FT & - & 90.5/90.6 & 94.0 & 95.3 \\ \hline QLoRA & 32 & 79.9/79.5 & 83.8 & 86.6 \\ \hline LoftQ(SVD First) & 32 & 87.8/87.7 & 84.9 & 89.7 \\ \hline LoftQ(Quantiztion First) & 32 & **88.0/88.1** & **92.2** & **94.7** \\ \hline \hline \end{tabular}
+\end{table}
+표 6: GLUE의 일부에 대한 2-비트 균일하게 양자화된 DeBERTaV3-베이스의 결과. LoftQ(SVD First)는 알고리즘 1에서 라인 3과 라인 4를 스위칭하는 대체 LoftQ를 나타낸다. 우리는 4개의 랜덤 시드에 대한 중앙값을 보고한다. 각 작업에 대 한 최상의 결과는 **볼드** 에 표시 됩니다.
+
+도 3: LoftQ에서 사용되는 상이한 교번 단계 \(T\)의 비교. \ (T=0\)는 저순위 어댑터를 (5)로 초기화하는 QLoRA 방법을 사용함을 나타낸다. \ (T=1,5,10\)는 알고리즘 1에 설명된 LoftQ에 대해 다른 \(T\)을 사용한다는 것을 나타냅니다. **왼쪽**: Uniform 2비트 DeBERTaV3-base. **중간**: NF4 2비트 LLAMA-2-13b. **오른쪽**: NF4 BART-large입니다.
+
+트레이닝 데이터세트의 작은 서브세트를 갖는 모델. 그러므로, 후속 양자화는 트레이닝 데이터세트에 의해 안내되어, 태스크-특정 양자화된 모델들을 제공한다. 또한 구배 역전파를 포함하지 않으므로 비용 효율적입니다. 그러나 일반적으로 QAT에 비해 정확도가 떨어진다.
+
+## 7 Conclusion
+
+본 논문에서는 LMM을 위한 양자화 프레임워크인 LoftQ를 제안한다. LoftQ는 기존의 고정밀 사전 훈련된 가중치에 양자화와 저순위 근사화를 적용하여 후속 LoRA 미세 조정을 위한 초기화를 얻는다. 자연어 이해, 질의 응답, 요약 및 자연어 생성에 대한 실험을 통해 제안된 프레임워크가 인코더 전용 모델, 인코더-디코더 및 디코더 전용 모델의 양자화를 위해 QLoRA와 같은 기존 방법을 현저하게 능가함을 보여준다. 우리는 QLoRA보다 더 나쁜 성능을 보이는 방법을 관찰하지 못했다. 더욱이, 우리의 양자화 프레임워크는 특히 2-비트 레벨과 같은 저-비트 양자화 체제에서 유효성과 견고성을 입증한다.
+
+## References
+
+* Bai 등(2022)Bai, H., Hou, L., Shang, L., Jiang, X., King, I. and Lyu, M. R. (2022)Towards efficient post-training quantization of pre-training language models. _ Neural Information Processing Systems_, **35** 1405-1418의 발전.
+* Bai 등(2020)Bai, H., Zhang, W., Hou, L., Shang, L., Jin, J., Jiang, X., Liu, Q., Lyu, M. and King, I. (2020)Binarybert: Pushing the limit of bert quantization. _ arXiv preprint arXiv:2012.15701_.
+* Bar-Haim 등(2006) Bar-Haim, R., Dagan, I., Dolan, B., Ferro, L., Giampiccolo, D., Magnini, B. and Szpektor, I. (2006). 두 번째 패스칼은 텍스트 수반 문제를 인식합니다.
+* Bentivogli et al. (2009)Bentivogli, L., Clark, P., Dagan, I. and Giampiccolo, D. (2009). 다섯 번째 패스칼은 텍스트 수반 도전을 인식한다. _TAC_에서.
+* Cer 등(2017)Cer, D., Diab, M., Agirre, E., Lopez-Gazpio, I. and Specia, L. (2017). SemEval-2017 과제 1: 의미 텍스트 유사성 다국어 및 교차 언어 집중 평가. _Proceedings of the 11th International Workshop on SemEval-2017)_에서. 캐나다 밴쿠버에 있는 계산 언어학 협회.
+* Cobbe 등(2021)Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R. et al.(2021) 검증자를 학습하여 수학 단어 문제를 해결합니다. _ arXiv preprint arXiv:2110.14168_.
+* Dagan et al. (2007)Dagan, I., Glickman, O. 및 Magnini, B. (2007). 패스칼은 텍스트적 수반 문제를 인식합니다. _Machine Learning Challengees Workshop_ 에서입니다.
+* Dagan 등(2017)Dettmers, T., Lewis, M., Belkada, Y. Zettlemoyer, L. (2022). Llm int8() : 스케일에서의 트랜스포머에 대한 8비트 행렬 곱셈. _ arXiv preprint arXiv:2208.07339_.
+* Dettmers 등(2023)Dettmers, T., Pagnoni, A., Holtzman, A. and Zettlemoyer, L. (2023). Qlora: 양자화된 l1ms의 효율적인 finetuning. _ arXiv preprint arXiv:2305.14314_.
+* Diao et al. (2023)Diao, S., Pan, R., Dong, H., Shum, K. S., Zhang, J., Xiong, W. Zhang T. (2023). Lmflow: 대형 기초 모델의 피니튜닝 및 추론을 위한 확장 가능한 툴킷. _ arXiv preprint arXiv:2306.12420_.
+* Dolan and Brockett (2005)Dolan, W. B. and Brockett, C. (2005). 센센셜 패러프레이즈 코퍼스를 자동으로 구성합니다. _Proceedings of the Third International Workshop on Paraphrasing(IWP2005)_에서.
+* Frantar 등(2022)Frantar, E., Ashkboos, S., Hoefler, T. 및 Alistarh, D. (2022). Gptq: 생성 사전 훈련된 트랜스포머에 대한 정확한 사후 훈련 양자화. _ arXiv preprint arXiv:2210.17323_.
+* Giampiccolo et al. (2007)Giampiccolo, D., Magnini, B., Dagan, I. and Dolan, B. (2007). 세 번째 PASCAL은 텍스트 수반 도전을 인식한다. _Textual Entailment and Paraphrasing에 관한 ACL-PASCAL Workshop의 Proceedings_에서. 계산 언어학 협회, 프라하
+*He et al. (2021a)He, J., Zhou, C., Ma, X., Berg-Kirkpatrick, T. 및 Neubig, G. (2021a). 매개 변수 효율적인 전이 학습의 통합 보기를 향합니다. _ arXiv preprint arXiv:2110.04366_.
+*He et al. (2021b)He, P., Gao, J. and Chen, W. (2021b). Debertav3: gradient-disentangled embedding sharing을 갖는 electra-style pre-training을 이용한 deberta 개선_ arXiv preprint arXiv:2111.09543_.
+* Hermann 등(2015)Hermann, K. M., Kocisky, T., Grefenstette, E., Espeholt, L., Kay, W., Suleyman, M. 및 Blunsom, P. (2015). 컴퓨터를 읽고 이해할 수 있도록 가르칩니다. _ 신경 정보 처리 시스템_, **28** 의 발전입니다.
+* Hu 등(2021)Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L. 그리고 Chen, W. (2021). Lora: 대형 언어 모델의 낮은 순위 적응입니다. _ arXiv preprint arXiv:2106.09685_.
+* Levesque et al. (2012)Levesque, H., Davis, E. and Morgenstern, L. (2012). 위노그라드 스키마 도전 지식 표현과 추론의 원리에 관한 13번째 국제 회의에서.
+* Lewis 등(2019)Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mohamed, A., Levy, O., Stoyanov, V. Zettlemoyer, L. (2019). 바트: 자연어 생성, 번역 및 이해를 위한 시퀀스 대 시퀀스 사전 트레이닝의 노이즈 제거_ arXiv preprint arXiv:1910.13461_.
+* Lewis 등(2020)Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mohamed, A., Levy, O., Stoyanov, V. Zettlemoyer, L. (2020). BART: 자연어 생성, 번역 및 이해를 위한 시퀀스 대 시퀀스 사전 트레이닝의 노이즈 제거. _Computational Linguistics Association의 제58차 연례 회의의 절차_에서. 온라인 컴퓨터 언어학 협회.
+* Lewis 등(2019)Li, Y., Yu, Y., Zhang, Q., Liang, C., He, P., Chen, W. Zhao, T. (2023). Losparse: 저순위 및 희소 근사치에 기초한 대형 언어 모델의 구조화된 압축. _ arXiv preprint arXiv:2306.11222_.
+* Lin(2004)Lin, C.-Y. (2004). 요약 자동 평가 패키지입니다. _텍스트 요약 브랜치 아웃_ 에서입니다. 스페인 바르셀로나의 계산 언어학 협회.
+* Liu 등(2023)Liu, Z., Oguz, B., Zhao, C., Chang, E., Stock, P., Mehdad, Y., Shi, Y., Krishnamoorthi, R. and Chandra, V. (2023). Llm-qat: 대용량 언어 모델에 대한 데이터가 없는 양자화 인식 훈련. _ arXiv preprint arXiv:2305.17888_.
+* Loshchilov and Hutter (2017) Loshchilov, I. and Hutter, F. (2017). Decoupled weight decay regularization. _ arXiv preprint arXiv:1711.05101_.
+* Merity 등(2016)Merity, S., Xiong, C., Bradbury, J. and Socher, R. (2016). 포인터 센티넬 혼합물 모델
+* Narayan et al. (2018)Narayan, S., Cohen, S. B. and Lapata, M. (2018). 자세히 알려주지 말고 요약만 해주세요! 극단적인 요약을 위한 주제 인식 컨볼루션 신경망. _ ArXiv_, **abs/1808.08745**.
+* Nie 등(2019)Nie, Y., Williams, A., Dinan, E., Bansal, M., Weston, J. and Kiela, D. (2019). Adversarial nli: 자연어 이해를 위한 새로운 벤치마크. _ ArXiv_, **abs/1910.14599**. [https://api.semanticscholar.org/CorpusID:207756753] (https://api.semanticscholar.org/CorpusID:207756753)
+* Paszke 등(2019) Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Kopf, A., Yang, E., DeVito, Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L., Bai, J. and Chintala, S. (2019). 피토치: 필수 스타일, 고성능 딥러닝 라이브러리입니다. _신경 정보 처리 시스템의 발전 32_에서. Curran Associates, Inc., 8024-8035.
+*Peri 등(2020)Peri, D., Patel, J. and Park, J. (2020). 텐서를 사용하여 양자화 인식 트레이닝된 네트워크를 배포하는 단계를 포함하는, 방법. _GPU 기술 콘퍼런스_에서.
+* Rajpurkar et al. (2016)Rajpurkar, P., Zhang, J., Lopyrev, K. 및 Liang, P. (2016). SQuAD: 텍스트의 기계 이해를 위한 100,000개 이상의 질문입니다. _2016년 자연어 처리에서의 경험적 방법에 관한 회의의 진행문_ 에서. 텍사스 오스틴의 계산 언어학 협회
+* Shen 등(2020)Shen, S., Dong, Z., Ye, J., Ma, L., Yao, Z., Gholami, A., Mahoney, M. W. and Keutzer, K. (2020). Q-bert: 헤시안 기반 버트의 초저 정밀도 양자화. _Proceedings of the AAAI Conference on Artificial Intelligence_ 34 vol.
+* Socher 등(2013)Socher, R., Perelygin, A., Wu, J., Chuang, J., Manning, C. D., Ng, A. and Potts, C. (2013). 감성 트리뱅크에 대한 의미 구성성에 대한 재귀적 심층 모델입니다. <2013년 자연어 처리에서의 경험적 방법에 관한 회의의 진행>에서. 미국 워싱턴주 시애틀에 있는 컴퓨터 언어학 협회.
+* Sukhukhukh et al. (2017)Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babael, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S. et al.(2023). 라마 2: 기반 및 미세 조정 채팅 모델을 엽니다. _ arXiv preprint arXiv:2307.09288_.
+* Vaswani 등(2017) Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L. 및 Polosukhin, I. (2017). 당신이 필요로 하는 모든 것에 주목하세요. 신경 정보 처리 시스템_, **30**에서의 진보.
+* Wang 등(2019)Wang, A., Singh, A., Michael, J., Hill, F., Levy, O. 및 Bowman, S. R. (2019). GLUE: 자연어 이해를 위한 멀티 태스크 벤치마크 및 분석 플랫폼. _학습 표현에 대 한 국제 회의_ 에서입니다.
+* Warstadt et al. (2019)Warstadt, A., Singh, A. and Bowman, S. R. (2019). 신경망 허용 여부 판단 _ Association for Computational Linguistics_, **7** 625-641의 트랜잭션.
+* Williams et al. (2018)Williams, A., Nangia, N. 그리고 Bowman, S. (2018). 추론을 통한 문장 이해를 위한 광범위한 도전 말뭉치입니다. _Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long Papers)_. 뉴올리언스, 루이지애나 주 계산 언어학 협회
+* Xiao et al. (2023)Xiao, G., Lin, J., Seznec, M., Wu, H., Demouth, J. and Han, S. (2023). Smoothquant: 대형 언어 모델에 대한 정확하고 효율적인 사후 훈련 양자화. _Machine Learning에 대 한 국제 회의_ 에서입니다. PMLR.
+* Zafrir et al. (2019)Zafrir, O., Boudoukh, G., Izsak, P. and Wasserblat, M. (2019). Q8bert: 양자화된 8bit bert. _2019 다섯 번째 워크숍 on Energy Efficient Machine Learning and Cognitive Computing-NeurIPS Edition(EMC2-NIPS)_에서. IEEE.
+* Zhang et al. (2019)Zhang, H., Dauphin, Y. N. and Ma, T. (2019). 픽업 초기화: 정규화가 없는 잔여 학습. _ arXiv preprint arXiv:1901.09321_.
+* Zhang 등(2023)Zhang, Q., Chen, M., Bukharin, A., He, P., Cheng, Y., Chen, W. Zhao, T. (2023). 매개 변수 효율적인 미세 조정을 위한 적응형 예산 할당 _ arXiv preprint arXiv:2303.10512_.
+
+모델 압축비 및 메모리 풋프린트
+
+표 7에서 LoftQ를 적용한 후 압축률을 보고한다. 이는 다음과 같이 정의된다.
+
+\[\text{compression ration}=\frac{\text{backbone size}+\text{LoRA adapter size}}{\text{pre-trained size}}.\]
+
+또한 훈련 중 GPU 메모리 비용을 측정합니다. GPU 메모리는 모델, 작업, 시퀀스 길이, 배치 크기 등에 따라 달라집니다. 우리는 표 8의 예로서 GSM8K에 LLAMA-2를 보고한다.
+
+## 부록 B 양자화 시간
+
+우리는 표 9의 단일 가중치 매트릭스에 적용되는 LoftQ의 실행 시간을 보고한다. 그 시간은 Intel(R) Xeon(R) CPU E5-2650 v4 @ 2.20GHz에서 테스트된다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c} \hline \hline \multirow{2}{*}{**Model**} & **Compression** & **Trainable** & \multirow{2}{*}{**Rank**} & **Bits** & **Quantization** \\  & **ratio (\%)** & **ratio (\%)** & & & **method** \\ \hline DeBERTaV3-base & 15.6 & 3.1 & 16 & 2 & Uniform \\ DeBERTaV3-base & 18.8 & 6.3 & 32 & 2 & Uniform \\ DeBERTaV3-base & 17.2 & 3.1 & 16 & 2 & NF2 \\ DeBERTaV3-base & 20.4 & 6.3 & 32 & 2 & NF2 \\ BART-large & 15.3 & 1.2 & 8 & 4 & NF2 \\ BART-large & 16.7 & 2.5 & 16 & 4 & NF2 \\ BART-large & 27.8 & 1.2 & 8 & 4 & NF4 \\ BART-large & 29.0 & 2.5 & 16 & 4 & NF4 \\ BART-large & 26.2 & 1.2 & 8 & 4 & Uniform \\ BART-large & 27.5 & 2.5 & 16 & 4 & Uniform \\ LLAMA-2-7b & 16.6 & 2.4 & 64 & 2 & Nf2 \\ LLAMA-2-7b & 29.0 & 2.4 & 64 & 4 & Nf4 \\ LLAMA-2-13b & 16.0 & 1.9 & 64 & 2 & Nf2 \\ LLAMA-2-13b & 28.5 & 1.9 & 64 & 4 & Nf4 \\ \hline \hline \end{tabular}
+\end{table}
+표 7: 등뼈의 압축비.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c} \hline \hline \multicolumn{1}{c|}{**Model**} & **Dataset** & **Seq length** & **Batch size** & **GPU Mem** \\ \hline LLAMA-2-7b & GSM8K & 384 & 1 & 15GB \\ LLAMA-2-13b & GSM8K & 384 & 1 & 24GB \\ \hline \hline \end{tabular}
+\end{table}
+표 8: GPU 메모리 풋프린트
+
+## 부록 C GLUE 데이터 세트 통계
+
+GLUE Wang et al.(2019)의 데이터셋 통계량을 다음 표에 제시한다.
+
+GLUE는 두 개의 단일 문장 분류 작업인 SST-2(Socher et al., 2013) 및 CoLA(Warstadt et al., 2019)와 세 개의 유사성 및 패러프레이즈 작업인 MRPC(Dolan and Brockett, 2005), STS-B(Cer et al., 2017) 및 QQP를 포함한다. GLUE는 또한 GLUE에서의 네 개의 자연 언어 추론 태스크들: MNLI(Williams et al., 2018), QNLI(Rajpurkar et al., 2016), RTE(Dagan et al., 2007; Bar-Haim et al., 2006; Giampiccolo et al., 2007; Bentivogli et al., 2009), 및 WNLI(Levesque et al., 2012).
+
+\begin{table}
+\begin{tabular}{l|l|c|c|c|c} \hline \hline
+**Corpus** & **Task** & **\#Train** & **\#Dev** & **\#Test** & **\#Label** & **Metrics** \\ \hline \multicolumn{6}{c}{Single-Sentence Classification (GLUE)} \\ \hline CoLA & Acceptability & 8.5k & 1k & 1k & 2 & Matthews corr \\ \hline SST & Sentiment & 67k & 872 & 1.8k & 2 & Accuracy \\ \hline \multicolumn{6}{c}{Pairwise Text Classification (GLUE)} \\ \hline MNLI & NLI & 393k & 20k & 20k & 3 & Accuracy \\ \hline RTE & NLI & 2.5k & 276 & 3k & 2 & Accuracy \\ \hline QQP & paraphrase & 364k & 40k & 391k & 2 & Accuracy/F1 \\ \hline MRPC & paraphrase & 3.7k & 408 & 1.7k & 2 & Accuracy/F1 \\ \hline QNLI & QA/NLI & 108k & 5.7k & 5.7k & 2 & Accuracy \\ \hline \multicolumn{6}{c}{Text Similarity (GLUE)} \\ \hline STS-B & Similarity & 7k & 1.5k & 1.4k & 1 & Pearson/Spearman corr \\ \hline \hline \end{tabular}
+\end{table}
+표 10: GLUE 벤치마크의 요약.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c} \hline \hline
+**Model** & **Size** & **Step \(T\)** & **Quantization method** & **Time** \\ \hline DeBERTaV3-base & \(768\times 768\) & 5 & Uniform & 1s \\ BART-large & \(1024\times 1024\) & 5 & NF4 & 1s \\ LLAMA-2-7b & \(4096\times 4096\) & 5 & NF4 & 21s \\ LLAMA-2-13b & \(5120\times 5120\) & 5 & NF4 & 43s \\ \hline \hline \end{tabular}
+\end{table}
+표 9: 상이한 가중치 매트릭스에 적용되는 LoftQ의 실행 시간.
+
+자연어 이해
+
+### GLUE with 4-bit
+
+우리는 표 11에서 4비트 결과를 보여준다. 두 방법 모두 풀피네튜닝에 가까운 성능을 달성할 수 있다.
+
+### Training Details
+
+**구현 세부 정보.** LoftQ의 구현은 공개적으로 사용 가능한 Huggingface(Paszke 등, 2019) 코드 기반"을 기반으로 합니다.
+
+**하이퍼 매개 변수 세부 정보** \(\{1\times 10^{-5},5\times 10^{-5},1\times 10^{-4},5\times 10^{-4}\}\)의 학습 속도를 선택 하 고 균일 양자화 실험과 nf2 양자화 실험 모두에 선택 된 학습 속도를 사용 합니다. 우리는 모든 GLUE 작업과 ANLI에 32의 배치 크기를 사용한다. SQuADv1.1에 대해 16의 배치 크기를 사용합니다. 모든 GLUE 작업에 대해 5 반복의 LoftQ를 사용합니다.
+
+표 12는 균일 양자화를 이용한 DeBERTaV3-base 학습에 사용된 각 태스크에 대한 세부 하이퍼파라미터들을 요약한 것이다. <표 13>은 nf2 양자화를 이용한 DeBERTaV3-base 학습에 사용된 각 태스크에 대한 세부 하이퍼파라미터들을 정리한 것이다.
+
+\begin{table}
+\begin{tabular}{c|c|c c c c c} \hline \hline
+**Method** & **Rank** & \begin{tabular}{c} **MNLI** \\ m / mm \\ \end{tabular} & \begin{tabular}{c} **SST-2** \\ Acc \\ \end{tabular} & \begin{tabular}{c} **QNLI** \\ Acc \\ \end{tabular} &
+\begin{tabular}{c} **ANLI** \\ Acc \\ \end{tabular} \\ \hline Full FT & - & 90.5/90.6 & 95.3 & 94.0 & 59.8 \\ \hline QLoRA & 32 & 89.9/89.9 & **95.3** & **94.2** & 59.4 \\ \hline LoftQ & 32 & **89.9/90.0** & **95.3** & 94.1 & **59.9** \\ \hline \hline \end{tabular}
+\end{table}
+표 11: NF4 양자화를 사용하여 GLUE 개발 세트에 대한 DeBERTaV3 기반 모델의 4비트 LoftQ를 사용한 결과. 우리는 4개의 종자 이상의 중앙값을 보고한다. NA를 사용한 결과는 모델이 수렴하지 않음을 나타낸다. 각 데이터 세트에 대한 최상의 결과는 굵게 표시됨
+
+\begin{table}
+\begin{tabular}{c|c c c c c c c c c} \hline \hline
+**Hyper-parameter** & **MNLI** & **RTE** & **QNLI** & **MRPC** & **QQP** & **SST-2** & **CoLA** & **STS-B** & **SQuADv1.1** & **ANLI** \\ \hline \# epochs & 5 & 20 & 10 & 60 & 10 & 10 & 60 & 60 & 10 & 12 \\ Learning rate & \(1\times 10^{-4}\) & \(5\times 10^{-4}\) & \(5\times 10^{-5}\) & \(1\times 10^{-4}\) & \(5\times 10^{-5}\) & \(5\times 10^{-5}\) & \(5\times 10^{-5}\) & \(5\times 10^{-5}\) & \(5\times 10^{-5}\) & \(5\times 10^{-5}\) \\ \hline \hline \end{tabular}
+\end{table}
+표 12: 균일 양자화를 사용하여 DeBERTaV3-베이스를 트레이닝하기 위한 GLUE 벤치마크에 대한 LoftQ의 하이퍼-파라미터 설정.
+
+[MISSING_PAGE_FAIL:21]
+
+[MISSING_PAGE_EMPTY:22]
+
+우리는 식 (10)을 행렬 곱셈으로 재구성할 수 있다.
+
+\[Y=Z\times H^{\top},\]
+
+여기서 \(Z\in\mathbb{R}^{hw\times c_{1}d^{2}},H\in\mathbb{R}^{c_{2}\times c_{1}d^{2}}\)는 입력 \(X\)을 확장 및 평탄화하여 커널을 연결 및 평탄화한다. 먼저 커널 윈도우 내에서 벡터 \(x_{i,j}\in\mathbb{R}^{c_{1}}\)을 이웃 벡터로 확장한다.
+
+\[x_{i,j}^{{}^{\prime}}=\text{Concat}(\text{x}_{\text{i}-\frac{d}{2},\text{j}- \frac{d}{2}},....,\text{x}_{\text{i}+\frac{d}{2},\text{j}+\frac{d}{2}}).\]
+
+이제 \(X\)은 \(X^{\prime}\in\mathbb{R}^{hw\times w\times c_{1}d^{2}}\)이 된다. 그리고 \(X^{\prime}\)을 \(Z\in\mathbb{R}^{hw\times c_{1}d^{2}}\)으로 평평하게 하였다. 커널의 경우 먼저 \(\{K_{1},...,K_{c_{2}}\}\)을 \(H^{\prime}\in\mathbb{R}^{c_{2}\times c_{1}\times d\times d}\)으로 연결한다. 그런 다음 \(H^{\prime}\)을 \(H\)으로 평평하게 만들었다.
+
+\(H\)은 낮은 순위의 행렬로 근사될 수 있다는 점에 유의하라.
+
+\[R=UV^{\top},\]
+
+여기서 SVD에 의한 \(U\in\mathbb{R}^{c_{2}\times r},V\in\mathbb{R}^{c_{1}d^{2}\times r},r\ll\min\{c _{2},c_{1}d^{2}\}\)이다. 따라서, 원래의 컨볼루션 레이어는 다음과 같이 근사될 수 있다.
+
+\[\widehat{Y} = Z\times(UV^{\top})^{\top} \tag{11}\] \[=(Z\times V)\times U^{\top}\] (12) \[=M\times U^{\top}. \tag{13}\]
+
+\(Z\times V\)는 \(r\) 커널을 갖는 convolution 연산으로 복원될 수 있다 \(d_{i}\in\mathbb{R}^{c_{1}\times d\times d},i=1,2,...,r\)와 \(M\times U^{\top}\)는 \(c_{2}\) 커널을 갖는 convolution 연산으로 복원될 수 있다 \(U_{i}\in\mathbb{R}^{r\times 1\times 1},i=1,2,...,c_{2}\)
+
+\begin{table}
+\begin{tabular}{c|c|c c c} \hline \hline \multirow{2}{*}{**Method**} & \multirow{2}{*}{**Ratio**} & **MNLI** & **SST-2** & **QNLI** \\  & & m / mm & Acc & Acc \\ \hline Full FT & 100\% & 90.5 / 90.6 & 95.3 & 94.0 \\ \hline \multirow{2}{*}{LoSparse} & 15\% & 83.3/82.9 & 87.6 & 90.4 \\  & 20\% & 84.5/83.8 & 91.7 & 88.6 \\ \hline \multirow{2}{*}{LoftQ} & 15.6\% & **87.3**/**87.1** & **94.0** & **90.6** \\  & 18.8\% & **88.0**/**88.1** & **94.7** & **92.4** \\ \hline \hline \end{tabular}
+\end{table}
+표 18: 일부 GLUE 개발 세트에 대해 DeBERTaV3-베이스 모델을 갖는 LoSparse와 비교하여 2-비트 균일 양자화를 사용하는 LoftQ의 결과. 여기서, _비율_은 전체 잔여 가중치의 비율이다. _N.A._가 있는 결과는 모델이 수렴하지 않음을 나타냅니다.

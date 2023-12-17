@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# LoftQ: LoRA-Fine-Tuning-Aware Quantization for Large Language Models\n' +
+      '\n' +
+      'Yixiao Li\\({}^{**}\\), Yifan Yu\\({}^{**}\\), Chen Liang, Pengcheng He,\n' +
+      '\n' +
+      'Nikos Karampatzizakis, Weizhu Chen, Tuo Zhao\n' +
+      '\n' +
+      'Li, Yu, Liang and Zhao are affiliated with Georgia Tech. He, Karampatzizakisand Chen are affiliated with Microsoft Azure. Correspondence to yixiaoli@gatech.edu, yyu429@gatech.edu and tourzhao@gatech.edu.Equal contributionsespecially in real-world deployments where resources are often constrained and need to be shared among many users.\n' +
+      '\n' +
+      'To mitigate the extensive storage requirements of pre-trained models, quantization serves as a pivotal compression technique (Zafrir et al., 2019; Shen et al., 2020; Bai et al., 2022; Dettmers et al., 2022), converting high-precision numerical values into a discrete set of values. Typically, model parameters, originally stored in a 16-bit float format, are transformed into a 4-bit integer format through quantization, resulting in a substantial 75% reduction in storage overhead. Additionally, to facilitate the adaptation of quantized pre-trained models to downstream tasks efficiently, Low-Rank Adaptation (LoRA) is a viable approach (Hu et al., 2021). This technique is a parameter-efficient fine-tuning method traditionally applied to high-precision pre-trained models. It is based on the hypothesis that the differences between fully fine-tuned weights and pre-trained weights exhibit low-rank properties. This allows these differences to be represented using low-rank matrices. As a result, the original pre-trained weights remain unaltered, with adaptations confined solely to these low-rank matrices, enabling effective task adaptation.\n' +
+      '\n' +
+      'When quantizing pre-trained models, practitioners often concentrate primarily on the quantization technique, inadvertently neglecting the importance of subsequent LoRA fine-tuning (Dettmers et al., 2023; Diao et al., 2023). For example, QLoRA inherits the fixup initialization (Zhang et al., 2019) used in LoRA, which (Dettmers et al., 2023) attaches zero initialized low-rank adapters (see Section 2.3) to the quantized pre-trained model. The inevitable discrepancy introduced by quantization during the approximation of the original high-precision numbers, a scenario particularly pronounced in low-bit situations such as the 2-bit regime, can adversely impact the initialization of LoRA fine-tuning. As illustrated in Figure 0(a), the quantized pre-trained model obtained by QLoRA exhibits severe degradation below the 3-bit level. This deviation in initialization often results in an inferior fine-tuning performance. As illustrated in Figure 0(b), the fine-tuning performance drops as the quantization bit decreases when applying QLoRA. Moreover, it is noteworthy that QLoRA fails below the 3-bit level.\n' +
+      '\n' +
+      'In this paper, we introduce a novel quantization framework, called **Lo**RA-**F**ine-**T**uning-aware **Q**uantization (LoftQ). It is designed specifically for pre-trained models that require quantization and LoRA fine-tuning. This framework actively integrates low-rank approximation, working in tandem with quantization to jointly approximate the original high-precision pre-trained weights. This synergy significantly enhances alignment with the original pre-trained weights as illustrated in Figure 2. Consequently, our method provides an advantageous initialization point for subsequent LoRA fine-tuning, leading to improvements in downstream tasks.\n' +
+      '\n' +
+      'We evaluate our quantization framework by conducting extensive experiments on downstream tasks, such as NLU, question answering, summarization, and NLG. Experiments show that LoftQ consistently outperforms QLoRA across all precision levels. For instance, with 4-bit quantization, we achieve a 1.1 and 0.8 gain in Rouge-1 for XSum (Narayan et al., 2018) and CNN/DailyMail (Hermann et al., 2015), respectively. LoftQ excels particularly in low-bit scenarios and works effectively with different quantization methods. For example, we achieve over an 8% gain on MNLI (Wang et al., 2019) and more than 10% on SQuADv1.1 (Rajpurkar et al., 2016) with both 2-bit NormalFloat and the 2-bit uniform quantization. We have not seen our approach performs worse than QLoRA.\n' +
+      '\n' +
+      'Figure 1: QLoRA performance with different bits. **Left:** QLoRA initialization of LLAMA-2-13b on WikiText-2. **Right:** Apply QLoRA to LLAMA-2-13b on WikiText-2 language modeling task. Smaller perplexity indicates better performance.\n' +
+      '\n' +
+      'Figure 2: Initialization discrepancy between the LoRA initialization and the original pre-trained weight matrix, described by the spectral norm and Frobenius norm of the difference. The weight matrix in the above figures is randomly selected in BART-large. The initialization is obtained by QLoRA and LoftQ, with Uniform and NormalFloat quantization methods applied at both 2-bit and 4-bit levels. LoftQ successfully mitigates the discrepancy, especially at the 2-bit level.\n' +
+      '\n' +
+      'Background\n' +
+      '\n' +
+      '### Transformer Models\n' +
+      '\n' +
+      'A transformer model contains a sequence of layers, where each layer consists of two sub-layers: a multi-head self-attention (MHA) and a fully connected feed forward network (FFN) (Vaswani et al., 2017). Given the input \\(X\\in\\mathbb{R}^{n\\times d}\\), where \\(n\\) is the sequence length and \\(d\\) is the hidden dimension of the model, MHA computes the \\(h\\) attention heads in parallel:\n' +
+      '\n' +
+      '\\[\\text{MHA}(X)=\\text{Concat}(\\text{head}_{1},...,\\text{head}_{h})W _{o},\\] \\[\\text{where}\\ \\ \\ \\text{head}_{i}= \\text{Softmax}(XW_{q_{i}}(XW_{k_{i}})^{\\top}/\\sqrt{d_{h}})XW_{v_{ i}}\\ \\ \\text{for}\\ \\ \\ \\ i=1,...,h,\\]\n' +
+      '\n' +
+      'where \\(W_{q_{i}},W_{k_{i}},W_{v_{i}}\\in\\mathbb{R}^{d\\times d_{h}}\\) are query, key, and value matrices, \\(W_{o}\\in\\mathbb{R}^{d\\times d}\\) is the output matrix, and \\(d_{h}=d/h\\). FFN comprises two linear transformations and an activation function, and is defined as \\(\\text{FFN}(X)=\\sigma(XW_{f_{1}}+b_{1})W_{f_{2}}+b_{2}\\), where \\(W_{f_{1}}\\in\\mathbb{R}^{d\\times d_{m}}\\), \\(W_{f_{2}}\\in\\mathbb{R}^{d_{m}\\times d}\\), and \\(\\sigma(\\cdot)\\) is the activation function. A residual connection is used and followed by layer normalization.\n' +
+      '\n' +
+      '### Quantization\n' +
+      '\n' +
+      '**Quantization.** Given a high-precision number, e.g., such as 32-bit floating point number, \\(X^{\\text{HP}}\\in\\mathbb{R}\\), \\(N\\)-bit quantization encodes it to an integer \\(X^{\\text{INT}}\\in\\{0,1,...,2^{N}-1\\}\\). This process can be expressed as\n' +
+      '\n' +
+      '\\[X^{\\text{INT}}=\\text{round}\\left((2^{N}-1)F\\left(X^{\\text{HP}} \\right)\\right), \\tag{1}\\]\n' +
+      '\n' +
+      'where \\(F(\\cdot)\\colon\\mathbb{R}\\mapsto[0,1]\\) is a normalization function. Uniform quantization assumes \\(F(X)=(X-X_{\\text{min}})/(X_{\\text{max}}-X_{\\text{min}})\\). Dettmers et al. (2023) proposes 4-bit NormalFloat Quantization (NF4). It assumes \\(X\\sim\\mathcal{N}(0,\\sigma^{2})\\) and hence \\(F(X)=\\Phi(X/\\sigma)\\), where \\(\\Phi(\\cdot)\\) is the cumulative distribution function of the standard normal distribution.\n' +
+      '\n' +
+      '**Dequantization.** A lookup table \\(\\mathcal{T}\\), where\n' +
+      '\n' +
+      '\\[\\mathcal{T}[i]=F^{-1}\\left(\\frac{i}{2^{N}-1}\\right),i=0,1,...,2^{N}-1, \\tag{2}\\]\n' +
+      '\n' +
+      'is used to decode the integer \\(X^{\\text{INT}}\\) to its simulated high-precision counterpart \\(X^{\\text{D}}\\in\\mathbb{R}\\). Therefore, the dequantization can be expressed as\n' +
+      '\n' +
+      '\\[X^{\\text{D}}=\\mathcal{T}[X^{\\text{INT}}]. \\tag{3}\\]\n' +
+      '\n' +
+      '**Simulated Quantization for Matrices.** While it is possible to perform multiplication directly between quantized representations, it is common to apply simulated quantization for matrices (Bai et al., 2020; Shen et al., 2020). There, quantized weight matrices are stored as encoded integers in memory, and are temporarily dequantized to simulated high-precision matrices by the lookup table when engaged in multiplication operations. In simulated quantization, it is only necessary to analyze the map from a high-precision matrix to a simulated high-precision matrix. We denote this end-to-end process by \\(q_{N}(\\cdot)\\colon\\mathbb{R}^{m\\times n}\\mapsto\\mathbb{R}^{m\\times n}_{N}\\), where \\(\\mathbb{R}_{N}:\\{\\mathcal{T}[i]\\in\\mathbb{R}|0\\leq i<2^{N}\\}\\).\n' +
+      '\n' +
+      '### Low-Rank Adaptation\n' +
+      '\n' +
+      'LoRA (Hu et al., 2021) updates two small weight matrices \\(A\\) and \\(B\\) that are attached to a frozen pre-trained weight matrix \\(W\\). Hence, a linear transformation, \\(Y=XW\\), is reformulated as\n' +
+      '\n' +
+      '\\[Y=XW+XAB^{\\top}, \\tag{4}\\]\n' +
+      '\n' +
+      'where \\(X\\in\\mathbb{R}^{n\\times d_{1}},W\\in\\mathbb{R}^{d_{1}\\times d_{2}},A\\in\\mathbb{ R}^{d_{1}\\times r},B\\in\\mathbb{R}^{d_{2}\\times r}\\), and \\(r\\ll\\min\\{d_{1},d_{2}\\}\\). Initially,\n' +
+      '\n' +
+      '\\[A\\sim\\mathcal{N}(0,\\sigma^{2}),\\;B=0, \\tag{5}\\]\n' +
+      '\n' +
+      'so as to align to the pre-trained weights. During the fine-tuning, \\(W\\) is fixed while \\(A\\) and \\(B\\) are updated by some SGD-type optimization method.\n' +
+      '\n' +
+      'It is worth noting that if low-rank adapters \\(A\\) and \\(B\\) are attached to a quantized backbone \\(Q=q_{N}(W)\\) and are initialized by (5), the starting weight \\(Q+AB^{\\top}\\) is no longer equal to the pre-trained weight \\(W\\) due to the discrepancy introduced by the quantization.\n' +
+      '\n' +
+      '## 3 Method\n' +
+      '\n' +
+      'We propose **LoRA**-Fine**-Tuning**-aware **Q**uantization (LoftQ), a quantization framework for LLMs. It alternatively applies quantization and low-rank approximation to approximate original pre-trained weights. This quantization framework provides a promising initialization for LoRA fine-tuning, which alleviates the quantization discrepancy in QLoRA and improves generalization in downstream tasks significantly.\n' +
+      '\n' +
+      '### LoRA-Aware Quantization\n' +
+      '\n' +
+      'We use an \\(N\\)-bit quantized weight \\(Q\\in\\mathbb{R}_{N}^{d_{1}\\times d_{2}}\\) and low-rank approximations \\(A\\in\\mathbb{R}^{d_{1}\\times r},B\\in\\mathbb{R}^{d_{2}\\times r}\\) to approximate the original high-precision pre-trained weight \\(W\\in\\mathbb{R}^{d_{1}\\times d_{2}}\\) as the initialization of LoRA fine-tuning. Specifically, before fine-tuning, we initialize the network by minimizing the following objective:\n' +
+      '\n' +
+      '\\[\\min_{Q,A,B}\\left\\|W-Q-AB^{\\top}\\right\\|_{F}, \\tag{6}\\]\n' +
+      '\n' +
+      'where \\(\\left\\|\\cdot\\right\\|_{F}\\) denotes the Frobenius norm. This objective in (6) takes LoRA fine-tuning into consideration by jointly optimizing the initial values of the quantized backbone \\(Q\\) and low-rank adapters \\(A,B\\). Contrarily, practitioners typically convert the pre-trained weight \\(W\\) into a quantized weight \\(Q\\) outright, neglecting the subsequent LoRA fine-tuning process. This oversight leads to notable performance degradation in downstream tasks arising from the quantization discrepancy.\n' +
+      '\n' +
+      '### Alternating Optimization\n' +
+      '\n' +
+      'We solve the minimization problem in (6) by alternating between quantization and singular value decomposition (SVD). To begin with, we set \\(A_{0}\\), and \\(B_{0}\\) equal to 0.\n' +
+      '\n' +
+      '**Quantization**. At the \\(t\\)-th step, we quantize the difference between the original pre-trained weight \\(W\\) and the low-rank approximation \\(A_{t-1}B_{t-1}^{\\top}\\) from the last step to obtain the quantized weight \\(Q_{t}\\) by\n' +
+      '\n' +
+      '\\[Q_{t}=q_{N}(W-A_{t-1}B_{t-1}^{\\top}), \\tag{7}\\]\n' +
+      '\n' +
+      'where \\(q_{N}(\\cdot)\\) maps a high-precision weight matrix to a quantized matrix.\n' +
+      '\n' +
+      'We remark that our algorithm is compatible with different quantization functions \\(q_{N}(\\cdot)\\). We apply NF4 and the uniform quantization in Section 4 as examples. We also remark that \\(Q_{t}\\) is not an exact solution of the minimization in (6), given the fixed \\(A_{t-1}B_{t-1}^{\\top}\\), but it is an efficient approximation.\n' +
+      '\n' +
+      '**SVD**. After obtaining the \\(t\\)-th quantized weight \\(Q_{t}\\), SVD is applied to the residual of the quantization denoted by \\(R_{t}=W-Q_{t}\\) by\n' +
+      '\n' +
+      '\\[R_{t}=\\sum_{i=1}^{d}\\sigma_{t,i}u_{t,i}v_{t,i}^{\\top}, \\tag{8}\\]\n' +
+      '\n' +
+      'where \\(d=\\min\\{d_{1},d_{2}\\}\\), \\(\\sigma_{t,1}\\geq\\sigma_{t,2}\\geq...\\geq\\sigma_{t,d}\\) are the singular values of \\(R_{t}\\), \\(u_{t,i}\\)\'s and \\(v_{t,i}\\)\'s are the associated left and right singular vectors of \\(R_{t}\\). We then obtain a rank-\\(r\\) approximation of \\(R_{t}\\) by \\(A_{t}B_{t}^{\\top}\\), where\n' +
+      '\n' +
+      '\\[A_{t}=[\\sqrt{\\sigma_{t,1}}u_{t,1},...,\\sqrt{\\sigma_{t,r}}u_{t,r}],\\] \\[B_{t}=[\\sqrt{\\sigma_{t,1}}v_{t,1},...,\\sqrt{\\sigma_{t,r}}v_{t,r}]. \\tag{9}\\]\n' +
+      '\n' +
+      'We summarize our method in Algorithm 1. It is worth noting that \\(T=1\\) is a special case where \\(Q_{1}\\) is the exact quantized weight obtained by QLoRA, and low-rank approximations \\(A_{1},B_{1}\\) are obtained by the SVD of the quantization residual \\(W-Q_{1}\\). \\(T=1\\) is sufficient to mitigate the quantization discrepancy, and alternating optimization helps to find a closer initialization to the pre-trained weight \\(W\\), which further improves the performance (see Section 3).\n' +
+      '\n' +
+      'We remark that the computational cost of LoftQ is negligible because it is applied to individual weight matrices and therefore can be executed in parallel. We also remark one can apply LoftQ only once to a pre-trained model and reuse the initialization obtained by LoftQ for different downstream tasks.\n' +
+      '\n' +
+      '### Applying to LoRA Fine-tuning\n' +
+      '\n' +
+      'We store the \\(Q_{T}\\in\\mathbb{R}_{N}^{d_{1}\\times d_{2}}\\) obtained by LoftQ using an integer matrix \\(M\\) by (1) and a lookup table \\(\\mathcal{T}\\) by (2). We initialize the backbone with the integer matrix \\(M\\) and initialize the low-rank adapters with \\(A_{T},B_{T}\\) obtained by LoftQ.\n' +
+      '\n' +
+      '```\n' +
+      '1:Pre-trained weight \\(W\\), target rank \\(r\\), \\(N\\)-bit quantization function \\(q_{N}(\\cdot)\\), alternating step \\(T\\)\n' +
+      '2:Initialize \\(A_{0}\\gets 0,B_{0}\\gets 0\\)\n' +
+      '3:for t = 1 to \\(T\\)do\n' +
+      '4: Obtain quantized weight \\(Q_{t}\\gets q_{N}(W-A_{t-1}B_{t-1}^{\\top})\\)\n' +
+      '5: Obtain low-rank approximation \\(A_{t},B_{t}\\leftarrow\\text{SVD}(W-Q_{t})\\) by (9)\n' +
+      '6:endfor\n' +
+      '7:\\(Q_{T},A_{T},B_{T}\\)\n' +
+      '```\n' +
+      '\n' +
+      '**Algorithm 1** LoftQ\n' +
+      '\n' +
+      'During LoRA fine-tuning, we freeze the integer weight \\(M\\) and optimize the low-rank adapters with an efficient optimization algorithm, e.g., AdamW (Loshchilov and Hutter, 2017). In forward propagation, the integer weight \\(M\\) is temporarily dequantized to the simulated high-precision weight \\(Q_{T}\\) by its lookup table, as described in (3). In back propagation, gradients and optimizer state are only related to low-rank adapters \\(A,B\\), which reduces considerable training cost.\n' +
+      '\n' +
+      '## 4 Experiments\n' +
+      '\n' +
+      'We evaluate our method on NLU and NLG tasks. We apply LoftQ for quantizing DeBERTaV3-base (He et al., 2021), BART-large (Lewis et al., 2019), and LLAMA-2 series (Touvron et al., 2023).\n' +
+      '\n' +
+      '**Implementation Details.** Following the prior works of LoRA variants (Zhang et al., 2023; He et al., 2021), we freeze all the backbone weight matrices and add low-rank adapters to weight matrices in MHA and FFN of all layers. We quantize the weight matrices that are attached by low-rank adapters. All the quantized models and adapters used in this paper are available on [https://huggingface.co/LoftQ](https://huggingface.co/LoftQ). Our implementation is based on publicly available _Huggingface Transformers_ code-base (Paszke et al., 2019). All the experiments are conducted on NVIDIA A100 GPUs.\n' +
+      '\n' +
+      '**Quantization Methods.** We apply two quantization methods to demonstrate LoftQ is compatible with different quantization functions:\n' +
+      '\n' +
+      '* _Uniform quantization_ is a classic quantization method. It uniformly divides a continuous interval into \\(2^{N}\\) categories and stores a local maximum absolute value for dequantization.\n' +
+      '* _NF4_ and its 2-bit variant _NF2_ are quantization methods used in QLoRA (Dettmers et al., 2023). They assume that the high-precision values are drawn from a Gaussian distribution and map these values to discrete slots that have equal probability.\n' +
+      '\n' +
+      'We perform 2-bit and 4-bit quantization on all models, achieving compression ratios of 25-30% and 15-20% at the 4-bit and 2-bit levels, respectively. The compression ratios and trainable parameter ratios for all models are detailed in the Appendix A.\n' +
+      '\n' +
+      '**Baselines.** We compare LoftQ with the following baseline methods:* _Full fine-tuning_ is the most common approach for adapting a pre-trained model to downstream tasks. The model is initialized with pre-trained weights and all parameters are updated through an SGD-type optimization method.\n' +
+      '* _Full precision LoRA (LoRA)_ is a lightweight method for task adaptation, where it stores the backbone using 16-bit numbers and optimizes the low-rank adaptors only. The adaptors are applied to the same matrices as in LoftQ.\n' +
+      '* _QLoRA_ is similar to _LoRA_ except the backbone is quantized into low-bit regime. The low-rank adapters are initialized using (5) and are applied to the same matrices as in LoftQ.\n' +
+      '\n' +
+      '### Encoder-only Model: DeBERTaV3\n' +
+      '\n' +
+      '**Models and Datasets.** We quantize the DeBERTaV3-base (He et al., 2021) with LoftQ, then finetune and evaluate the model on the General Language Understanding Evaluation (GLUE) benchmark (Wang et al., 2019), SQuADv1.1 (Rajpurkar et al., 2016), and ANLI (Nie et al., 2019). The specific tasks of GLUE are given in Appendix C. Following previous works (Zhang et al., 2023), we exclude WNLI in the experiments.\n' +
+      '\n' +
+      '**Implementation Details.** We select the learning rates from \\(\\{1\\times 10^{-5},5\\times 10^{-5},1\\times 10^{-4}\\,5\\times 10^{-4}\\}\\). We quantize the entire backbone. Given that GLUE, SQuADv1.1, and ANLI are relatively easy NLU tasks, we also quantize the embedding layer for higher compression efficiency. We apply the NormalFloat and the uniform quantization for LoftQ and QLoRA at both 2-bit and 4-bit levels. We use rank 16 and 32 for low-rank adapters. More implementation details, such as the training epochs and batch sizes, are presented in Appendix D.2.\n' +
+      '\n' +
+      '**Main Results.** Table 1 and Table 2 summarize the results for 2-bit quantization on the GLUE, SQuADv1.1, and ANLI datasets, by NF2 and the uniform quantization, respectively. Our method consistently outperforms QLoRA on all settings with respect to different ranks, quantization methods, and datasets. When using the uniform quantization (Table 2), our method achieves 88.0% accuracy on MNLI-m, surpassing the QLoRA baseline by 8%. For tasks like SST and SQuADv1.1, our method even approaches the full fine-tuning performance at 2-bit level. The 4-bit quantization experiment results are presented in Appendix D.1 as both LoftQ and QLoRA achieve performance close to full fine-tuning.\n' +
+      '\n' +
+      'Our method is also more stable compared to QLoRA in the low-bit regime. For instance, while QLoRA fails to converge on CoLA for both quantization methods and ranks, LoftQ converges in all cases and achieves a score of 60.5 using uniform quantization at rank 32. LoftQ stands out in its ability to consistently attain robust and improved performance by effectively preserving the starting point of pre-trained weights.\n' +
+      '\n' +
+      '### Encoder-Decoder Model: BART\n' +
+      '\n' +
+      '**Models and Datasets.** We quantize BART-large model (Lewis et al., 2020) with LoftQ, then finetune and evaluate the model on two commonly used summarization datasets: XSum (Narayan et al., 2018) and CNN/DailyMail(Hermann et al., 2015).\n' +
+      '\n' +
+      '**Implementation Details.** We apply LoftQ to weight matrices in MHA and FFN of both encoder and decoder layers. We report ROUGE 1/2/L scores, which are the metrics for summarization tasks (Lin, 2004). We conduct quantization experiments in both 2-bit and 4-bit scenarios. We experiment with both NormalFloat and the uniform quantization in both 2-bit and 4-bit scenarios. In each precision, we choose rank equal to 8 and 16 for a fair comparison with the full precision LoRA baseline (Zhang et al., 2023). Please see Appendix E for detailed configurations.\n' +
+      '\n' +
+      '**Main Results.** Table 3 summarizes our 4-bit quantization experiment results on the XSum and CNN/DailyMail test sets. Our method consistently outperforms QLoRA at both ranks on both\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c c c c c c c c c} \\hline \\hline\n' +
+      '**Rank** & **Method** & **MNLI** & **QNLI** & **RTE** & **SST** & **MRPC** & **CoLA** & **QQP** & **STSB** & **SQuAD** & **ANLI** \\\\  & & m / mm & Acc & Acc & Acc & Matt & Acc & P/S Corr & EM/F1 & Acc \\\\ \\hline \\hline - & Full FT & 90.5/90.6 & 94.0 & 82.0 & 95.3 & 89.5/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\\\ \\hline \\multirow{2}{*}{16} & LoRA & 90.4/90.5 & 94.6 & 85.1 & 95.1 & 89.9/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\\\  & & LoftQ & **87.4**/**95.1** & **86.6** & **61.4** & **90.2** & **83.8**/**88.6** & **37.4** & **90.3**/**86.9** & **87.1**/**86.9** & **81.5**/**88.6** & **47.1** \\\\ \\hline \\multirow{2}{*}{32} & QLoRA & 78.5/78.7 & 80.4 & 56.7 & 86.9 & 73.8/82.7 & N.A. & 87.1/82.7 & 83.6/83.3 & 64.6/73.8 & N.A. \\\\  & LoftQ & **86.0**/**86.1** & **89.9** & **61.7** & **92.0** & **83.6**/**87.2** & **47.5** & **91.0**/**87.9** & **87.5**/**87.0** & **82.9**/**89.8** & **49.0** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Results with 2-bit LoftQ of DeBERTaV3-base models on GLUE development set, SQuADv1.1 development set, ANLI test set using **NF2 quantization**. We report the median over four seeds. _N.A._ indicates the model does not converge. The best results on each dataset are shown in **bold**.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c c c c c c c c c} \\hline \\hline\n' +
+      '**Rank** & **Method** & **MNLI** & **QNLI** & **RTE** & **SST** & **MRPC** & **CoLA** & **QQP** & **STSB** & **SQuAD** \\\\  & & m / mm & Acc & Acc & Acc & Acc & Matt & Acc & P/S Corr & Em/F1 \\\\ \\hline \\hline - & Full FT & 90.5/90.6 & 94.0 & 82.0 & 95.3 & 89.5/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\\\ \\hline \\multirow{2}{*}{16} & LoRA & 90.4/90.5 & 94.6 & 85.1 & 95.1 & 89.9/93.3 & 69.2 & 92.4/89.8 & 91.6/91.1 & 88.5/92.8 \\\\  & & LoftQ & **87.4**/**90.5** & 94.6 & 85.1 & 95.1 & 89.9/93.6 & 69.9 & 92.0/89.4 & 91.7/91.1 & 87.3/93.1 \\\\ \\hline \\multirow{2}{*}{16} & QLoRA & 76.5/76.3 & 83.8 & 56.7 & 86.6 & 75.7/84.7 & N.A. & 87.1/82.6 & 83.5/83.4 & 69.5/77.6 \\\\  & LoftQ & **87.3**/**87.1** & **90.6** & **61.1** & **94.0** & **87.0**/**90.6** & **59.1** & **90.9**/**88.0** & **87.9**/**87.6** & **84.4**/**91.2** \\\\ \\hline \\multirow{2}{*}{32} & QLoRA & 79.9/79.5 & 83.7 & 57.8 & 86.9 & 76.5/84.5 & N.A. & 88.6/84.7 & 84.1/84.0 & 71.6/80.2 \\\\  & LoftQ & **88.0**/**88.1** & **92.2** & **63.2** & **94.7** & **87.5**/**91.2** & **60.5** & **91.3**/**88.3** & **89.5**/**89.2** & **85.2**/**91.6** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Results with 2-bit LoftQ of DeBERTaV3-base models on GLUE development set, SQuADv1.1 development set using **Uniform quantization**. We report the median over four seeds. _N.A._ indicates the model does not converge. The best results on each task are shown in **bold**.\n' +
+      '\n' +
+      'datasets. It even surpasses full precision LoRA at both ranks on Xsum. We will discuss this unexpected results in Section 5. The 2-bit quantization results are shown in Table 4. Our observation is consistent with the NLU experiments, that LoftQ demonstrates the convergence to reasonable results, while QLoRA does not converge. This indicates our method is robuster by narrowing the initialization gap.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c c} \\hline \\hline\n' +
+      '**Rank** & **Method** & **XSum** & **CNN/DailyMail** \\\\ \\hline \\multirow{3}{*}{8} & QLoRA & N.A. & N.A. \\\\  & LoftQ & 39.63/16.65/31.62 & 42.24/19.44/29.04 \\\\ \\hline \\multirow{3}{*}{16} & QLoRA & N.A. & N.A. \\\\  & LoftQ & 40.81/17.85/32.80 & 42.52/19.81/39.51 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: Results with 2-bit LoftQ of BART-large on XSum and CNN/DailyMail using **NF2 quantization**. _N.A._ indicates the model does not converge. We report ROUGE-1/2/L, the higher the better. We report the median over five seeds.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c|c c} \\hline \\hline\n' +
+      '**Quantization** & **Rank** & **Method** & **XSum** & **CNN/DailyMail** \\\\ \\hline \\multirow{3}{*}{Full Precision} & - & Lead-3 & 16.30/1.60/11.95 & 40.42/17.62/36.67 \\\\  & & Full FT & 45.14/22.27/37.25 & 44.16/21.28/40.90 \\\\ \\cline{2-5}  & 8 & LoRA & 43.40/20.20/35.20 & 44.72/21.58/41.84 \\\\  & 16 & LoRA & 43.95/20.72/35.68 & 45.03/21.84/42.15 \\\\ \\hline \\multirow{3}{*}{NF4} & 8 & QLoRA & 42.91/19.72/34.82 & 43.10/20.22/40.06 \\\\  & & LoftQ & **44.08/20.72/35.89** & **43.81/20.95/40.84** \\\\ \\cline{2-5}  & 16 & QLoRA & 43.29/20.05/35.15 & 43.42/20.62/40.44 \\\\  & & LoftQ & **44.51/21.14/36.18** & **43.96/21.06/40.96** \\\\ \\hline \\multirow{3}{*}{Uniform} & 8 & QLoRA & 41.84/18.71/33.74 & N.A. \\\\  & & LoftQ & **43.86/20.51/35.69** & **43.73/20.91/40.77** \\\\ \\cline{1-1} \\cline{2-5}  & 16 & QLoRA & 42.45/19.36/34.38 & 43.00/20.19/40.02 \\\\ \\cline{1-1}  & & LoftQ & **44.29/20.90/36.00** & **43.87/20.99/40.92** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: Results with 4-bit LoftQ of BART-large on XSum and CNN/DailyMail. We report ROUGE-1/2/L, the higher the better. _Lead-3_ means choosing the first 3 sentences as the summary. _N.A._ indicates the model does not converge. _Full FT_ refers to the full fine-tuning where all parameters are tuned. We report the median over five seeds.\n' +
+      '\n' +
+      '### Decoder-only Model: LLAMA-2\n' +
+      '\n' +
+      '**Models and Datasets.** We quantize LLAMA-2-7b and LLAMA-2-13b (Touvron et al., 2023) with LoftQ. We then fine-tune and evaluate the models on two NLG datasets: GSM8K (Cobbe et al., 2021) and WikiText-2 (Merity et al., 2016). Please see Appendix F for more details about the datasets.\n' +
+      '\n' +
+      '**Implementation Details.** Similarly, we apply LoftQ to weight matrices in MHA and FFN of all layers. In WikiText-2 evaluation, we report perplexity. In GSM8K evaluation, we extract numerical answers in the generated solutions and then calculate the accuracy using those numerical answers. We conduct experiments with both NF2 and NF4. Please see Appendix F for detailed configurations.\n' +
+      '\n' +
+      '**Main Results.** Table 5 presents a summary of our experiments on LLAMA-2-7b and LLAMA-2-13b using 2-bit, 4-bit, and mixed-precision NormalFloat quantization methods on WikiText-2 and GSM8K datasets. In WikiText-2, our method consistently outperforms QLoRA across all quantization precision settings on both models. When dealing with the challenging 2-bit precision, where QLoRA fails to converge, LoftQ manages to achieve a perplexity of 7.85. In GSM8K, our method achieves better or on par performance compared to QLoRA across different model sizes and quantization precision levels. For example, our method achieves 20.9% accuracy using 2-bit precision, where QLoRA doesn\'t converge.\n' +
+      '\n' +
+      'We find LoftQ outperforms full precision LoRA in GSM8K with LLAMA-2-13b. One possible explanation is that the lack of regularization causes overfitting on full precision LoRA fine-tuning. Therefore, we conduct full precision LoRA with weight decay on GSM8K. From Table 5, regularization helps LLAMA-2-13b full precision LoRA fine-tuning, but fails in LLAMA-2-7b. This indicates LLAMA-2-13b is prone to overfitting and quantization has implicit regularization to overcome such overfitting.\n' +
+      '\n' +
+      'To provide a customized trade-off between the performance and precision, we also explore mixed-precision quantization where matrices in the first 4 layers are quantized using 4 bits, and the rest matrices remain 2 bits. We witness a remarkable 5.9% accuracy boost on the GSM8K dataset using LLAMA-2-7b and a 12.7% boost using LLAMA-2-13b. This result underscores the potential of LoftQ for complex mixed-precision quantization scenarios.\n' +
+      '\n' +
+      '### Analysis\n' +
+      '\n' +
+      '**Effectiveness of Alternating Optimization.** We conduct experiments with different alternating step \\(T\\) to verify the effectiveness of the alternating optimization and to find the best value \\(T\\) as a hyperparameter for different models. Across all tasks and models, we observed that alternating optimization yields substantial improvements even with a minimal alternating step. This suggests that it rapidly narrows the discrepancy between quantized weights and pre-trained weights, making our method easy to apply. For example, our method achieves 88.0% accuracy on MNLI-m dataset using only 5 alternating steps and 21.14 Rouge-2 score using only 1 step. Interestingly, wenoticed that increasing the alternating step beyond a certain point tends to result in diminishing returns. We suspect this phenomenon occurs because, as the gap becomes smaller, it becomes more challenging for alternating optimization to consistently minimize the gap at each step. This challenge emerges because of the inherent errors introduced by the quantization method. Nevertheless, results from Figure 3 indicate our method is not sensitive to the alternating step \\(T\\) and is able to consistently enhance downstream fine-tuning performance.\n' +
+      '\n' +
+      '## 5 Discussion\n' +
+      '\n' +
+      '**Start with quantization or SVD in the alternating optimization?** An alternative algorithm to the alternating optimization is that we first obtain the low-rank approximation \\(A_{t},B_{t}\\) and then obtain the quantized weight \\(Q_{t}\\) by switching Line 3 and Line 4 in Algorithm 1. We note this is a valid alternative method as both still jointly minimize the objective in (6). Table 6 summarizes the performance of this alternative method. It is noteworthy that the alternative method still outperforms QLoRA significantly, even though it is worse than the primary version. This observation underscores the potential for performance improvement by achieving a closer\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multirow{2}{*}{**Bit**} & \\multicolumn{2}{c}{**LLAMA-2-7b**} & \\multicolumn{2}{c}{**LLAMA-2-13b**} \\\\  & & **WikiText-2\\(\\downarrow\\)** & **GSM8K\\(\\uparrow\\)** & **WikiText-2\\(\\downarrow\\)** & **GSM8K\\(\\uparrow\\)** \\\\ \\hline LoRA & 16 & 5.08 & 36.9 & 5.12 & 43.1 \\\\ LoRA+Reg & 16 & – & 34.4 & – & 45.3 \\\\ \\hline QLoRA & 4 & 5.70 & **35.1** & 5.22 & 39.9 \\\\ LoftQ & 4 & **5.24** & 35.0 & **5.16** & **45.0** \\\\ \\hline QLoRA & 3 & 5.73 & 32.1 & 5.22 & 40.7 \\\\ LoftQ & 3 & **5.63** & **32.9** & **5.13** & **44.4** \\\\ \\hline QLoRA & 2.5 & N.A. & N.A. & 19.39 & N.A. \\\\ LoftQ & 2.5 & 5.78 & **31.1** & 5.22 & **41.1** \\\\ \\hline QLoRA & 2.25 & N.A. & N.A. & N.A. & N.A. \\\\ LoftQ & 2.25 & **6.13** & **26.5** & **5.45** & **38.1** \\\\ \\hline QLoRA & 2 & N.A & N.A. & N.A. & N.A. \\\\ LoftQ & 2 & **7.85** & **20.9** & **7.69** & **25.4** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: Results of LoftQ using NormalFloat for LLAMA-2 series on WikiText-2 and GSM8K. 3/2.5/2.25-bit indicates mixed-precision quantization: 4-bit precision for the first 16/8/4 layers and 2-bit precision for the rest of layers. We report the perplexity (the smaller the better) for WikiText-2 and accuracy for GSM8K. The rank of low-rank adapters is 64. _N.A._ indicates the model does not converge. We report the median over five random seeds.\n' +
+      '\n' +
+      'approximation of pre-trained weights within the low-precision regime.\n' +
+      '\n' +
+      '## 6 Related Work\n' +
+      '\n' +
+      '**Quantization-Aware Training (QAT)** is often used to obtain quantized models that are adapted in downstream tasks (Peri et al., 2020; Liu et al., 2023). It involves quantization and full model fine-tuning at the same time. However, QAT requires massive training cost, such as the gradient and optimization state. Moreover, it is difficult to compute the gradient of quantized weights. Our method, with the help of LoRA, sidesteps the aforementioned issues, providing a light approach for downstream task adaptation.\n' +
+      '\n' +
+      '**Post-Training Quantization (PTQ)** is a category of popular quantization frameworks (Frantar et al., 2022; Xiao et al., 2023), which can also be used for task adaptation. It calibrates the high-precision\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multirow{2}{*}{**Rank**} & **MNLI** & **QNLI** & **SST2** \\\\  & & m / mm & Acc & Acc \\\\ \\hline Full FT & - & 90.5/90.6 & 94.0 & 95.3 \\\\ \\hline QLoRA & 32 & 79.9/79.5 & 83.8 & 86.6 \\\\ \\hline LoftQ(SVD First) & 32 & 87.8/87.7 & 84.9 & 89.7 \\\\ \\hline LoftQ(Quantiztion First) & 32 & **88.0/88.1** & **92.2** & **94.7** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 6: Results of 2-bit uniformly quantized DeBERTaV3-base on part of GLUE. LoftQ(SVD First) indicates the alternative LoftQ that swiches Line 3 and Line 4 in Algorithm 1. We report the median over four random seeds. The best results on each task are shown in **bold**.\n' +
+      '\n' +
+      'Figure 3: Comparison of different alternating step \\(T\\) used in LoftQ. \\(T=0\\) indicates we use QLoRA method that initializes low-rank adapters by (5). \\(T=1,5,10\\) indicates we use different \\(T\\) for LoftQ described in Algorithm 1. **Left**: Uniform 2-bit DeBERTaV3-base. **Middle**: NF4 2-bit LLAMA-2-13b. **Right**: NF4 BART-large.\n' +
+      '\n' +
+      'model with a small subset of the training dataset. Therefore, the subsequent quantization is guided by the training dataset, providing task-specific quantized models. Besides, it does not involve any gradient backpropagation, so it is cost-efficient. However, it usually results in lower accuracy compared to QAT.\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      'We propose LoftQ, a quantization framework for LLMs, which alternatively applies quantization and low-rank approximation to the original high-precision pre-trained weights, to obtain an initialization for the subsequent LoRA fine-tuning. Experiments on natural language understanding, question answering, summarization, and natural language generation show that our framework remarkably surpasses existing methods, e.g., QLoRA, for quantizing encoder-only, encoder-decoder, and decoder-only models. We have not observed our method exhibiting worse performance over QLoRA. Moreover, our quantization framework demonstrates effectiveness and robustness particularly in low-bit quantization regimes, e.g., the 2-bit level.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Bai et al. (2022)Bai, H., Hou, L., Shang, L., Jiang, X., King, I. and Lyu, M. R. (2022)Towards efficient post-training quantization of pre-trained language models. _Advances in Neural Information Processing Systems_, **35** 1405-1418.\n' +
+      '* Bai et al. (2020)Bai, H., Zhang, W., Hou, L., Shang, L., Jin, J., Jiang, X., Liu, Q., Lyu, M. and King, I. (2020)Binarybert: Pushing the limit of bert quantization. _arXiv preprint arXiv:2012.15701_.\n' +
+      '* Bar-Haim et al. (2006)Bar-Haim, R., Dagan, I., Dolan, B., Ferro, L., Giampiccolo, D., Magnini, B. and Szpektor, I. (2006). The second pascal recognising textual entailment challenge.\n' +
+      '* Bentivogli et al. (2009)Bentivogli, L., Clark, P., Dagan, I. and Giampiccolo, D. (2009). The fifth pascal recognizing textual entailment challenge. In _TAC_.\n' +
+      '* Cer et al. (2017)Cer, D., Diab, M., Agirre, E., Lopez-Gazpio, I. and Specia, L. (2017). SemEval-2017 task 1: Semantic textual similarity multilingual and crosslingual focused evaluation. In _Proceedings of the 11th International Workshop on Semantic Evaluation (SemEval-2017)_. Association for Computational Linguistics, Vancouver, Canada.\n' +
+      '* Cobbe et al. (2021)Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R. et al. (2021). Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_.\n' +
+      '* Dagan et al. (2007)Dagan, I., Glickman, O. and Magnini, B. (2007). The pascal recognising textual entailment challenge. In _Machine Learning Challenges Workshop_.\n' +
+      '* Dagan et al. (2017)Dettmers, T., Lewis, M., Belkada, Y. and Zettlemoyer, L. (2022). Llm. int8 (): 8-bit matrix multiplication for transformers at scale. _arXiv preprint arXiv:2208.07339_.\n' +
+      '* Dettmers et al. (2023)Dettmers, T., Pagnoni, A., Holtzman, A. and Zettlemoyer, L. (2023). Qlora: Efficient finetuning of quantized l1ms. _arXiv preprint arXiv:2305.14314_.\n' +
+      '* Diao et al. (2023)Diao, S., Pan, R., Dong, H., Shum, K. S., Zhang, J., Xiong, W. and Zhang, T. (2023). Lmflow: An extensible toolkit for finetuning and inference of large foundation models. _arXiv preprint arXiv:2306.12420_.\n' +
+      '* Dolan and Brockett (2005)Dolan, W. B. and Brockett, C. (2005). Automatically constructing a corpus of sentential paraphrases. In _Proceedings of the Third International Workshop on Paraphrasing (IWP2005)_.\n' +
+      '* Frantar et al. (2022)Frantar, E., Ashkboos, S., Hoefler, T. and Alistarh, D. (2022). Gptq: Accurate post-training quantization for generative pre-trained transformers. _arXiv preprint arXiv:2210.17323_.\n' +
+      '* Giampiccolo et al. (2007)Giampiccolo, D., Magnini, B., Dagan, I. and Dolan, B. (2007). The third PASCAL recognizing textual entailment challenge. In _Proceedings of the ACL-PASCAL Workshop on Textual Entailment and Paraphrasing_. Association for Computational Linguistics, Prague.\n' +
+      '* He et al. (2021a)He, J., Zhou, C., Ma, X., Berg-Kirkpatrick, T. and Neubig, G. (2021a). Towards a unified view of parameter-efficient transfer learning. _arXiv preprint arXiv:2110.04366_.\n' +
+      '* He et al. (2021b)He, P., Gao, J. and Chen, W. (2021b). Debertav3: Improving deberta using electra-style pre-training with gradient-disentangled embedding sharing. _arXiv preprint arXiv:2111.09543_.\n' +
+      '* Hermann et al. (2015)Hermann, K. M., Kocisky, T., Grefenstette, E., Espeholt, L., Kay, W., Suleyman, M. and Blunsom, P. (2015). Teaching machines to read and comprehend. _Advances in neural information processing systems_, **28**.\n' +
+      '* Hu et al. (2021)Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L. and Chen, W. (2021). Lora: Low-rank adaptation of large language models. _arXiv preprint arXiv:2106.09685_.\n' +
+      '* Levesque et al. (2012)Levesque, H., Davis, E. and Morgenstern, L. (2012). The winograd schema challenge. In _Thirteenth international conference on the principles of knowledge representation and reasoning_.\n' +
+      '* Lewis et al. (2019)Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mohamed, A., Levy, O., Stoyanov, V. and Zettlemoyer, L. (2019). Bart: Denoising sequence-to-sequence pre-training for natural language generation, translation, and comprehension. _arXiv preprint arXiv:1910.13461_.\n' +
+      '* Lewis et al. (2020)Lewis, M., Liu, Y., Goyal, N., Ghazvininejad, M., Mohamed, A., Levy, O., Stoyanov, V. and Zettlemoyer, L. (2020). BART: Denoising sequence-to-sequence pre-training for natural language generation, translation, and comprehension. In _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_. Association for Computational Linguistics, Online.\n' +
+      '* Lewis et al. (2019)Li, Y., Yu, Y., Zhang, Q., Liang, C., He, P., Chen, W. and Zhao, T. (2023). Losparse: Structured compression of large language models based on low-rank and sparse approximation. _arXiv preprint arXiv:2306.11222_.\n' +
+      '* Lin (2004)Lin, C.-Y. (2004). ROUGE: A package for automatic evaluation of summaries. In _Text Summarization Branches Out_. Association for Computational Linguistics, Barcelona, Spain.\n' +
+      '* Liu et al. (2023)Liu, Z., Oguz, B., Zhao, C., Chang, E., Stock, P., Mehdad, Y., Shi, Y., Krishnamoorthi, R. and Chandra, V. (2023). Llm-qat: Data-free quantization aware training for large language models. _arXiv preprint arXiv:2305.17888_.\n' +
+      '* Loshchilov and Hutter (2017)Loshchilov, I. and Hutter, F. (2017). Decoupled weight decay regularization. _arXiv preprint arXiv:1711.05101_.\n' +
+      '* Merity et al. (2016)Merity, S., Xiong, C., Bradbury, J. and Socher, R. (2016). Pointer sentinel mixture models.\n' +
+      '* Narayan et al. (2018)Narayan, S., Cohen, S. B. and Lapata, M. (2018). Don\'t give me the details, just the summary! topic-aware convolutional neural networks for extreme summarization. _ArXiv_, **abs/1808.08745**.\n' +
+      '* Nie et al. (2019)Nie, Y., Williams, A., Dinan, E., Bansal, M., Weston, J. and Kiela, D. (2019). Adversarial nli: A new benchmark for natural language understanding. _ArXiv_, **abs/1910.14599**. [https://api.semanticscholar.org/CorpusID:207756753](https://api.semanticscholar.org/CorpusID:207756753)\n' +
+      '* Paszke et al. (2019)Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., Killeen, T., Lin, Z., Gimelshein, N., Antiga, L., Desmaison, A., Kopf, A., Yang, E., DeVito, Z., Raison, M., Tejani, A., Chilamkurthy, S., Steiner, B., Fang, L., Bai, J. and Chintala, S. (2019). Pytorch: An imperative style, high-performance deep learning library. In _Advances in Neural Information Processing Systems 32_. Curran Associates, Inc., 8024-8035.\n' +
+      '* Peri et al. (2020)Peri, D., Patel, J. and Park, J. (2020). Deploying quantization-aware trained networks using tensorrt. In _GPU Technology Conference_.\n' +
+      '* Rajpurkar et al. (2016)Rajpurkar, P., Zhang, J., Lopyrev, K. and Liang, P. (2016). SQuAD: 100,000+ questions for machine comprehension of text. In _Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing_. Association for Computational Linguistics, Austin, Texas.\n' +
+      '* Shen et al. (2020)Shen, S., Dong, Z., Ye, J., Ma, L., Yao, Z., Gholami, A., Mahoney, M. W. and Keutzer, K. (2020). Q-bert: Hessian based ultra low precision quantization of bert. In _Proceedings of the AAAI Conference on Artificial Intelligence_, vol. 34.\n' +
+      '* Socher et al. (2013)Socher, R., Perelygin, A., Wu, J., Chuang, J., Manning, C. D., Ng, A. and Potts, C. (2013). Recursive deep models for semantic compositionality over a sentiment treebank. In _Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing_. Association for Computational Linguistics, Seattle, Washington, USA.\n' +
+      '* Sukhukhukh et al. (2017)Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babael, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S. et al. (2023). Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_.\n' +
+      '* Vaswani et al. (2017)Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L. and Polosukhin, I. (2017). Attention is all you need. _Advances in neural information processing systems_, **30**.\n' +
+      '* Wang et al. (2019)Wang, A., Singh, A., Michael, J., Hill, F., Levy, O. and Bowman, S. R. (2019). GLUE: A multi-task benchmark and analysis platform for natural language understanding. In _International Conference on Learning Representations_.\n' +
+      '* Warstadt et al. (2019)Warstadt, A., Singh, A. and Bowman, S. R. (2019). Neural network acceptability judgments. _Transactions of the Association for Computational Linguistics_, **7** 625-641.\n' +
+      '* Williams et al. (2018)Williams, A., Nangia, N. and Bowman, S. (2018). A broad-coverage challenge corpus for sentence understanding through inference. In _Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers)_. Association for Computational Linguistics, New Orleans, Louisiana.\n' +
+      '* Xiao et al. (2023)Xiao, G., Lin, J., Seznec, M., Wu, H., Demouth, J. and Han, S. (2023). Smoothquant: Accurate and efficient post-training quantization for large language models. In _International Conference on Machine Learning_. PMLR.\n' +
+      '* Zafrir et al. (2019)Zafrir, O., Boudoukh, G., Izsak, P. and Wasserblat, M. (2019). Q8bert: Quantized 8bit bert. In _2019 Fifth Workshop on Energy Efficient Machine Learning and Cognitive Computing-NeurIPS Edition (EMC2-NIPS)_. IEEE.\n' +
+      '* Zhang et al. (2019)Zhang, H., Dauphin, Y. N. and Ma, T. (2019). Fixup initialization: Residual learning without normalization. _arXiv preprint arXiv:1901.09321_.\n' +
+      '* Zhang et al. (2023)Zhang, Q., Chen, M., Bukharin, A., He, P., Cheng, Y., Chen, W. and Zhao, T. (2023). Adaptive budget allocation for parameter-efficient fine-tuning. _arXiv preprint arXiv:2303.10512_.\n' +
+      '\n' +
+      'Model Compression Ratio and Memory Footprint\n' +
+      '\n' +
+      'We report the compression ratio after applying LoftQ in Table 7. It is defined as\n' +
+      '\n' +
+      '\\[\\text{compression ration}=\\frac{\\text{backbone size}+\\text{LoRA adapter size}}{\\text{pre-trained size}}.\\]\n' +
+      '\n' +
+      'We also measure the GPU memory cost during training. Given that GPU memory varies by models, tasks, sequence lengths, batch sizes, etc. We report LLAMA-2 on GSM8K as an example in Table 8.\n' +
+      '\n' +
+      '## Appendix B Quantization Time\n' +
+      '\n' +
+      'We report the execution time of LoftQ applying to a single weight matrix in Table 9. The time is tested on Intel(R) Xeon(R) CPU E5-2650 v4 @ 2.20GHz.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c|c|c} \\hline \\hline \\multirow{2}{*}{**Model**} & **Compression** & **Trainable** & \\multirow{2}{*}{**Rank**} & **Bits** & **Quantization** \\\\  & **ratio (\\%)** & **ratio (\\%)** & & & **method** \\\\ \\hline DeBERTaV3-base & 15.6 & 3.1 & 16 & 2 & Uniform \\\\ DeBERTaV3-base & 18.8 & 6.3 & 32 & 2 & Uniform \\\\ DeBERTaV3-base & 17.2 & 3.1 & 16 & 2 & NF2 \\\\ DeBERTaV3-base & 20.4 & 6.3 & 32 & 2 & NF2 \\\\ BART-large & 15.3 & 1.2 & 8 & 4 & NF2 \\\\ BART-large & 16.7 & 2.5 & 16 & 4 & NF2 \\\\ BART-large & 27.8 & 1.2 & 8 & 4 & NF4 \\\\ BART-large & 29.0 & 2.5 & 16 & 4 & NF4 \\\\ BART-large & 26.2 & 1.2 & 8 & 4 & Uniform \\\\ BART-large & 27.5 & 2.5 & 16 & 4 & Uniform \\\\ LLAMA-2-7b & 16.6 & 2.4 & 64 & 2 & Nf2 \\\\ LLAMA-2-7b & 29.0 & 2.4 & 64 & 4 & Nf4 \\\\ LLAMA-2-13b & 16.0 & 1.9 & 64 & 2 & Nf2 \\\\ LLAMA-2-13b & 28.5 & 1.9 & 64 & 4 & Nf4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: Compression ratios of backbones.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c|c|c} \\hline \\hline \\multicolumn{1}{c|}{**Model**} & **Dataset** & **Seq length** & **Batch size** & **GPU Mem** \\\\ \\hline LLAMA-2-7b & GSM8K & 384 & 1 & 15GB \\\\ LLAMA-2-13b & GSM8K & 384 & 1 & 24GB \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 8: GPU memory footprint \n' +
+      '\n' +
+      '## Appendix C GLUE Dataset Statistics\n' +
+      '\n' +
+      'We present the dataset statistics of GLUE Wang et al. (2019) in the following table.\n' +
+      '\n' +
+      'GLUE includes two single-sentence classification tasks: SST-2 (Socher et al., 2013) and CoLA (Warstadt et al., 2019), and three similarity and paraphrase tasks: MRPC (Dolan and Brockett, 2005), STS-B (Cer et al., 2017), and QQP. GLUE also includes four natural language inference tasks in GLUE: MNLI (Williams et al., 2018), QNLI (Rajpurkar et al., 2016), RTE (Dagan et al., 2007; Bar-Haim et al., 2006; Giampiccolo et al., 2007; Bentivogli et al., 2009), and WNLI (Levesque et al., 2012).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l|c|c|c|c} \\hline \\hline\n' +
+      '**Corpus** & **Task** & **\\#Train** & **\\#Dev** & **\\#Test** & **\\#Label** & **Metrics** \\\\ \\hline \\multicolumn{6}{c}{Single-Sentence Classification (GLUE)} \\\\ \\hline CoLA & Acceptability & 8.5k & 1k & 1k & 2 & Matthews corr \\\\ \\hline SST & Sentiment & 67k & 872 & 1.8k & 2 & Accuracy \\\\ \\hline \\multicolumn{6}{c}{Pairwise Text Classification (GLUE)} \\\\ \\hline MNLI & NLI & 393k & 20k & 20k & 3 & Accuracy \\\\ \\hline RTE & NLI & 2.5k & 276 & 3k & 2 & Accuracy \\\\ \\hline QQP & paraphrase & 364k & 40k & 391k & 2 & Accuracy/F1 \\\\ \\hline MRPC & paraphrase & 3.7k & 408 & 1.7k & 2 & Accuracy/F1 \\\\ \\hline QNLI & QA/NLI & 108k & 5.7k & 5.7k & 2 & Accuracy \\\\ \\hline \\multicolumn{6}{c}{Text Similarity (GLUE)} \\\\ \\hline STS-B & Similarity & 7k & 1.5k & 1.4k & 1 & Pearson/Spearman corr \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 10: Summary of the GLUE benchmark.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c|c|c} \\hline \\hline\n' +
+      '**Model** & **Size** & **Step \\(T\\)** & **Quantization method** & **Time** \\\\ \\hline DeBERTaV3-base & \\(768\\times 768\\) & 5 & Uniform & 1s \\\\ BART-large & \\(1024\\times 1024\\) & 5 & NF4 & 1s \\\\ LLAMA-2-7b & \\(4096\\times 4096\\) & 5 & NF4 & 21s \\\\ LLAMA-2-13b & \\(5120\\times 5120\\) & 5 & NF4 & 43s \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 9: Execution time of LoftQ applying to different weight matrices.\n' +
+      '\n' +
+      'Natural Language Understanding\n' +
+      '\n' +
+      '### GLUE with 4-bit\n' +
+      '\n' +
+      'We show the 4-bits results in the Table 11. Both methods can achieve performance close to full-finetuning.\n' +
+      '\n' +
+      '### Training Details\n' +
+      '\n' +
+      '**Implementation Details.** The implementation of LoftQ is based on publicly available Huggingface (Paszke et al., 2019) code-base ".\n' +
+      '\n' +
+      '**Hyper-parameter Details.** We select the learning rate of \\(\\{1\\times 10^{-5},5\\times 10^{-5},1\\times 10^{-4},5\\times 10^{-4}\\}\\), and use the selected learning rate for both uniform quantization experiments and nf2 quantization experiments. We use batch size of 32 for all GLUE tasks and ANLI. We use batch size of 16 for SQuADv1.1. We use LoftQ of 5 iterations for all GLUE tasks.\n' +
+      '\n' +
+      'Table 12 summarizes the detailed hyperparameters for each task used in training DeBERTaV3-base using uniform quantization. Table 13 summarizes the detailed hyperparameters for each task used in training DeBERTaV3-base using nf2 quantization.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c c c c c} \\hline \\hline\n' +
+      '**Method** & **Rank** & \\begin{tabular}{c} **MNLI** \\\\ m / mm \\\\ \\end{tabular} & \\begin{tabular}{c} **SST-2** \\\\ Acc \\\\ \\end{tabular} & \\begin{tabular}{c} **QNLI** \\\\ Acc \\\\ \\end{tabular} & \n' +
+      '\\begin{tabular}{c} **ANLI** \\\\ Acc \\\\ \\end{tabular} \\\\ \\hline Full FT & - & 90.5/90.6 & 95.3 & 94.0 & 59.8 \\\\ \\hline QLoRA & 32 & 89.9/89.9 & **95.3** & **94.2** & 59.4 \\\\ \\hline LoftQ & 32 & **89.9/90.0** & **95.3** & 94.1 & **59.9** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 11: Results with 4-bit LoftQ of DeBERTaV3-base models on GLUE development set using NF4 quantization. We report the median over four seeds. Results with N.A. indicate the model does not converge. The best results on each dataset are shown in bold\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c c c c c c c c c} \\hline \\hline\n' +
+      '**Hyper-parameter** & **MNLI** & **RTE** & **QNLI** & **MRPC** & **QQP** & **SST-2** & **CoLA** & **STS-B** & **SQuADv1.1** & **ANLI** \\\\ \\hline \\# epochs & 5 & 20 & 10 & 60 & 10 & 10 & 60 & 60 & 10 & 12 \\\\ Learning rate & \\(1\\times 10^{-4}\\) & \\(5\\times 10^{-4}\\) & \\(5\\times 10^{-5}\\) & \\(1\\times 10^{-4}\\) & \\(5\\times 10^{-5}\\) & \\(5\\times 10^{-5}\\) & \\(5\\times 10^{-5}\\) & \\(5\\times 10^{-5}\\) & \\(5\\times 10^{-5}\\) & \\(5\\times 10^{-5}\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 12: Hyper-parameter setup of LoftQ for GLUE benchmark for training DeBERTaV3-base using Uniform quantization.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:21]\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:22]\n' +
+      '\n' +
+      'We can reformulate Equation (10) into matrix multiplication as\n' +
+      '\n' +
+      '\\[Y=Z\\times H^{\\top},\\]\n' +
+      '\n' +
+      'where \\(Z\\in\\mathbb{R}^{hw\\times c_{1}d^{2}},H\\in\\mathbb{R}^{c_{2}\\times c_{1}d^{2}}\\), by extending and flattening the input \\(X\\) together with concatenating and flattening kernels. We first extend a vector \\(x_{i,j}\\in\\mathbb{R}^{c_{1}}\\) by its neighbor vectors within the kernel window:\n' +
+      '\n' +
+      '\\[x_{i,j}^{{}^{\\prime}}=\\text{Concat}(\\text{x}_{\\text{i}-\\frac{d}{2},\\text{j}- \\frac{d}{2}},....,\\text{x}_{\\text{i}+\\frac{d}{2},\\text{j}+\\frac{d}{2}}).\\]\n' +
+      '\n' +
+      'Now, \\(X\\) becomes \\(X^{\\prime}\\in\\mathbb{R}^{hw\\times w\\times c_{1}d^{2}}\\). We then flatten \\(X^{\\prime}\\) into \\(Z\\in\\mathbb{R}^{hw\\times c_{1}d^{2}}\\). For kernels, we first concatenate \\(\\{K_{1},...,K_{c_{2}}\\}\\) into \\(H^{\\prime}\\in\\mathbb{R}^{c_{2}\\times c_{1}\\times d\\times d}\\). We then flatten \\(H^{\\prime}\\) into \\(H\\).\n' +
+      '\n' +
+      'Note that \\(H\\) can be approximated by a low-rank matrix\n' +
+      '\n' +
+      '\\[R=UV^{\\top},\\]\n' +
+      '\n' +
+      'where \\(U\\in\\mathbb{R}^{c_{2}\\times r},V\\in\\mathbb{R}^{c_{1}d^{2}\\times r},r\\ll\\min\\{c _{2},c_{1}d^{2}\\}\\) by SVD. Therefore, the original convolution layer can be approximated as\n' +
+      '\n' +
+      '\\[\\widehat{Y} =Z\\times(UV^{\\top})^{\\top} \\tag{11}\\] \\[=(Z\\times V)\\times U^{\\top}\\] (12) \\[=M\\times U^{\\top}. \\tag{13}\\]\n' +
+      '\n' +
+      'Note that \\(Z\\times V\\) can be restored into a convolution operation where we have \\(r\\) kernels \\(D_{i}\\in\\mathbb{R}^{c_{1}\\times d\\times d},i=1,2,...,r\\) and \\(M\\times U^{\\top}\\) can also be restored into a convolution operation where we have \\(c_{2}\\) kernels \\(U_{i}\\in\\mathbb{R}^{r\\times 1\\times 1},i=1,2,...,c_{2}\\).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multirow{2}{*}{**Ratio**} & **MNLI** & **SST-2** & **QNLI** \\\\  & & m / mm & Acc & Acc \\\\ \\hline Full FT & 100\\% & 90.5 / 90.6 & 95.3 & 94.0 \\\\ \\hline \\multirow{2}{*}{LoSparse} & 15\\% & 83.3/82.9 & 87.6 & 90.4 \\\\  & 20\\% & 84.5/83.8 & 91.7 & 88.6 \\\\ \\hline \\multirow{2}{*}{LoftQ} & 15.6\\% & **87.3**/**87.1** & **94.0** & **90.6** \\\\  & 18.8\\% & **88.0**/**88.1** & **94.7** & **92.4** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 18: Results of LoftQ using 2-bits uniform quantization compared with LoSparse with DeBERTaV3-base models on some of GLUE development sets. Here _Ratio_ is the proportion of total remaining weights. Results with _N.A._ indicate the model does not converge.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
