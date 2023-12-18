@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# LIME: Localized Image Editing via Attention Regularization\n' +
+      '\n' +
+      'in Diffusion Models\n' +
+      '\n' +
+      'Enis Simsar\\({}^{1}\\) Alessio Tonioni\\({}^{3,}\\) Yongqin Xian\\({}^{3,}\\) Thomas Hofmann\\({}^{1}\\) Federico Tombari\\({}^{2,3}\\)\n' +
+      '\n' +
+      '\\({}^{1}\\)ETH Zurich - DALAB\n' +
+      '\n' +
+      '\\({}^{2}\\)Technical University of Munich\n' +
+      '\n' +
+      '\\({}^{3}\\)Google Switzerland\n' +
+      '\n' +
+      'Equal advising.\n' +
+      '\n' +
+      'The project page can be found at _[https://enisimsar.github.io/LIME/_](https://enisimsar.github.io/LIME/_).\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Diffusion models (DMs) have gained prominence due to their ability to generate high-quality, varied images, with recent advancements in text-to-image generation. The research focus is now shifting towards the controllability of DMs. A significant challenge within this domain is localized editing, where specific areas of an image are modified without affecting the rest of the content. This paper introduces LIME for localized image editing in diffusion models that do not require user-specified regions of interest (RoI) or additional text input. Our method employs features from pre-trained methods and a simple clustering technique to obtain precise semantic segmentation maps. Then, by leveraging cross-attention maps, it refines these segments for localized edits. Finally, we propose a novel cross-attention regularization technique that penalizes unrelated cross-attention scores in the RoI during the denoising steps, ensuring localized edits. Our approach, without re-training and fine-tuning, consistently improves the performance of existing methods in various editing benchmarks.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Diffusion models (DMs) have recently achieved remarkable success in generating images that are not only high-quality but also richly varied, thanks to advancements in text-to-image conversion [19, 36, 38, 40]. Beyond their generative capabilities, there is a growing research interest in the controllability aspect of these models [2, 6, 8, 17, 33, 53]. This has led to the exploration of a variety of editing techniques, leveraging the power of DMs for tasks such as personalized image creation [14, 39, 47], context-aware inpainting[26, 31, 50], and image transformation in response to textual edits [2, 6, 8, 17, 21, 27]. These developments underscore the versatility of DMs and their potential to serve as foundational tools for various image editing applications.\n' +
+      '\n' +
+      'In this paper, we address the task of text-guided image editing, explicitly focusing on localized editing, which refers to identifying and modifying any region of interest in an image. This is done regardless of its size and based on textual instructions while preserving the context of the surrounding regions. The difficulty arises from the intertwined nature of image representations within these models, where changes intended for one area can inadvertently affect others [6, 17, 27, 53]. Existing methods often depend on additional user input, such as masking the target area, _i.e_., Region of Interest (RoI), or providing additional text information, _e.g_., objects of interest, to pinpoint the editing region [2, 8]. However, these approaches introduce complexity and do not guarantee the precision necessary for seamless editing. Figure 1 highlights localized edits without altering the overall image, a balance that current methods have not yet struck. Advancing localized editing to be more intuitive and effective remains a pivotal direction.\n' +
+      '\n' +
+      'We address the challenge of localized image editing by introducing _LIME_, that leverages pre-trained Instruct-Pix2Pix [6] without the need for additional supervision, user inputs, or model re-training/fine-tuning. Recent studies [34, 44, 49] have demonstrated that diffusion models are capable of encoding semantics within their intermediate features. LIME utilizes those features to identify segments, then extracts RoI by harnessing attention scores derived from instructions. Other research [1, 7] has shown the significant impact of attention-based guidance on the composition of an image. Accordingly, LIME aims to restrict the scope of edits by regularizing attention scores to enable disentangled and localized edits. By improving these two lines of work, LIME not only offers more effective localized editing as shown in Fig. 1 but also demonstrates a notable advancement by quantitatively outperforming current state-of-the-art methods on four different benchmark datasets.\n' +
+      '\n' +
+      'Our pipeline contains two steps. It first finds semantic segments of the input image. This is achieved based on semantic information encoded in intermediate features. Then, we identify the area to be edited by combining the segments with large cross-attention scores toward the edit instruction. Once we isolate the area to be edited, _i.e_., RoI, the proposed attention regularization technique is applied to the text tokens to selectively target the RoI to ensure that subsequent editing is accurately focused, avoiding unintended changes to other parts of the image. This two-step approach, first refining targeted areas and then editing within the RoI, ensures that our modifications are accurate and contextually coherent, simplifying the editing process while avoiding unintended alterations to the rest of the image.\n' +
+      '\n' +
+      'The core contributions of this study are:\n' +
+      '\n' +
+      '* We introduce a localized image editing technique that eliminates the need for fine-tuning or re-training, ensuring efficient and precise localized edits.\n' +
+      '* Our approach leverages the pre-trained model\'s intermediate features to segment the image and to identify the regions where modifications will be applied.\n' +
+      '* An attention regularization strategy is proposed, which is employed to achieve disentangled and localized edits within the RoI, ensuring contextually coherent edits.\n' +
+      '\n' +
+      'The experimental evaluation demonstrates that our approach outperforms existing methods in localized editing both qualitatively and quantitatively on four benchmark datasets [5, 6, 20, 52].\n' +
+      '\n' +
+      '## 2 Related Work\n' +
+      '\n' +
+      'Text-guided image generation.Text-to-image synthesis significantly advanced thanks to diffusion models that surpassed prior generative adversarial networks (GANs) [16, 37, 51]. Key developments [10, 19, 43] have resulted in diffusion models that generate highly realistic images from textual inputs [31, 36, 40]. Notably, the introduction of latent diffusion models has significantly increased the computational efficiency of previous methods [38].\n' +
+      '\n' +
+      'Image editing with Diffusion Models.One direction for image editing is utilizing pre-trained diffusion models by first inverting the input image in the latent space and then applying the desired edit by altering the text prompt [8, 17, 20, 27, 30, 32, 45, 46, 48]. For instance, DirectInversion [20] inverts the input image and then applies Prompt2Prompt [17] to obtain the desired edit, but it may lose details of the input image during inversion. DiffEdit [8], on the other hand, matches the differences in predictions for input and output captions to localize the edit yet struggles with complex instructions. It works in the noise space to edit. Another direction for image editing by using instructions is training diffusion models on triplet data, which contains input image, instruction, and desired image [6, 13, 52, 53]. The latest approach, Instruct-Pix2Pix (IP2P) [6] uses a triplet dataset to train a model for editing images by using instructions. It performs better than previous methods but sometimes generates entangled edits. To tackle this problem, HIVE [53] relies on human feedback on edited images to learn what users generally prefer and uses this information to fine-tune IP2P, aiming to align more closely with human expectations. Alternatively, our method leverages the pre-trained IP2P to localize the edit instruction. Then, instead of manipulating the noise space [2, 8, 29], our method employs attention regularization to achieve localized editing, ensuring the edits are restricted within the RoI. The entire process is done without needing additional data, re-training, or fine-tuning.\n' +
+      '\n' +
+      'Semantics in Diffusion Models.Intermediate features of diffusion models, as explored in studies like [33, 34, 44, 49], have been shown to encode semantic information. Recent research such as LD-ZNet [34] and ODISE [49] leverages intermediate features of these models for training networks for semantic segmentation. Localizing Prompt Mixing (LPM) [33], on the other hand, utilizes clustering on self-attention outputs for segment identification. Motivated by this success, our method leverages pre-trained intermediate features to achieve semantic segmentation and apply localized edits using edit instructions.\n' +
+      '\n' +
+      '## 3 Background\n' +
+      '\n' +
+      'Latent Diffusion Models.Stable Diffusion (SD) [38] is a Latent Diffusion Model (LDM) designed to operate in a compressed latent space. This space is defined at the bottleneck of a pre-trained variational autoencoder (VAE) to enhance computational efficiency. Gaussian noise is introduced into the latent space, generating samples from a latent distribution \\(z_{t}\\). A U-Net-based denoising architecture [10] is then employed for image reconstruction, conditioned on noise input (\\(z_{t}\\)) and text conditioning (\\(c_{T}\\)). This reconstruction is iteratively applied over multiple time steps, each involving a sequence of self-attention and cross-attention layers. Self-attention layers transform the current noised image representation, while cross-attention layers integrate text conditioning.\n' +
+      '\n' +
+      'Every attention layer comprises three components: Queries (\\(Q\\)), Keys (\\(K\\)), and Values (\\(V\\)). For cross-attention layers, \\(Q\\)s are obtained by applying a linear transformation \\(f_{Q}\\) to the result of the self-attention layer preceding the cross-attention layer (_i.e_., image features). Similarly, \\(K\\)s and \\(V\\)s are derived from text conditioning \\(c_{T}\\) using linear transformations \\(f_{K}\\) and \\(f_{V}\\). Equation (1) shows the mathematical formulation of an attention layer where \\(P\\) denotes the attention maps and is obtained as the softmax of the dot product of \\(K\\) and \\(Q\\) normalized by the square root of dimension \\(d\\) of \\(K\\)s and \\(Q\\)s.\n' +
+      '\n' +
+      '\\[\\text{Attention}(Q,K,V)=P\\cdot V, \\tag{1}\\] \\[\\text{where }P=\\text{Softmax}\\left(\\frac{QK^{T}}{\\sqrt{d}}\\right).\\]\n' +
+      '\n' +
+      'Intuitively, \\(P\\) denotes which areas of the input features will be modified in the attention layer. For cross-attention, this is the area of the image that is affected by one of the conditioning text tokens that define \\(c_{T}\\). Beyond these attention maps, our approach also leverages the output of transformer layers, noted as _intermediate features_\\(\\phi(z_{t})\\), which contain rich semantic content, as highlighted in recent studies [34, 44, 49]. In this work, we modify the cross-attention\'s \\(P\\) and leverage the intermediate features \\(\\phi(z_{t})\\) to localize edits in pre-trained LDMs.\n' +
+      '\n' +
+      'InstructPix2Pix.Our method relies on InstructPix2Pix (IP2P) [6], an image-to-image transformation network trained for text-conditioned editing. IP2P builds on top of Stable Diffusion and incorporates a bi-conditional framework, which simultaneously leverages an input image \\(I\\), and an accompanying text-based instruction \\(T\\) to steer the synthesis of the image, with the conditioning features being \\(c_{I}\\) for the image and \\(c_{T}\\) for the text. The image generation workflow is modulated through a classifier-free guidance (CFG) strategy [18] that employs two separate coefficients, \\(s_{T}\\) for text condition and \\(s_{I}\\) for image condition. The noise vectors predicted by the learned network \\(e_{\\theta}\\), which corresponds to the individual U-Net step, with different sets of inputs, are linearly combined as represented in Eq. (2) to achieve score estimate \\(\\tilde{e}_{\\theta}\\). Our method utilizes and modifies the processes for the terms with \\(c_{I}\\) in Eq. (2) to apply localized image editing.\n' +
+      '\n' +
+      '\\[\\tilde{e}_{\\theta}(z_{t},c_{I},c_{T})= \\ e_{\\theta}(z_{t},\\varnothing,\\varnothing) \\tag{2}\\] \\[+s_{I}\\cdot(e_{\\theta}(z_{t},c_{I},\\varnothing)-e_{\\theta}(z_{t}, \\varnothing,\\varnothing))\\] \\[+s_{T}\\cdot(e_{\\theta}(z_{t},c_{I},c_{T})-e_{\\theta}(z_{t},c_{I},\\varnothing)).\\]\n' +
+      '\n' +
+      '## 4 Method\n' +
+      '\n' +
+      'We aim to develop a localized editing method for a _pre-trained_ IP2P _without re-training or fine-tuning_. The proposed method contains two components: (i) _edit localization_ finds the RoI by incorporating the input image and the edit instruction, and (ii) _edit application_ applies the instruction to RoI in a disentangled and localized manner.\n' +
+      '\n' +
+      '### Edit Localization\n' +
+      '\n' +
+      'Segmentation:Our study extends the established understanding that intermediate features of diffusion models encode essential semantic information. In contrast to previous methods that build upon Stable Diffusion [34, 44, 49], our approach works on IP2P and focuses on the features conditioned on the original image (\\(z_{t}\\), \\(c_{I}\\), and \\(\\varnothing\\)) for segmentation as indicated in Eq. (2). Through experimental observation, we show that these features align well with segmentation objectives for editing purposes. To obtain segmentation maps, we extract features from multiple layers of the U-Net architecture, including both down- and up-blocks, to encompass a variety of resolutions and enhance the semantic understanding of the image. Our preference for intermediate features over attention maps is based on their superior capability to encode richer semantic information, as verified by studies such as [34, 44, 49].\n' +
+      '\n' +
+      'We implement a multi-resolution fusion strategy to refine the feature representations within our proposed model. This involves (i) resizing feature maps from various resolutions to a common resolution by applying bi-linear interpolation,(ii) concatenating and normalizing them along the channel dimension, and (iii) finally, applying a clustering method, such as the K-means algorithm, on fused features. We aim to retain each feature set\'s rich, descriptive qualities by following these steps. Moreover, each resolution in the U-Net step keeps different granularity of the regions in terms of semantics and sizes.\n' +
+      '\n' +
+      'Figure 2 demonstrates segmentation maps from different resolutions and our proposed fused features. Each resolution captures different semantic components of the image, _e.g_., field, racket, hat, dress.... Although _Resolution 64_ can distinguish objects, _e.g_., skin and outfit, it does not provide consistent segment areas, _e.g_., two distinct clusters for lines in the field. On the other hand, lower resolutions, _Resolution 16 and 32_, can capture coarse segments like lines in the field and the racket. Fusing those features from different resolutions yields more robust feature representations, enhancing the segmentation; see Fig. 2 - _Ours_. For the extraction of intermediate features, we use time steps between 30 and 50 out of 100 steps, as recommended by LD-ZNet [34].\n' +
+      '\n' +
+      'Localization:Upon identifying the segments within the input image, the proposed method identifies the RoI for the edit using cross-attention maps conditioned on the input image and instruction (\\(z_{t}\\), \\(c_{I}\\), and \\(c_{T}\\)) as indicated in Eq. (2). These maps have dimensions of \\(H_{b}\\times W_{b}\\times D\\), where \\(H_{b}\\) and \\(W_{b}\\) represent the height and width of the features of block \\(b^{th}\\) (up and down blocks), respectively, and \\(D\\) denotes the number of text tokens. Following our segmentation strategy, the cross-attention maps are resized to a common resolution, combined among the spatial dimensions, namely \\(H\\) and \\(W\\), and normalized among the token dimension, \\(D\\). After merging attention maps from different resolutions, the method ignores the _<start of text>_, _stop words_, and _padding_ tokens to ignore noisy attention values from unrelated parts of the conditioning text and focuses on the remaining tokens to identify the area that is related to the edit instruction. Then, we get the mean attention score among the tokens to generate a final attention map; see Fig. 2 - _Attention_. Subsequently, the top \\(100\\) pixels, ablated in Tab. 4, marked by highest probability scores, are identified. Then, all segments that overlap at least one of those pixels are combined to obtain the RoI; see Fig. 2 - _Ours_, _Attention_, and _RoI_.\n' +
+      '\n' +
+      '### Edit Application\n' +
+      '\n' +
+      'Leveraging the strength of the pre-trained models, we introduce a novel _localized editing technique_ within IP2P. This module manipulates attention scores corresponding to the RoI while ensuring the rest of the image remains the same, thus preventing any unintended alterations outside the RoI. Specifically, this procedure uses the terms with \\(z_{t}\\), \\(c_{I}\\), and \\(c_{T}\\) using the notation of Eq. (2).\n' +
+      '\n' +
+      'Attention Regularization:Previous methods [2, 8, 29] use the noise space instead of attention scores. In contrast, our method introduces targeted attention regularization for selectively reducing the influence of unrelated tokens within the RoI during editing. This approach regularizes attention scores for tokens that are unrelated to the editing task, such as _<start of text>_, _padding_, and _stop words_ (denoted as \\(S\\)). By adjusting the attention scores (\\(QK^{T}\\)) within the RoI, we aim to minimize the impact of these unrelated tokens during the softmax normalization process. As a result, the softmax function is more likely to assign higher attention probabilities within the RoI to tokens that align with the editing instructions. This targeted approach ensures that edits are precisely focused on the desired areas, enhancing the accuracy and effectiveness of the edits while preserving the rest. Given the binary mask for RoI \\(M\\), we modify the result of the dot product \\(QK^{T}\\) of cross-attention layers for unrelevant tokens to a regularization version \\(R(QK^{T},M)\\) as follows:\n' +
+      '\n' +
+      'Figure 3: **Attention Regularization. Our method selectively regularizes unrelated tokens within the RoI, ensuring precise, context-aware edits without the need for additional model training or extra data. After attention regularization, the probabilities for the related tokens are attending the RoI, as illustrated in the second row.**\n' +
+      '\n' +
+      'Figure 2: **Segmentation and RoI finding.**_Resolution X_s demonstrates segmentation maps from different resolutions, while _Ours_ shows the segmentation map from our method. For the cross-attention map, the color yellow indicates high probability, and blue dots mark the \\(100\\) pixels with the highest probability. The last image shows the extracted RoI using blue dots and _Ours_.\n' +
+      '\n' +
+      '\\[R(QK^{T},M)=\\begin{cases}QK^{T}_{ijt}-\\alpha,&\\text{if $M_{ij}=1$ and $t\\in S$}\\\\ QK^{T}_{ijt},&\\text{otherwise},\\end{cases} \\tag{3}\\]\n' +
+      '\n' +
+      'where \\(\\alpha\\) is a large value. Intuitively, we prevent unrelated tokens from attending to the RoI, as shown in Fig. 3. In contrast, related tokens will be more likely to be selected in the RoI, leading to more accurate, localized, and focused edits. This method achieves an optimal balance between targeted editing within the intended areas and preserving the surrounding context, thus enhancing the overall effectiveness of the instruction.\n' +
+      '\n' +
+      'By employing this precise regularization technique within the RoI, our method significantly enhances IP2P. It elevates the degree of disentanglement and improves the localization of edits by tapping into the already-learned features of the model. This targeted approach circumvents the need for _re-training or fine-tuning_, preserving computational resources and time. It harnesses the inherent strength of the pre-trained IP2P features, deploying them in a focused and effective manner. This precision ensures that edits are contained within the intended areas, underpinning the model\'s improved capability to execute complex instructions in a localized and controlled way without the necessity for additional rounds of training or fine-tuning.\n' +
+      '\n' +
+      '## 5 Experiments\n' +
+      '\n' +
+      '### Evaluation Datasets and Metrics\n' +
+      '\n' +
+      'Combining diverse datasets and metrics ensures a thorough evaluation of our proposed method. For each dataset, we report the metrics proposed in the corresponding work.\n' +
+      '\n' +
+      '**MagicBrush [52].** The test split offers a comprehensive evaluation pipeline with 535 sessions and 1053 turns. _Sessions_ refer to the source images used for iterative editing instructions, and _turns_ denote the individual editing steps within each session. It employs _L1_ and _L2_ norms to measure pixel accuracy, _CLIP-1_, and _DINO_ embeddings for assessing image quality via cosine similarity, and _CLIP-T_ to ensure that the generated images align accurately with local textual descriptions.\n' +
+      '\n' +
+      '**InstructPix2Pix [6].** We evaluate our method on InstructPix2Pix test split with 5K image-instruction pairs. Metrics include _CLIP image similarity_ for visual fidelity and _CLIP text-image direction similarity_ to measure adherence to the editing instructions.\n' +
+      '\n' +
+      '**PIE-Bench [20].** The benchmark includes 700 images in 10 editing categories with input/output captions, editing instructions, input images, and RoI annotations. Metrics for structural integrity and background preservation are derived from cosine similarity measures and image metrics like _PSNR_, _LPIPS_, _MSE_, and _SSIM_, while text-image consistency is evaluated via _CLIP Similarity_.\n' +
+      '\n' +
+      'Figure 4: **Qualitative Examples. We test our method on different tasks: (a) editing a large segment, (b) altering texture, (c) editing multiple segments, (d) adding, (e) replacing, and (f) removing objects. Examples are taken from established papers [20, 52, 53]. The integration of LIME enhances the performance of all models, enabling localized edits while maintaining the integrity of the remaining image areas.**\n' +
+      '\n' +
+      '**EditVal [5].** The benchmark offers 648 image editing operations spanning 19 classes from the MS-COCO dataset [24]. The benchmark assesses the success of each edit with a binary score that indicates whether the edit type was successfully applied. The OwL-ViT [28] model is utilized to detect the object of interest, and detection is used to assess the correctness of the modifications.\n' +
+      '\n' +
+      '### Implementation Details\n' +
+      '\n' +
+      'Our method adopts InstructPix2Pix [6] as its base model and runs the model for 100 steps for each stage explained in Secs. 4.1 and 4.2. Specifically, during _Edit Localization_, intermediate representations are extracted between \\(30\\) and \\(50\\) out of \\(100\\) steps, as suggested in LD-ZNet [34]. Moreover, those intermediate features are resized to \\(256\\times 256\\). The number of clusters for segmenting is \\(8\\) across all experiments, motivated by an ablation study. Concurrently, we gather features from steps \\(1\\) to \\(75\\) for the cross-attention maps and retain only related tokens. We extract \\(100\\) pixels with the highest probabilities from the attention maps to identify RoI and determine overlapping segments. For _Edit Localization_, the image scale \\(s_{I}\\) and the text scale \\(s_{T}\\), the parameters are \\(1.5\\) and \\(7.5\\), respectively. During _Edit Application_, the attention regularization is employed between steps \\(1\\) and \\(75\\), targeting only unrelated tokens. Throughout the editing process, the image scale, \\(s_{I}\\), and the text scale, \\(s_{T}\\), parameters are set to \\(1.5\\) and \\(3.5\\), respectively.\n' +
+      '\n' +
+      '### Qualitative Results\n' +
+      '\n' +
+      'Figure 4 presents qualitative examples for various editing tasks. These tasks include editing large segments, altering textures, editing multiple small segments simultaneously, and adding, replacing, or removing objects. The first column displays the input images, with the corresponding edit instructions below each image. The second column illustrates the results generated by the base models without our proposed method. The third and fourth columns report the RoI identified by our method and the edited output produced by the base models when our regularization method is applied to these RoIs. As shown in Fig. 4, our method effectively implements the edit instructions while preserving the overall scene context. In all presented results, our method surpasses current state-of-the-art models, including their fine-tuned versions on manually annotated datasets, _e.g_., MagicBrush [52]. Furthermore, as also claimed and reported in HIVE [53], without additional training, IP2P cannot perform a successful edit for (d) in Fig. 4. However, our proposed method achieves the desired edit without any additional training on the base model as shown Fig. 4 - (d).\n' +
+      '\n' +
+      '### Quantitative Results\n' +
+      '\n' +
+      '**Results on MagicBrush.** Our method outperforms all other methods on both the single- and multi-turn editing tasks on MagicBrush (MB) [52] benchmark, as seen in Tab. 1. Compared to the base models, our approach provides significant improvements and best results in terms of _L1_, _L2_, _CLIP-I_, and _DINO_. For the _CLIP-T_ metric, which compares the edited image and caption to the ground truth, our method comes very close to the oracle scores of \\(0.309\\) for multi-turn and \\(0.307\\) for single-turn. This indicates that our edits accurately reflect the ground truth modifications. VQGAN-CLIP [9] achieves the highest in _CLIP-T_\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c} \\hline \\hline \\multirow{2}{*}{**Methods**} & \\multicolumn{5}{c}{**Single-turn**} & \\multicolumn{5}{c}{**Multi-turn**} \\\\ \\cline{2-11}  & **MB** & L1 \\(\\downarrow\\) & L2 \\(\\downarrow\\) & CLIP-I \\(\\uparrow\\) & DINO \\(\\uparrow\\) & CLIP-T \\(\\uparrow\\) & L1 \\(\\downarrow\\) & L2 \\(\\downarrow\\) & CLIP-I \\(\\uparrow\\) & DINO \\(\\uparrow\\) & CLIP-T \\(\\uparrow\\) \\\\ \\hline Open-Edit [25] & ✗ & 0.143 & 0.043 & 0.838 & 0.763 & 0.261 & 0.166 & 0.055 & 0.804 & 0.684 & 0.253 \\\\ VQGAN-CLIP [9] & ✗ & 0.220 & 0.083 & 0.675 & 0.495 & **0.388** & 0.247 & 0.103 & 0.661 & 0.459 & **0.385** \\\\ SDEdit [27] & ✗ & 0.101 & 0.028 & 0.853 & 0.773 & 0.278 & 0.162 & 0.060 & 0.793 & 0.621 & 0.269 \\\\ Text2LIVE [4] & ✗ & **0.064** & **0.017** & **0.924** & **0.881** & 0.242 & **0.099** & **0.028** & **0.880** & **0.793** & 0.272 \\\\ Null-Text Inv. [30] & ✗ & 0.075 & 0.020 & 0.883 & 0.821 & 0.274 & 0.106 & 0.034 & 0.847 & 0.753 & 0.271 \\\\ \\hline HIVE [53] & ✗ & 0.109 & 0.034 & 0.852 & 0.750 & 0.275 & 0.152 & 0.056 & 0.800 & 0.646 & 0.267 \\\\ HIVE [53] + _LIME_ & ✗ & **0.051** & **0.016** & **0.940** & **0.909** & 0.293 & **0.080** & 0.029 & 0.894 & **0.829** & 0.283 \\\\ HIVE [53] & ✓ & 0.066 & 0.022 & 0.919 & 0.866 & 0.281 & 0.097 & 0.037 & 0.879 & 0.789 & 0.280 \\\\ HIVE [53] + _LIME_ & ✓ & 0.053 & **0.016** & 0.939 & 0.906 & **0.300** & **0.080** & **0.028** & **0.899** & **0.829** & **0.295** \\\\ \\hline IP2P [6] & ✗ & 0.112 & 0.037 & 0.852 & 0.743 & 0.276 & 0.158 & 0.060 & 0.792 & 0.618 & 0.273 \\\\ IP2P [6] + _LIME_ & ✗ & 0.058 & **0.017** & 0.935 & 0.906 & 0.293 & 0.094 & 0.033 & 0.883 & 0.817 & 0.284 \\\\ IP2P [6] & ✓ & 0.063 & 0.020 & 0.933 & 0.899 & 0.278 & 0.096 & 0.035 & 0.892 & 0.827 & 0.275 \\\\ IP2P [6] + _LIME_ & ✓ & **0.056** & **0.017** & **0.939** & **0.911** & **0.297** & **0.088** & **0.030** & **0.894** & **0.835** & **0.294** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: **Evaluation on MagicBrush Dataset [52]. Results for single-turn and multi-turn settings are presented for each method and _MB_ stands for models fine-tuned on MagicBrush. The benchmark values for other approaches are sourced from [52], while values for our proposed method are computed following the same protocol. Across both settings, our method surpasses the base models performance of the compared models. The top-performing is highlighted in bold, while the second-best is denoted with underline for each block.**by directly using CLIP [35] for fine-tuning during inference. However, this can excessively alter images, leading to poorer performance in other metrics. Overall, the performance across metrics shows that our approach generates high-quality and localized image edits based on instructions, outperforming prior state-of-the-art methods.\n' +
+      '\n' +
+      'Results on PIE-Bench.Our quantitative analysis on the PIE-Bench [20] demonstrates the effectiveness of our proposed method. Compared to baseline models like Instruct-Pix2Pix [6] and fine-tuned versions on MagicBrush [52] and HIVE [53], our method achieves significantly better performance on metrics measuring structure and background preservation. This indicates that our approach makes localized edits according to the instructions while avoiding unintended changes to unaffected regions. At the same time, our method obtains comparable results to base models on the CLIP similarity score, showing it applies edits faithfully based on the textual instruction. A comprehensive comparison is presented in Tab. 2. Overall, the quantitative results validate that our method can enable text-guided image editing by making precise edits solely based on the given instruction without altering unrelated parts.\n' +
+      '\n' +
+      'Results on EditVal.In evaluation using the EditVal benchmark dataset [5], our method exhibits superior performance across various edit types, particularly excelling in _Object Addition (O.A.)_, _Position Replacement (P.R.)_, and _Positional Addition (P.A.)_, while achieving second-best in _Object Replacement (O.R.)_. In particular, it performs comparable to other methods for edits involving _Size (S.)_ and _Alter Parts (A.P.)_. A comprehensive comparison is presented in Tab. 3. Overall, the method advances the state-of-the-art by improving the average benchmark results by a margin of \\(5\\%\\) over the previous best model.\n' +
+      '\n' +
+      'Results on InstructPix2Pix.We evaluate our method utilizing the same setup as InstructPix2Pix, presenting results on a synthetic evaluation dataset [6] as shown in Fig. 5. Our approach notably improves the base model, IP2P, optimizing the trade-off between the input image and the instruction-based edit. Additionally, while an increase in text scale, \\(s_{T}\\), enhances the _CLIP Text-Image Direction Similarity_, it adversely impacts _CLIP Image Similarity_. For both metrics, the higher, the better. The black arrow indicates the selected configuration for the results in this paper.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c|c|c c c c|c c} \\hline \\hline  & **Metrics** & **Structure** & \\multicolumn{4}{c|}{**Background Preservation**} & \\multicolumn{2}{c}{**CLIP Similarity**} \\\\ \\hline\n' +
+      '**Methods** & **GT Mask** & \\(\\textbf{Distance}_{+10}\\downarrow\\) & **PSNR \\(\\uparrow\\)** & \\(\\textbf{LPIPS}_{+10}\\downarrow\\) & \\(\\textbf{MSE}_{+10}\\downarrow\\) & \\(\\textbf{SSIM}_{+10}\\uparrow\\) & **Whole \\(\\uparrow\\)** & **Edited \\(\\uparrow\\)** \\\\ \\hline InstructDiffusion [15] & ✗ & 75.44 & 20.28 & 155.66 & 49.66 & 75.53 & 23.26 & 21.34 \\\\ BlendedDiffusion [3] & ✓ & 81.42 & **29.13** & **36.61** & **19.16** & **86.96** & **25.72** & **23.56** \\\\ DirectInversion + P2P [20] & ✗ & **11.65** & 27.22 & 54.55 & 32.86 & 84.76 & 25.02 & 22.10 \\\\ \\hline IP2P [6] & ✗ & 57.91 & 20.82 & 158.63 & 227.78 & 76.26 & 23.61 & **21.64** \\\\ IP2P [6] + _LIME_ & ✗ & 32.80 & 21.36 & 110.69 & 159.93 & 80.20 & 23.73 & 21.11 \\\\ IP2P [6] + _LIME_ & ✓ & **26.33** & **24.78** & **89.90** & **105.19** & **82.26** & **23.81** & 21.10 \\\\ \\hline IP2P [6] w/MB [52] & ✗ & 22.25 & 27.68 & 47.61 & 40.03 & 85.82 & 23.83 & **21.26** \\\\ IP2P [6] w/MB [52] + _LIME_ & ✗ & 10.81 & 28.80 & 41.08 & 27.80 & 86.51 & 23.54 & 20.90 \\\\ IP2P [6] w/MB [52] + _LIME_ & ✓ & **10.23** & **28.96** & **39.85** & **27.11** & **86.72** & **24.02** & 21.09 \\\\ \\hline HIVE [53] & ✗ & 56.37 & 21.76 & 142.97 & 159.10 & 76.73 & 23.30 & **21.52** \\\\ HIVE [53] + _LIME_ & ✗ & 37.05 & 22.90 & 112.99 & 107.17 & 78.67 & 23.41 & 21.12 \\\\ HIVE [53] + _LIME_ & ✓ & **33.76** & **24.14** & **103.63** & **94.01** & **81.18** & **23.62** & 21.21 \\\\ \\hline HIVE [53] w/MB [52] & ✗ & 34.91 & 20.85 & 158.12 & 227.18 & 76.47 & 23.90 & **21.75** \\\\ HIVE [53] w/MB [52] + _LIME_ & ✗ & 26.98 & 26.09 & 68.28 & 63.70 & 84.58 & 23.96 & 21.36 \\\\ HIVE [53] w/MB [52] + _LIME_ & ✓ & **25.86** & **28.43** & **50.33** & **43.25** & **86.67** & **24.23** & 21.43 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: **Evaluation on PIE-Bench Dataset [20]. Comparison across ten edit types shows our method outperforming base models on text-guided image editing models. The numbers for the first block are taken from the benchmark paper [20]. The top-performing is highlighted in bold, while the second-best is denoted with underline for each block. _GT Mask_ stands for ground-truth masks as regions of interest.**\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline\n' +
+      '**Method** & **O.A.** & **O.R.** & **P.R.** & **P.A.** & **S.** & **A.P.** & **Avg.** \\\\ \\hline SINE [54] & 0.47 & **0.59** & 0.02 & 0.16 & 0.46 & 0.30 & 0.33 \\\\ NText. [30] & 0.35 & 0.48 & 0.00 & 0.20 & **0.52** & **0.34** & 0.32 \\\\ IP2P [6] & 0.38 & 0.39 & 0.07 & 0.25 & 0.51 & 0.25 & 0.31 \\\\ Imagic [21] & 0.36 & 0.49 & 0.03 & 0.08 & 0.49 & 0.21 & 0.28 \\\\ SDEdit [27] & 0.35 & 0.06 & 0.04 & 0.18 & 0.47 & 0.33 & 0.24 \\\\ Dbooth [39] & 0.39 & 0.32 & 0.11 & 0.08 & 0.28 & 0.22 & 0.24 \\\\ TInv. [14] & 0.43 & 0.19 & 0.00 & 0.00 & 0.02 & 0.14 \\\\ DiffEdit [8] & 0.34 & 0.26 & 0.00 & 0.00 & 0.00 & 0.07 & 0.11 \\\\ \\hline IP2P + _LIME_ & **0.48** & 0.49 & **0.21** & **0.34** & 0.49 & 0.28 & **0.38** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: **Evaluation on EditVal Dataset [5]. Comparison across six edit types shows our method outperforming eight state-of-the-art text-guided image editing models. The numbers for other methods are directly taken from the benchmark paper [5] and the same evaluation setup is applied to our method. The top-performing is highlighted in bold, while the second-best is denoted with bold.**\n' +
+      '\n' +
+      '### Ablation Study\n' +
+      '\n' +
+      'Ablation studies analyze the impact of three key components: the RoI finding method, the number of points from attention maps, and the number of clusters. InstructPix2Pix is the base architecture. Evaluation is on the MagicBrush dataset. Each parameter is modified separately, while other parameters are kept fixed to isolate their impact.\n' +
+      '\n' +
+      'RoI finding methods.The ground truth masks of MagicBrush [52] are not very tight around the edit area, see _Supplementary Material_ for visualizations. For this reason, our method with predicted masks achieves the best performance for the _L1_, _L2_, _CLIP-I_, and _DINO_ metrics while having on-par results with _CLIP-T_ compared to the use of ground truth masks, as shown in Tab. 4. We also compare the segmentation predicted by adapting the state-of-the-art LPM [33] to IP2P by utilizing the official code base1. Even in this case, our method achieves better results.\n' +
+      '\n' +
+      'Footnote 1: [https://github.com/orpatashnik/local-prompt-mixing](https://github.com/orpatashnik/local-prompt-mixing)\n' +
+      '\n' +
+      'Number of points from attention maps.Using only \\(25\\) points worsens performance, as it cannot capture multiple distinct segments within RoI. However, having more points includes excessive noise, causing more segments to improperly merge and expanding the RoI area. \\(100\\) points provide better RoI, as shown in Tab. 4.\n' +
+      '\n' +
+      'Number of clusters.A few clusters like \\(4\\) led to large segments and an expanded RoI, preventing localized edits. Increasing the number of clusters, like \\(16\\) or \\(32\\), causes the separation of a single RoI into multiple clusters. As shown in Tab. 4, 8 achieves the best results.\n' +
+      '\n' +
+      'Edit Application.Instead of attention regularization, editing can also be performed in noise space [2, 8, 29]. This corresponds to a linear blending of the input image and a reference image derived from the edit text in noise space, according to the RoI. However, alignment between the reference and input images in the edited area is crucial for targeting the RoI effectively. As shown in Tab. 4 - _Edit_, our method enhances editing precision by employing attention regularization.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      'In this paper, we introduce, LIME, a novel _localized image editing_ technique using IP2P modified with explicit segmentation of the edit area and attention regularization. This approach effectively addresses the challenges of precision and context preservation in localized editing, eliminating the need for user input or model fine-tuning/retraining. The attention regularization step of our method can also be utilized with a user-specified mask, offering additional flexibility. Our method\'s robustness and effectiveness are validated through empirical evaluations, outperforming existing state-of-the-art methods. This advancement contributes to the continuous evolution of LDMs in image editing, pointing toward exciting possibilities for future research.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c c c c c c} \\hline  & **Method** & L1 \\(\\downarrow\\) & L2 \\(\\downarrow\\) & CLIP-I\\(\\uparrow\\) & DINO \\(\\uparrow\\) & CLIP-T \\(\\uparrow\\) \\\\ \\hline  & IP2P [6] & 0.112 & 0.037 & 0.852 & 0.743 & 0.276 \\\\ \\hline \\multirow{4}{*}{**Road**} & GT & 0.063 & **0.017** & **0.935** & 0.902 & **0.297** \\\\  & LPM [33] & 0.072 & 0.019 & 0.924 & 0.886 & 0.291 \\\\  & Ours & **0.058** & **0.017** & **0.935** & **0.906** & 0.293 \\\\ \\hline \\multirow{4}{*}{**Road**} & \\(25\\) & 0.079 & 0.023 & 0.917 & 0.874 & 0.290 \\\\  & \\(100\\) & **0.058** & **0.017** & **0.935** & **0.906** & 0.293 \\\\  & \\(225\\) & 0.065 & 0.018 & 0.932 & 0.901 & **0.295** \\\\  & \\(400\\) & 0.070 & 0.020 & 0.925 & 0.889 & **0.295** \\\\ \\hline \\multirow{4}{*}{**Road**} & \\(4\\) & 0.080 & 0.022 & 0.923 & 0.885 & **0.295** \\\\  & \\(8\\) & **0.058** & **0.017** & **0.935** & **0.906** & 0.293 \\\\  & \\(16\\) & 0.062 & 0.018 & 0.933 & 0.903 & 0.294 \\\\  & \\(32\\) & 0.064 & 0.018 & 0.932 & 0.901 & 0.291 \\\\ \\hline \\multirow{4}{*}{**Road**} & Noise & 0.076 & 0.022 & 0.914 & 0.864 & 0.291 \\\\  & Ours & **0.058** & **0.017** & **0.935** & **0.906** & **0.293** \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: **Ablation Study.** For fair comparison, all parameters are the same for all settings except the ablated parameter. The top-performing is highlighted in **bold**, while the second-best is denoted with underline for each block.\n' +
+      '\n' +
+      'Figure 5: **InstructPix2Pix Test.** Trade-off between input image (Y-axis) and edit (X-axis) is showed. T and C denotes \\(s_{T}\\) and # of clusters, respectively. For all experiments, \\(s_{I}\\in[1.0,2.2]\\) is fixed. The arrow points to the chosen configuration for our results.\n' +
+      '\n' +
+      'Figure 6: **Failure Cases & Limitations.** Left: Base model entanglement. Right: Feature mixing issue.\n' +
+      '\n' +
+      'Limitations.Figure 6 shows limitations of our method: (i) shows the limitation due to the pre-trained base model\'s capabilities. Our method can focus on the RoI and successfully apply edits but may alter the scene\'s style, particularly in color, due to the base model entanglement. However, our proposal significantly improves the edit compared to IP2P. (ii) illustrates how prompt content impacts edit quality. During editing, all tokens except \\(<\\)_start of text\\(>\\)_, _stop words_, and _padding_, affect the RoI, leading to feature mixing.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1]A. Agarwal, S. Karanam, K. J. Joseph, A. Saxena, K. Goswami, and B. Vasan Srinivasan (2023) A-star: test-time attention segregation and retention for text-to-image synthesis. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pp. 2283-2293. Cited by: SS1.\n' +
+      '* [2]O. Avrahami, D. Lischinski, and O. Fried (2022) Blended diffusion for text-driven editing of natural images. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022, pp. 18187-18197. Cited by: SS1.\n' +
+      '* [3]O. Avrahami, O. Fried, and D. Lischinski (2023) Blended latent diffusion. ACM Transactions on Graphics (TOG)42 (4), pp. 1-11. Cited by: SS1.\n' +
+      '* ECCV 2022\n' +
+      '- 17th European Conference, Tel Aviv, Israel, October 23-27, 2022, Proceedings, Part XV, pp. 707-723. Cited by: SS1.\n' +
+      '* [5]S. Basu, M. Saberi, S. Bhardwaj, A. M. Chegini, D. Massiceti, M. Sanjabi, S. Xu Hu, and S. Feizi (2023) Editval: benchmarking diffusion based text-guided image editing methods. arXiv preprint arXiv:2310.02426. Cited by: SS1.\n' +
+      '* [6]T. Brooks, A. Holynski, and A. A. Efros (2022) Instructpix2pix: learning to follow image editing instructions. CoRRabs/2211.09800. Cited by: SS1.\n' +
+      '* [7]H. Chefer, Y. Alaluf, Y. Vinker, L. Wolf, and D. Cohen-Or (2023) Attend-and-excite: attention-based semantic guidance for text-to-image diffusion models. ACM Transactions on Graphics (TOG)42 (4), pp. 1-10. Cited by: SS1.\n' +
+      '* [8]G. Couairon, J. Verbeek, H. Schwenk, and M. Cord (2023) Diffe4it: diffusion-based semantic image editing with mask guidance. In The Eleventh International Conference on Learning Representations, Vol., pp. 1-2. Cited by: SS1.\n' +
+      '* ECCV 2022\n' +
+      '- 17th European Conference, Tel Aviv, Israel, October 23-27, 2022, Proceedings, Part XXXVII, pp. 88-105. Cited by: SS1.\n' +
+      '* [10]P. Dhariwal and A. Nichol (2021) Diffusion models beat gans on image synthesis. Advances in neural information processing systems34, pp. 8780-8794. Cited by: SS1.\n' +
+      '* [11]A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly, J. Uszkoreit, and N. Houlsby (2021) An image is worth 16x16 words: transformers for image recognition at scale. In International Conference on Learning Representations, Cited by: SS1.\n' +
+      '* [12]P. Esser, R. Rombach, and B. Ommer (2021) Taming transformers for high-resolution image synthesis. In IEEE Conference on Computer Vision and Pattern Recognition, CVPR 2021, virtual, June 19-25, 2021, pp. 12873-12883. Cited by: SS1.\n' +
+      '* [13]T. Fu, W. Hu, X. Du, W. Y. Wang, Y. Yang, and Z. Gan (2023) Guiding instruction-based image editing via multimodal large language models. arXiv preprint arXiv:2309.17102. Cited by: SS1.\n' +
+      '* [14]R. Gal, Y. Alaluf, Y. Atzmon, O. Patashnik, A. H. Bermano, G. Chechik, and D. Cohen-Or (2022) An image is worth one word: personalizing text-to-image generation using textual inversion. Cited by: SS1.\n' +
+      '* [15]Z. Geng, B. Yang, T. Hang, C. Li, S. Gu, T. Zhang, J. Bao, Z. Zhang, H. Hu, D. Chen, et al. (2023) Instructdiffusion: a generalist modeling interface for vision tasks. arXiv preprint arXiv:2309.03895. Cited by: SS1.\n' +
+      '* [16]I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville, and Y. Bengio (2014) Generative adversarial nets. Advances in neural information processing systems27. Cited by: SS1.\n' +
+      '* [17]A. Hertz, R. Mokady, J. Tenenbaum, K. A. Y. Pitch, and D. Cohen-Or (2022) Prompt-to-prompt image editing with cross attention control. CoRRabs/2208.01626. Cited by: SS1.\n' +
+      '* [18]J. Ho and T. Salimans (2021) Classifier-free diffusion guidance. In NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applications, Cited by: SS1.\n' +
+      '* [19]J. Ho, A. Jain, and P. Abbeel (2020) Denoising diffusion probabilistic models. Advances in neural information processing systems33, pp. 6840-6851. Cited by: SS1.\n' +
+      '* [20]X. Ju, A. Zeng, Y. Bian, S. Liu, and Q. Xu (2023) Direct inversion: boosting diffusion-based editing with 3 lines of code. arXiv preprint arXiv:2310.01506. Cited by: SS1.\n' +
+      '* [21]B. Kawar, S. Zada, O. Lang, O. Tov, H. Chang, T. Dekel, I. Mosseri, and M. Irani (2022) ImageNet: text-based real image editing with diffusion models. CoRRabs/2210.09276. Cited by: SS1.\n' +
+      '* [22]A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W. Lo, P. Dollar, and R. B. Girshick (2023) Segment anything. CoRRabs/2304.02643. Cited by: SS1.\n' +
+      '* [23]P. Korshunov and S. Marcel (2018) Deepfakes: a new threat to face recognition? assessment and detection. arXiv preprint arXiv:1812.08685. Cited by: SS1.\n' +
+      '\n' +
+      '- ECCV 2014\n' +
+      '- 13th European Conference, Zurich, Switzerland, September 6-12, 2014, Proceedings, Part V_, pages 740-755. Springer, 2014.\n' +
+      '* ECCV 2020\n' +
+      '- 16th European Conference, Glasgow, UK, August 23-28, 2020, Proceedings, Part XI_, pages 89-106. Springer, 2020.\n' +
+      '* [26] Andreas Lugmayr, Martin Danelljan, Andres Romero, Fisher Yu, Radu Timofte, and Luc Van Gool. Repairt: Inpainting using denoising diffusion probabilistic models. In _IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2022, New Orleans, LA, USA, June 18-24, 2022_, pages 11451-11461. IEEE, 2022.\n' +
+      '* [27] Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. SDEdit: Guided image synthesis and editing with stochastic differential equations. In _International Conference on Learning Representations_, 2022.\n' +
+      '* ECCV 2022: 17th European Conference, 2022_, page 728-755, 2022.\n' +
+      '* [29] Ashkan Mirzaei, Tristan Aumentado-Armstrong, Marcus A Brubaker, Jonathan Kelly, Alex Levinshtein, Konstantinos G Depamis, and Igor Giltschenski. Watch your steps: Local image and scene editing by text instructions. _arXiv preprint arXiv:2308.08947_, 2023.\n' +
+      '* [30] Ron Mokady, Amir Hertz, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Null-text inversion for editing real images using guided diffusion models. _CoRR_, abs/2211.09794, 2022.\n' +
+      '* [31] Alexander Quinn Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav Shyam, Pamela Mishkin, Bob McGrew, Ilya Sutskever, and Mark Chen. GLIDE: towards photorealistic image generation and editing with text-guided diffusion models. In _International Conference on Machine Learning, 2022_, pages 16784-16804. PMLR, 2022.\n' +
+      '* [32] Gaurav Parmar, Krishna Kumar Singh, Richard Zhang, Yijun Li, Jingwan Lu, and Jun-Yan Zhu. Zero-shot image-to-image translation. In _ACM SIGGRAPH 2023 Conference Proceedings_, pages 1-11, 2023.\n' +
+      '* [33] Or Patashnik, Daniel Garibi, Idan Azuri, Hadar Averbuch-Elor, and Daniel Cohen-Or. Localizing object-level shape variations with text-to-image diffusion models. In _Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)_, 2023.\n' +
+      '* [34] Koutilya PNVR, Bharat Singh, Pallabi Ghosh, Behjat Siddiquie, and David Jacobs. Ld-znet: A latent diffusion approach for text-based image segmentation. In _Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)_, pages 4157-4168, 2023.\n' +
+      '* [35] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In _Proceedings of the 38th International Conference on Machine Learning, 2021_, pages 8748-8763. PMLR, 2021.\n' +
+      '* [36] Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen. Hierarchical text-conditional image generation with CLIP latents. _CoRR_, abs/2204.06125, 2022.\n' +
+      '* [37] Scott E. Reed, Zeynep Akata, Honglak Lee, and Bernt Schiele. Learning deep representations of fine-grained visual descriptions. In _2016 IEEE Conference on Computer Vision and Pattern Recognition, 2016_, pages 49-58. IEEE Computer Society, 2016.\n' +
+      '* [38] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bjorn Ommer. High-resolution image synthesis with latent diffusion models. In _IEEE/CVF Conference on Computer Vision and Pattern Recognition, 2022_, pages 10674-10685. IEEE, 2022.\n' +
+      '* [39] Nataniel Ruiz, Yuanzhen Li, Varun Jampani, Yael Pritch, Michael Rubinstein, and Kfir Aberman. Dreambooth: Fine tuning text-to-image diffusion models for subject-driven generation. In _Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)_, pages 22500-22510, 2023.\n' +
+      '* [40] Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily Denton, Seyed Kamyar Seyed Ghasemipour, Raphael Gontijo-Lopes, Burcu Karagol Ayan, Tim Salimans, Jonathan Ho, David J. Fleet, and Mohammad Norouzi. Photorealistic text-to-image diffusion models with deep language understanding. In _Advances in Neural Information Processing Systems_, 2022.\n' +
+      '* [41] Shelly Sheynin, Adam Polyak, Uriel Singer, Yuval Kirstain, Amit Zohar, Oron Ashual, Devi Parikh, and Yaniv Taigman. Emu edit: Precise image editing via recognition and generation tasks. _arXiv preprint arXiv:2311.10089_, 2023.\n' +
+      '* [42] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denoising diffusion implicit models. In _9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021_. OpenReview.net, 2021.\n' +
+      '* [43] Yang Song and Stefano Ermon. Generative modeling by estimating gradients of the data distribution. _Advances in neural information processing systems_, 32, 2019.\n' +
+      '* [44] Luming Tang, Menglin Jia, Qianqian Wang, Cheng Perng Phoo, and Bharath Hariharan. Emergent correspondence from image diffusion. _arXiv preprint arXiv:2306.03881_, 2023.\n' +
+      '* [45] Kai Wang, Fei Yang, Shiqi Yang, Muhammad Atif Butt, and Joost van de Weijer. Dynamic prompt learning: Addressing cross-attention leakage for text-based image editing. In _Thirty-seventh Conference on Neural Information Processing Systems_, 2023.\n' +
+      '* [46] Qian Wang, Biao Zhang, Michael Birsak, and Peter Wonka.\n' +
+      '\n' +
+      'Mdp: A generalized framework for text-guided image editing by manipulating the diffusion path, 2023.\n' +
+      '* [47] Yuxiang Wei, Yabo Zhang, Zhilong Ji, Jinfeng Bai, Lei Zhang, and Wangmeng Zuo. Elite: Encoding visual concepts into textual embeddings for customized text-to-image generation. _arXiv preprint arXiv:2302.13848_, 2023.\n' +
+      '* [48] Qiucheng Wu, Yujian Liu, Handong Zhao, Ajinkya Kale, Trung Bui, Tong Yu, Zhe Lin, Yang Zhang, and Shiyu Chang. Uncovering the disentanglement capability in text-to-image diffusion models. In _Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition_, pages 1900-1910, 2023.\n' +
+      '* [49] Jiarui Xu, Sifei Liu, Arash Vahdat, Wonmin Byeon, Xiaolong Wang, and Shalini De Mello. Open-vocabulary panoptic segmentation with text-to-image diffusion models. In _Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition_, pages 2955-2966, 2023.\n' +
+      '* [50] Binxin Yang, Shuyang Gu, Bo Zhang, Ting Zhang, Xuejin Chen, Xiaoyan Sun, Dong Chen, and Fang Wen. Paint by example: Exemplar-based image editing with diffusion models. In _Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition_, pages 18381-18391, 2023.\n' +
+      '* [51] Han Zhang, Tao Xu, and Hongsheng Li. Stackgan: Text to photo-realistic image synthesis with stacked generative adversarial networks. In _IEEE International Conference on Computer Vision, ICCV 2017, Venice, Italy, October 22-29, 2017_, pages 5908-5916. IEEE Computer Society, 2017.\n' +
+      '* [52] Kai Zhang, Lingbo Mo, Wenhu Chen, Huan Sun, and Yu Su. Magicbrush: A manually annotated dataset for instruction-guided image editing. In _Advances in Neural Information Processing Systems_, 2023.\n' +
+      '* [53] Shu Zhang, Xinyi Yang, Yihao Feng, Can Qin, Chia-Chih Chen, Ning Yu, Zeyuan Chen, Huan Wang, Silvio Savarese, Stefano Ermon, Caiming Xiong, and Ran Xu. HIVE: harnessing human feedback for instructional visual editing. _CoRR_, abs/2303.09618, 2023.\n' +
+      '* [54] Zhixing Zhang, Ligong Han, Arnab Ghosh, Dimitris Metaxas, and Jian Ren. Sine: Single image editing with text-to-image diffusion models, 2022.\n' +
+      '\n' +
+      '## 7 Implementation Details\n' +
+      '\n' +
+      'We obtain the results using an NVIDIA A100 40GB GPU machine with 8 cores. For \\(512\\times 512\\) images the IP2P-based baselines (_e.g._, IP2P, IP2P w/MB, HIVE, and HIVE w/MB) take approximately 15 seconds per edit, while for LIME integrated models, it takes \\(\\approx\\)25 seconds.\n' +
+      '\n' +
+      '### Baselines\n' +
+      '\n' +
+      'Open-Edit [25]:This GAN-based approach uses a reconstruction loss for pre-training and incorporates a consistency loss during fine-tuning on specific images. Its unique feature is the arithmetic manipulation of word embeddings within a shared space of visual and textual features.\n' +
+      '\n' +
+      'VQGAN-CLIP [9]:Enhancing the VQGAN [12] framework with CLIP embeddings [35], this method fine-tunes VQGAN using the similarity of CLIP embeddings between the generated image and the target text, leading to optimized image generation.\n' +
+      '\n' +
+      'SDEdit [27]:Leveraging the capabilities of Stable Diffusion [38], SDEdit introduces a tuning-free approach. It uses stochastic differential equation noise, adding it to the source image and subsequently denoising to approximate the target image, all based on the target caption.\n' +
+      '\n' +
+      'Text2LIVE [4]:It propose a Vision Transformer [11] for generating edited objects on an additional layer. It incorporates data augmentation and CLIP [35] supervision, ultimately alpha-blending the edited layer with the original to create the target image.\n' +
+      '\n' +
+      'Null Text Inversion [30]:By optimizing the DDIM [42] trajectory, this method initially inverts the source image. After, it performs image editing during the denoising process guided by cross-attention [17] between text and image.\n' +
+      '\n' +
+      'SINE [54]:Real images are edited using model-based guidance and patch-based fine-tuning process.\n' +
+      '\n' +
+      'DreamBooth [39]:It fine-tunes a diffusion model by learning special text tokens and adjusting model parameters on a set of images for editing.\n' +
+      '\n' +
+      'Textual-Inversion [14]:It fine-tunes a token embedding within the text-encoder space using a set of images.\n' +
+      '\n' +
+      'Imagic [21]:It edits images through a three-step process: first fine-tuning a token embedding, then fine-tuning the parameters of a text-guided image diffusion model using the fine-tuned token embedding, and finally performing interpolation to generate various edits based on a target prompt.\n' +
+      '\n' +
+      'DiffEdit [8]:It identifies the region to edit in images by contrasting between a conditional and unconditional diffusion model based on query and reference texts. Then, it reconstructs the edited image by collecting the features from the text-query by combining the features in the noise/latent space, considering the region to edit.\n' +
+      '\n' +
+      'Blended Latent Diffusion [3]:This method uses a text-to-image Latent Diffusion Model (LDM) to edit the user-defined mask region. It extracts features for the mask region from the edit text, and for the rest of the image, it uses features from the original image in the noise/latent space.\n' +
+      '\n' +
+      'DirectDiffusion [20]:It inverts the input image into the latent space of Stable Diffusion [38] and then applies Prompt2Prompt [17] to obtain the desired edit without making any changes to the edit diffusion branch.\n' +
+      '\n' +
+      'Diffusion Disentanglement [48]:It finds the linear combination of the text embeddings of the input caption and the desired edit to be performed. Since it does not fine-tune Stable Diffusion parameters, they claim that the method performs disentangled edits.\n' +
+      '\n' +
+      'InstructPix2Pix (IP2P) [6]:Starting from the foundation of Stable Diffusion [38], the model is fine-tuned for instruction-based editing tasks. It ensures that the edited image closely follows the given instructions while maintaining the source image without the need for test-time tuning.\n' +
+      '\n' +
+      'InstructPix2Pix w/MagicBrush [52]:A version of IP2P [6] trained on MagicBrush train set [52]. Since the MagicBrush dataset has more localized edit examples, the fine-tuned version has better results, as seen in Tab. 1.\n' +
+      '\n' +
+      'Hive [53]:It extends IP2P [6] by fine-tuning it with an expanded dataset. Further refinement is achieved through fine-tuning with a reward model, which is developed based on human-ranked data.\n' +
+      '\n' +
+      'HIVE w/MagicBrush [52]:HIVE [53] fine-tuned on MagicBrush train set [52]. Since the MagicBrush dataset has more localized edit examples, the fine-tuned version has better results, as seen in Tab. 1.\n' +
+      '\n' +
+      '## 8 Additional Experiments\n' +
+      '\n' +
+      '### MagicBrush Annotations\n' +
+      '\n' +
+      'As mentioned in Sec. 5.5, mask annotations for MagicBrush dataset [52] are not very tight around the edit area, as shown in Fig. 7. Our method directly uses the identified mask during the editing process, therefore, it is important for themasks to be as tight as possible around the edit area to apply localized edits. The loose GT masks of MagicBrush explain why our model achieves worse performance in Tab. 4 when using GT masks. To highlight this, we evidentiate with red circles in Fig. 7 precise edits when precise masks are provided to LIME. For the first row - (a), the handle of the racket can be preserved if the mask has a precise boundary between the handle and outfit in the occluded area. Moreover, the second row - (b) shows that if the mask in the MagicBrush dataset is used during the edit, the method changes the color of the blanket as well. However, with the precise mask extracted by our method, the edit can distinguish the objects in the area and apply localized edits.\n' +
+      '\n' +
+      '### Visual Comparison\n' +
+      '\n' +
+      'Vqgan-clip.As shown in Tab. 1, VQGAN-CLIP [9] has better results on the _CLIP-T_ metric. This is expected since it directly fine-tunes the edited images using CLIP embeddings. However, as seen in Fig. 8, the edited images from VQGAN-CLIP fail to preserve the details of the input image. On the other hand, our method successfully performs the desired edit by preserving the structure and fine details of the scene. It results in similar _CLIP-T_ values with ones for the ground truth edited images in the MagicBrush dataset.\n' +
+      '\n' +
+      'Blended Latent Diffusion.As shown in Tab. 2, Blended Latent Diffusion [3] has better results than baselines and our method. However, as shown in Fig. 9, even if their method can perform the desired edit on the given mask (RoI) from the user, (a) it distorts the location of the features, _e.g_., heads of the birds, and (b) it loses the information of the object in the input image and creates a new object in the RoI, _e.g_., blanket in (b). On the other hand, our method performs visually appealing edits on the input images considering the given edit instructions by preserving as many details from the input image as possible. This is also highlighted by a significantly lower Distance metric for our method in Tab. 2.\n' +
+      '\n' +
+      'Diffusion Disentanglement.Wu et al. [48] propose a disentangled attribute editing method. Figure 10 shows edit types such as (a) texture editing and (b) replacing the object with a similar one. _Diffusion Disentanglement_ on (a)\n' +
+      '\n' +
+      'Figure 8: **VQGAN-CLIP [9] Comparison.** CLIP-T metrics are reported below each image and calculated between the output caption and the corresponding image. Input images and edit instructions are pictured in the first column. Ground truth edit images are taken from the MagicBrush dataset.\n' +
+      '\n' +
+      'Figure 7: **MagicBrush Mask Annotations.** Ground truth (GT) refers to mask annotations in MagicBrush [52]. RoI indicates inferred masks from our proposed method. Red circles on the edited images (+ Edit) highlight area where the precise localization of the edits can be appreciated.\n' +
+      '\n' +
+      'Figure 9: **BlendedDiffusion [3] Qualitative Comparison.** Edited images based on input images and edit instructions reported below each row. The images for BlendedDiffusion are taken from the PIE-Bench evaluation [20].\n' +
+      '\n' +
+      'alters the background objects in the image, _e.g_., adding snow on and changing the shape of the branch, and also changes the features of the object of interest, _e.g_., removing the tail of the bird. On (b), it fails to perform the desired edit altogether. Moreover, it requires a GPU with \\(>48\\) GB RAM2, and one image takes approximately 10 minutes on an NVIDIA A100 80GB to generate the edited version. In comparison, our method achieves higher visual quality and takes 25 seconds to complete on NVIDIA A100 40GB with a GPU RAM usage of 25 GB.\n' +
+      '\n' +
+      'Footnote 2: [https://github.com/UCSB-NLP-Chang/DiffusionDisenqulement](https://github.com/UCSB-NLP-Chang/DiffusionDisenqulement)\n' +
+      '\n' +
+      '### Qualitative comparison on segmentation maps\n' +
+      '\n' +
+      'Our method proposes an alternative segmentation method based on the clustering of intermediate features of the diffusion process. In this section, we provide a qualitative comparison to other segmentation methods. LPM [33] uses self-attention features from one resolution, such as \\(32\\times 32\\), while our method leverages the intermediate features from different resolutions to enhance the segmentation map. Then, both apply a clustering method to find the segments in the input image. Another way to find segments is by using large segmentation models, _e.g_., SAM [22], ODISE [49]..., but they require supervised data and training or fine-tuning. As seen in Fig. 11 (i), large segmentation models cannot detect the transparent fin of the fish, while LPM and ours can. Moreover, LPM utilizes only one resolution, so it cannot find rocks in the river separately. As seen in Fig. 11 (ii), ODISE [49] and SAM [22] fail to segment minute object parts, like fingernails, while LPM and ours can find those segments. Furthermore, our method provides precise boundaries and segments in higher resolutions than LPM. Moreover, LPM uses Stable Diffusion [38] and requires real image inversion to find segments, while our method does not since it is based on IP2P [6]. For this reason, LPM requires more than 1 minute to perform, while our proposal takes only 10-15 seconds per image. As a result, in a direct comparison to LPM, our method has the advantage of having higher-resolution segmentation maps segmentation of more details, and it is significantly faster. The publicly available official implementations of LPM3, SAM4 and ODISE5 are used for the results in Fig. 11. Additionally, the same number of clusters is used for LPM and ours to achieve a fair comparison.\n' +
+      '\n' +
+      'Footnote 3: [https://github.com/orpatashnik/local-prompt-mixing](https://github.com/orpatashnik/local-prompt-mixing)\n' +
+      '\n' +
+      'Footnote 4: [https://segment-anything.com/demo](https://segment-anything.com/demo)\n' +
+      '\n' +
+      'Footnote 5: [https://github.com/NVlab/ODISE](https://github.com/NVlab/ODISE)\n' +
+      '\n' +
+      '### Ablation study\n' +
+      '\n' +
+      'In addition to the ablation study in Sec. 5.5, we also analyze token selection during cross-attention regularization as defined in Sec. 4.2. Instead of regularizing the attention of unrelated tokens, such as \\(<\\)_start of text\\(>\\)_, _padding_, and _stop words_, by penalizing it. We could think of doing the opposite and give high values to relevant tokens (denoted as \\(\\tilde{S}\\)) within the RoI as reported in the following equation:\n' +
+      '\n' +
+      '\\[R(QK^{T},M)=\\begin{cases}QK^{T}_{ijt}+\\alpha,&\\text{if }M_{ij}=1\\text{ and }t \\in\\tilde{S}\\\\ QK^{T}_{ijt},&\\text{otherwise},\\end{cases} \\tag{4}\\]\n' +
+      '\n' +
+      'where \\(\\alpha\\) is a large value. This assignment guarantees that the relevant tokens related to edit instructions will have high attention scores after the softmax operation. As seen in Tab. 5, there is no significant improvement if the unrelated tokens are penalized instead of awarding the related tokens. However, penalizing the unrelated tokens gives the freedom to distribute the attention scores among relevant tokens to the process unequally. Thus, it means soft assignment among the related tokens.\n' +
+      '\n' +
+      'Figure 11: **Segmentation Qualitative. Comparison between the state-of-art segmentation methods on challenging examples.**\n' +
+      '\n' +
+      'Figure 10: **Diffusion Disentanglement [48] Qualitative Comparison.** Edits are obtained by using the global description of the input image and the desired edit by concatenating them with ’,’.\n' +
+      '\n' +
+      '### More Qualitative Results\n' +
+      '\n' +
+      'This section presents additional qualitative results derived from our method, emphasizing its improved effectiveness against established baselines, such as IP2P [6] and IP2P w/MB [52]. Figure 12 illustrates the application of our method in localized image editing tasks. Specifically, it demonstrates our method\'s proficiency in altering the color of specific objects: (a) _ottoman_, (b) _lamp_, (c) _carpet_, and (d) _curtain_. Unlike the baseline methods, which tend to entangle the object of interest with surrounding elements, our approach achieves precise, disentangled edits. This is not achieved by the baseline that tends to alter multiple objects simultaneously rather than isolating changes to the targeted region. The disentangled and localized edits showcased in Fig. 12 highlight the potential of LIME in end-user applications where object-specific edits are crucial.\n' +
+      '\n' +
+      'Figure 13 demonstrates additional examples of our method\'s performance on the MagicBrush [52] test set and the PIE-Bench [20] dataset. Our approach effectively executes various tasks, such as (a) replacing an animal, (b) modifying multiple objects, (c) altering the texture of an animal, and (d) changing the color of multiple objects. As illustrated in Fig. 13, our method demonstrates significant improvements over existing baselines. For instance, while baseline models like IP2P w/MB in (a) achieve reasonable edits, they often inadvertently modify areas outside the RoI, as observed in cases (b) and (c). Notably, our method helps focus the baseline models on the RoI, as seen in (b), (c), and (d), where baselines struggle to preserve the original image. Although our method is dependent on the baseline and may occasionally induce unintended changes in peripheral areas,, the floor\'s color, it consistently outperforms the baseline models in terms of targeted and localized editing.\n' +
+      '\n' +
+      'Figure 14 provides further comparative analyses using the Emu-Edit test set [41]. Our method successfully handles diverse tasks, including (a) modifying parts of animals, (b) altering the color of specific objects, (c) adding, and (d) removing objects. As depicted in Fig. 14, our approach significantly surpasses existing baselines in performance. Notably, while baseline models tend to alter entire objects rather than their individual parts,, animal legs, our method targets and modifies the specific sections as instructed in scenario (a). Furthermore, baseline models often inadvertently affect areas beyond the intended RoI, as seen in cases (b) and (c). In contrast, our method demonstrates precision by confining its operations within the RoI. Particularly in scenario (d), while baseline models such as IP2P struggle to maintain the integrity of the original image or, as in the case of IP2P w/MB, fail to effectively remove objects, our method excels by accurately removing the specified objects, underscoring its superiority in targeted image manipulation tasks.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c} \\hline \\hline\n' +
+      '**Method** & L1 \\(\\downarrow\\) & L2 \\(\\downarrow\\) & CLIP-I \\(\\uparrow\\) & DINO \\(\\uparrow\\) & CLIP-T \\(\\uparrow\\) \\\\ \\hline IP2P [6] & 0.112 & 0.037 & 0.852 & 0.743 & 0.276 \\\\ \\hline Related & 0.065 & 0.018 & 0.930 & 0.897 & 0.292 \\\\ Unrelated & **0.058** & **0.017** & **0.935** & **0.906** & **0.293** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: **Ablation Study on Token Selection.** For fair comparison, all parameters are the same for all settings except the ablated parameter. The top-performing is highlighted in **bold**, while the second-best is denoted with underline for each block.\n' +
+      '\n' +
+      'Figure 12: **A use-case of the proposed method.** Changing the color of different objects is shown by comparing baselines and our method. Our method performs disentangled and localized edits for different colors and different objects in the scene.\n' +
+      '\n' +
+      '## 9 Broader Impact & Ethical Considerations\n' +
+      '\n' +
+      'The advancement in localized image editing technology holds significant potential for enhancing creative expression and accessibility in digital media and virtual reality applications. However, it also raises critical ethical concerns, particularly regarding its misuse for creating deceptive imagery like deepfakes [23] and the potential impact on job markets in the image editing sector. Ethical considerations must focus on promoting responsible use, establishing clear guidelines to prevent abuse, and ensuring fairness and transparency, especially in sensitive areas like news media. Addressing these concerns is vital for maximizing the technology\'s positive impact while mitigating its risks.\n' +
+      '\n' +
+      'Figure 13: **More Qualitative Examples.** We test our method on different tasks: (a) replacing an animal, (b) changing existing objects, (c) changing texture, and (d) changing the color of multiple objects. Examples are taken from established benchmarks [20, 52]. The integration of LIME enhances the performance of all models, enabling localized edits while maintaining the integrity of the remaining image areas.\n' +
+      '\n' +
+      'Figure 14: **More Qualitative Examples.** We test our method on different tasks: (a) editing animal parts, (b) changing color, (c) adding, and (d) removing objects. Examples are taken from established papers [41]. The integration of LIME enhances the performance of all models, enabling localized edits while maintaining the integrity of the remaining image areas.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
