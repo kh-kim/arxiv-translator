@@ -1,0 +1,308 @@
+[MISSING_PAGE_EMPTY:1]
+
+## 1 Introduction
+
+Language models (LMs) at certain scale exhibit the profound ability to solve complex reasoning questions [3; 41] - from writing math programs [9] to solving science problems [17]. Notably, these capabilities have shown to improve with Chain of Thought (CoT) prompting [42], whereby complex problems are decomposed into a sequence of intermediate reasoning steps. CoT excels at semantic reasoning tasks, but tends to struggle with questions that involve numeric or symbolic reasoning [23; 36]. Subsequent work addresses this by prompting LMs (e.g., trained on Github [4]) to write and execute code [1; 5; 26]. Code in particular is advantageous because it provides both (i) a general syntactic structure to build and encode complex programs [19] (e.g., logic structures, functional vocabularies - in ways that are Turing complete), and (ii) an interface by which existing APIs paired together with an interpreter can be used to perform precise algorithmic computations (e.g., from multiplication of large numbers to sorting an array of size 10,000) that a language model trained only to mimic the statistically most likely next token would otherwise struggle to produce.
+
+While writing and executing code may improve LM reasoning performance across a wide range of arithmetic tasks, this particular approach contends with the fact that many semantic tasks are rather difficult (and at times, nearly impossible) to express in code. For example, it remains unclear how to write a function that returns a boolean when it detects sarcasm in a string [36] (handling the edge cases would be insurmountable). Perhaps fundamentally, using LMs to write programs in lieu of multi-step textual reasoning inherently assumes that the intermediate reasoning traces (expressed in lines of code) all need to be _executable_ by an interpreter. Is it possible to lift these restrictions to get the best of both reasoning in code and reasoning in language?
+
+In this work, we propose Chain of Code (CoC), a simple yet surprisingly effective extension to improve LM code-driven reasoning - where the LM not only writes a program, but also selectively "simulates" the interpreter by generating the expected output of certain lines of code (that the interpreter could not execute). The key idea is to encourage LMs to format semantic sub-tasks in a program as flexible pseudocode that at runtime can be explicitly caught and handed off to emulate with an LM - we term this an LMulator (a portmanteau of LM and emulator). For example, given the task "_in the above paragraph, count how many times the person was sarcastic_," we can in-context prompt the LM to write a program that may call helper functions such as is_sarcastic(sentence), to which the LM makes a linguistic prediction and returns the result as a boolean output, that then gets processed with the rest of the program. Specifically, we formulate LM reasoning as the following process (illustrated in Figure 1): the LM writes code, the interpreter steps through to execute each line of code (in red), or if it fails, simulates the result with the LM (in purple) and updates the program state (in green). CoC inherits the benefits of both (i) writing executable code (where precise algorithmic compututations are left to an interpreter), and (ii) writing pseudocode for semantic problems, and generating their outputs (which can be thought of as a simple formatting change, to which LMs are robust [22]) - enabling the LM to "think in code."
+
+Extensive experiments demonstrate that CoC is applicable to a wide variety of challenging numerical and semantic reasoning questions, and outperforms a number of popular baselines. In particular, we find that it achieves high performance on BIG-Bench Hard tasks [36], outperforming average human raters overall and even the best human raters on an algorithmic subset of tasks, and to the best of our knowledge setting a new state of the art. We further show that _both_ code interpreter execution and language model execution simulation are necessary for this performance, and that the approach scales well with large and small models alike - contrary to prompting techniques like Chain of Thought that only emerge at scale. Finally, we demonstrate how Chain of Code can serve as a general purpose reasoner via _cross-task prompting_ benchmark, which in contrast to prior work, uses prompts from different families of problems as context - providing only the structure of the response (as opposed to the solution itself). This work underscores how one may leverage the structure and computational power of code and the reasoning abilities of language models to enable a "best of both worlds" reasoner.
+
+## 2 Chain of Code: Reasoning with an LMulator
+
+In this section, we describe Chain of Code (CoC) prompting, an approach that leverages the ability of language models to code, to reason, and to leverage an LM-augmented code emulator (an LMulator) to simulate running code. We start with background in Section 2.1, then overview the method in Section 2.2, its implementation in Section 2.3, and finally its capabilities in Section 2.4.
+
+### Preliminaries
+
+Briefly, we overview some background on LM reasoning. Many of these reasoning techniques have been enabled by in-context learning [3], which provides the model with a few demonstrative examples at inference time, rather than updating any weights with gradients. These examples serve to provide context and format for the setting, enabling the model to emulate these examples while adapting to a new query. This property has been instrumental in easily applying LMs to new tasks as it can be rapidly adapted and requires minimal data.
+
+Through in-context learning, approaches have been developed to leverage human thought processes and use tools to improve performance of language models. We outline three such approaches that provide the foundations for Chain of Code. Chain of Thought (CoT) [42], ScratchPad [26], and Program of Thoughts [5] demonstrated the efficacy of breaking problems down into substeps. For CoT these substeps are in natural language, mirroring one's thought process when stepping through a complicated problem. ScratchPad, on the other hand, maintains a program state of intermediate steps when simulating the output of code - resulting in an LM acting as a code interpreter. Program of Thoughts [5] focused on generating the code itself, which is then executed by a code interpreter to solve reasoning problems. Each of these is visualized in Figure 2.
+
+### Chain of Code
+
+Inspired by how a human may reason through a particularly complex problem with a mix of natural language, pseudocode, and running code or how a researcher may develop a new general algorithm through a code-based formalism then apply it to a problem, Chain of Code proceeds in two steps: (1) Generation, which, given the question to solve, an LM generates code to reason through the problem, and (2) Execution, which executes the code via a code interpreter when possible and via an LM when not. See Section 2.3 for more details on the specific implementation.
+
+**Chain of Code Generation** Given a problem to solve, CoC generates reasoning substeps in the structure of code. This code provides the framework of reasoning through the problem, and may be in the form of explicit code, pseudocode, or natural language. Figure 1(d) walks through a potential generation to solve an object counting problem from BIG-Bench.
+
+**Chain of Code Execution** A core contribution of CoC is not just the generation of reasoning code, but the manner in which it is executed. Once the code is written, the code is attempted to be run by a code interpreter - in this work we consider Python, but the approach is general to any interpreter. If the code is successfully executed, the program state is updated and the execution continues. If the code is not executable or raises any exception, the language model instead is used to simulate the execution. The program state is subsequently updated by the language model's outputs and the execution continues. Herein, we refer to this as an LMulator, a portmanteau of LM and code emulator. This relatively simple change enables a variety of new applications for code which mix semantics and numerics. Figure 1(e) shows how the generated code is run, maintaining the program state and switching between the Python executor and the LMulator.
+
+### Chain of Code Implementation
+
+While the generation implementation is straightforward prompting and language model generation, the execution implementation is slightly more complex. Our implementation is based on using Python's try and except and maintaining a program state. Line by line CoC steps through the code. If the line is executable by a code interpreter, it is executed, the program state is updated, and the program continues. If it is not executable by a code interpreter, a language model is given the context of the program (the question, the prior lines, and the history of the program state) and generates the next program state. This emulation can also leverage chain of thought to determine how to respond. That generated program state is then updated for the code interpreter as well. This sharing of program state
+
+Figure 2: **Previous reasoning methods:** To solve advanced problems, (2a) Chain of Thought prompting breaks the problem down into intermediate steps, (2b) Program of Thoughts prompting writes and executes code, and (2c) ScratchPad prompting simulates running already written code by tracking intermediate steps through a program state. **Our reasoning method:** Chain of Code first (2d) generates code or psuedocode to solve the question and then (2e) executes the code with a code interpreter if possible, and with an LMulator (language model emulating code) otherwise. Blue highlight indicates LM generation, \(\overline{\text{red}}\) highlight indicates LM generated code being executed, and \(\overline{\text{purple}}\) highlight indicates LMulator simulating the code via a program state in green.
+
+interweaves the code interpreter and the language model simulator in a manner applicable to arbitrary interweaving, even control flow like for-loops and if-statements. This continues until the entire code is run, and the answer is retrieved as the value of the variable named answer, or in case of irrecoverable errors, with the language model outputting A: answer.
+
+As a brief example, the code answer = 0; answer *= is_s_s_s_s_s_s_castic('you don't say'); answer *= 1; would be executed as follows: (1) Python would execute the first line answer = 0; and update the program state to (answer = 0), (2) Python would attempt to execute the second line and fail, and thus the LMulator would simulate the code answer *= is_s_s_s_s_s_castic('you don't say') by generating the program state (answer = 1), which would be updated in the program, (3) Python would execute the last line answer *= 1; and update the program state to (answer = 2), (4) the answer would be retrieved as 2.
+
+### Chain of Code Abilities
+
+Chain of Code has several attractive properties:
+
+1. It enables code use in entirely new regimes, by combining the advantages of code with the powerful semantic and commonsense knowledge of language models, which can easily express rules that are challenging to express in code (e.g., which foods are fruits?). Such an ability may have benefits beyond reasoning problems and its flexibility enables executing expressive language, such as pseudocode.
+2. It leverages the ability of language models to code, a particular strength of recent language models due to the high quality data available.
+3. It inherits many of the benefits of reasoning code, both the formal yet expressive structure of code (e.g., Turing completeness) and powerful computational tools available to code (whether simply multiplying two numbers, calculating \(\sqrt[]{12121}\), or simulating physics).
+4. It inherits many of the benefits of techniques that reason via intermediate steps, such as Chain of Thought. These techniques enable the language model to use more computation when necessary to solve a problem as well as provide more interpretability.
+
+Empirically, we observe in Section 3 that these benefits results in significant improvements in reasoning performance over a variety of challenging tasks.
+
+## 3 Language Reasoning Experimental Evaluation
+
+We select challenging problems requiring varied types of reasoning, whether arithmetic, commonsense, or symbolic reasoning tasks, to answer the following questions:
+
+1. How well does CoC perform overall across a variety of tasks?
+2. Which types of problems does CoC perform best?
+3. How does each aspect of CoC affects overall performance?
+4. How does CoC scale with model size?
+5. How does CoC perform as a general-purpose reasoner, with prompt examples from different problems rather than the same problem (which we term cross-task prompting)?
+6. How does CoC compare with instruction tuned chat models with and without tools?
+
+We first discuss the approaches, ablations, and baselines considered in Section 3.1, then the tasks considered in Section 3.2, and finally the results in Section 3.3.
+
+### Baselines and Ablations
+
+We consider our main method to be **CoC (Interweave)**, also referred to as **CoC (Ours)**, though we also propose two variants with simpler implementation and modestly lower performance: **CoC (try Python except LM)** and **CoC (try Python except LM state)**. These two variants attempt to run the entire generated code with Python (rather than line by line) and if it fails, simulate the code execution with the LMulator, outputting a final answer or an intermediate state trace, respectively. We also perform the following ablations, some of which are comparable to previous work as noted. In **CoC (Python)** Python is used to run the entire generated code and if the code is not executable, it is marked as failure - this can be thought of as a comparison to Program of Thoughts [5] or Program-aided language models [10]. We note that in many cases this baseline is particularly challenged, as writing executable code for some of the reasoning problems becomes nearly impossible (e.g., writing code to judge if a phrase is sarcastic), but one may focus on the results for Algorithmic only tasks for a more fair comparison. In **CoC (LM)** the code is interpreted by an LMulator outputting the final answer, and in **CoC (LM state)** the code is interpreted by an LMulator outputting a state trace of intermediate steps - this can be thought of as ScratchPad prompting for reasoning [26]. Note, the last two ablations do not leverage the Python interpreter.
+
+We also compare against the following baselines. In **Direct** question answering the LM simply responds to the question with a final answer. In Chain of Thought prompting **CoT** the LM uses intermediate steps to solve the task; we use CoT as our standard prompt technique for the field of substep prompting [16, 48] as prompts are readily available.
+
+### Tasks
+
+We consider a subset of challenging tasks from BIG-Bench [34] called BIG-Bench Hard (BBH) [36] to ensure we are solving the most challenging tasks. These tasks were specifically selected for their difficulty for language models and the datasets provides human-rater baselines and a set of Chain of Thought prompts. The 23 tasks require semantic reasoning(e.g., "Movie Recommendation"), numerical reasoning (e.g., "Multi-Step Arithmetic"), and a combination of both (e.g., "Object Counting"). As such they enable us to study the efficacy of CoC across varied problems, not just those that coding is a natural fit for. Several prompts are shown in Appendix Figure A1. We also show results for the grade-school math (GSM8K) benchmark [7] in Appendix Section A.2, though find that these problems are primarily solved algorithmically alone through code.
+
+These tasks are evaluated with **few-shot prompting**, whereby three examples from the same problem family are provided as context. We also introduce a new evaluation setting, **cross-task prompting**, whereby three examples of _different_ problems are provided as context. As such, the language model has in-context examples of the _format_ of reasoning, but isn't provided explicit instructions on _how_ to reason. We see this as an indicative signal for a general-purpose reasoner, which in many real-world applications (e.g., chatbots) would be asked to reason across a wide variety of tasks.
+
+The models used herein include the OpenAI family of models: text-ada-001, text-baggage-001, text-curie-001, and text-davinci-003 (in plots we denote these as a-1, b-1, c-1, and d-3). We also consider PaLM-2's code finetuned variant [6, 12]. For instruction tuned models, we compare to recent variants of GPT (gpt-3.5-turbo and gpt-4) with the chat completion mode run in October 2023. The results below are using the text-davinci-003 model unless otherwise stated.
+
+### Results
+
+**Question 1: Overall Performance.** The overall performance of CoC is shown in Figure 1 and Table 1 (with full results in Table A1). We see that CoC outperforms other approaches, both in the number oftasks it exceeds the human baseline and in the overall amount that it exceeds the baseline. Indeed, CoC's 84% is SoTA to the best of our knowledge [11]. In several tasks CoC vastly outperforms the human baseline and other methods, achieving nearly 100% - generally for these tasks the result is complicated in language but trivial in code (e.g., a task from multi-step arithmetic Q: (\((-3+5\times 8\times-4)-(9-8\times-7)\)) =). We also observe that CoT outperforms the human baseline on a number of tasks, while the Direct answer fares poorly.
+
+Table 1 | Overall performance (%) with both few-shot prompting with a single task and cross-task. The delta compared to direct prompting is shown in parenthesis.
+
+**Question 2: Problem Type.** Figure 3 breaks the results down by problem type; the task labels are shown in Table A1. First, we isolate problems that are primarily algorithmic or primarily natural language (these categories were identified in [36]). We see that on algorithmic tasks, CoC performs particularly well, while on natural language tasks CoC performs on par with CoT. This is particularly encouraging, because one may expect these language oriented tasks to be a worse fit for code. The key is that our method offers the flexibility of using a LMulator to simulate the output of code execution, retaining the semantic reasoning capabilities of LMs for natural language problems.
+
+Figure 3 additionally breaks the tasks down into categories that capture how different each question's response is and whether the code can be fully executed by Python (denoted Python only vs. Python + LM). For some tasks within the benchmark, each question has the same code or Chain of Thought, with the only variation being the inputs - in this case we say the code is (repeated code), and if not then it is denoted (new code). As expected, we see that when the code is repeated and run by Python, CoC gets nearly 100%, though these tasks (e.g., multi-step arithmetic) seem to be among the most challenging for the other baselines, including human raters. The other categories are more challenging for CoC; however in each, we still see a benefit over baselines.
+
+**Question 3: Ablations.** Figures 4 and 5, and Table 2 show the ablations performed to motivate each aspect of Chain of Code prompting. As one may expect, the approaches that execute Python (CoC (Interweave, Python, try Python except LM, try Python except LM state)) achieve 100% performance on several tasks - if the code is correct, then the model will be correct every time. However, the approach that relies on Python alone (CoC (Python)) performs poorly when applied to non-algorithmic tasks, failing almost all. The CoC (Python) ablation is similar to recent works [5; 10], which show that if applied to numerical problems then code reasoning performs well. CoC without the Python interpreter (CoC (LM, LM state)) too fares poorly, though we see that the step-by-step approach proposed in ScratchPad prompting [26] improves in each task.
+
+We also show that ablations CoC (try Python except LM, try Python except LM state), in which CoC first tries to run the entire code with Python and if it fails simulates the code with an LM, perform quite well. Again we see that maintaining a program state provides an improvement in performance. With only minor degradations in performance observed, they are reasonable alternatives to the fully interweaved CoC for their simplicity. Though we note, these ablations' performance would be much worse in cases where interweaving code and semantics is truly necessary - for example, if we imagine a case where code is necessary to parse image inputs or to access an external database, but language is necessary to parse the results (see the robotics applications in Section 4).
+
+**Question 4: Scaling.** Figure 6 shows the performance of CoC across various model sizes. We observe that, similar to Chain of Thought prompting, the improvements of CoC increases as model
+
+Figure 4: CoC ablations on average performance grouped by task type.
+
+Figure 5: Results across all BIG-Bench Hard tasks compared to human baseline [34]. The tasks (x-axis) in each plot are sorted individually by performance. See Table A1 and Figure 4 for a breakdown by task type.
+
+size increases. In fact, for some of the algorithmic tasks, Chain of Code even outperforms the best human raters (whom admittedly did not have access to code). Unlike Chain of Thought prompting, however, which only brings performance benefits for the largest model (d-3), CoC outperforms the direct question answering baseline also for smaller models (a-1, b-1, c-1), suggesting that it's easier for smaller models to output structured code as intermediate steps rather than natural languages.
+
+**Question 5: Cross-task Prompting.** For cross-task prompting, we prompt the language models with a few examples from different problems. We see the performance drops for all methods in Figure 6 and Table 2. Despite this drop, CoC outperforms CoT and direct prompting at scale, nearly achieving human average performance. This is a promising indication towards general purpose reasoning, in which a model does not expect to receive examples of similar problems in its prompt.
+
+**Question 6: Instruction Tuned Models.** To compare against instruction tuned models with the chat interface, we prompt the models with instructions to elicit the desired reasoning approaches. For the baselines, we ask the model to "directly answer" (Direct) or "think step by step" (CoT). For CoC variants, we ask the model to "write python code to help solve the problem, if it's helpful". If a program is written, we either run the code with a Python interpreter and then feed the result (or the error message if execution fails) back to the model to determine a final answer (CoC (Python)), or ask the model to simulate the output of code execution as a LMulator (CoC (LM)). The CoC (Python) baseline can be thought of as a comparison to an LM with Python tool use.
+
+Table 3 shows the performance of each. With gpt-3.5-turbo, both CoT and CoC (Python) show benefits over direct prompting, although both are strongly outperformed by CoC (Interweave). With gpt-4, despite the considerable model strength advantage over text-davinci-003, CoC (Interweave) still outperforms, though the gap is narrower. Due to the limits of the chat interface, we are unable to run the full CoC (Interweaved) approach with these models, but we do expect further gains if it were to be paired with gpt-4.
+
+\begin{table}
+\begin{tabular}{l c c c c c c} \hline \hline  & \multicolumn{6}{c}{Chain of Code} \\ \cline{2-7}  & Interweave & try Python & try Python & Python & LM state & LM \\ Prompt & & except LM state & except LM & & & \\ \hline Single task & 84 & 82 (-2) & 80 (-4) & 48 (-36) & 63 (-21) & 57 (-27) \\ Cross task & 61 & 57 (-4) & 60 (-1) & 35 (-26) & 49 (-12) & 50 (-11) \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: Ablation overall performance (%) with both few-shot prompting with a single task and cross-task. The delta compared to the full model (Interweave) is shown in parenthesis.
+
+Figure 6: Average performance with model scaling.
+
+## 4 Robotics Applications
+
+Downstream applications such as robotics are well fit for CoC as robotics tasks require semantic reasoning and algorithmic reasoning, as well as interfacing with other APIs through code (such as control or perception APIs [19]) and with users through natural language. For example, given a task like "sort the fruits by size", the robot must reason over which items are fruits, sort them by size, and then connect those decisions to actions executable on the robot. CoC (Interweave) is able to solve these challenges with the Python interpreter and the LMulator at runtime, while allowing for more interpretability and fine-grained control of the robot policies.
+
+**Environment and Robot Setup.** Our environment is a tabletop with small objects (containers, toys, etc) and a UR5 robot arm equipped with a vacuum gripper and a wrist-mounted RGB-D camera. For the purpose of our experiments, the available perception API is detect_objects(), which returns a list of detected objects (probabilities, labels, bounding boxes and segmentation masks) from the wrist camera. This API is implemented with first querying GPT-4V [27] for a list of objects, and then using Grounding-SAM [15, 20] to localize them. The available control API is pick_place(obj1, obj2), which is a scripted primitive skill that picks up obj1 and places it on top of obj2. There is also a text-to-speech API say(sentence) that allows the robot to communicate with the user.
+
+**Results.** We evaluate with a number of tabletop pick-and-place robotics tasks that involve semantic reasoning; these tasks are listed in Section A.4. With few-shot prompting, one example is provided as context (of a food serving problem) so that the language model understands the expected structure as well as the available robot APIs. From this single example, we see that our model is able to generalize to new objects, languages, and task domains (see Figure A3 and an example trajectory in Figure 7). Note that for these robotics tasks, unlike the previous language reasoning tasks, our main method CoC (Interweave) is the only capable approach, as the code requires line-by-line interplay between the Python interpreter execution (robot APIs) and the LMulator (commonsense QA like is_compostable).
+
+Figure 7 | Robot trajectory visualization for task “sort the objects on the table into the compost bin and the recycle bin”. CoC first generates code to solve the problem, and then executes the code with Python if possible (e.g., robot APIs like detect_objects and pick_place), and with LMulator if not (e.g., commonsense QA like is_compostable). The robot successfully picks and places the Post-it note to the recycle bin and the orange peel to the compost bin. See the full code in Fig. A3 and videos of rollouts at our webpage [https://chain-of-code.github.io/](https://chain-of-code.github.io/).
+
+\begin{table}
+\begin{tabular}{c c c c c c c c} \hline \hline text-davinci-003 & \multicolumn{4}{c}{gpt-3.5-turbo} & \multicolumn{4}{c}{gpt-4} \\ \hline CoC & Direct & CoT & CoC & CoC & Direct & CoT & CoC & CoC \\ (Interweave) & & & (Python) & (LM) & & & (Python) & (LM) \\ \hline
+84 & 51 (-33) & 56 (-28) & 56 (-28) & 45 (-39) & 70 (-14) & 78 (-6) & 82 (-2) & 75 (-9) \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: Comparisons with instruction tuned models in the chat interface, with and without tool use.
+
+Figure 7: Robot trajectory visualization for task “sort the objects on the table into the compost bin and the recycle bin”. CoC first generates code to solve the problem, and then executes the code with Python if possible (e.g., robot APIs like detect_objects and pick_place), and with LMulator if not (e.g., commonsense QA like is_compostable). The robot successfully picks and places the Post-it note to the recycle bin and the orange peel to the compost bin. See the full code in Fig. A3 and videos of rollouts at our webpage [https://chain-of-code.github.io/](https://chain-of-code.github.io/).
+
+## 5 Related Work
+
+**Language Model Reasoning** The abilities and applications of language models have seen significant progress, due to their overall performance [6; 11; 31; 37] and emergent capabilities [41], such as few-shot prompting [3] and abstract reasoning [42]. Perhaps most related to this work, a number of works have leveraged prompting to improve reasoning [8]: Chain of Thought [42] proposes to break a task down into intermediate reasoning steps, least-to-most [48] proposes a series of increasingly simpler problems, and ScratchPad [26] proposes to maintain a trace of intermediate results for interpreting code (this first demonstrated the code simulation ability of LMs required for our LMulator). Along these lines "let's think step by step" [16] uses a few key words to elicit such break downs (words that were later refined to "Take a deep breath and work on this problem step-by-step" in Yang et al. [43]). Beyond these, other approaches structure such step-by-step solutions into graphical structures [2; 45], plans [25; 39], or mixture of expert-based sampling [40; 49]. CoC builds upon the intuition of these works, with the observation that _code_ is a formal, structured approach to breaking a problem down into sub-steps with many advantages beyond natural language alone.
+
+**Language Model Tool Use** Many recent works have proposed techniques for language models to use tools to respond to queries [21]. These tools have often been provided to the language model through prompting [6; 7; 9; 14; 44], enabling tools like calculators for math problems, code interpreters, databases, or more. These tools too can provide feedback on novel modalities [35; 46]. To expand the range of tools available, others have used external tool databases or finetuned language models [28; 29; 30; 32]. As tool interfaces vary, feedback from the tool too can improve performance [13; 47]. In this work we leverage the expressibility and generality of full code as well as its structure, by treating it both as a tool and as a framework.
+
+**Language Model Program Synthesis** The ability of language models to code is well known and they have been applied as programming assistants [4] and shown to be capable programmers on their own [1; 18; 24]. This ability has been applied to a variety of tasks outside of language alone, leveraging their ability to reason through code in new settings, such as robotics [19; 33], embodied agents [38], or vision [35]. Others have specifically done so for reasoning, such as Program of Thoughts [5] and Program-aided Language Models [10], which generate code to solve numerical reasoning problems. Herein, we focus on the interplay between writing code, running code, and language models simulating code, thus enabling new regimes of language model code applications, such as semantic reasoning.
+
+## 6 Conclusions, Limitations, and Future Work
+
+We have proposed Chain of Code, an approach towards reasoning with language models through writing code, and executing code either with an interpreter or with a language model that simulates the execution (termed herein an LMulator) if the code is not executable. As such, CoC can leverage both the expressive structure of code and the powerful tools available to it. Beyond this, by simulating the execution of non-executable code, CoC can apply to problems nominally outside the scope of code (e.g., semantic reasoning problems). We have demonstrated that this approach outperforms baselines, and for some tasks even the best human raters, in a range of challenging language and numeric reasoning problems.
+
+This work is not without its limitations. First, generating and executing in two steps as well as interweaving code and language execution requires additional context length and computation time. Second, though we have not seen any loss of performance for semantic tasks in aggregate, there are few tasks in which code doesn't help, e.g., the task Ruin Names, which asks whether an edit for a name is humorous. Finally, our implementation to interweave LM and code is quite simple, tracking the program state in strings and parsing the strings into Python's built-in data types (e.g., dict, tuple). As our method stands now, the LM cannot modify custom Python objects while simulating code execution. In theory,however, it is doable as long as each of these Python objects have a serialization and deserialization method, e.g., using techniques like Protocol Buffers.
+
+There are many avenues for future work with CoC. First, we believe that a unified code and language interpreter well combines the commonsense of language models with the analytical abilities, structure, and interpretability of code. Such a technology can thus enable applications of code and code-like reasoning to novel problem regimes, beyond simple reasoning. Second, we are interested in investigating the degree to which finetuning a language model to be an LMulator can benefit semantic code reasoning. Third, we see evidence that reasoning through many pathways yields improvements, which is a promising step forward. Finally, we believe this integration with code enables access to external modalities, such as vision or databases, and represents a interesting path for new applications (e.g., robotics, augmented reality).
+
+## References
+
+* Austin et al. [2021] Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski, David Dohan, Ellen Jiang, Carrie Cai, Michael Terry, Quoc Le, et al. Program synthesis with large language models. _arXiv preprint arXiv:2108.07732_, 2021.
+* Besta et al. [2023] Maciej Besta, Nils Bloch, Ales Kubicek, Robert Gerstenberger, Lukas Gianinazzi, Joanna Gajda, Tomasz Lehmann, Michal Podstawski, Hubert Niewiadomski, Piotr Nyczyk, et al. Graph of thoughts: Solving elaborate problems with large language models. _arXiv preprint arXiv:2308.09687_, 2023.
+* Brown et al. [2020] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.
+* Chen et al. [2021] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, et al. Evaluating large language models trained on code. _arXiv preprint arXiv:2107.03374_, 2021.
+* Chen et al. [2022] Wenhu Chen, Xueguang Ma, Xinyi Wang, and William W Cohen. Program of thoughts prompting: Disentangling computation from reasoning for numerical reasoning tasks. _arXiv preprint arXiv:2211.12588_, 2022.
+* Chowdhery et al. [2022] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, et al. Palm: Scaling language modeling with pathways. _arXiv preprint arXiv:2204.02311_, 2022.
+* Cobbe et al. [2021] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021.
+* Dohan et al. [2022] David Dohan, Winnie Xu, Aitor Lewkowycz, Jacob Austin, David Bieber, Raphael Gontijo Lopes, Yuhuai Wu, Henryk Michalewski, Rif A Saurous, Jascha Sohl-Dickstein, et al. Language model cascades. _arXiv preprint arXiv:2207.10342_, 2022.
+* Drori et al. [2022] Iddo Drori, Sarah Zhang, Reece Shuttleworth, Leonard Tang, Albert Lu, Elizabeth Ke, Kevin Liu, Linda Chen, Sunny Tran, Newman Cheng, et al. A neural network solves, explains, and generates university math problems by program synthesis and few-shot learning at human level. _Proceedings of the National Academy of Sciences_, 119(32):e2123433119, 2022.
+* Gao et al. [2023] Luyu Gao, Aman Madaan, Shuyan Zhou, Uri Alon, Pengfei Liu, Yiming Yang, Jamie Callan, and Graham Neubig. Pal: Program-aided language models. In _International Conference on Machine Learning_, pp. 10764-10799. PMLR, 2023.
+
+* [11] Google Gemini Team. Gemini: A family of highly capable multimodal models. 2023. URL [https://storage.googleapis.com/deepmind-media/gemini/gemini_1_report.pdf](https://storage.googleapis.com/deepmind-media/gemini/gemini_1_report.pdf).
+* [12] Google, Rohan Anil, Andrew M Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, et al. Palm 2 technical report. _arXiv preprint arXiv:2305.10403_, 2023.
+* [13] Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu Chen. Critic: Large language models can self-correct with tool-interactive critiquing. _arXiv preprint arXiv:2305.11738_, 2023.
+* [14] Tushar Khot, Harsh Trivedi, Matthew Finlayson, Yao Fu, Kyle Richardson, Peter Clark, and Ashish Sabharwal. Decomposed prompting: A modular approach for solving complex tasks. _arXiv preprint arXiv:2210.02406_, 2022.
+* [15] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C. Berg, Wan-Yen Lo, Piotr Dollar, and Ross Girshick. Segment anything. _arXiv:2304.02643_, 2023.
+* [16] Takeshi Kojima, Shixiang Shane Gu, Michel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. _Advances in neural information processing systems_, 35:22199-22213, 2022.
+* [17] Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, et al. Solving quantitative reasoning problems with language models, 2022. 2022. URL [https://arxiv.org/abs/2206.14858](https://arxiv.org/abs/2206.14858).
+* [18] Yujia Li, David Choi, Junyoung Chung, Nate Kushman, Julian Schrittwieser, Remi Leblond, Tom Eccles, James Keeling, Felix Gimeno, Agustin Dal Lago, et al. Competition-level code generation with alphacode. _Science_, 378(6624):1092-1097, 2022.
+* [19] Jacky Liang, Wenlong Huang, Fei Xia, Peng Xu, Karol Hausman, Brian Ichter, Pete Florence, and Andy Zeng. Code as policies: Language model programs for embodied control. In _2023 IEEE International Conference on Robotics and Automation (ICRA)_, pp. 9493-9500. IEEE, 2023.
+* [20] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Chunyuan Li, Jianwei Yang, Hang Su, Jun Zhu, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. _arXiv preprint arXiv:2303.05499_, 2023.
+* [21] Gregoire Mialon, Roberto Dessi, Maria Lomeli, Christoforos Nalmpantis, Ram Pasunuru, Roberta Raileanu, Baptiste Roziere, Timo Schick, Jane Dwivedi-Yu, Asli Celikyilmaz, et al. Augmented language models: a survey. _arXiv preprint arXiv:2302.07842_, 2023.
+* [22] Sewon Min, Xinxi Lyu, Ari Holtzman, Mikel Artetxe, Mike Lewis, Hannaneh Hajishirzi, and Luke Zettlemoyer. Rethinking the role of demonstrations: What makes in-context learning work? _arXiv preprint arXiv:2202.12837_, 2022.
+* [23] Suvir Mirchandani, Fei Xia, Pete Florence, Brian Ichter, Danny Driess, Montserrat Gonzalez Arenas, Kanishka Rao, Dorsa Sadigh, and Andy Zeng. Large language models as general pattern machines. _arXiv preprint arXiv:2307.04721_, 2023.
+* [24] Erik Nijkamp, Bo Pang, Hiroaki Hayashi, Lifu Tu, Huan Wang, Yingbo Zhou, Silvio Savarese, and Caiming Xiong. Codegen: An open large language model for code with multi-turn program synthesis. _arXiv preprint arXiv:2203.13474_, 2022.
+* [25] Xuefei Ning, Zinan Lin, Zixuan Zhou, Huazhong Yang, and Yu Wang. Skeleton-of-thought: Large language models can do parallel decoding. _arXiv preprint arXiv:2307.15337_, 2023.
+* [26] Maxwell Nye, Anders Johan Andreassen, Guy Gur-Ari, Henryk Michalewski, Jacob Austin,David Bieber, David Dohan, Aitor Lewkowycz, Maarten Bosma, David Luan, et al. Show your work: Scratchpads for intermediate computation with language models. _arXiv preprint arXiv:2112.00114_, 2021.
+* [27] OpenAI. Gpt-4 technical report, 2023.
+* [28] Bhargavi Paranjape, Scott Lundberg, Sameer Singh, Hannaneh Hajishirzi, Luke Zettlemoyer, and Marco Tulio Ribeiro. Art: Automatic multi-step reasoning and tool-use for large language models. _arXiv preprint arXiv:2303.09014_, 2023.
+* [29] Aaron Parisi, Yao Zhao, and Noah Fiedel. Talm: Tool augmented language models. _arXiv preprint arXiv:2205.12255_, 2022.
+* [30] Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, et al. ToollIm: Facilitating large language models to master \(16000+\) real-world apis. _arXiv preprint arXiv:2307.16789_, 2023.
+* [31] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. Language models are unsupervised multitask learners. _OpenAI blog_, 1(8):9, 2019.
+* [32] Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. Toolformer: Language models can teach themselves to use tools. _arXiv preprint arXiv:2302.04761_, 2023.
+* [33] Ishika Singh, Valts Blukis, Arsalan Mousavian, Ankit Goyal, Danfei Xu, Jonathan Tremblay, Dieter Fox, Jesse Thomason, and Animesh Garg. Progprompt: Generating situated robot task plans using large language models. In _2023 IEEE International Conference on Robotics and Automation (ICRA)_, pp. 11523-11530. IEEE, 2023.
+* [34] Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abu Awal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R Brown, Adam Santoro, Aditya Gupta, Adria Garriga-Alonso, et al. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _arXiv preprint arXiv:2206.04615_, 2022.
+* [35] Didac Suris, Sachit Menon, and Carl Vondrick. Vipergpt: Visual inference via python execution for reasoning. _arXiv preprint arXiv:2303.08128_, 2023.
+* [36] Mirac Suzgun, Nathan Scales, Nathanael Scharli, Sebastian Gehrmann, Yi Tay, Hyung Won Chung, Aakanksha Chowdhery, Quoc V Le, Ed H Chi, Denny Zhou, et al. Challenging big-bench tasks and whether chain-of-thought can solve them. _arXiv preprint arXiv:2210.09261_, 2022.
+* [37] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.
+* [38] Guanzhi Wang, Yuqi Xie, Yunfan Jiang, Ajay Mandlekar, Chaowei Xiao, Yuke Zhu, Linxi Fan, and Anima Anandkumar. Voyager: An open-ended embodied agent with large language models. _arXiv preprint arXiv:2305.16291_, 2023.
+* [39] Lei Wang, Wanyu Xu, Yihuai Lan, Zhiqiang Hu, Yunshi Lan, Roy Ka-Wei Lee, and Ee-Peng Lim. Plan-and-solve prompting: Improving zero-shot chain-of-thought reasoning by large language models. _arXiv preprint arXiv:2305.04091_, 2023.
+* [40] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. _arXiv preprint arXiv:2203.11171_, 2022.
+* [41] Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. Emergent abilities of large language models. _arXiv preprint arXiv:2206.07682_, 2022.
+
+* [42] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. _Advances in Neural Information Processing Systems_, 35:24824-24837, 2022.
+* [43] Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V Le, Denny Zhou, and Xinyun Chen. Large language models as optimizers. _arXiv preprint arXiv:2309.03409_, 2023.
+* [44] Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. Recat: Synergizing reasoning and acting in language models. _arXiv preprint arXiv:2210.03629_, 2022.
+* [45] Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L Griffiths, Yuan Cao, and Karthik Narasimhan. Tree of thoughts: Deliberate problem solving with large language models. _arXiv preprint arXiv:2305.10601_, 2023.
+* [46] Andy Zeng, Maria Attarian, Brian Ichter, Krzysztof Choromanski, Adrian Wong, Stefan Welker, Federico Tombari, Aveek Purohit, Michael Ryoo, Vikas Sindhwani, et al. Socratic models: Composing zero-shot multimodal reasoning with language. _arXiv preprint arXiv:2204.00598_, 2022.
+* [47] Aojun Zhou, Ke Wang, Zimu Lu, Weikang Shi, Sichun Luo, Zipeng Qin, Shaoqing Lu, Anya Jia, Linqi Song, Mingjie Zhan, et al. Solving challenging math word problems using gpt-4 code interpreter with code-based self-verification. _arXiv preprint arXiv:2308.07921_, 2023.
+* [48] Denny Zhou, Nathanael Scharli, Le Hou, Jason Wei, Nathan Scales, Xuezhi Wang, Dale Schuurmans, Claire Cui, Olivier Bousquet, Quoc Le, et al. Least-to-most prompting enables complex reasoning in large language models. _arXiv preprint arXiv:2205.10625_, 2022.
+* [49] Yanqi Zhou, Tao Lei, Hanxiao Liu, Nan Du, Yanping Huang, Vincent Zhao, Andrew M Dai, Quoc V Le, James Laudon, et al. Mixture-of-experts with expert choice routing. _Advances in Neural Information Processing Systems_, 35:7103-7114, 2022.
+
+[MISSING_PAGE_FAIL:16]
+
+### Quantitative results on the GSM8K Benchmark
+
+Table A2 shows results on the the grade-school math benchmark (GSM8K) [7] with direct prompting, Chain of Thought, and Chain of Code. We find that CoC generally outperforms CoT and Direct prompting. Since these tasks are primarily algorithmic and are solved by Python alone, all Chain of Code variants that use Python achieve the same performance - also the same performance shown in Program of Thoughts [5].
+
+### Qualitative results on language reasoning tasks
+
+Figure A1 shows the model outputs for a few reasoning tasks from BIG-Bench Hard (BBH) and Figure A2 shows a demonstrative example of date reasoning. These examples are selected to highlight the interweaving execution of the Python interpreter and the LMulator.
+
+### Results on robotics tasks
+
+For few-shot prompting, we include a single example: "Serve a meal that follows the user's dietary restrictions". During test time, we query the model with each of the following instructions.
+
+* "Pack a lunch box for someone who is on a vegan diet."
+* "Assemble a sandwich for someone who is vegetarian."
+* "Gather ingredients for a peanut butter sandwich in a plate."
+* "Prepare in the pot." (interleaving English and Chinese on purpose)
+* "Place all paper-made objects in the grass-colored container."
+* "Sort the objects on the table into the compost bin and the recycle bin."
+* "My steak is too bland. Can you help?"
+
+Figure A3 shows the one-shot prompt as well as the model outputs and how they are executed for a few test instructions.
+
+Figure A1 | Model outputs for a few reasoning tasks from BIG-Bench Hard (BBH). We observe that CoC can apply to a wide variety of complex reasoning tasks that involve both semantic and numeric reasoning. Red highlight indicates LM generated code being executed by the Python interpreter, and purple highlight indicates LM simulating the code execution.
+
+Figure A2 | A demonstrative example of how Chain of Code generates code and reasons through an LM-augmented code emulator. Lines evaluated with Python are in \(\overline{\text{red}}\) and with an LM are in \(\overline{\text{purple}}\). The chain of thought and direct answers were evaluated with gpt-4 in October 2023, and we note the current model (as of December 2023) writes code to solve this problem and gets the same solution as Chain of Code.
+
+(a) Given Prompt
+
+(a: Serve a meal that follows the user's dietary restrictions.
+
+restriction: r report(Tob you have any dietary restrictions?)
+
+... obs: = r robot:detect_objects()
+
+container_obj:=None
+
+forobj in obj:
+
+1s_match_description = match_description(obj, "food container", ret_type=bool")
+
+if is_match_description:
+
+container_obj = obj:
+
+break
+
+if container_obj is None:
+
+robot:say("No food container found.")
+
+else:
+
+forobj in obj:
+
+if obj = container_obj:
+
+continue
+
+is_follow_restrictions = follow_restrictions(obj, restrictions, ret_type=bool")
+
+if is_follow_restrictions:
+
+robot_object_places(obj, container_obj)
+
+(c) Novel Task
+
+(d: Prover "HT")( (tit-fried tomato and eggs) in the pot.
+
+Ingredients ("HT")( "HT")( "HT")( "Ground", "egg")
+
+... obs: = r robot:detect_object()
+
+pot_obj = None
+
+forobj in obj:
+
+Is_match_description = match_description(obj), "cooking pot", ret_type=bool")
+
+if is_match_description:
+
+pot_obj = obj:
+
+break
+
+if pot_obj is None:
+
+robot_say("No cooking pot found.")
+
+else:
+
+for ingredient in ingredients:
+
+for obj in obj:
+
+Is_match_description = match_description(obj, "good", ret_type=bool")
+
+if is_match_description:
+
+robot_pick_place(obj, pot_obj)
+
+Figure A3 | The one-shot prompt as well as the model outputs for a few test instructions for the robotics tasks. When given a single example in the prompt (a), our method can generalize (b-d) to new objects, languages, and task domains. Red highlight indicates LM generated code being executed by the Python interpreter, and purple highlight indicates LM simulating the code execution. Gray text is for illustration purpose only, and not provided to our model. Note that code in the form of robot:<func name> invokes robot APIs.
+
+Figure A4 | Full question used in Fig. 1
+
+How many countries have I been to? I've been to Mumbai, London, Washington, Grand Canyon, Baltimore, Longsheng, Guilin, Beijing, Galapagos, Quito, Barcelona, Paris, Prague, Nice, Dehli, Agra, Rome, Florence, Amalfi, Athens, Mikosnikos, Milaga, Monaco, Berlin, Munich, Thmsbruck, Bern, Milan, Lucure, Gimelwald (Schilithornhahn), St Moritz, St Petersburg, Helsinki, Amsterdam, Gdansk, Vancouver, Anchorage, Montreal, Belize, The Bahamas, Jamaia, Hawaii, Acadia National Park, Stockholm, Copenhagen, Dover, Lyon, Madrid, Toulouse, Santorini, Oslo, Kusadasi, Souda, Rhodes, Tallinn, Venice, Vatican City, Naples, Cape Town, Johannesburg, Addis Abbea, Nairobi, Seattle, San Francisco, Chicago, St Louis, Memphis, Chile, Stanford, New York, Philadelphia, Boston, Miami, New Orleans, Walt Disney World Resort, Jacksonville, Las Vegas, Los Angeles, Portland, Salt Lake City, Tahoe City, Phoenix, Albuquerque, Cleveland, Charlottesville, Nagas Head, Newfoundland and Labrador, Burlington, Wilmington, Myrtle Beach, St Lucia, Barbados, Grenada, Banff, Haiti, Monaco Bay, Sao Palo, Rio, Lima, Cosco, Ozemil, Amarillo, Vosemite National Park, Joshua Tree, Zion National Park, Bryce Canyon National Park, Grand Teton National Park, Yellousone National Park, Glacier National Park, Mount Hood, Pasco Robles, San Diego, Bend, North Cascades National Park, Olympic National Park Visitor Center, Jasper National Park, Sequoia National Park, Kings Canyon National Park, Shasta National Forest, Mount Saint Helens, Mount Rainier, Austin, Buenos Aires, El Calafarte, El Chalten, Fitz Roy, Torres del Paine National Park, Puerto Notales, Puerto Vargs, Santiago, Marble Caves, Cerro Castillo, Cyhaique, Singapore, Casablanca, Marrakesh, Cairo, Jerusalem, Tokyo, Kyoto Prefecture, Taipei City, Taichung City, Kirk, Matpurpurak Puez-Geisler, Lyubljana, Pilitive Lakes National Park, Fairbanks, Juneau, Dallas, Sydney, Cairns, Brisbane, Hokol Island, Charleston, Panna City, Bangkok, Chiang Mai, Bengaluru, Denver, Indianapolis, Nashville, Blacksburg, Lisbon, Porto, Estes Park, Coeur d'Aleme, Hood River, Denali, Sitka, Mexico City, Warsaw, Geneva, Auckland, Queenstown, Whitefish, Minneapolis, Sioux Falls, Bozeman, Missoula, Springfield, Skye, Edinburgh, Honolulu, Kauai, Haleakali National Park, Wrangell-St. Elias National Park & Preserve, Atlanta, Tirana, Corfu, Siena.
