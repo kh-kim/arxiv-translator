@@ -1,0 +1,306 @@
+# SOLAR 10.7B: Scaling Large Language Models with Simple yet Effective Depth Up-Scaling
+
+ Dahyun Kim\({}^{*}\), Chanjun Park\({}^{*\dagger}\), Sanghoon Kim\({}^{*\dagger}\), Wonsung Lee\({}^{*\dagger}\), Wonho Song
+
+Yunsu Kim, Hyeonwoo Kim, Yungi Kim, Hyeonju Lee, Jihoo Kim
+
+Changbae Ahn, Seonghoon Yang, Sukyung Lee, Hyunbyung Park, Gyoungjin Gim
+
+Mikyoung Cha, Hwalsuk Lee\({}^{\dagger}\), Sunghun Kim\({}^{\dagger}\)
+
+Equal Contribution \({}^{\dagger}\) Corresponding Author
+
+###### Abstract
+
+We introduce depth up-scaling (DUS), a novel technique to up-scale base LLMs efficiently and effectively in a simple manner. In contrast to mixture-of-experts (MoE), DUS does not require complex changes to train and inference. Using DUS, we build SOLAR 10.7B, a large language model (LLM) with 10.7 billion parameters, demonstrating superior performance in various natural language processing (NLP) tasks. Comparative evaluations show that SOLAR 10.7B outperforms existing open-source pretrained LLMs, such as Llama 2 and Mistral 7B. We additionally present SOLAR 10.7B-Instruct, a variant fine-tuned for instruction-following capabilities, surpassing Mistral-8x7B. SOLAR 10.7B is publicly available under the Apache 2.0 license, promoting broad access and application in the LLM field 1.
+
+Footnote 1: [https://huggingface.co/upstage/](https://huggingface.co/upstage/) SOLAR-10.7B-v1.0
+
+Footnote 2: [https://github.com/google-learning/](https://github.com/google-learning/)
+
+## 1 Introduction
+
+The field of natural language processing (NLP) has been significantly transformed by the introduction of large language models (LLMs), which have enhanced our understanding and interaction with human language (Zhang et al., 2023). These advancements, while beneficial, bring challenges such as the increased need to train ever larger models owing to the performance scaling law (Kaplan et al., 2020; Hernandez et al., 2021; Anil et al., 2023). To efficiently tackle the above, recent works in scaling language models such as a mixture of experts (MoE) (Shazeer et al., 2017; Komatsuzaki et al., 2022) have been proposed. While those approaches are able to efficiently and effectively scale-up LLMs, they often require nontrivial changes to the training and inference framework (Gale et al., 2023), which hinders widespread applicability. Effectively and efficiently scaling up LLMs whilst also retaining the _simplicity_ for ease of use is an important problem (Alberts et al., 2023; Fraiwan and Khasawneh, 2023; Sallam et al., 2023; Bahrini et al., 2023).
+
+Our study introduces depth up-scaling (DUS), an effective and efficient method to up-scale LLMs whilst also remaining strikingly easy to apply. Using DUS, we release SOLAR 10.7B, an LLM with 10.7 billion parameters, that outperforms existing models like Llama 2 (Touvron et al., 2023) and Mistral 7B (Jiang et al., 2023) in various benchmarks. The proposed DUS method is immediately compatible with easy-to-use LLM frameworks such as HuggingFace (Wolf et al., 2019) and does need additional changes to the training or inference framework. Furthermore, DUS is compatible with all transformer architectures, opening up new gateways to effectively and efficiently scale-up LLMs in a simple manner.
+
+We have also developed SOLAR 10.7B-Instruct, a variant fine-tuned for tasks requiring strict adherence to complex instructions. It significantly outperforms the Mistral-8x7B model across various evaluation metrics, evidencing an advanced proficiency that exceeds the capabilities of even larger models in terms of benchmark performance.
+
+By releasing SOLAR 10.7B under the Apache 2.0 license, we aim to promote collaboration and innovation in NLP. This open-source approach allows for wider access and application of these models by researchers and developers globally.
+
+## 2 SOLAR 10.7B Architectural Details
+
+For developing LLMs with a better performance-to-size trade-off, we argue that the commonly used 7B-sized LLMs need to be at the Pareto-optimal curve and proceed to scale up the 7B LLMs. In doing so, we utilize pretrained weights of base models to scale up to larger LLMs in a more efficient manner. Specifically, we choose a well-performing base model and apply the novel DUS method to obtain ascaled-up model that utilizes the pretrained weights from the base model.
+
+Note that other up-scaling methods, most notably MoE, require complex changes, such as a separate training framework optimized for MoE and custom CUDA kernels for efficient inference. In contrast, a model up-scaled with DUS can utilize the exact same training and inference framework as the base LLMs and still achieve maximal efficiency and efficacy. DUS offers a simple way to up-scale LLMs and any other transformer-based architectures, that is easy to use and compatible with existing widespread training and inference frameworks.
+
+**Base Model.** We have selected the 32-layer Llama 2 architecture as our base model, recognizing its robust and versatile framework as an optimal foundation for further advancements. We then initialize the Llama 2 architecture with pretrained weights from Mistral 7B, as it is one of the top performers compatible with the Llama 2 architecture.
+
+By adopting the Llama 2 architecture for our base model, we aim to leverage the vast pool of community resources while introducing novel modifications to further its capabilities.
+
+**Depth Up-Scaling.** One naive way to up-scale the base LLM would be to repeat its layers once more, _i.e.,_ from \(32\) to \(64\) layers. This has the benefit that from layers 1 to 32 and from layers 33 to 64, there are no heterogeneity as those layers are taken directly from the base LLM. In other words, the 'layer distance', or the difference in the layer indices in the base model, is only bigger than 1 where layers 32 and 33 are connected, _i.e.,_ at the seam.
+
+An additional benefit may be the potential for fast performance recovery after the up-scaling is done, as is also observed in MoE (Komatsuzaki et al., 2022). The reason is that optimizing the up-scaled model could first focus on reducing the discrepancy in the layers at the seam, which would boost the performance of the up-scaled model rapidly. Then, a gradual optimization of all the layers would begin.
+
+However, in the naive up-scaling approach, the layer distance at the seam reaches its maximum, potentially impeding the model's ability to effectively utilize the pretrained weights. A potential solution to would be to sacrifice the middle layers, thereby reducing the discrepancy at the seam. Guided by this intuition, we devise the Depth Up-Scaling (DUS) method, which we illustrate in Figure 1.
+
+In the first step of DUS, we take the base model, which is the 32-layer Llama2 architecture with Mistral 7B pretrained weights, and make a copy. Next, we slice off the last 8 layers from the original base model and the first 8 layers from the duplicate. This leaves us with two 24-layer models. In the final step, these models are concatenated to form a depth up-scaled model with 48 layers and 10.7 billion parameters.
+
+The decision to remove 8 layers from each model was driven by our target performance-to-size trade-off. By discarding what would have been the middle layers in the up-scaled model, the layer distance at the seam is reduced as layer 24 of the first model to layer 9 of the second are connected instead of layer 32 and 1, respectively.
+
+Unlike the Mixture of Experts (MoE) approach, DUS does not require additional modules like a gating network or an expert selection process. Con
+
+Figure 1: Depth up-scaling with base models that have 32 layers. We use the Llama2 architecture, but other transformer architectures are compatible with depth up-scaling. We use pretrained weights in 24 of the 32 layers in the base model, which results in the depth up-scaled model having pretrained weights for all of its 48 layers.
+
+sequently, DUS models do not necessitate a distinct training framework for optimal training efficiency, nor do they require specialized CUDA kernels for fast inference. An LLM up-scaled with DUS can seamlessly integrate into existing training and inference frameworks while maintaining high efficiency. The following sections will delve into the training process of the up-scaled model, SOLAR 10.7B."
+
+## 3 SOLAR 10.7B Training Details
+
+Pretraining.After DUS is applied to the base model, the performance initially drops below that of the base LLM. However, in-line with our hypothesis in Sec. 2, we observe fast performance recovery once we continually pretrain the up-scaled model. After continual pretraining, we perform fine-tuning in two stages: 1) instruction tuning and 2) alignment tuning.
+
+Instruction Tuning.In the instruction tuning stage, the model is trained to follow instructions in a QA format (Zhang et al., 2023). We mostly use open-source datasets but also synthesize a math QA dataset to enhance the model's mathematical capabilities. A rundown of how we crafted the dataset is as follows. First, seed math data are collected from the Math (Hendrycks et al., 2021) dataset only, in order to avoid contamination with commonly used benchmark datasets such as GSM8K (Cobbe et al., 2021). Then, using a process similar to Meta-Math (Yu et al., 2023), we rephrase the questions and answers of the seed math data. We use the resulting rephrased question-answer pairs as a QA dataset and call it 'Synth. Math-Instruct'.
+
+Alignment Tuning.In the alignment tuning stage, the instruction-tuned model is further fine-tuned to be more aligned with human or strong AI (_e.g.,_ GPT4 (OpenAI, 2023)) preferences using direct preference optimization (DPO) (Rafailov et al., 2023). Similar to the instruction tuning stage, we use mostly open-source datasets but also synthesize a math-focused alignment dataset utilizing the 'Synth. Math-Instruct' dataset mentioned in the instruction tuning stage.
+
+The alignment data synthesis process is as follows. We take advantage of the fact that the rephrased question-answer pairs in Synth. Math-Instruct data are beneficial in enhancing the model's mathematical capabilities (see Sec. 4.3.1). Thus, we speculate that the rephrased answer to the rephrased question is a better answer than the original answer, possibly due to the interim rephrasing step. Consequently, we set the rephrased question as the prompt and use the rephrased answer as the chosen response and the original answer as the rejected response and create the {prompt, chosen, rejected} DPO tuple. We aggregate the tuples from the rephrased question-answer pairs and call the resulting dataset 'Synth. Math-Alignment'.
+
+Model Merging.Model merging is an effective way to boost model performance without further training. We merge some of the models that we trained in both the instruction and alignment tuning stages. We tried two model merging methods: 1) simple average of the weights and 2) SLERP (Shoemake, 1985).
+
+## 4 Experimental Results
+
+### Training Datasets and Evaluation
+
+Training Datasets.We present details regarding our training datasets for the instruction and alignment tuning stages in Tab.. 1. We do not always use the entirety of the dataset and instead subsample a set amount. We note that most of our training data is open-source, and the undisclosed datasets can be
+
+\begin{table}
+\begin{tabular}{c c c c c c c} \hline \hline \multirow{2}{*}{Properties} & \multicolumn{3}{c}{Instruction} & \multicolumn{3}{c}{Alignment} \\ \cline{2-7}  & Alpaca-GPT4 & OpenOrca & Synth. Math-Instruct & Orca DPO Pairs & Ultrafeedback Cleaned & Synth. Math-Alignment \\ \hline Total \# Samples & 52K & 2.91M & 126K & 12.9K & 60.8K & 126K \\ Maximum \# Samples Used & 52K & 100K & 52K & 12.9K & 60.8K & 20.1K \\ Open Source & O & O & ✗ & O & O & ✗ \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: Training datasets used for the instruction and alignment tuning stages, respectively. For the instruction tuning process, we utilized the Alpaca-GPT4 (Peng et al., 2023), OpenOrca (Mukherjee et al., 2023), and Synth. Math-Instruct datasets, while for the alignment tuning, we employed the Orca DPO Pairs (Intel, 2023), Ultrafeedback Cleaned (Ivison et al., 2023), and Synth. Math-Alignment datasets. The ‘Total # Samples’ indicates the total number of samples in the entire dataset. The ‘Maximum # Samples Used’ indicates the actual maximum number of samples that were used in training, which could be lower than the total number of samples in a given dataset. ‘Open Source’ indicates whether the dataset is open-sourced.
+
+substituted for open-source alternatives such as the MetaMathQA Yu et al. (2023) dataset.
+
+We reformatted the instruction datasets with an Alpaca-styled chat template. For datasets such as OpenOrca, which are derived from FLAN Longpre et al. (2023), we filter data that overlaps with the benchmark datasets (see Tab. 8 in Appendix. C for more information). The alignment datasets are in the {prompt, chosen, rejected} triplet format. We preprocess the alignment datasets following Zephyr Tunstall et al. (2023).
+
+**Evaluation.** In the HuggingFace Open LLM Leaderboard Beeching et al. (2023), six types of evaluation methods are presented: ARC Clark et al. (2018), HellaSWAG Zellers et al. (2019), MMLU Hendrycks et al. (2020), TruthfulQA Lin et al. (2022), Winogrande Sakaguchi et al. (2021), and GSM8K Cobbe et al. (2021). We utilize these datasets as benchmarks for evaluation and also report the average scores for the six tasks, _e.g._, H6.
+
+### Main Results
+
+We present evaluation results for our SOLAR 10.7B and SOLAR 10.7B-Instruct models along with other top-performing models in Tab. 2. SOLAR 10.7B outperforms other pretrained models of similar sizes, such as Qwen 14B and Mistral 7B, which shows that DUS is an effective method to up-scale base LLMs. Furthermore, despite the smaller size, SOLAR 10.7B-Instruct scores the highest in terms of H6, even surpassing the recent top-performing open-source LLM Mistral 8x7B-Instruct-0.1 or Qwen 72B. The above results indicate DUS can up-scale models that are capable of achieving state-of-the-art performance when continually pretrained and fine-tuned. We also report data contamination results in Appendix C to show the integrity of SOLAR 10.7B-Instruct.
+
+### Ablation Studies
+
+We present ablation studies for both the instruction and alignment tuning stages.
+
+#### 4.3.1 Instruction Tuning
+
+**Ablation on the Training Datasets.** We present ablation studies using different training datasets for the instruction tuning stage in Tab. 3. The ablated models are prefixed with SFT or supervised fine-tuning and are trained as follows. 'SFT v1' only uses the Alpaca-GPT4 dataset, whereas 'SFT v2' uses the OpenOrca dataset along with the Alpaca-GPT4 dataset. 'SFT v3' uses the Synth. Math-Instruct data when training along with the datasets used in 'SFT v2'. Similarly, 'SFT v4' uses the Synth. Math-Instruct data when training along with the datasets used in 'SFT v1'.
+
+First, we analyze how Alpaca-GPT4 and OpenOrca affect the trained models. The first ablated model, 'SFT v1', which used only the Alpaca-GPT4 dataset for training, resulted in \(69.15\) for H6. When we add the OpenOrca dataset to train the second ablated model, 'SFT v2', the resulting H6 score is \(69.21\), which is little change from \(69.15\) of 'SFT v1'. However, the task scores vary more as 'SFT v2' gets a substantially higher GSM8K score of \(57.32\) compared to \(52.24\) of 'SFT v1' but also gets noticeably lower scores across the board for ARC, HellaSwag, and TruthfulQA. This seems to indicate that using OpenOrca results in a model that behaves differently from using only Alpaca-GPT4.
+
+Second, we investigate whether Synth. Math-Instruct dataset is beneficial. For 'SFT v3', we
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c} \hline \hline Model & Size & Type & H6 (Avg.) & ARC & HellaSwag & MMLU & TruthfulQA & Winogrande & GSM8K \\ \hline SOLAR 10.7B-Instruct & \(\sim\) 11B & Alignment-tuned & **74.20** & **71.08** & 88.16 & 66.21 & **71.43** & 83.58 & 64.75 \\ Open 72B & \(\sim\) 72B & Pretrained & 73.60 & 65.19 & 85.94 & **77.37** & 60.19 & 82.48 & **70.43** \\ Mistral 8x7B-Instruct-v0.1 & \(\sim\) 47B & Instruction-tuned & 72.62 & 70.22 & 87.53 & 71.16 & 64.58 & 81.37 & 60.73 \\ Yi 34B-200K & \(\sim\) 34B & Pretrained & 70.81 & 65.36 & 85.58 & 76.06 & 53.64 & 82.56 & 61.64 \\ Yi 34B & \(\sim\) 34B & Pretrained & 69.42 & 64.59 & 85.69 & 76.35 & 56.23 & 83.03 & 50.64 \\ Mistral 8x7B-v0.1 & \(\sim\) 47B & Pretrained & 68.42 & 66.04 & 86.49 & 71.82 & 46.78 & 81.93 & 57.47 \\ Llamma 70B & \(\sim\) 70B & Pretrained & 67.87 & 67.32 & 87.33 & 69.83 & 44.92 & 83.74 & 54.06 \\ Falcon 180B & \(\sim\) 180B & Pretrained & 67.85 & 69.45 & **88.66** & 70.50 & 45.47 & **86.90** & 45.94 \\ SOLAR 10.7B & \(\sim\) 11B & Pretrained & 66.04 & 61.95 & 84.60 & 65.48 & 45.04 & 83.66 & 55.50 \\ Open 14B & \(\sim\) 14B & Pretrained & 65.86 & 52.88 & 83.99 & 67.70 & 49.43 & 76.80 & 58.98 \\ Mistral 7B-Instruct-v0.2 & \(\sim\) 78B & Instruction-tuned & 65.71 & 63.14 & 84.88 & 60.78 & 68.26 & 77.19 & 40.03 \\ Yi 34B-Chat & \(\sim\) 34B & Instruction-tuned & 65.32 & 65.44 & 84.16 & 74.90 & 55.37 & 80.11 & 31.92 \\ Mistral 7B & \(\sim\) 7B & Pretrained & 60.97 & 59.98 & 83.31 & 64.16 & 42.15 & 78.37 & 37.83 \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: Evaluation results for SOLAR 10.7B and SOLAR 10.7B-Instruct along with other top-performing models. We report the scores for the six tasks mentioned in Sec. 4.1 along with the H6 score (average of six tasks). We also report the size of the models in units of billions of parameters. The type indicates the training stage of the model and is chosen from {Pretrained, Instruction-tuned, Alignment-tuned}. Models based on SOLAR 10.7B are colored purple. The best scores for H6 and the individual tasks are shown in bold.
+
+add the Synth. Math-Instruct dataset, which boosts GSM8K scores to \(64.14\) and achieves comparable scores for the other tasks. Interestingly, when we add the Synth. Math-Instruct dataset to 'SFT v1' to train 'SFT v4', we get our highest H6 score of \(70.88\) with higher scores than 'SFT v3' for all tasks. From the above, we can see that adding the Synth. Math-Instruct dataset is helpful.
+
+Lastly, we see whether merging models trained with and without OpenOrca can boost performance. In the first analysis, we saw that using OpenOrca resulted in a model that behaved differently from the model that was trained without OpenOrca. Building on this intuition, we merge 'SFT v3' and 'SFT v4' as they are the best-performing models with and without OpenOrca. To our surprise, the resulting merged model 'SFT v3+v4' retains the high scores for non-GSM8K tasks from 'SFT v4' but also achieves a higher GSM8K score than 'SFT v3' or 'SFT v4'. Thus, we see that merging models that specialize in different tasks is a promising way to obtain a model that performs well generally.
+
+#### 4.3.2 Alignment Tuning
+
+This section describes our carefully designed alignment tuning strategy. We utilize Direct Preference Optimization (DPO) for practical alignment tuning. More specifically, we demonstrate the different training datasets used for training, the different SFT base models to initialize the DPO model, and finally, the model merging strategy to obtain the final alignment-tuned model.
+
+Ablation on the Training Datasets.We ablate on the different alignment datasets used during DPO in Tab. 4. We use 'SFT v3' as the SFT base model for DPO. The description for the ablated models are as follows. 'DPO v1' only uses the Ultrafeedback Clean dataset while 'DPO v2' also used the Synth. Math-Alignment dataset.
+
+First, we test how Ultrafeedback Clean and Synth. Math-Alignment impacts model performance. For 'DPO v1', it achieves \(73.06\) in H6, which is a substantial boost from the SFT base model score of \(70.03\). However, we note that while scores for tasks like ARC, HellaSwag, and TruthfulQA all improved by good margins, the score for GSM8K is \(58.83\), which is lower than the SFT base model score of \(64.14\). Adding Synth. Math-Alignment to train 'DPO v2', we see that the GSM8k score improves to \(60.27\), which is lower than the SFT base model but still higher than 'DPO v1'. Other task scores are also not negatively impacted by adding Synth. Math-Alignment. Thus, we can conclude that adding Synth. Math-Alignment is beneficial for H6.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c} \hline \hline Model & Ultrafeedback Clean & Synth. Math-Alignment & H6 (Avg.) & ARC & HellaSwag & MMLU & TruthfulQA & Winogrande & GSM8K \\ \hline DPO v1 & O & ✗ & 73.06 & 71.42 & **88.49** & **66.14** & 72.04 & 81.45 & 58.83 \\ DPO v2 & O & O & **73.42** & **71.50** & 88.28 & 65.97 & 71.71 & **82.79** & **60.27** \\ DPO v1 + v2 & O & O & 73.21 & 71.33 & 88.36 & 65.92 & **72.65** & 82.79 & 58.23 \\ \hline \hline \end{tabular}
+\end{table}
+Table 4: Ablation studies on the different datasets used during the direct preference optimization (DPO) stage. ‘SFT v3’ is used as the SFT base model for DPO. We name ablated models with the ‘DPO’ prefix to indicate the alignment tuning stage. ‘DPO v1+v2’ indicates that the model is merged from ‘DPO v1’ and ‘DPO v2’ by simply averaging the model weights. The best scores for H6 and the individual tasks are shown in bold.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline Model & Alexa-GGP4 & OpenOrca & Synth. Math-Instrect & H6 (Avg.) & ARC & HellaSwag & MMLU & TruthfulQA & Winogrande & GSM8K \\ \hline SFT v1 & O & ✗ & ✗ & 69.15 & **67.66** & **86.03** & 65.88 & **60.12** & **82.95** & 52.24 \\ SFT v2 & O & O & ✗ & 69.21 & 63.56 & 83.59 & 65.93 & 58.47 & 82.79 & 57.32 \\ SFT v3 & O & O & 70.03 & 65.87 & 85.55 & 63.31 & 57.93 & 81.37 & 64.14 \\ SFT v4 & O & ✗ & O & 70.88 & 67.32 & 85.87 & 58.97 & 82.48 & 64.75 \\ SFT v3 + v4 & O & O & **71.11** & 67.32 & 85.96 & **65.95** & 58.80 & 2.08 & **66.57** \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: Ablation studies on the different datasets used for instruction tuning. ‘SFT v3+v4’ indicates that the model is merged from ‘SFT v3’ and ‘SFT v4’ by simply averaging the model weights. The best scores for H6 and the individual tasks are shown in bold.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c} \hline \hline Model & Base SFT Model & H6 (Avg.) & ARC & HellaSwag & MMLU & TruthfulQA & Winogrande & GSM8K \\ \hline DPO v2 & SFT v3 & 73.42 & **71.50** & **88.28** & **65.97** & 71.71 & **82.79** & 60.27 \\ DPO v3 & SFT v3 + v4 & **73.58** & 71.33 & 88.08 & 65.39 & **72.45** & 81.93 & **62.32** \\ \hline \hline \end{tabular}
+\end{table}
+Table 5: Ablation studies on the different SFT base models used during the direct preference optimization (DPO) stage. ‘SFT v3’ is used as the SFT base model for DPO. We name ablated models with the ‘DPO’ prefix to indicate the alignment tuning stage. ‘DPO v1+v2’ indicates that the model is merged from ‘DPO v1’ and ‘DPO v2’ by simply averaging the model weights. The best scores for H6 and the individual tasks are shown in bold.
+
+Then, we experiment whether merging 'DPO v1' and 'DPO v2' is beneficial. Unfortunately, 'DPO v1+v2' scores \(73.21\) in H6, which is worse than 'DPO v2'. More importantly, the gain in the GSM8K score from adding Synth. MathAlignment is gone, which is undesirable. One reason for this could be that 'DPO v2' is a strict improvement over 'DPO v1', unlike the case for merging 'SFT v3' and 'SFT v4' where the models had different strengths and weaknesses.
+
+Ablation on the SFT base Models.When applying DPO, we start from a model that is already instruction tuned, _i.e._, the SFT base model and ablate on using different SFT base models. We use Ultrafeedback Clean and Synth. Math-Alignment datasets for this ablation. Each of the ablated models is trained as follows. 'DPO v2' uses 'SFT v3' as the base SFT model, while 'DPO v3' uses 'SFT v3+v4' as the SFT base model instead.
+
+Note that 'SFT v3+v4' has higher scores on all tasks compared to 'SFT v3', and the gap is especially large for ARC (\(+1.45\)) and GSM8K (\(+2.43\)). Surprisingly, the two models perform similarly in terms of H6. A closer look at the scores for the individual tasks shows only a small margin in the GSM8K scores, and other task scores show little difference. Thus, the performance gaps in certain tasks in the SFT base models do not always carry over to the alignment-tuned models.
+
+Ablation on different merge methods.From Tab. 3, we saw that merging two models that have different strengths can be beneficial to performance. To utilize this for the alignment-tuned model as well, we train two models named 'Cand. 1' and 'Cand. 2' using the same training dataset and SFT base model as 'DPO v2' and 'DPO v3' but with different hyper-parameters to maximize each model's respective strengths. We compare 'Cand. 1' and 'Cand. 2' in Tab. 6 where we can see that 'Cand. 1' has high GSM8K scores but relatively low scores for the other tasks, whereas 'Cand. 2' has low scores for GSM8K but high scores for the other tasks. We merge these two models using various methods and ablate the results in Tab.. 7.
+
+We use two merge methods: 1) Average (\(a\), \(b\)), where a and b denote the weighting for 'Cand. 1' and 'Cand. 2' when averaging weights and 2) SLERP (Shoemake, 1985). We use (\(0.5\), \(0.5\)), (\(0.4\), \(0.6\)), and (\(0.6\), \(0.4\)) for Average (\(a\), \(b\)). From Tab. 7, we can see that the different merge methods have little effect on the H6 scores. The scores for the individual tasks also do not differ by much, suggesting that as long as the merge candidates have sufficiently different strengths, the exact merge method may not be as crucial. Thus, we chose 'Merge v1' as our SOLAR 10.7B-Instruct model.
+
+## 5 Conclusion
+
+This paper introduces depth up-scaling (DUS), a simple method to up-scale LLMs efficiently. Unlike other up-scaling techniques, such as MoE, DUS does not require specialized training or inference frameworks to achieve maximum efficiency. We demonstrate the effectiveness of DUS by training SOLAR 10.7B and its fine-tuned variant, SOLAR 10.7B-Instruct, which are depth up-scaled from smaller base LLMs. We hope the release of SOLAR 10.7B under the Apache 2.0 license can foster more collaborative research, improved accessibility, and sustainable growth in the field of NLP.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c} \hline \hline Model & H6 (Avg.) & ARC & HellaSwag & MMLU & TruthfulQA & Winogrande & GSM8K \\ \hline Cand. 1 & **73.73** & 70.48 & 87.47 & 65.73 & 70.62 & 81.53 & **66.57** \\ Cand. 2 & 73.28 & **71.59** & **88.39** & **66.14** & **72.50** & **81.99** & 59.14 \\ \hline \hline \end{tabular}
+\end{table}
+Table 6: Performance comparison amongst the merge candidates. ‘Cand. 1’ and ‘Cand. 2’ are trained using the same setting as ‘DPO v2’ and ‘DPO v3’, respectively, but with slightly different hyper-parameters. The best scores for H6 and the individual tasks are shown in bold.
+
+\begin{table}
+\begin{tabular}{l l c c c c c c} \hline \hline Model & Merge Method & H6 (Avg.) & ARC & HellaSwag & MMLU & TruthfulQA & Winogrande & GSM8K \\ \hline Merge v1 & Average (0.5, 0.5) & 74.00 & **71.16** & 88.01 & 66.14 & 71.71 & **82.08** & 64.90 \\ Merge v2 & Average (0.4, 0.6) & 73.93 & 71.08 & **88.08** & **66.27** & **71.89** & 81.77 & 64.52 \\ Merge v3 & Average (0.6, 0.4) & **74.05** & 71.08 & 87.88 & 66.13 & 71.61 & **82.08** & **65.50** \\ Merge v4 & SLERP & 73.96 & **71.16** & 88.03 & 66.25 & 71.79 & 81.93 & 64.59 \\ \hline \hline \end{tabular}
+\end{table}
+Table 7: Ablation studies on the different merge methods used for obtaining the final model. We use ‘Cand. 1’ and ‘Cand. 2’ from Tab. 6 as our two models for merging. We name the merged models with the ‘Merge’ prefix to indicate they are merged. The best scores for H6 and the individual tasks are shown in bold.
+
+## Acknowledgements
+
+We would like to extend our heartfelt gratitude to the teams at Hugging Face, particularly Clementine Fourrier, Lewis Tunstall, Omar Sanseviero, and Philipp Schmid. Our appreciation also extends to the teams at AWS, notably Ritesh Vajaria, Gal Oshri, Jay Kwon, Brandon Lee, Effie Bae, and Rahul Sharma. We are grateful to the teams at Korea Telecom (KT), especially Jin Hyoung Lee, Jungsuk Park, Sungjoon Park, Hong-rae Wang, Kyeongsoo Jung, and Sunyoong Yoon, whose significant support has been instrumental in ensuring the broad compatibility of our model.
+
+## Limitations
+
+Firstly, the model's substantial computational requirements for training and inference may limit its accessibility for those with constrained computational resources. Secondly, despite efforts to reduce data contamination, SOLAR 10.7B, like all machine learning models, is susceptible to biases inherent in its training data, potentially leading to skewed outcomes in certain scenarios. Thirdly, the complexity of SOLAR 10.7B poses challenges in terms of interpretability and explainability, which can be problematic in applications where understanding the model's decision-making process is critical.
+
+Additionally, while SOLAR 10.7B performs admirably across various natural language processing tasks, its effectiveness can vary in different languages, particularly those with fewer resources, and in specialized domains. Moreover, the significant energy consumption required for training and running SOLAR 10.7B raises concerns about its environmental impact, a critical consideration in the context of sustainable AI development.
+
+Finally, while SOLAR 10.7B-Instruct variant shows improved performance in following instructions, the model still necessitates task-specific fine-tuning for optimal performance in specialized applications, a process that can be both resource-intensive and not always effective. Acknowledging these limitations is essential for a comprehensive understanding of the proposed LLM's capabilities and for guiding future research and development in LLMs.
+
+## Ethics Statement
+
+We conscientiously address and emphasize the commitment of SOLAR 10.7B in maintaining the highest ethical standards. First, we highlight that SOLAR 10.7B-Instruct has shown low levels of data contamination in our evaluations, a testament to our rigorous data handling and processing protocols. This aspect is crucial, as it underpins the reliability and integrity of the results obtained from SOLAR.
+
+Furthermore, during the course of our experiments, we ensured that all setups and methodologies employed steer clear of any potential ethical pitfalls. This preemptive consideration and avoidance of ethically questionable practices underscore our dedication to conducting research that is not only innovative but also responsible.
+
+Additionally, we ensure that SOLAR complies with general ethical considerations in all aspects of its operation. This includes adherence to privacy norms, respect for intellectual property, and ensuring the absence of bias in our algorithms. Our commitment to these ethical principles is unwavering, and we believe it significantly contributes to the credibility and societal acceptance of SOLAR.
+
+In conclusion, the ethical framework within which SOLAR operates is robust and comprehensive, ensuring that our advancements in this field are not only scientifically sound but also ethically responsible.
+
+## References
+
+* L. Alberts, L. Mercolli, T. Pyka, G. Prenosil, K. Shi, A. Rominger, and A. Afshar-Oromieh (2023)Large language models (llm) and chatgpt: what will the impact on nuclear medicine be?. European journal of nuclear medicine and molecular imaging50 (6), pp. 1549-1552. Cited by: SS1.
+* R. Anil, A. M. Dai, O. Firat, M. Johnson, D. Lepikhin, A. Passos, S. Shakeri, E. Taropa, P. Bailey, Z. Chen, et al. (2023)Palm 2 technical report. arXiv preprint arXiv:2305.10403. Cited by: SS1.
+* A. Bahrini, M. Khamoshifar, H. Abbasimehr, R. J. Riggs, M. Esmaeili, R. Mastali Majdabadkohne, and M. Pasehvar (2023)Chapter9: applications, opportunities, and threats. In 2023 Systems and Information Engineering Design Symposium (SIEDS), pp. 274-279. Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/HuggingFaceH4/open_1lm_leaderboard) Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open llm leaderboard. Note: Open llm leaderboard External Links: [https://huggingface.co/spaces/HuggingFaceH4/open](https://huggingface.co/spaces/HuggingFaceH4/open)Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. 2020. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901.
+* Clark et al. (2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 2018. Think you have solved question answering? try arc, the ai2 reasoning challenge. _arXiv preprint arXiv:1803.05457_.
+* Cobbe et al. (2023) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. 2021. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_.
+* Deng et al. (2023) Chunyuan Deng, Yilun Zhao, Xiangru Tang, Mark Gerstein, and Arman Cohan. 2023. Investigating data contamination in modern benchmarks for large language models. _arXiv preprint arXiv:2311.09783_.
+* Dong et al. (2023) Hanze Dong, Wei Xiong, Deepanshu Goyal, Rui Pan, Shizhe Diao, Jipeng Zhang, Kashun Shum, and Tong Zhang. 2023. Raft: Reward ranked finetuning for generative foundation model alignment. _arXiv preprint arXiv:2304.06767_.
+* Fraiwan and Khasawneh (2023) Mohammad Fraiwan and Natheer Khasawneh. 2023. A review of chatgpt applications in education, marketing, software engineering, and healthcare: Benefits, drawbacks, and research directions. _arXiv preprint arXiv:2305.00237_.
+* Gale et al. (2023) Trevor Gale, Deepak Narayanan, Cliff Young, and Matei Zaharia. 2023. Megablocks: Efficient sparse training with mixture-of-experts. _Proceedings of Machine Learning and Systems_, 5.
+* Golchin and Surdeanu (2023) Shahriar Golchin and Mihai Surdeanu. 2023. Time travel in llms: Tracing data contamination in large language models. _arXiv preprint arXiv:2308.08493_.
+* Hendrycks et al. (2020) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2020. Measuring massive multitask language understanding. In _International Conference on Learning Representations_.
+* Hendrycks et al. (2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021. Measuring mathematical problem solving with the math dataset. _arXiv preprint arXiv:2103.03874_.
+* Hernandez et al. (2021) Danny Hernandez, Jared Kaplan, Tom Henighan, and Sam McCandlish. 2021. Scaling laws for transfer. _arXiv preprint arXiv:2102.01293_.
+* Hwang et al. (2023) Changho Hwang, Wei Cui, Yifan Xiong, Ziyue Yang, Ze Liu, Han Hu, Zilong Wang, Rafael Salas, Jithin Jose, Prabhat Ram, et al. 2023. Tutel: Adaptive mixture-of-experts at scale. _Proceedings of Machine Learning and Systems_, 5.
+* Intel (2023) Intel. 2023. Supervised fine-tuning and direct preference optimization on intel gaudi2.
+* Ivison et al. (2023) Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. 2023. Camels in a changing climate: Enhancing lm adaptation with tulu 2.
+* Jiang et al. (2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. 2023. Mistral 7b. _arXiv preprint arXiv:2310.06825_.
+* Kaplan et al. (2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 2020. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_.
+* Komatskuzaki et al. (2022) Aran Komatskuzaki, Joan Puigcerver, James Lee-Thorp, Carlos Riquelme Ruiz, Basil Mustafa, Joshua Ainslie, Yi Tay, Mostafa Dehghani, and Neil Houlsby. 2022. Sparse upcycling: Training mixture-of-experts from dense checkpoints. _arXiv preprint arXiv:2212.05055_.
+* Lin et al. (2022) Stephanie Lin, Jacob Hilton, and Owain Evans. 2022. Truthfulqa: Measuring how models mimic human falsehoods. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 3214-3252.
+* Longpre et al. (2023) Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V Le, Barret Zoph, Jason Wei, et al. 2023. The flan collection: Designing data and methods for effective instruction tuning. _arXiv preprint arXiv:2301.13688_.
+* Mukherjee et al. (2023) Subhabrata Mukherjee, Arindam Mitra, Ganesh Jawahar, Sahaj Agarwal, Hamid Palangi, and Ahmed Awadallah. 2023. Orca: Progressive learning from complex explanation traces of gpt-4. _arXiv preprint arXiv:2306.02707_.
+* OpenAI (2023) OpenAI. 2023. Gpt-4 technical report.
+* Peng et al. (2023) Baolin Peng, Chunyuan Li, Pengcheng He, Michel Galley, and Jianfeng Gao. 2023. Instruction tuning with gpt-4. _arXiv preprint arXiv:2304.03277_.
+* Radford et al. (2019) Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. 2019. Language models are unsupervised multitask learners. _OpenAI blog_, 1(8):9.
+* Rafailov et al. (2023) Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D Manning, and Chelsea Finn. 2023. Direct preference optimization: Your language model is secretly a reward model. _arXiv preprint arXiv:2305.18290_.
+* Raghavan et al. (2020)Oscar Sainz, Jon Ander Campos, Iker Garcia-Ferrero, Julien Etxaniz, Oier Lopez de Lacalle, and Eneko Agirre. 2023. Nlp evaluation in trouble: On the need to measure llm data contamination for each benchmark. _arXiv preprint arXiv:2310.18018_.
+* Sakaguchi et al. (2021) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 2021. Winogrande: An adversarial winograd schema challenge at scale. _Communications of the ACM_, 64(9):99-106.
+* Sallam et al. (2023) Malik Sallam, Nesreen Salim, Muna Barakat, and Alaa Al-Tammemi. 2023. Chatgpt applications in medical, dental, pharmacy, and public health education: A descriptive study highlighting the advantages and limitations. _Narra J_, 3(1):e103-e103.
+* Shazeer et al. (2017) Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton, and Jeff Dean. 2017. Outrageously large neural networks: The sparsely-gated mixture-of-experts layer. _arXiv preprint arXiv:1701.06538_.
+* Shen et al. (2019) Tianxiao Shen, Myle Ott, Michael Auli, and Marc'Aurelio Ranzato. 2019. Mixture models for diverse machine translation: Tricks of the trade. In _International conference on machine learning_, pages 5719-5728. PMLR.
+* Shi et al. (2023) Weijia Shi, Anirudh Ajith, Mengzhou Xia, Yangsibo Huang, Daogao Liu, Terra Blevins, Danqi Chen, and Luke Zettlemoyer. 2023. Detecting pretraining data from large language models. _arXiv preprint arXiv:2310.16789_.
+* Shoemake (1985) Ken Shoemake. 1985. Animating rotation with quaternion curves. In _Proceedings of the 12th annual conference on Computer graphics and interactive techniques_, pages 245-254.
+* Touvron et al. (2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_.
+* Tunstall et al. (2023) Lewis Tunstall, Edward Beeching, Nathan Lambert, Nazneen Rajani, Kashif Rasul, Younes Belkada, Shengyi Huang, Leandro von Werra, Clementine Fourrier, Nathan Habib, et al. 2023. Zephyr: Direct distillation of lm alignment. _arXiv preprint arXiv:2310.16944_.
+* Wang et al. (2022) Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A Smith, Daniel Khashabi, and Hannaneh Hajishirzi. 2022. Self-instruct: Aligning language model with self generated instructions. _arXiv preprint arXiv:2212.10560_.
+* Wei et al. (2021) Jason Wei, Maarten Bosma, Vincent Y Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. 2021. Finetuned language models are zero-shot learners. _arXiv preprint arXiv:2109.01652_.
+* Wei et al. (2022a) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. 2022a. Emergent abilities of large language models. _arXiv preprint arXiv:2206.07682_.
+* Wei et al. (2022b) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022b. Chain-of-thought prompting elicits reasoning in large language models. _Advances in Neural Information Processing Systems_, 35:24824-24837.
+* Wolf et al. (2019) Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Remi Louf, Morgan Funtowicz, et al. 2019. Huggingface's transformers: State-of-the-art natural language processing. _arXiv preprint arXiv:1910.03771_.
+* Yang et al. (2023) Chengrun Yang, Xuezhi Wang, Yifeng Lu, Hanxiao Liu, Quoc V Le, Denny Zhou, and Xinyun Chen. 2023. Large language models as optimizers. _arXiv preprint arXiv:2309.03409_.
+* Yu et al. (2023) Longhui Yu, Weisen Jiang, Han Shi, Jincheng Yu, Zhengying Liu, Yu Zhang, James T Kwok, Zhenguo Li, Adrian Weller, and Weiyang Liu. 2023. Metamath: Bootstrap your own mathematical questions for large language models. _arXiv preprint arXiv:2309.12284_.
+* Yuan et al. (2023) Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, Songfang Huang, and Fei Huang. 2023. Rrhf: Rank responses to align language models with human feedback without tears. _arXiv preprint arXiv:2304.05302_.
+* Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. 2019. Hellaswag: Can a machine really finish your sentence? In _Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics_, pages 4791-4800.
+* Zhang et al. (2023a) Junwei Zhang, Huamin Feng, Biao Liu, and Dongmei Zhao. 2023a. Survey of technology in network security situation awareness. _Sensors_, 23(5):2608.
+* Zhang et al. (2023b) Shengyu Zhang, Linfeng Dong, Xiaoya Li, Sen Zhang, Xiaofei Sun, Shuhe Wang, Jiwei Li, Runyi Hu, Tianwei Zhang, Fei Wu, et al. 2023b. Instruction tuning for large language models: A survey. _arXiv preprint arXiv:2308.10792_.
+* Zhou et al. (2023) Kun Zhou, Yutao Zhu, Zhipeng Chen, Wentong Chen, Wayne Xin Zhao, Xu Chen, Yankai Lin, Ji-Rong Wen, and Jiawei Han. 2023. Don't make your llm an evaluation benchmark cheater. _arXiv preprint arXiv:2311.01964_.
+* Ziegler et al. (2019) Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. 2019. Fine-tuning language models from human preferences. _arXiv preprint arXiv:1909.08593_.
+
+Contributions
+
+The contributions of this study are as follows:
+
+* **Innovative LLM Up-Scaling Method**: Depth up-scaling is both effective and efficient while also being straightforward to use. The proposed method serves as an easier alternative to other up-scaling methods such as MoE without compromising in efficacy or efficiency,
+* **Introduction of the World's First 10.7 Billion-Parameter Model**: SOLAR 10.7B sets a new precedent in the field, demonstrating an unprecedented scale in language model development.
+* **Superior Performance Across Diverse Benchmarks**: SOLAR 10.7B excels in various benchmarks, outperforming established models like Llama 2 and Mistral 7B in reasoning, mathematics, and the MMLU framework.
+* **Advancement in Instruction-Following Capabilities**: The introduction of SOLAR 10.7B-Instruct, a variant fine-tuned for enhanced instruction-following abilities, marks a significant improvement in the model's ability to understand and execute complex instructions.
+* **Deployment under a Commercially Viable License**: The release of SOLAR 10.7B under the Apache 2.0 license allows for commercial use, facilitating the integration of these models into various products and services, thereby bridging the gap between academic research and practical applications.
+
+Dahyun Kim, Chanjun Park, Sanghoon Kim, and Wonsung Lee contributed equally to this paper. Sanghoon Kim led the Foundation Model part, with Dahyun Kim, Wonho Song, Yunsu Kim, and Hyeonwoo Kim. Chanjun Park led the Data and Evaluation (Data-Centric LLM) part, with Yungi Kim, Jihoo Kim, Changbae Ahn, Seonghoon Yang, Sukyung Lee, and Hyunbyung Park. Wonsung Lee led the Adaptation Modeling part, with Gyoungjin Gim, Hyeonju Lee, and Mikyoung Cha. Hwalsuk Lee performed the role of the overall project operation. All these individuals contributed to the creation of SOLAR 10.7B.
+
+## Appendix B Related Works and Background
+
+### Large Language Models
+
+Following the advent of context-based language models, various studies have revealed a "scaling law" Kaplan et al. (2020); Hernandez et al. (2021); Anil et al. (2023), demonstrating a positive correlation between the size of model and training data and model performance. This has led to the emergence of Large Language Models (LLMs). Unlike previous language models, LLMs possess the ability for In-context learning, including Zero-shot learning Radford et al. (2019) and Few-shot learning Brown et al. (2020), allowing them to perform new tasks without updating model weights. These capabilities of LLMs, not evident in smaller models, are referred to as Emergent abilities Wei et al. (2022).
+
+### Mixture of Experts
+
+In the landscape of machine learning architectures, the Mixture of Experts (MoE) models like Shazeer et al. (2017); Shen et al. (2019); Komatsuzaki et al. (2022) has gained attention for its capability to address the challenges posed by complex and heterogeneous data. MoE models offer notable benefits, including enhanced output diversity, allowing for the capture of intricate patterns within the input space. Moreover, their computational efficiency, especially when implemented in a sparse form, has made them valuable in scenarios where resource constraints are a consideration Shazeer et al. (2017); Komatsuzaki et al. (2022).
+
+However, MoE models are quite complex and have certain limitations. One key issue is that they are very sensitive to how they are set up, which means a lot of time and effort is needed to find the right settings (called hyperparameters). A major problem with MoE models is something called "posterior collapse". This happens when one part of the model becomes much more dominant than the others. It's like a "rich gets richer" situation, where the other parts become less effective, or a case where all parts of the model end up being the same, making them less useful.
+
+Also, the implementation of MoE models poses a considerable challenge, primarily due to the intricacies associated with dynamic routing and load-imbalanced computation Gale et al. (2023). Existing hardware and software for deep learning, such as TPUs and XLA compilers, often demand static knowledge of tensor shapes, making MoE implementation on TPU challenging.
+
+While GPU implementation offers more flexibility, sparse computation compatibility becomes a hurdle. Striking the right balance between fixing the size of each expert to facilitate efficient computation and maintaining model quality creates a tradeoff between information preservation and hardware efficiency. This tradeoff, in turn, necessitates careful consideration during hyperparameter tuning, adding a layer of complexity to the implementation of MoE models, potentially offsetting their advantages. Given the formidable challenges in MoE model implementation, it becomes almost inevitable for researchers and practitioners to resort to specialized tools and frameworks, such as Tutel Hwang et al. (2023) or Megablocks Gale et al. (2023)
+
+Departing from the horizontal expansion characteristic of MoE models, our new approach, DUS, introduces a vertical dimension. This method takes a different, less complex route compared to MoE. While MoE contends with horizontal complexities, DUS operates on a vertical plane, simplifying the process by just copying, trimming the front and back layers, and then reassembling them. This shift in approach offers a unique and more straightforward way of working, moving away from conventional MoE challenges.
+
+Aside from its simple implementation, unlike MoE, which may face challenges such as posterior collapse, DUS offers a notable benefit in that there are fewer situations where its usage becomes devoid of meaning. This point highlights that DUS is a useful and dependable choice, demonstrating its strength and adaptability in different situations.
+
+### Prompt Engineering
+
+A key research area to harness the emergent abilities of LLMs is prompt engineering. Prompt engineering is the study of how to design inputs (prompts) that enable LLMs to better perform specific tasks. A prime example of this research is Chain-of-Thought (CoT) Wei et al. (2022), which proposes CoT prompting that decomposes multi-step problems into a series of intermediate reasoning steps. Moreover, efforts are underway to replace even such prompt engineering with LLMs Yang et al. (2023).
+
+### Instruction Tuning
+
+To enhance the steerability of LLMs, instruction tuning Wei et al. (2021) has emerged as a learning technique. This involves fine-tuning LLMs using data formatted as (instruction, input, output) for various tasks Wang et al. (2022). Instruction tuning allows for targeted adjustments, providing a more controlled and task-oriented improvement to the model's capabilities.
+
+Before instruction tuning, existing methods faced challenges in effectively guiding and controlling the behavior of large language models Zhang et al. (2023). The sheer complexity of these models made it difficult to ensure precise and task-oriented responses. The need for a more targeted approach arose from the limitations of existing methods, leading to the development of instruction tuning. This targeted approach enables better control over the model's behavior, making it more suitable for specific tasks and improving its overall performance in alignment with user-defined objectives. Therefore, instruction tuning is computationally efficient and facilitates the rapid adaptation of LLMs to a specific domain without requiring extensive retraining or architectural changes.
+
+### Alignment Tuning
+
+LLM has been observed to generate sentences that may be perceived as linguistically incongruent by human readers since they learned not human intention, but only vast knowledge across various domains in the pretraining step Ziegler et al. (2019). To overcome this limitation and align with human intentions, previous research Ziegler et al. (2019) have proposed Reinforcement Learning with Human Feedback (RLHF). RLHF operates by learning a reward model based on human preferences, employing reinforcement learning to guide the LLM towards prioritizing answers with the highest reward scores. This process enhances the safety, propriety, and overall quality of the generated responses. Despite demonstrating satisfactory performance, RLHF encounters challenges such as managing numerous hyperparameters and necessitating the incorporation of multiple models (policy, value, reward, and reference models).
+
+In response to these challenges, the supervised fine-tuning based approaches have proposed, such as Rank Responses to align Human Feedback (RRHF) Yuan et al. (2023), Reward rAnked Fine-Tuning (RAFT) Dong et al. (2023), and Direct
+
+[MISSING_PAGE_FAIL:12]
