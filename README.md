@@ -87,6 +87,7 @@
 | 1801.01203 | Spectre Attacks Exploiting Speculative Execution | [arXiv](https://arxiv.org/abs/1801.01203) / [ar5iv](https://ar5iv.org/abs/1801.01203) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1801.01203/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1801.01203/paper.ko.html) |
 | 1706.03762 | Attention Is All You Need | [arXiv](https://arxiv.org/abs/1706.03762) / [ar5iv](https://ar5iv.org/abs/1706.03762) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1706.03762/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1706.03762/paper.ko.html) |
 | 1702.08734 | Billion-scale similarity search with GPUs | [arXiv](https://arxiv.org/abs/1702.08734) / [ar5iv](https://ar5iv.org/abs/1702.08734) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1702.08734/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1702.08734/paper.ko.html) |
+| 1610.00502 | A Survey of Symbolic Execution Techniques | [arXiv](https://arxiv.org/abs/1610.00502) / [ar5iv](https://ar5iv.org/abs/1610.00502) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1610.00502/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/1610.00502/paper.ko.html) |
 
 ## Procedure
 
