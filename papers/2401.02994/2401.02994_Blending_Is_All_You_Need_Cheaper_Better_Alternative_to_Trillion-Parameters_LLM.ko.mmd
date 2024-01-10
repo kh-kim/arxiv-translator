@@ -1,0 +1,213 @@
+# Blending Is All You Need: Cheaper, Better Alternative to
+
+Trillion-Parameters LLM
+
+ Xiaoding Lu\({}^{\lx@sectionsign}\) Adian Liusie\({}^{\lx@sectionsign}\) Vyas Raina\({}^{\lx@sectionsign}\) Yuwen Zhang\({}^{\lx@paragraphsign}\) William Beauchamp\({}^{\lx@sectionsign}\)
+
+케임브리지대학교 런던대학
+
+Chai Research
+
+###### Abstract
+
+대화형 AI 연구에서 ChatGPT와 같은 모델로 예시되는 더 많은 수의 매개변수를 가진 모델을 개발하는 경향이 눈에 띈다. 이러한 확장 모델은 점점 더 나은 채팅 응답을 생성하는 경향이 있지만 상당한 계산 자원과 메모리를 요구한다. 이 연구는 관련 질문을 탐구합니다. 작은 모델의 조합이 단일 큰 모델에 비해 비교 가능하거나 향상된 성능을 공동으로 달성할 수 있습니까? 우리는 여러 채팅 AI를 통합하는 간단하면서도 효과적인 방법인 혼합이라는 접근법을 소개한다. 우리의 경험적 증거는 특정 작은 모델이 상승적으로 혼합될 때 잠재적으로 훨씬 더 큰 대응물의 능력을 능가하거나 일치시킬 수 있음을 시사한다. 예를 들어, 적당한 크기의 3개의 모델(6B/13B 파라미터)만을 통합하는 것은 ChatGPT(175B+ 파라미터)와 같이 실질적으로 더 큰 모델의 성능 메트릭에 경쟁하거나 심지어 능가할 수 있다. 이 가설은 30일 동안 차이 연구 플랫폼에서 대규모 사용자 기반을 가진 A/B 테스트 방법론을 사용하여 엄격하게 테스트된다. 이 연구 결과는 컴퓨팅 요구의 급증 없이 채팅 AI 효능을 향상시키기 위한 실행 가능한 접근법으로서 _Blended_ 전략의 잠재력을 강조한다. 1
+
+각주 1: 모든 훈련된 모델은 [https://huggingface.co/ChaiML](https://huggingface.co/ChaiML)에 제공됩니다.
+
+## 1 Introduction
+
+현재 생성 AI 기술의 놀라운 능력으로 인해 사전 훈련된 대규모 언어 모델(LLM)은 다양한 응용 프로그램에 걸쳐 광범위한 활용을 발견했다. 그러한 응용 프로그램 중 하나는 채팅 AI에 있으며, 여기서 자동 시스템은 사용자가 즐거운 대화에 참여하도록 하는 대화 어시스턴트로 배치된다. 일반적인 발견은 모델 매개변수의 수와 학습 데이터 크기를 확장함에 따라 LLM의 품질과 능력이 극적으로 증가한다는 것이다. 이것은 현재의 최첨단 시스템이 수천억 개의 매개변수를 가지고 있는 엄청난 크기로 모델을 확장하는 현재의 추세로 이어졌다. 이것은 놀라운 비상 능력을 가진 매우 유능한 채팅 AI를 가능하게 했지만, 이는 전문 인프라가 필요하고 공개 API를 통해 이러한 시스템에 대한 액세스가 제한된 대규모 추론 오버헤드의 실질적인 비용을 초래한다. 따라서, 현재의 100B+ 파라미터 LLM이 달성한 대화 품질을 유지하면서도, 이러한 극적인 실제 한계를 극복하고, 더 작고 효율적인 채팅 AI를 갖는 것이 매우 바람직하다.
+
+단일 소형 모델이 현재의 최첨단 LLM과 경쟁할 가능성은 낮지만 적당히 크기의 LLM 그룹이 함께 동등하거나 아마도 더 나은 능력의 채팅 AI를 형성할 수 있는지 의문을 제기할 수 있다. 이 작업에서 우리는 혁신적이고 간단한 접근법인 Blended를 소개하고 놀랍게도 기본 채팅 AI 그룹에서 응답이 무작위로 선택되면 결과 결합된 채팅 AI가 매우 유능하고 매력적이며 수십 배 더 많은 매개변수를 가진 시스템을 능가할 수 있음을 보여준다. 우리는 혼합 모델이 "모두의 최고"인 특성을 취하는 것으로 보이며 대화 역사에 대한 응답을 컨디셔닝함으로써 특정 속성을 가진 단일 모델이 다른 시스템에서 능력을 학습한다는 것을 흥미롭게 관찰한다. 이것은 더 매력적이고 다양한 반응과 더 매력적인 사용자 경험으로 이어집니다. CHAI 플랫폼에서 실제 사용자를 대상으로 한 대규모 A/B 테스트에서 Blended의 효과를 입증했으며, 그 결과 3개의 6-13B 매개변수 LLM이 포함된 Blended 앙상블이 OpenAI의 175B+ 매개변수 ChatGPT를 능가하는 것으로 나타났다. 챗GPT 기반 채팅 AI보다 블렌디드 앙상블에 대해 훨씬 더 높은 사용자 보유를 관찰했는데, 이는 사용자가 블렌디드 채팅 AI가 추론 비용과 메모리 오버헤드의 일부만을 요구함에도 불구하고 더 매력적이고 재미있으며 유용하다는 것을 보여준다.
+
+## 2 관련 작업
+
+### Chat AI 접근 방식
+
+채팅 AI는 사용자 보조로부터 캐주얼 상호 작용(_chitchat_의 경우)에 이르기까지 다양한 애플리케이션을 위해 개발되었다(Chen 등, 2017). 초기 설계는 규칙 기반 알고리즘(Weizenbaum, 1966)을 기반으로 했으며, 이후 생성 검색 기반 모델(Papangelis et al., 2021)로 발전했다. 사전 훈련된 변압기 언어 모델의 출현은 채팅 AI 개발에 상당한 변화를 표시했는데(Zhu, 2022; Vaswani et al., 2017; Zaib et al., 2020), 여기서 스케일링-업 추세는 채팅 AI의 개발을 위해 대화 데이터세트로 미세 조정된 점점 더 큰 Transformer 기반 모델로 이어졌다(Adiwardana et al., 2020; Roller et al., 2021; Bao et al., 2020; Choudhary and Kawahara, 2022; Yan et al., 2022).
+
+전통적으로 채팅 AI는 대화 데이터 세트에 대한 자체 감독 방법으로 훈련되었다. 그러나, 보다 최근의 접근법들은 매력적인 대화에 대한 인간의 기대와 더 잘 정렬하기 위해 훈련에서 인간 피드백의 중요성을 강조한다(Leike et al., 2018; Askell et al., 2021; Gabriel, 2020). 이것은 전형적으로 인간 피드백으로부터의 강화 학습(RLHF; Christiano et al., 2017; Stiennon et al., 2020) 또는 응답들을 선택하거나 필터링하기 위해 자체적으로 보상 모델을 사용함으로써 달성된다(Dathathri et al., 2019; Irvine et al., 2023).
+
+우리 작업에서 _Blended_ 접근법은 더 나은 대화 LLM을 훈련할 수 있는 방법을 고려하지 않으며 대신 기존 작은 대화 LLM 그룹을 활용하고 대화를 통해 협력하여 더 매력적이고 다양한 응답을 생성하는 단일 채팅 AI를 구성할 수 있음을 보여줍니다.
+
+### 생성 시스템 조합
+
+시스템 조합은 스택킹(Wolpert, 1992), 음의 상관관계 학습(Liu and Yao, 1999), 맥스-보터 스킴(Ju et al., 2018; Simonyan and Zisserman, 2014) 또는 확률 평균화(He et al., 2016; Raina et al., 2020; Szegedy et al., 2015)와 같은 접근법이 다양한 회귀 및 분류 작업에 사용되었다. 이러한 앙상블 방법들에 의해, 개별 멤버들의 다양성을 증가시키는 것이 더 우수한 성능의 결합 시스템들로 이어질 수 있다는 것이 추가로 밝혀졌다(Kilimci et al., 2018; Seijo-Pardo et al., 2017).
+
+그러나, 출력들이 토큰들의 시퀀스인 생성 언어 태스크들의 경우, 대부분의 앙상블 접근법들은 적용 불가능하고 비효율적이 된다. 그러나, 시퀀스-레벨 앙상블 접근법들은, 종종 다수의 시스템들의 조건부 토큰 레벨 확률들을 평균화함으로써 이 근방에 도달한다(Sennrich et al., 2015; Freitag et al., 2017; Malinin and Gales, 2021; Fathullah et al., 2021). 그러나, 이러한 접근법은 종종 동일한 멤버 아키텍처 및 토큰의 출력 확률에 대한 액세스를 요구한다. LLM에 대한 제한된 블랙박스 액세스의 증가 추세(예를 들어, Chat-GPT(Liu et al., 2023) 및 BARD(Nyberg et al., 2021))에 따라, 출력 시퀀스만을 사용하는 앙상블 방법은 실용적인 이점을 가질 수 있다. MBR(Minimum Bayes' Risk) 디코딩(Kumar and Byrne, 2004)은 예측된 '최상의' 시스템 출력을 선택하기 위해 시스템 출력을 사용함으로써 이를 가능하게 한다. 이 접근법은 전통적으로 자동 음성 인식(ASR)에 사용되었지만, NLP 작업에도 성공적으로 적용되었다(Rosti et al., 2007; Freitag et al., 2022; Manakul et al., 2023; Raina and Gales, 2023). 상이한 태스크들에서 잘 수행하는, 대규모 언어 모델들을 배포하는 (API-액세스 전용)의 수가 증가함에 따라, (Jiang et al., 2023) 또한 블랙박스 설정에서 출력들을 결합하는 방법의 필요성을 관찰했다. 그들은 먼저 _PairRanker_에 따라 출력을 순위를 매긴 다음 별도의 심층 시퀀스 대 시퀀스 시스템(termed _GenFuser_)을 사용하여 상위 K 출력을 _퓨즈_하여 서로 다른 언어 모델의 출력을 _블렌더_하는 _LLM-Blender_를 제안한다.
+
+본 연구에서는 MBR과 LLM-Blender와 마찬가지로 블랙박스 언어 모델의 출력을 결합할 수 있는 앙상블 접근법도 제안한다. 그러나, 대화 에이전트와 같은 멀티 턴 태스크의 특정 특성에 대한 방법을 설계함으로써, 블렌디드 접근 방식은 모든 컴포넌트 시스템이 출력을 생성하는 것이 아니라 다음 응답을 생성하는 시스템을 확률적으로 선택함으로써 멀티 턴 대화 수준에서 모델 블렌딩을 가능하게 한다.
+
+## 3 Blended
+
+### Chat AI
+
+채팅 AI의 목적은 인간 사용자가 상호 작용할 수 있는 매력적이고 재미있는 대화를 생성할 수 있는 자동 시스템을 설계하는 것이다. \(u_{k}\)는 사용자의 \(k\)번째 턴을 표시 합니다. 여기서 각 사용자 턴은 단어의 시퀀스입니다. \(u_{k}\!=\! (w_{1}^{(k)}\ldots,w_{|u_{k}|}^{(k)})\). 유사하게, \(r_{k}\)은 시스템의 \(k\)번째 생성된 응답을 나타내도록 하자. 이것은 또한 단어 \(r_{k}\!=\!)의 시퀀스이다. (w_{1}^{(k)},\ldots,w_{|r_{k}|}^{(k)})\). 암묵적 언어 모델로서, \(\theta\)에 의해 파라미터화된 특정 채팅 AI는 이전 대화 이력이 주어진 다음 응답의 확률을 모델링하고,
+
+\[P(r_{k}|u_{1:k},r_{1:k-1};\theta) \tag{1}\]
+
+트레이닝 동안, 시스템은 유창하고, 매력적이며, 고품질인 응답들에 더 높은 확률을 할당하도록 암묵적으로 학습한다. 따라서 출력은 확률적으로 또는 빔 탐색과 같은 근사 탐색 과정을 통해 단순히 분포로부터 샘플링될 수 있다.
+
+\[r_{k}\sim P(r|u_{1:k},r_{1:k-1};\theta) \tag{2}\]
+
+InstructGPT(Ouyang et al., 2022)에서 영감을 받아 (Irvine et al., 2023)에 요약된 최신 채팅 AI는 3단계 파이프라인을 따르는 경향이 있다. 먼저, 사전 훈련된 언어 모델(PrLM)은 _engaging_ 챗봇의 설계를 위한 엔터테인먼트 문헌과 같은 관련 텍스트 도메인 상에서 미세 조정된다. 둘째, 보상 모델은, 예를 들어, 응답 품질에 대한 프록시로서 사용자 참여를 사용함으로써 명시적인 인간 피드백을 사용하여 트레이닝된다(Irvine 등, 2023). 마지막으로, 보상 모델은 근접 정책 최적화(Ouyang et al., 2022) 또는 간단한 거부 샘플링 전략을 따라 원래 PrLM을 개선하는 데 사용된다.
+
+특정 채팅 AI를 개발함에 있어 기본 PrLM, 미세 조정에 사용되는 대화 데이터, 시스템을 업데이트하는 데 사용되는 인간 피드백의 특성 등 많은 설계 선택이 있다. 다른 레시피와 훈련 종자가 각각 고유한 강점과 특성을 보여주는 매우 다양한 시스템으로 이어질 수 있다고 예상할 수 있다. 그런 다음 채팅 AI 세트가 전체적으로 더 나은 특성을 가진 시스템에 대해 결합될 수 있는 방법을 고려할 수 있다.
+
+### Ensembling
+
+베이지안 통계 원리에 따라, 특정 응답에 할당된 확률은 모든 그럴듯한 채팅 AI 파라미터에 대해 취한 한계 기대로서 개념화될 수 있고,
+
+\[P(r_{k}|u_{1:k},r_{1:k-1}) \tag{3}\] \[= \mathbb{E}_{\theta\sim P_{\theta}}\left[P(r_{k}|u_{1:k},r_{1:k-1};\theta)\right]\] (4) \[= \int P_{\theta}(\theta)P(r_{k}|u_{1:k},r_{1:k-1};\theta)d\theta \tag{5}\]
+
+실제로 우리는 채팅 AI 시스템 \(\{\theta_{1},\theta_{2}...\theta_{N}\}\)의 유한 집합에만 접근할 수 있다. 연속적분을 이산적분으로 근사할 수 있다. 또한, \(P_{\theta}(\theta)\)이 시스템 전체에 균일하게 분포한다고 가정할 수 있으며, 이는 집합이 유사하게 수행되는 모델로 구성된 경우 유효한 가정일 수 있다. 이는 근사치를 산출하고,
+
+\[P(r_{k}|u_{1:k},r_{1:k-1}) \tag{6}\] \[\approx \sum_{\theta}P_{\theta}(\theta)P(r_{k}|u_{1:k},r_{1:k-1};\theta)\] (7) \[= \frac{1}{N}\sum_{n=1}^{N}P(r_{k}|u_{1:k},r_{1:k-1};\theta_{n}) \tag{8}\]
+
+### Blended
+
+우리의 접근법의 목적은 실제 앙상블 분포(방정식 8)에서 샘플을 대략적으로 추출하는 것이다. 이러한 근사화를 달성하기 위해, 각각의 턴은 무작위로(그리고 균일하게) 혼합되어 현재 응답을 생성하는 채팅 AI \(\theta\)을 선택한다. 이 프로세스는 알고리즘 1에 예시되어 있다. 대화 중에, 특정 채팅 AI에 의해 생성된 응답은 이전에 선택된 채팅 AI에 의해 생성된 모든 이전 응답에 조건적이라는 점에 유의할 수 있다. 이는 상이한 채팅 AI가 현재 응답의 출력에 암묵적으로 영향을 미칠 수 있음을 의미한다. 결과적으로 현재 응답은 개별 채팅 AI 강점의 혼합으로, 일반적으로 더 매력적인 대화를 만들기 위해 _협력_ 합니다.
+
+```
+1:\(k\gets 1\)
+2.while true do
+3:\(u_{k}\leftarrow\) user's current input turn
+4: 샘플 모델 파라미터 \(\theta_{n}\sim P_{\theta}\)
+5: \[r_{k}\sim P(r|u_{1:k},r_{1:k-1};\theta_{n})\]에 따른 반응 생성 \(r_{k}\)
+6:\(k=k+1\)
+7:endwhile
+```
+
+**알고리즘 1** 블렌디드 알고리즘
+
+## 4 평가 채팅 AI
+
+NLG 출력의 품질을 평가하는 것은 악명 높은 도전 과제(Fabbri et al., 2021; Liusie et al., 2023)이며, 여기서 전통적인 금-표준 접근법은 비용이 많이 들 수 있는 생성된 응답의 품질을 점수화하는 인간 평가자를 사용한다.
+
+그러나 채팅 AI는 인간과의 사회적 환경에 정의적으로 배치되기 때문에 채팅 AI 매력도와 품질에 대한 의미 있고 정렬된 척도로 사용자 상호 작용 통계를 활용할 수 있다. 채팅 AI의 '품질'을 평가하기 위해 업계 표준 _사용자 보유_와 주요 목적 함수인 _사용자 참여_의 두 가지 주요 프록시 함수를 고려한다.
+
+### User Retention
+
+사용자 보유는 가입 후 \(k\)일 후에 플랫폼에 복귀하는 사용자의 비율을 측정하여 플랫폼의 성공을 측정하는 표준 산업 측정치이다. 제어 그룹 \(\mathcal{G}_{n}\)을 무작위로 선택된 새로운 사용자 그룹으로 하고, 이 그룹의 각 사용자는 채팅 AI \(\theta_{n}\)만을 제공받게 된다. \(S_{n}(k)\)을 플랫폼을 사용하고 채팅 AI와 상호작용하는 \(\mathcal{G}_{n}\)의 사용자 수 \(k\)로 하자. 따라서, \(k\)-일 사용자 유지율, \(R(k)\)은 단순히 분수로 주어지며,
+
+\[R(k)=\frac{S_{n}(k)}{|\mathcal{G}_{n}|}. \tag{9}\]
+
+다른 모델의 보유율은 A/B 테스트 기간 동안 비교할 수 있으며, 여기서 다른 채팅 AI의 즉각적이고 장기적인 참여를 비교할 수 있다. 따라서 고려 된 그룹 \(\mathcal{G}_{n}\) 및 제어 그룹 \(\mathcal{G}_{c}\)의 경우 **유지 비율**, \(q_{n}(k)\)를 제어 하는 테스트를 정의할 수 있습니다.
+
+\[q_{n}(k)=\frac{R_{n}(k)}{R_{c}(k)}. \tag{10}\]
+
+모델을 비교하는 것 외에도 해석 가능한 메트릭으로 채팅 AI의 성능을 요약할 수 있는 보유 곡선 통계를 추출하는 것이 유용하다. 실증적 증거에 따르면 보유율은 다음과 같이 잘 모델링될 수 있다.
+
+\[R^{*}(k)=\frac{R(1)}{k^{-\beta}}, \tag{11}\]
+
+여기서 매개변수 \(\beta\)는 사용자 보존 붕괴일의 비율 \(k\)을 나타낸다. 양측의 로그를 취하여 산출하는 단계;
+
+\[\log(q^{*}(k))=\Delta\zeta+\Delta\beta\log k, \tag{12}\]
+
+여기서 \(\Delta\zeta=(\log(R_{w}(1))-\log(R_{c}(1))\) 및 \(\Delta\beta=(\beta_{w}-\beta_{c})\). 따라서 로그-로그 선형 최적 라인의 기울기와 절편을 사용하여 매개변수 \(\Delta\beta\)와 \(\Delta\zeta\)를 추정할 수 있으며, 이는 제어 채팅 AI에 대한 초기 유지율과 유지율 감쇠율을 유용하게 비교할 수 있다.
+
+### User Engagement
+
+사용자 보존은 유용한 산업 메트릭이지만 실제 관심 있는 메트릭과 완벽하게 일치하지는 않을 수 있습니다. 고품질의 매력적인 대화는 사용자를 더 오래 사로잡을 가능성이 높기 때문에 프락시 사용자 참여 메트릭을 방문 사용자당 평균 시간으로 직접 정의한다. \(E^{(u)}(t)\)이 한 번에 사용자가 _engaged_인지 여부를 나타내도록 하자 \(t\),
+
+\[E^{(u)}(t)=\begin{cases}1,&\text{user interacts in $t-\Delta$ to $t+\Delta$},\\ 0,&\text{otherwise},\end{cases} \tag{13}\]
+
+그런 다음 코호트의 모든 사용자에 대한 \(E_{n}(t)\), 시간에서의 참여 \(t\), \(\mathcal{G}_{n}\), 다음과 같이 정의할 수 있다.
+
+\[E_{n}(t)=\frac{1}{|\mathcal{G}_{n}|}\sum_{u\in\mathcal{G}_{n}}E^{(u)}(t). \tag{14}\]
+
+사용자 보유와 마찬가지로 A/B 설정을 통해 서로 다른 채팅 AI 간의 참여를 직접 비교할 수 있습니다. 따라서 **결합 비율**, \(r_{n}(t)\)을 제어하는 테스트를 다음과 같이 정의합니다.
+
+\[r_{n}(t)=\frac{E_{n}(t)}{E_{c}(t)}. \tag{15}\]
+
+시간 \(t\)에 따른 채팅 AI의 참여 점수에 대한 전체 단일 메트릭을 갖는 것도 유용하다. 따라서, 이를 얻기 위해, 채팅 AI 인게이지먼트의 붕괴에 대한 합리적인 근사치는 2인 것이 경험적으로 관찰된다,
+
+각주 2: 주기적 진동은 여기서 모델링되지 않는다.
+
+\[E^{*}(t)=\alpha t^{\gamma}, \tag{16}\]
+
+그러면 이것은 테스트 대 제어 교전 비율에 대한 모델을 다음과 같이 제공한다.
+
+\[\log(r^{*}(t))=\Delta\alpha+\Delta\gamma\log t, \tag{17}\]
+
+여기서 \(\Delta\alpha=(\log(\alpha^{(w)})-\log(\alpha^{(c)}))\) 및 \(\Delta\gamma=(\gamma^{(w)}-\gamma^{(c)}))\. \(t\)에 대해 \(r(t)\)를 플로팅하면 매개변수 \(\Delta\alpha\)와 \(\Delta\gamma\)가 각각 절편과 기울기로 가장 잘 맞는 선형 선이 찾을 수 있다. 이는 서로 다른 테스트 채팅 인공지능의 참여 품질을 비교하기 위한 요약 메트릭 \(\Delta\alpha\)과 \(\Delta\gamma\)을 제공한다.
+
+## 5 Experiments
+
+### 실험 설정
+
+**기본 채팅 AI 시스템:** 실험에서 4가지 다른 기본 채팅 AI 시스템을 고려합니다. 먼저 3개의 중간 크기의 오픈 소스 LLM: Pygmillion 6B3, Chai 모델 6B4 및 Vicuna 13B5를 갖는다. 각각의 베이스 LLM은 대화 데이터에 대해 추가로 피니튜닝되었고, 트레이닝된 보상 모델로부터의 거절 샘플링을 사용한다(상세함 (Irvine 등, 2023)). 마지막으로 175B 파라미터를 갖고 비공개 API 호출을 통해서만 이용할 수 있는 오픈아이의 다빈치(GPT3.5)인 최첨단 채팅 AI도 고려한다.
+
+각주 3: [https://huggingface.co/PygmalianAI/pyomalion-6b](https://huggingface.co/PygmalianAI/pyomalion-6b)
+
+각주 4: [https://huggingface.co/ChaiML/edit_str_pyz_v2e_ep_17515](https://huggingface.co/ChaiML/edit_str_pyz_v2e_ep_17515)
+
+각주 5: [https://huggingface.co/lmsys/vicuna-13b-v1.3](https://huggingface.co/lmsys/vicuna-13b-v1.3)
+
+**방법론:** 각 기본 채팅 AI 시스템은 섹션 3.3에서 논의된 대로 독립적인 사용자 그룹에 대한 A/B 테스트와 함께 배포되며, 여기서 그룹은 Chai Research Platform에 참여하는 실제 사용자입니다. 각 그룹의 최소 10000명의 사용자를 대상으로 대규모 평가를 수행하고 30일 동안 플랫폼에서 사용자 참여를 모니터링한다. 또한, 피그밀리언, 차이 모델 및 비쿠나를 포함하는 블렌디드 시스템(Blended)을 배포한다. 사용자의 보유 및 참여(예를 들어, 플랫폼 인기, 휴일 등)에 영향을 미칠 수 있는 외부 요인이 있을 수 있기 때문에, 시스템은 선택된 베이스라인 그룹에 정규화된 메트릭인 상대 참여 및 상대 보유를 사용하여만 비교된다.
+
+### Experimental Results
+
+차이 리서치 플랫폼에 배포된 각 채팅 AI에 대해 A/B 테스트 설정에서 방정식 15에 따라 매일 \(k\)의 사용자 참여를 계산한다. 20일(\(k=20\))을 고려하여 그림 0(a)는 Blended의 구성 채팅 AI와 Open AI의 GPT-3.5의 참여 비율을 보여준다. 중간 크기의 채팅 AI(Pygmillion, Vicuna, ChaiLLM)가 GPT3.5보다 유의하게 낮은 참여 비율을 보여 GPT3.5가 10배 이상의 매개 변수를 가질 것으로 예상된다. 그러나, 세 개의 기본 채팅 AI를 블렌딩함으로써, 블렌딩이 각각의 구성 시스템보다 더 높은 관여도를 가질 뿐만 아니라, 성능 이득이 너무 커서 블렌딩이 OpenAI의 GPT3.5를 능가할 수 있다. 블렌딩이 다른 채팅 AI에 비해 성공하는 것은, 도 1에서 보는 바와 같이, \(k=20\) 사용자 보유 비율(수학식 10)을 비교할 때 또한 관찰될 수 있다.
+
+Blended은 OpenAI의 175B 파라미터와 비교하여 총 25B 파라미터를 가지며, 또한 Blended에 대한 응답은 각각 단일 컴포넌트 채팅 AI에서 샘플링되기 때문에 추론 비용은 단일 6B/13B 시스템과 동등하다는 점을 강조한다. 추론 속도(테스트 시간에 총 부동 소수점 연산의 역으로 측정됨)의 상당한 차이는 도 2 및 도 2에서 각각 강조되며, 여기서 블렌딩은 작은 채팅 AI의 속도와 유사한 속도로 참여 및 사용자 유지와 관련하여 상당한 성능 이득을 제공한다는 것을 관찰할 수 있다. 이는 시스템의 품질을 향상시키기 위해 시스템을 확장하는 대신 여러 개의 더 작은 오픈 소스 시스템을 단순히 혼합할 수 있으며, 추론 비용을 증가시키지 않고도 사용자의 대화 경험을 크게 향상시킬 수 있다는 장점이 있다. 이것은 참여적이고 성공적인 채팅 AI를 설계할 때 간단한 모델 파라미터 스케일링보다 모델 협업의 중요성을 보여준다.
+
+객관적 비교로서, 표 1은 단일 메트릭 요약(섹션 3.3에서 제안됨)을 보고한다. Pygmillion을 대조군으로 사용하여 테스트 대 컨트롤 참여 비율 메트릭 \(\Delta\alpha\) 및 \(\Delta\gamma\)과 테스트 대 컨트롤 유지 비율 메트릭 \(\Delta\zeta\) 및 \(\Delta\beta\)을 보고한다. 블렌딩은 상대 초기 교호작용(\Delta\alpha\)이 가장 높고 교호작용비 감쇠율(\Delta\gamma\)이 가장 우수하다. _retention_ ratio decay
+
+그림 1: 모델 성능 비교를 통해 기준선을 피그말리온 6B로 설정한다. 각 모델은 5,000명의 고유한 신규 사용자에게 할당되며 그래프는 기준선과 관련하여 30일 유지 및 참여 개선을 보고합니다.
+
+비율, \(\Delta\beta\)이 Blended보다 Vicuna에 더 좋으며, Vicuna의 초기 유지율, \(\Delta\zeta\)이 현저히 낮아서 그림 3에서 볼 수 있듯이 Vicuna가 Blended의 유지 점수 6에 도달하기 위해 연장된 기간이 필요하다는 것을 보여준다. 전반적으로 Blended은 더 작은 채팅 AI의 협업을 사용하여 훨씬 더 큰 단일 채팅 AI(OpenAI의 GPT3.5)보다 더 높은 품질의 대화를 제공하는 데 효과적이라는 것이 분명하다.
+
+각주 6: 이 기간은 약 1년으로 추정된다.
+
+## 6 Future Work
+
+이번 작업은 오픈아이의 다빈치(ChatGPT)와 같은 하나의 대규모 채팅 AI보다 다수의 소규모 채팅 AI의 협업인 블렌딩이 더 좋은 성능을 발휘한다는 것을 입증했다. 이 섹션에서는 블렌디드 모델을 더욱 개선하여 훨씬 더 매력적인 사용자 대화를 생성할 수 있는 방법을 제공한다.
+
+**선택 집합 크기 조정**: 이 작업의 실험은 세 가지 구성 요소 채팅 AI(차이 모델, Vicuna 및 Pygmillion)의 선택 집합으로도 Blended가 훨씬 큰 다빈치 GPT3.5 모델보다 더 나은 성능을 발휘할 수 있음을 입증했습니다. 이러한 성능 향상은 컴포넌트 시스템이 협업함에 따라 다양한 품질의 대화를 생성하는 각 개별 컴포넌트 모델의 개별 전문성에 기인한다. 따라서 대화에서 다양성과 풍부함을 더욱 증가시키기 위한 한 가지 간단한 접근법은 3개 이상의 구성 요소 시스템으로 확장하는 것이다. 블렌드의 방법론에서 각 응답에 대해 항상 단일 시스템을 통해서만 추론이 실행되기 때문에 컴포넌트 시스템의 수를 늘리는 것은 계산 비용이 없다. 따라서, 향후 작업은 컴포넌트 채팅 AI의 선택 세트를 증가시키는 것이 대화의 전체 품질에 미치는 영향을 탐색할 것이다.
+
+**최적 선택 분포**: 식 6에서 보여지는 것처럼 이 작업에서 Blended는 모델 선택을 위한 간단한 근사값인 \(P_{\theta}(\theta_{n})=\frac{1}{N}\)을 채택합니다. 그러나 각 구성 요소 채팅 AI는 \(\theta_{n}\)이 전체 대화에 추가할 수 있는 값을 가질 수 있지만 각 채팅 AI의 기여도가 동일하지 않을 수 있다. 따라서, 이를 극복하기 위해, 모델 선택 분포에 대한 더 나은 근사치가,
+
+\[P_{\Theta}(\theta_{n})=\mathcal{F}(u_{1:k},r_{1:k-1})_{n}, \tag{18}\]
+
+여기서, \(\mathcal{F}\)은 상기 \(\theta_{n}\)을 식별하기 위한 채팅 AI 선택 세트에 대한 확률 분포를 예측하도록 훈련된 딥러닝 분류기이다.
+
+\begin{table}
+\begin{tabular}{l|c c|c c|c} \hline \hline chat AI & \(\Delta\zeta\) & \(\Delta\beta\) & \(\Delta\gamma\) & \(\Delta\alpha\) & FLOP \\ \hline Chai & 0.1 & 0.0 & 0.3 & 0.2 & 1.0 \\ Vicuna & -0.4 & 0.9 & 0.0 & 0.1 & 2.2 \\ Pygmillion (**ctrl**) & 0.0 & 0.0 & 0.0 & 0.0 & 1.0 \\ \hline Blended & **0.2** & 0.5 & **2.1** & **1.7** & 1.4 \\ GPT3.5 & 0.0 & 0.3 & 1.4 & 0.5 & 29.2 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 컴포넌트 채팅 AI(ChaiModel, Vicuna, Pygmillion(**control**); Blended and OpenAI’s Davinci GPT3.5)에 대한 보유 및 참여 요약 통계 및 추론 시간(총 부동 소수점 연산/제어)을 제어하기 위한 테스트.
+
+도 3 : 사용자 보유
+
+도 2 : 사용자 참여
+
+[MISSING_PAGE_FAIL:7]
+
+청주, 아우렐리엔 비보, 마크 반 데르 라안 2018. 이미지 분류를 위한 심층 컨볼루션 신경망을 갖는 앙상블 메소드의 상대적 성능. _ Journal of Applied Statistics_, 45(15):2800-2818.
+* Kilimci et al. (2018) Zeynep H Kilimci, Selim Akyokus, et al. 2018. Deep learning-and word embedding-based heterogeneous classifier ensembles for text classification. _ Complexity_, 2018.
+* Kumar and Byrne (2004) Shankar Kumar and William Byrne. 2004. Minimum Bayes-risk decoding for statistical machine translation. _Proceedings of the Human Language Technology Conference of the North American Chapter of the Association for Computational Linguistics: HLT-NAACL 2004_, pages 169-176, Boston, Massachusetts, USA. 계산 언어학을 위한 연관성.
+* Leike 등(2018) Jan Leike, David Krueger, Tom Everitt, Miljan Martic, Vishal Maini, and Shane Legg. 2018. Scalable agent alignment via reward modeling: research direction. _ CoRR_, abs/1811.07871.
+* Liu 등(2023) Yiheng Liu, Tianle Han, Siyuan Ma, Jiayue Zhang, Yuanyuan Yang, Jiaming Tian, Hao He, Antong Li, Mengshen He, Zhengliang Liu, Zihao Wu, Dajiang Zhu, Xiang Li, Ning Qiang, Dingang Shen, Tianming Liu, and Bao Ge. 2023. Summary of chatgpt/gpt-4 research and perspective toward the future of large language models.
+* Liu and Yao (1999) Yong Liu and Xin Yao. 1999. Ensemble learning via negative correlation. _ Neural networks_, 12(10):1399-1404.
+* Liusie 등(2023) Adian Liusie, Potsawee Manakul, and Mark J. F. Gales. 2023. Llm 비교 평가: 대형 언어 모델을 이용한 쌍대 비교를 통한 Zero-shot nlg 평가.
+* Malinin and Gales (2021) Andrey Malinin and Mark Gales. 2021. Uncertainty estimation in autoregressive structured prediction. _학습 표현에 대 한 국제 회의_ 에서입니다.
+* Manakul 등(2023) Potsawee Manakul, Yassir Fathullah, Adian Liusie, Vyas Raina, Vatsal Raina, and Mark Gales. 2023. Cued at probsum 2023: Hierarchical ensemble of summarization models.
+* Nyberg 등(2021) Erik P. Nyberg, Ann E. Nicholson, Kevin B. Korb, Michael Wybrow, Ingrid Zukerman, Steven Mascaro, Shreshth Thakur, Abraham Oshni Alvandi, Jeff Riley, Ross Pearson, Shane Morris, Matthieu Herrmann, A.K.M. Azad, Fergus Bolger, Ulrike Hahn, and David Lagnado. 2021. BARD: 분석적 추론을 지원하기 위한 베이지안 네트워크의 그룹 도출을 위한 구조화된 기술. _ Risk Analysis_, 42(6):1155-1178.
+* Ouyang et al.(2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022. Training language models to follow instructions with human feedback. _ arXiv preprint arXiv:2203.02155_.
+* Papangelis 등(2021) Alexandros Papangelis, Pawel Budzianowski, Bing Liu, Elnaz Nouri, Abhinav Rastogi, and Yun-Nung Chen, editors. 2021. _대화형 AI를 위한 자연어 처리에 대한 3차 워크샵 진행률_ 입니다. 온라인 컴퓨터 언어학 협회.
+* Raina and Gales (2023) Vyas Raina and Mark Gales. 2023. Minimum bayes's risk decoding for system combination of grammatical error correction systems.
+* Raina 등(2020) Vyas Raina, Mark J.F. Gales, and Kate M. 똑똑 2020. Universal Adversarial attack on spoken language assessment systems. _Interspeech 2020_ 에 있습니다. ISCA.
+* Roller 등(2021) Stephen Roller, Emily Dinan, Naman Goyal, Da Ju, Mary Williamson, Yinhan Liu, Jing Xu, Myle Ott, Eric Michael Smith, Y-Lan Boureau, and Jason Weston. 2021. 오픈 도메인 챗봇 구축을 위한 레시피. _The Proceedings of the 16th Conference of the European Chapter of the Association of Computational Linguistics: Main Volume_, pages 300-325, Online. 계산 언어학을 위한 연관성.
+* Rosti 등(2007) Antti-Veikko Rosti, Necip Fazil Ayan, Bing Xiang, Spyros Matsoukas, Richard Schwartz, and Bonnie Dorr. 2007. Combining output from multiple machine translation systems. _Human Language Technologies 2007: The Conference of the North American Chapter of the Association for Computational Linguistics; Proceedings of the Main Conference_, pages 228-235, Rochester, New York. 계산 언어학을 위한 연관성.
+* Seijo-Pardo 등(2017) Borja Seijo-Pardo, Iago Porto-Diaz, Veronica Bolon-Canedo, and Amparo Alonso-Betanzos. 2017. Ensemble feature selection: homogeneous and heterogeneous approach. _ Knowledge-Based Systems_, 118:124-139.
+* Sennrich et al. (2015) Rico Sennrich, Barry Haddow, and Alexandra Birch. 2015. Improving neural machine translation models with monolingual data. _ arXiv preprint arXiv:1511.06709_.
+* Simonyan and Zisserman (2014) Karen Simonyan and Andrew Zisserman. 2014. Very deep convolutional networks for large-scale image recognition. _ arXiv preprint arXiv:1409.1556_.
+* Stiennon 등(2020) Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. 2020. Learning to summarize with human feedback. _ Advances in Neural Information Processing Systems_, 33:3008-3021.
+* Szegedy 등(2015) Christian Szegedy, Wei Liu, Yangqing Jia, Pierre Sermanet, Scott Reed, Dragomir Anguelov, Dumitru Erhan, Vincent Vanhoucke, and Andrew Rabinovich. 2015년, 더 심오한 경련 _컴퓨터 비전 및 패턴 인식에 관한 IEEE 회의의 진행사항_에서, 페이지 1-9.
+
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, L ukasz Kaiser, and Illia Polosukhin. 2017년입니다. 주의만 하면 됩니다. _Advances in Neural Information Processing Systems_, Volume 30. Curran Associates, Inc.
+* Weizenbaum (1966) Joseph Weizenbaum. 1966. Eliza--a computer program for study of natural language communication between man and machine. _ Commun. ACM_, 9(1):36-45.
+* Wolpert (1992) David H Wolpert. 1992. Stacked generalization. _ Neural networks_, 5(2):241-259.
+* Yan et al.(2022) Rui Yan, Juntao Li, Zhou Yu, et al. 2022. Deep learning for dialogue systems: Chit-chat and beyond. _ Foundations and Trends(r) in Information Retrieval_, 15(5):417-589.
+* Zaib 등(2020) Munazza Zaib, Quan Z. 성, 위엠마 장 2020. Short survey of pre-trained language models for conversation ai-a new age in nlp. Proceedings of the Australasian Computer Science Week Multiconference_, ACSW '20, New York, NY, USA. 컴퓨터 기계 협회
+* Zhu(2022) Zhenyi Zhu. 2022. 사전 훈련된 언어 모델에 대한 간단한 조사입니다. _ Preprints.org 202208.0238_.
