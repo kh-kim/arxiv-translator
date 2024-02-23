@@ -12,6 +12,7 @@
 
 | ArXiv ID | Title | ArXiv / Ar5iv | English / Korean |
 |:--------:|-------|:-------------:|:----------------:|
+| 2402.14714 | Efficient and Effective Vocabulary Expansion Towards Multilingual Large Language Models | [arXiv](https://arxiv.org/abs/2402.14714) / [ar5iv](https://ar5iv.org/abs/2402.14714) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2402.14714/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2402.14714/paper.ko.html) |
 | 2402.00838 | OLMo Accelerating the Science of Language Models | [arXiv](https://arxiv.org/abs/2402.00838) / [ar5iv](https://ar5iv.org/abs/2402.00838) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2402.00838/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2402.00838/paper.ko.html) |
 | 2402.00159 | Dolma an Open Corpus of Three Trillion Tokens for Language Model Pretraining Research | [arXiv](https://arxiv.org/abs/2402.00159) / [ar5iv](https://ar5iv.org/abs/2402.00159) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2402.00159/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2402.00159/paper.ko.html) |
 | 2401.10020 | Self-Rewarding Language Models | [arXiv](https://arxiv.org/abs/2401.10020) / [ar5iv](https://ar5iv.org/abs/2401.10020) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2401.10020/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2401.10020/paper.ko.html) |

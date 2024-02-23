@@ -1,0 +1,137 @@
+# 효율적이고 효과적인 어휘 확장
+
+다국어 대용량 언어 모델을 위한 연구
+
+김승덕
+
+야놀자
+
+{승덕.김, 승택.최이, 명호.정}@yaonolja.com
+
+Equal Contribution.
+
+각주 1: [https://huggingface.co/yanolja/EEVE-Korean-10.88-v1.0](https://huggingface.co/yanolja/EEVE-Korean-10.88-v1.0)
+
+###### Abstract
+
+이 보고서는 영어와 한국어 텍스트 이해에 걸쳐 놀라운 능력을 보이는 대규모 언어 모델의 한국어 적응인 EEVE-Korean-v1.0을 소개한다. SOLAR-10.7B 및 Phi-2와 같이 영어가 아닌 텍스트가 영어가 아닌 토큰라이저로 비효율적으로 처리되는 최근의 능력이 높지만 영어가 중심이 되는 LLM을 기반으로 매개변수 동결 및 하위 단어 초기화를 포함하는 효율적이고 효과적인 어휘 확장(EEVE) 방법을 제시한다. 새로운 임베딩이 수조 개의 훈련 토큰을 필요로 한다고 믿는 이전의 노력과 달리, 우리는 우리의 방법이 단지 20억 토큰 내에서 비영어 능숙도를 크게 향상시킬 수 있음을 보여준다. 오픈 코-LLM 리더보드에서 대부분의 명령어 조정 LLM을 능가하는 2024년 1월 현재 모델 EEVE-Korean-10.88-v1.0은 포옹 페이스의 리더보드에 따르면 오픈 소스 커뮤니티에서 선도적인 한국어 사전 훈련 모델로 순위가 매겨진다. 다양한 언어로 열린 연구 커뮤니티에 힘을 실어주기 위해 포옹페이스에서 모델을 오픈 소스화합니다.
+
+## 1 Introduction
+
+GPT-4 [2], Gemini [14], Claude [1]과 같은 대용량 언어 모델(LLM) 분야의 최근 발전은 여러 언어를 처리하고 이해하는 데 놀라운 능력을 보여주었다. 반면, LLaMA[15, 16], MPT[15], Falcon[11], Mistral[18], Mistral[18], SOLAR[19], Phi-1.5[10]와 같은 오픈 소스 커뮤니티의 주목할 만한 모델은 영어 작업에서 벤치마크를 설정했지만 이러한 개발은 주로 영어를 선호하여 비영어 언어에서 성능 격차를 초래했다.
+
+이러한 격차는 그들의 언어 능력뿐만 아니라 계산 효율에서도 발견될 수 있는데, 한국어와 같은 비영어 언어는 동등한 의미 콘텐츠에 대해서도 영어보다 훨씬 더 많은 토큰을 필요로 한다(도 1). 그리고, 물론, 이것은 더 긴 응답 시간들, 더 짧은 컨텍스트 길이들, 및 더 높은 API 비용들과 같은 사용자 경험들에 부정적인 영향을 미친다[23]. 몇 가지 자주 사용되지만 긴 단어를 추가 토큰으로 도입하는 토큰나이저 어휘를 확장하는 것은 따라서 비영어 사용자에게 필수 불가결한 일이지만, 새로운 임베딩에는 수조 개의 트레이닝 토큰이 필요하기 때문에 어휘 확장은 매우 어려운 작업이다[18].
+
+이를 위해, 이 기술 보고서는 효율적이고 효과적인 어휘 확장을 위한 새로운 접근법, 즉 새로 추가된 토큰의 임베딩을 더 잘 훈련시킬 수 있는 EEVE를 제시한다. 적응의 용이성을 위해 서브워드 기반 임베딩 초기화를 활용하고, 학습해야 할 파라미터의 순서와 양을 정교하게 조정하는 파라미터 동결과 함께 7개의 학습 단계를 설계한다. 초기에는 입력 임베딩에만 집중하고 최종 단계에서 전체 매개변수를 포함하도록 점진적으로 확장함으로써 기초 모델의 고급 기능을 영어에서 한국어로 세심하게 이전한다.
+
+EEVE를 사용하여 최근 영어 중심의 LLM, 특히 SOLAR-10.7B [15] 및 Phi-2 [10]에 구축된 한국어 LLM 계열인 EEVE-Korean-10.88-v1.01 및 EEVE-Korean-2.88-v1.02를 공식적으로 출시하고 추가 한국어 중심의 사전 교육을 제공한다. 우리는 영어와 한국어 과제 모두에 대해 lm-평가-harness3[1]에 대한 모델을 평가한다.
+
+[MISSING_PAGE_FAIL:2]
+
+추가적으로 논의될 것이다.
+
+### Multi-stage Training
+
+여기서는 초기 영어 중심 훈련 범위를 넘어 언어에서 파생된 새로운 토큰을 통합하는 세심한 과정을 강조하면서 효율적인 어휘 확장을 위한 7단계 훈련 방법론의 미묘한 접근 방식을 설명한다.
+
+**1 단계(새 입력 임베딩):** 처음에는 초점은 좁지만 중요합니다. 다른 모든 모델 매개 변수를 동결하는 동안 새로 추가된 토큰의 입력 임베딩을 학습하는 것입니다. 이 단계는 기반이 되어 모델이 처음부터 이러한 토큰의 인식과 처리를 조정할 수 있다. 사전 초기화된 임베딩은 모델이 기존 프레임워크에서 이러한 새로운 토큰을 더 잘 활용할 수 있도록 안내하는 시작점이 된다. 본 연구의 주요 가설은 인과적 언어 모델링에서 입력 토큰 시퀀스와 출력 토큰 시퀀스를 구별할 수 있다면 구 토큰과 신 토큰을 동시에 활용하여 모델이 구 토큰으로부터 임베딩 공간에 존재하는 지식을 활용할 수 있기 때문에 새로운 어휘 임베딩을 보다 효율적이고 효과적으로 학습할 수 있다는 것이다. 그러나 입력과 출력 시퀀스에 서로 다른 토큰라이저를 동시에 사용하는 것은 입출력 시퀀스의 불일치로 인한 교사 강제 적용의 어려움과 같은 구현상의 문제를 야기한다. 여기서, 서브워드 기반 임베딩 초기화(Sec 2.2)는 출력 시퀀스들에 대해 구 토큰나이저를 사용하기 위한 프록시를 제공하여, 모델이 전체 워드 토큰(새로운)이 주어진 서브워드 토큰(오래된)을 생성하도록 태스크링된다. 즉, 모델은 그림 2에 기술된 바와 같이 입력/출력 토큰 시퀀스의 수정 없이 입력 임베딩만을 최적화함으로써 새로운 토큰을 생성하기 위한 표현과 첫 번째 서브워드 토큰을 생성하기 위한 표현을 정렬하는 것을 학습할 수 있다. 그러나 이 단계에서 모델은 아직 동일한 숨겨진 상태를 공유하는 토큰 사이를 구별할 수 없다.
+
+**2단계(새 출력 임베딩):** 출력 임베딩(lm_head)만 조정하여 다양한 컨텍스트에 걸쳐 새 토큰을 정확하게 생성하는 모델의 숙련도를 향상시키는 것이 목표입니다. 다른 모든 매개변수를 동결하기로 한 결정은 모델의 현재 불안정한 상태에서 비롯된다. 입력 임베딩과 출력 임베딩이 동시에 훈련되도록 하는 것은 수렴을 달성하는 것을 복잡하게 하여 최적의 성능을 향한 모델의 진행을 방해할 것이다. 대부분의 매개변수를 동결함으로써 보다 안정적인 수렴을 달성한다. 더욱이, 이 접근법은 다른 계층들을 통한 역전파의 필요성을 제거하므로 트레이닝 시간을 상당히 감소시킨다.
+
+**3 단계(새 입력 및 출력 임베딩):** 이 단계에서는 출력 임베딩의 초기 임베딩을 기반으로 입력 임베딩(embed_tokens)이 여전히 최적화 상태를 유지합니다. 상기 스테이지는,
+
+도 1: 파라미터 동결을 갖는 훈련 단계. 화재 및 눈송이 이모지는 각각 훈련 가능한 매개변수와 동결된 매개변수를 나타낸다.
+
+[MISSING_PAGE_FAIL:4]
+
+Kens는 그것들을 나타내지만, 우리의 새로운 토큰화기는 1.6B 토큰만 사용하여 거의 절반으로 그렇게 할 수 있습니다. 이러한 차이는 각각 5.6B 토큰과 1.6B 토큰이 필요한 Phi-2와 EEVE-Korean-2.88 모델의 경우 더욱 두드러진다. 트랜스포머가 토큰 길이에 대해 2차적으로 증가하는 계산 복잡도를 갖는다는 점을 고려하면, 이는 두 가지 중요한 방식으로 해석될 수 있다. 첫째, 동일한 GPU에서 4배 이상 더 긴 시퀀스를 처리할 수 있습니다. 둘째, 동일한 데이터셋에 대해 거의 4배 더 효율적으로 모델을 학습할 수 있음을 의미한다. 이 차이는 Phi-2 및 EEVE-Korean-2.8B 토큰라이저의 경우 훨씬 더 두드러진다.
+
+EEVE-Korean 모델의 _fine-tuning_을 위해 LLaM-Factory 구현을 기반으로 한 직접 선호도 최적화(DPO; Rafailov et al.2023)를 사용했다. 모델의 한국어 명령어 수행 능력을 더욱 향상시키기 위해 공개적으로 사용 가능한 명령어 데이터 세트, 특히 Orca5(Mukherjee et al., 2023; Lian et al., 2023) 및 UltraFeedback6(Cui et al., 2023)를 한국어로 번역했다. 이러한 데이터 세트를 한국어로 번역하는 과정에서 프로그래밍 코드 형식의 무결성을 보장하고 소스 및 대상 언어가 실수로 한국어로 번역된 경우와 같은 번역 오류를 수정하는 것이 미세 조정된 모델의 품질과 효율성을 유지하는 데 중요했다. 우리는 미세 조정된 모델을 EEVE-Korean-Instruct로 명명했습니다.
+
+각주 5: [https://huggingface.co/datasets/Open-Orca/slimOrca-bedup](https://huggingface.co/datasets/Open-Orca/slimOrca-bedup)
+
+각주 6: [https://huggingface.co/datasets/argilla/ultrafeedback-binarized-preferences-cleaned](https://huggingface.co/datasets/argilla/ultrafeedback-binarized-preferences-cleaned)
+
+### Training
+
+기본 아키텍처로 SOLAR-10.7B(Kim et al., 2023)와 Phi-2(Li et al., 2023)를 선택하였다. 이러한 기반 아키텍처의 선택은 우리의 전략적 훈련 목표와 일치하며, 우리의 새로운 모델이 한국어에서 유사한 수준의 언어 이해 및 추론 능력을 달성할 수 있도록 입증된 강점을 활용합니다.
+
+모델 변형의 훈련을 위해 초기 사전 훈련 단계에서 Axolot7과 후속 미세 조정을 위해 LLaMA-Factory8(하이유가, 2023)의 두 가지 별개의 코드 베이스를 활용했다. 이러한 코드베이스는 우리의 훈련 과정을 위한 강력하고 신뢰할 수 있는 기반을 제공했다.
+
+각주 7: [https://github.com/OpenAccess-AI-Collective/axolotl](https://github.com/OpenAccess-AI-Collective/axolotl)
+
+각주 8: [https://github.com/hiyouga/LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory)
+
+특히, 64개의 CPU 코어를 사용하여 각각 80GB 메모리가 있는 8 x NVIDIA H100 GPU의 설정으로 모델을 훈련합니다. EEVE-Korean-10.8B-v1.0의 경우, bf16 정밀도에서 훈련 과정은 길이 4096, 기울기 누적 단계 4, 마이크로 배치 크기 8로 구성된 반면, EEVE-Korean-2.8B-v1.0은 시퀀스 길이 2048, 기울기 누적 단계 16, 마이크로 배치 크기 16을 채택한다. AdamW(Loshchilov and Hutter, 2018) 최적화기를 사용하여 10단계의 워밍업 단계를 포함하는 코사인 학습 속도 스케줄러와 쌍을 이룬다. 10.8B 변형에 대한 학습률은 4e-5로 설정된 반면 소형 모델에 대해서는 2e-4를 사용했다. 우리는 손실이 수렴할 때까지 각 단계에서 훈련을 계속하여 손실이 수렴된 것을 관찰하여 400개의 글로벌 단계에 도달했으며, 이는 훈련 전략의 효율성을 나타낸다. 우리의 훈련 전략은 7개의 다른 단계를 포함하지만 주목할 점은 2.8B 변형의 경우 출력 임베딩만 최적화하면 많은 계산이 발생하지 않기 때문에 전체 사전 훈련을 이틀 이내에 수행할 수 있다는 것이다.
+
+## 4 Evaluations
+
+우리는 한국어 및 영어 LLM 벤치마크에서 모델을 평가하여 기본 모델의 강력한 다국어 기능을 효율적으로 활용할 수 있는 어휘 확장 방법의 이점을 강조한다. 바람직하게는 한국어 과제에서는 향상된 성능을 보이고 영어 과제에서는 비슷한 성능을 보일 것으로 기대한다.
+
+### Benchmarks
+
+한국 태스크의 경우, 태스크가 설계된 KoBEST 벤치마크(Jang et al., 2022)를 채택한다.
+
+\begin{table}
+\begin{tabular}{l|l|l} \hline \hline Model & Total (tokens) & Average (tokens) \\ \hline SOLAR-10.7B & 3.1B & 964 \\ EEVE-Korean-10.8B-v1.0 & 1.6B & 500 \\ \hline Phi-2 & 5.6B & 1748 \\ EEVE-Korean-2.8B-v1.0 & 1.6B & 484 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 총 3.2M 문서의 6.7GB 사전 트레이닝 코퍼스에 대한 토큰라이저의 비교.
+
+언어 이해와 추론의 다양한 측면을 평가합니다. 구체적으로, 이 벤치마크는 한국어 번역 버전의 언어 이해 태스크를 제공한다 : 부울 질의 응답[1], 상식 인과 추론(COPA; Roemmele et al.2011), 문맥 민감 단어 이해(WiC; Pilehvar and Camacho-Collados2019), 상식 추론[11], 및 감정 부정 인식(SentiNeg). 영어 작업의 경우 KoBEST, BoolQ, COPA 및 HelaSwag의 원본 작업을 사용 하 여 LLM의 영어와 한국어 기능 간의 정렬을 더 잘 강조할 수 있습니다. 일관된 비교를 위해 오픈소스 LLM 평가 프레임워크인 lm-evaluation-harness9[7]를 사용한다.
+
+각주 9: [https://github.com/EleutherAI/lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)
+
+### Results
+
+이제 표 3에 다른 상위 성능 모델을 사용하여 EEVE-한국어 및 EEVE-한국어 강사 변형 모두에 대한 평가 결과를 제시한다. EEVE-한국어-10.8B-v1.0은 평균 성능에서 유사한 크기의 다른 사전 훈련 모델보다 성능이 우수하다. 주목할 점은 EEVE-Korean이 영어에서의 퍼포먼스를 훼손하지 않고 한국어에서의 퍼포먼스를 개선한 유일한 경우라는 점이다. 예를 들어, OPEN-SOLAR-KO-10.7B는 우리의 기본 모델인 EEVE-Korean-Instruct-10.8B-v1.0보다 약간 더 나은 성능을 보이지만 영어 능력을 보존하지 못하여 기본 모델인 SOLAR-10.7B-v1.0보다 영어 태스크에서 더 낮은 성능을 보인다. 우리는 파이-2-ko-v0.1 모델과 비교하여 더 작은 모델인 EEVE-Korean-2.8B-v1.0에서도 유사한 경향을 관찰하며 파이-2를 기본 모델로 공유한다. 이것은 특히 경쟁사보다 훨씬 적은 수의 훈련 토큰을 사용했다는 점을 고려할 때 우리의 훈련 전략의 효과를 보여준다.
+
+특히, 놀랍지는 않지만, 영어 데이터 세트에 대한 선호도 튜닝은 모델이 한국어 작업에서 성능이 저하되도록 만든다. 예를 들어, LLaMA-2 체크포인트의 선호도 조정 버전인 LLaMA-2-chat 변이체는 영어 태스크(Llama-2-7b 0.7774 \(\rightarrow\) LLama-2-7b-chat 0.7976 in English BoolQ)에서 향상된 성능을 보이는 반면 한국어 태스크(Llama-2-7b 0.5242 \(\rightarrow\) LLama-2-7b-chat 0.5157 in Korean BoolQ)에서는 낮은 성능을 보여 LLMs에 대한 한국어 특화 교육의 중요성을 강조한다. 반면에, 한국어 학습 데이터셋에 대한 선호도 튜닝은 영어 과제에서 모델 성능에 영향을 미치지 않고 오히려 개선시키는 것을 관찰한다. 우리는 임베딩 공간이 이미 한국어 토큰과 영어 토큰 사이에 잘 정렬되어 있기 때문에 특정 언어에 대한 미세 조정이 모델 매개변수에 큰 변화를 일으키지 않기 때문이라고 가정한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c} \hline \hline \multirow{2}{*}{Model} & \multirow{2}{*}{Types} & \multicolumn{4}{c}{English} & \multicolumn{4}{c}{Korean} & \multirow{2}{*}{**Avg.**} \\ \cline{3-3} \cline{5-10}  & & & \multicolumn{1}{c}{} & & & & & & & & \\ \cline{3-10}  & & & \multicolumn{1}{c}{} & & & & & & & & \\ \hline meta-llama/Llama-2-7b-hf & PT & 0.7774 & 0.8700 & 0.5714 & 0.5242 & 0.5700 & 0.4420 & 0.4610 & 0.4881 & 0.5880 \\ meta-llama/Llama-2-13b-hf & PT & 0.8055 & 0.9100 & 0.6006 & 0.5214 & 0.6010 & 0.4380 & 0.5038 & 0.4881 & 0.6086 \\ mistralA/Mistral-7B-v0.1 & PT & 0.8379 & 0.9200 & 0.6129 & 0.6282 & 0.5880 & 0.4300 & 0.5365 & 0.4881 & 0.6302 \\ meta-llama/Llama-2-7b-chat-hf & FT & 0.7976 & 0.8700 & 0.5779 & 0.5157 & 0.5530 & 0.4160 & 0.4987 & 0.4881 & 0.5896 \\ meta-llama/Llama-2-13b-chat-hf & FT & 0.8165 & 0.8800 & 0.6072 & 0.5057 & 0.5760 & 0.4040 & 0.4685 & 0.4881 & 0.5933 \\ \hline upstage/SOLAR-10.7B-v1.0 (base) & PT & 0.8257 & 0.8700 & 0.6393 & 0.5057 & 0.5750 & 0.4320 & 0.6146 & 0.4881 & 0.6188 \\ upstage/SOLAR-10.7B-Instruct-v1.0 & FT & **0.8853** & **0.9400** & **0.6866** & 0.8184 & 0.6370 & 0.4560 & 0.5668 & 0.4921 & 0.6853 \\ boomi/OPEN-SOLAR-KO-10.7B\({}^{*}\) & PT & 0.8187 & 0.8800 & 0.5570 & 0.8355 & **0.8010** & **0.5040** & 0.6952 & 0.4897 & 0.6976 \\ yanoj1/EEVE-Korean-10.8B-v1.0\({}^{*}\) & PT & 0.8492 & 0.9000 & 0.6203 & 0.8568 & 0.7530 & 0.4900 & 0.6675 & **0.4992** & 0.7045 \\ yanoj1/EEVE-Korean-10.8B-v1.0\({}^{*}\) & FT & 0.8810 & 0.9300 & 0.6502 & **0.8860** & 0.7610 & 0.4700 & **0.9521** & 0.4937 & **0.7530** \\ \hline microsoft/Phi-2 (base) & PT & **0.8336** & **0.9000** & **0.5583** & 0.5021 & 0.4770 & 0.3280 & 0.5063 & 0.4881 & 0.5742 \\ dacehum-ml/pli-2.ko-v0.1\({}^{*}\) & PT & 0.6141 & 0.5800 & 0.3257 & 0.5164 & **0.6100** & **0.3860** & 0.4484 & 0.4881 & 0.4961 \\ yanoj1/EEVE-Korean-2.8B-v1.0\({}^{*}\) & PT & 0.7404 & 0.8900 & 0.5247 & 0.5299 & 0.5820 & 0.3800 & 0.5164 & 0.4881 & 0.5814 \\ yanoj1/EEVE-Korean-Instruct-2.8B-v1.0\({}^{*}\) & FT & 0.8248 & 0.8700 & 0.5392 & **0.7066** & 0.5640 & 0.3660 & **0.5290** & **0.5230** & **0.6153** \\ \hline \hline \end{tabular}
+\end{table}
+표 3: lm-평가-하르니스 기준의 주요 평가 결과. 데이터세트 이름은 간결함을 약칭한다 : BoolQ의 경우 BQ, COPA의 경우 CP, HellaSwag의 경우 HS, SentiNeg의 경우 SN. 한국 과제는 [7]이다. 정확도(acc)는 모든 작업에 대한 평가 메트릭으로 사용된다. 유형' 열에서 모델은 사전 훈련(PT)과 미세 조정(FT)의 두 그룹으로 분류된다. 우리는 \({}^{*}\)으로 한국어 데이터 세트를 학습한 모델을 나타낸다. 번식을 쉽게 하기 위해 포옹페이스에서 공식 이름을 채택합니다.
+
+## 5 결론 & Future Work
+
+이 보고서는 한국어 텍스트 처리 능력을 크게 향상시키기 위해 효과적이고 효과적인 어휘 확장(EEVE) 방법을 활용하는 대규모 언어 모델의 한국어 적응인 EEVE-Korean-v1.0을 소개한다. 파라미터 동결 및 서브워드 초기화에 기반한 이 방법은 EEVE-Korean-10.8B-v1.0 모델이 강력한 영어 능력을 유지하면서 한국어 작업에서 탁월할 수 있도록 한다. 단 20억 토큰의 코퍼스로 달성된 이 접근법은 언어 모델 훈련 효율성과 효과성에서 주목할 만한 발전을 나타낸다. 이 모델을 연구 커뮤니티에 제공함으로써 이 프로젝트는 보다 포괄적이고 효율적인 언어 처리 기술 개발에 기여하는 것을 목표로 한다.
+
+우리의 비전을 확장하고, 미래의 노력은 우리의 어휘 확장 방법론을 추가 언어에 적용하여 일반화 가능성과 효과를 평가할 것이다. 우리는 EEVE-Korean 모델의 언어 범위를 확장할 뿐만 아니라 GSM8K Cobbe 등(2021), 챗봇 Zheng 등(2023)과 같은 대화형 환경에서 복잡한 수학적 추론 테스트와 인간 평가를 포함한 다양한 작업을 통해 추론 및 생성 능력을 평가하는 데 더 깊이 파고드는 것을 목표로 한다. 또한, 사전 훈련 데이터 품질을 향상시키고 코드 전환 시나리오에서 성능을 분석하기 위한 노력 Zhang et al.(2023)은 모델의 견고성과 다재다능성을 개선하기 위한 우리의 약속을 뒷받침할 것이다. 이러한 이니셔티브는 모델의 적용 가능성과 효율성을 넓히도록 설계되어 고급 언어 모델로 달성할 수 있는 것의 경계를 밀어낸다.
+
+## References
+
+* Almazrouei et al.(2023) Ebtesam Almazrouei, Hamza Alobeidli, Abdulaziz Alshamsi, Alessandro Cappelli, Ruxandra Cojocaru, Merouane Debbah, Etienne Goffinet, Daniel Hesslow, Julien Launay, Quentin Malartic, et al. 2023. falcon series of open language models. _ arXiv preprint arXiv:2311.16867_.
+* 인류(2023) 인류. 2023. 모델 카드 및 클로드 모델에 대한 평가. _ 인류 기술 보고서_
+* Clark 등(2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 2019. Boolq: 자연스런 예/아니오 질문의 놀라운 난이도 탐색. _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long and Short Papers)_, pages 2924-2936.
+* Cobbe et al. (2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. 2021. Training verifiers to solve mathematics word problems. _ arXiv preprint arXiv:2110.14168_.
+* Cui 등(2023) Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Wei Zhu, Yuan Ni, Guotong Xie, Zhiyuan Liu, and Maosong Sun. 2023. 울트라피드백: 고품질 피드백으로 언어 모델을 부스팅. _ arXiv preprint arXiv:2310.01377_.
+* Gao 등(2023) Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac'h, Haonan Li, Kyle McDonell, Niklas Muenninghoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. 2023. few-shot 언어 모델 평가를 위한 프레임워크.
+* 휴잇(2021) 존 휴잇. 2021. Initializing new word embeddings for pretrained language models.
+* hiyouga(2023) hiyouga. 2023. Llama factory. [https://github.com/hiyouga/LLaMA-Factory] (https://github.com/hiyouga/LLaMA-Factory).
+* Jang 등(2022) 장명준, 김도형, 득신권, 에릭 데이비스. 2022. Kobest: Korean balanced evaluation of significant tasks. _제29회 Computational Linguistics 국제 회의 진행률_ 3697-3708 페이지.
+* Jiang et al.(2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. 2023. Mistral 7b. _ arXiv preprint arXiv:2310.06825_.
+* Jiang et al.(2024) Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. 2024. Mistral of experts. _ arXiv preprint arXiv:2401.04088_.
+* Kim et al. (2023) Dahyun Kim, Chanjun Park, Sangghoon Kim, Wonung Lee, Wonho Song, Yunsu Kim, Hyunwoo Kim, Yungi Kim, Hyunju Lee, Jihoo Kim, et al. 2023. Solar 10.7 b: Simple yet effective depth up-scaling로 대형 언어 모델을 스케일링한다. _ arXiv preprint arXiv:2312.15166_.
+* Kim 등(2021) 일두 김, 한군수, 함지연, 백운혁. 2021. Kogpt: Kakaobrain Korean(행글) 생성 사전 훈련 변압기.
+* Ko et al. (2023) Ko현웅, Kichang Yang, Minho Ryu, Taekyoon Choi, Seungmu Yang, Sunggho Park, et al. 2023. A technical report for polyglot-ko: Open-source large-scale Korean language models. _ arXiv preprint arXiv:2306.02254_.
+* Kog 등(2021)L. Junbum(2024)Solar-ko-10.7b. 외부 링크: SS1에 의해 인용된 링크입니다.
+*H. Li, T. 란진 복동채 류남 콜리어티 Watanabe, Y. Su(2023)Repetition in repetition out: understanding neural text degeneration from the data perspective. 신경정보처리시스템에 관한 제37차 회의에서 SS1을 인용하였다.
+*Y. 이성호 부벡 엘단 델 조르노 구나세카, Y. T. Lee (2023) 교과서는 ii: 파이-1.5 기술 보고서가 필요한 전부이다. arXiv preprint arXiv:2309.05463. Cited by: SS1.
+* W. Lian, G. Wang, B. Goodson, E. Pentland, A. Cook, C. Vong, T. 윤남 Hoos (2023)Slimorca dedup: dedupicated subset of slimorca. 에 의해 인용된다: SS1.
+* I. Loshchilov and F. Hutter (2018)Decoupled weight decay regularization. In International Conference on Learning Representations, Cited by: SS1.
+*S. 무커지, A 미트라, G. 자와하르, S. Agarwal, H. Palangi, and A. Awadallah (2023)Orca: progressive learning from complex explanation traces of gpt-4. arXiv preprint arXiv:2306.02707. Cited by: SS1.
+*O. Al (2023)Gpt-4 기술 보고서. arXiv preprint arXiv:2303.08774. Cited by: SS1.
+* C. Park, H. Lee, H. Park, H. Kim, S. 김상훈 조성호 김수현 Lee(2023) Open ko-llm leaderboard. 에 의해 인용된다: SS1.
+* A. Petrov, E. La Malfa, P. H. Torr 및 A. Bibi (2023) 언어 모델 토큰라이저는 언어 간의 불공정성을 도입 합니다. arXiv preprint arXiv:2305.15425. Cited by: SS1.
+*M. Taher Pilehvar and J. Camacho-Collados (2019)Wic: the word-in-context dataset for evaluating context-sensitive meaning representation. Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long and Short Papers), pp. 1267-1273. Cited by: SS1.
+*R. 라파일로프, A 샤르마, E 미첼, S Ermon, C. D. Manning, and C. Finn(2023)Direct preference optimization: your language model is secretly a reward model. arXiv preprint arXiv:2305.18290. Cited by: SS1.
+*M. Roemmele, C. A. Bejan, and A. S. Gordon (2011) Select of 그럴듯한 대안: Evaluation of 상식적 인과 추론. 2011년 AAAI 스프링 심포지엄 시리즈, 인용: SS1.
+* G. Team, R. 안일석 보르헤오 우정렬 Soricut, J. Schalkwyk, A. M. Dai, A. Hauth, et al. (2023)Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805. Cited by: SS1.
+*M. NLP Team 등(2023) Introducing mpt-30b: raise the bar for open-source foundation models. 에 의해 인용된다: SS1.
+*H. Touvron, T. 라브릴 마틴 라코 라크루아, B 로지에르, N Goyal, E. Hambro, F. Azhar, et al. (2023)LIMA: open and efficient foundation language models. arXiv preprint arXiv:2302.13971. Cited by: SS1.
+* H. Touvron, L. 마틴 스톤, P. 알버트, A. 알마하이리, Y. 바배이 바슐리코프 Batra, P. Bhargava, S. Bhosale, et al. (2023)LIMA 2: 오픈 파운데이션 및 미세 조정된 채팅 모델. arXiv preprint arXiv:2307.09288. Cited by: SS1.
+* C. Welch, R. Mihalcea, and J. K. Kummerfeld (2020)Improving low compute language modeling with in-domain embedding initialisation. Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP), pp. 8625-8634. Cited by: SS1.
+*R. 젤러스 홀츠만 Bisk, A. Farhadi, Y. 최(2019)Hellaswag: 기계가 정말로 당신의 문장을 끝낼 수 있나요? Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics, pp. 4791-4800. Cited by: SS1.
+*R. 장성훈 Cahyawijaya, J. Christian Blaise Cruz 및 A. Fikri Aji (2023) 다국어 대형 언어 모델은 (아직) 코드-스위처가 아니다. arXiv preprint arXiv:2305.14235. Cited by: SS1.
+* J. Zhao, Z. 장규 장태진 Gui, X. 영어를 넘어선 Huang (2024)LIMA: 언어능력 전이에 대한 실증적 연구 arXiv preprint arXiv:2401.01055. Cited by: SS1.
+* L. 정욱 장영 성승 장진 우영 장진 린진 Li, D. Li, E. Xing, et al.(2023) Judgeing llm-as-a-judge with mt-bench and chatbot arenna. arXiv preprint arXiv:2306.05685. Cited by: SS1.
