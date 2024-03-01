@@ -1,0 +1,381 @@
+# 중국어 LLAMA 및 Alpaca에서 효율적이고 효과적인 텍스트 인코딩
+
+Yiming Cui
+
+ymcui@ieee.org
+
+Equal contributions.
+
+Ziqing Yang
+
+ziqingyang@gmail.com
+
+&Xin Yao
+
+yaoxin94@foxmail.com
+
+Chinase LLAMA 시리즈: [https://github.com/ymcui/Chinese-LLaMA-Alpaca](https://github.com/ymcui/Chinese-LLaMA-Alpaca)
+
+###### Abstract
+
+ChatGPT 및 GPT-4와 같은 대규모 언어 모델(LLM)은 자연어 처리 연구를 극적으로 변형시켰고 인공지능(AGI)을 향한 유망한 진보를 보여주었다. 그럼에도 불구하고 LLM 교육 및 배치와 관련된 높은 비용은 투명하고 접근 가능한 학술 연구에 상당한 장애물을 제시한다. LLaMA와 같은 여러 대형 언어 모델이 커뮤니티에 의해 공개되었지만, 이들은 주로 영어 코퍼라에 중점을 두어 다른 언어에 대한 유용성을 제한한다. 본 논문에서는 중국어 텍스트를 이해하고 생성할 수 있는 능력과 명령어를 따를 수 있는 능력을 갖춘 LLaMA를 증강하는 방법을 제안한다. 이를 위해 LLaMA의 기존 어휘를 추가로 2만 개의 중국어 토큰으로 확장하여 중국어에 대한 인코딩 효율성과 의미적 이해를 높인다. 또한 중국어 데이터를 이용한 2차 사전 교육을 통합하고 중국어 명령어 데이터 세트로 모델을 미세 조정함으로써 모델의 명령어 이해 및 실행 능력을 크게 향상시킨다. 우리의 실험 결과는 새로 제안된 모델이 원래 LLaMA의 중국어 콘텐츠 이해 및 생성 능력을 현저하게 향상시킨다는 것을 나타낸다. 또한, C-Eval 데이터 세트에 대한 결과는 우리 모델의 몇 배 크기를 가진 모델 간의 경쟁 성능을 산출한다. 미리 훈련된 모델, 훈련 스크립트 및 기타 리소스를 깃허브를 통해 사용할 수 있도록 하여 커뮤니티에 대한 공개 연구를 촉진했다.
+
+각주 1: 중국 LLaMA 시리즈: [https://github.com/ymcui/Chinese-LLaMA-Alpaca](https://github.com/ymcui/Chinese-LLaMA-Alpaca)
+
+각주 2: 중국 Llama-2 시리즈: [https://github.com/ymcui/Chinese-LLaMA-Alpaca-2](https://github.com/ymcui/Chinese-LLaMA-Alpaca-2)
+
+## 1 Introduction
+
+자연어 처리(Natural Language Processing, NLP) 분야는 대규모 언어 모델(Large Language Models, LLM)의 등장으로 실질적인 패러다임의 변화를 목격하고 있다. 상당한 크기와 포괄적인 훈련 데이터로 구별되는 이러한 모델은 인간과 같은 텍스트를 이해하고 생성하는 데 탁월한 능력을 보여주었다. BERT(Devlin et al., 2019)와 같은 텍스트 이해에 전념하는 사전 훈련된 언어 모델과 대조적으로, GPT 시리즈(Radford et al., 2018)는 텍스트 생성을 강조하여 상대방에 비해 창의성에 더 적합한 플랫폼으로 포지셔닝한다. 특히, GPT 계열의 최신 구성체, 즉 ChatGPT 및 GPT-4는 빠르게 진화하는 이 분야에서 선도적인 예로 자리매김하면서 상당한 관심을 받았다.
+
+InstructGPT(Ouyang et al., 2022)에서 진화한 ChatGPT(OpenAI, 2022)는 상황 인식, 인간과 유사한 상호작용을 수행할 수 있는 고급 대화형 AI 모델 역할을 한다. 그것의 성공은 더 정교한 LLM인 GPT-4(OpenAI, 2023)의 발전을 위한 발판을 마련했으며, 특히 멀티모달 및 추론 능력에 대해 자연어 이해, 생성 및 다양한 NLP 작업에서 훨씬 더 큰 잠재력을 보여준다. 이러한 모델은 새로운 연구 방향과 응용을 촉진하여 인공지능(AGI)의 잠재력을 탐구하는 데 관심을 강화했다. 여러 벤치마크에서 인상적인 성능을 보여주면서 적은 샷 학습과 새로운 작업에 대한 적응 능력을 보여 NLP 연구의 확장을 크게 견인했다. 결과적으로, 그들은 연구자와 업계 전문가 모두에게 감성 분석, 기계 번역, 질의 응답 시스템 등을 포함한 광범위한 응용 분야에서 잠재력을 더욱 활용할 수 있도록 영감을 주었습니다.
+
+그러나 LLM만큼 영향력 있는 구현은 투명하고 열린 연구를 방해하는 내재적 한계를 가지고 있다. 주요 관심사는 모델에 대한 접근을 제한하여 성공을 기반으로 하는 광범위한 연구 커뮤니티의 능력을 억제하는 독점적 특성이다. 또한 이러한 모델을 훈련하고 배포하는 데 필요한 방대한 계산 리소스는 제한된 리소스를 가진 연구자에게 어려움을 제공하여 접근성 문제를 더욱 복잡하게 만든다.
+
+이러한 한계를 해결하기 위해 NLP 연구 커뮤니티는 더 큰 투명성과 협력을 촉진하기 위해 오픈 소스 대안에 끌렸다. LLaMA(Touvron et al., 2023), Llama-2(Touvron et al., 2023), 및 Alpaca(Taori et al., 2023a)는 이러한 이니셔티브의 주목할만한 예로서 작용한다. 이러한 오픈 소스 LLM은 학술 연구를 촉진하고 NLP 분야 내에서 진전을 가속화하기 위한 것이다. 이러한 모델을 오픈 소싱하는 목적은 모델 개발, 미세 조정 및 평가의 추가 발전에 도움이 되는 환경을 조성하여 궁극적으로 다양한 용도에 적용할 수 있는 강력하고 능력 있는 LLM을 만드는 것이다.
+
+LLaMA와 Alpaca가 NLP에서 상당한 진전을 이루었음에도 불구하고 중국어 작업에 대한 모국어 지원과 관련하여 고유한 한계를 나타낸다. 그들의 어휘는 수백 개의 중국어 토큰만을 포함하고 있어 중국어 텍스트의 인코딩과 디코딩의 효율성을 상당히 저해하고 있다. 본 연구에서는 중국 BERT 시리즈(Cui et al., 2021)와 중국 소수자 중심의 다국어 사전 훈련 모델(Yang et al., 2022)을 기반으로 중국 콘텐츠의 이해와 생성을 위한 향상된 기능을 가진 중국 LLaMA 및 Alpaca 모델의 개발을 제안한다. 추가 2만 개의 중국어 토큰으로 원본 LLaMA의 어휘를 확장하여 중국어 텍스트의 처리 및 생성 능력을 크게 향상시킵니다. 이러한 모델의 효율적인 훈련과 배치를 보장하기 위해 LoRA(Low-Rank Adaptation) 접근법(Hu et al., 2021)을 사용하여 과도한 계산 비용 없이 모델을 훈련하고 미세 조정할 수 있다. 우리는 LLaMA와 Alpaca의 중국어 이해와 생성 능력을 향상시키기 위한 예비 연구가 이러한 모델을 다른 언어에 적용하는 것을 목표로 하는 연구자들의 토대가 될 것으로 기대한다. 본 논문에서는 다양한 언어에서 LLaMA와 Alpaca 모델의 어휘 확장과 성능 향상을 위해 사용될 수 있는 통찰력과 방법론을 제시한다. 제안된 모델의 개요는 그림 1에 나와 있다.
+
+그림 1: **제안된 중국 LLaMA 및 중국 Alpaca 모델 개요(메타의 LLaMA 및 Llama-2 기반).** 중국 LLaMA 시리즈는 기초 모델이고 중국 Alpaca 시리즈는 채팅 또는 명령어 후속 모델입니다.
+
+요약하면, 본 기술보고서의 기여는 다음과 같다:
+
+* 추가 2만 개의 중국어 토큰으로 원래 LLAMA의 어휘를 확장하여 중국어의 인코딩 및 디코딩 효율을 높이고 LLAMA의 중국어 이해 능력을 향상시킵니다.
+* 중국 LLAMA 및 Alpaca 모델의 효율적인 교육 및 배포를 용이하게 하기 위해 LoRA(Low-Rank Adaptation) 접근법을 사용하여 연구자가 과도한 계산 비용을 발생시키지 않고 이러한 모델을 사용할 수 있습니다.
+* 명령어 후속 작업 및 자연어 이해 작업에서 제안된 LLAMA 및 Alpaca 모델의 성능을 평가하여 중국어 작업의 맥락에서 원래 대응물에 비해 상당한 개선을 보여준다.
+* 우리 연구의 리소스와 결과를 공개적으로 사용할 수 있도록 하여 NLP 커뮤니티에서 추가 연구 및 협력을 촉진하고 LLAMA 및 알파카 모델을 다른 언어에 적응하도록 장려합니다.
+
+## 2 Chinese LLaMA and Chinese Alpaca
+
+### Background
+
+LLaMA(Touvron et al., 2023)는 트랜스포머 아키텍처(Vaswani et al., 2017)에 구축된 기초적이고 디코더 전용의 대형 언어 모델이다. LPAMA는 GPT 시리즈 및 다른 변압기 기반 LLM과 유사하게 임베딩 레이어, 다중 변압기 블록 및 언어 모델 헤드로 구성된다. LLAMA는 또한 사전 정규화(Zhang and Sennrich, 2019), SwiGLU 활성화(Shazeer, 2020), 및 회전 임베딩(Su 등, 2021)과 같은 상이한 모델에서 활용되는 개선들을 통합한다. LLaMA는 7B, 13B, 33B 및 65B의 4가지 다른 모델 크기로 제공됩니다.
+
+LLaMA는 크롤링된 웹 페이지, 책, 위키피디아 및 사전 인쇄 논문과 같은 공개적으로 이용 가능한 소스의 혼합을 사용하여 표준 언어 모델링 작업(섹션 2.4 참조)으로 사전 훈련되었다. 실험 결과는 LLaMA가 더 작은 모델 크기이지만 GPT-3와 같은 다른 LLM에 비해 경쟁 성능을 제공한다는 것을 보여준다. 이러한 압축성과 효과는 연구자들의 상당한 관심을 받아 LLAMA 기반 모델의 광범위한 사용으로 이어졌다.
+
+### 중국어 어휘 확장
+
+LLaMA의 트레이닝 세트는 대략 1.4T 토큰들을 포함하며, 대다수는 영어로, 그리고 작은 부분은 라틴어 또는 키릴어 스크립트를 사용하는 다른 유럽 언어들로 구성된다(Touvron et al., 2023). 따라서 LLaMA는 대부분 유럽 언어로 입증된 다국어 및 교차 언어 이해 능력을 가지고 있다. 흥미로운 사실은 우리의 이전 예비 연구는 LLaMA가 중국 텍스트를 생성하는 능력은 제한적이지만 기본적인 중국 이해 능력을 나타낸다는 것을 보여준다.
+
+LLaMA에 중국어 이해와 생성 능력을 향상시키기 위해, 우리는 중국어 말뭉치로 LLaMA 모델을 계속 사전 훈련할 것을 제안한다. 그러나 중국 코퍼라와의 지속적인 사전 교육을 직접 적용하는 것은 여러 가지 어려움에 직면한다. 첫째, 원본 LLaMA 어휘는 1,000자 미만의 한자를 다루고 있어 일반적인 한자 텍스트를 인코딩하기에는 부족하다. LLaMA 토큰화기는 알려지지 않은 UTF-8 문자를 바이트로 토큰화함으로써 이 문제를 우회하지만, 이 전략은 각 한자가 3-4 바이트 토큰으로 분할되기 때문에 시퀀스 길이를 상당히 확장하고 중국 텍스트의 인코딩 및 디코딩 효율을 늦춘다. 둘째, 바이트 토큰은 한자를 나타내기 위해 독점적으로 설계되지 않는다. 바이트 토큰은 다른 언어의 UTF-8 토큰도 의미하기 때문에 바이트 토큰과 변환기 인코더가 한자의 의미 의미를 포착하는 표현을 효과적으로 학습하는 것이 어려워진다.
+
+이러한 문제를 해결하고 인코딩 효율을 향상시키기 위해, 우리는 추가적인 중국어 토큰으로 LLaMA 어휘를 확장하고 확장된 어휘에 대한 모델을 적용하는 것을 제안한다(Yang et al., 2022). 확장 프로세스는 다음과 같이 진행된다:
+
+[MISSING_PAGE_FAIL:4]
+
+스테이지. 주로 LoRA 어댑터를 어텐션 모듈과 MLP 레이어의 가중치에 통합한다. 모든 선형 변압기 블록에 LoRA를 적용하는 효과는 QLoRA(Dettmers et al., 2023)에서 검증되며, 이는 우리의 선택이 합리적임을 나타낸다.
+
+### Pre-Training Objective
+
+우리는 표준 인과 언어 모델링(CLM) 작업으로 중국 LLaMA 모델을 사전 훈련한다. 입력 토큰 시퀀스 \(\mathbf{x}=(x_{0},x_{1},x_{2},\ldots)\)가 주어지면, 이 모델은 다음 토큰 \(x_{i}\)을 자기회귀 방식으로 예측하도록 훈련된다. 수학적으로 목표는 다음과 같은 음의 로그 우도를 최소화하는 것이다.
+
+\[\mathcal{L}_{\text{CLM}}(\theta)=\mathbb{E}_{\mathbf{x}\sim\mathcal{D}_{\text{PT}}}\left[-\sum_{i}\log p(x_{i}|x_{0},x_{1},\ldots,x_{i-1};\theta)\right] \tag{2}}\
+
+여기서, \(\theta\)는 모델 파라미터를 나타내고, \(\mathcal{D}_{\text{PT}}\)는 사전 트레이닝 데이터세트이고, \(x_{i}\)는 예측될 토큰이고, \(x_{0},x_{1},\ldots,x_{i-1}\)는 컨텍스트를 구성한다.
+
+### Supervised Fine-Tuning and Chinese Alpaca
+
+사전 훈련된 언어 모델은 사용자 지시를 거의 따를 수 없고 종종 의도하지 않은 콘텐츠를 생성할 수 있다. 이는 식 (2)의 언어 모델링 목적이 "지시를 따르고 질문에 답하라"가 아니라 다음 토큰을 예측하는 것이기 때문이다(Ouyang et al., 2022). 언어 모델의 행동을 사용자의 의도에 맞게 정렬하기 위해 모델을 미세 조정하여 지시 사항을 따르도록 명시적으로 훈련시킬 수 있다. Stanford Alpaca(Taori et al., 2023)는 Self-Instruct(Wang et al., 2022)에서의 기법들에 의해 생성된 52K 명령어-팔로잉 데이터에 대해 트레이닝된 LLaMA 기반 명령어-팔로잉 모델이다. 우리는 스탠포드 알파카의 접근법을 따라 중국 LLaMA에 자기 지시 미세 조정을 적용하여 지시 후속 모델인 중국 알파카를 훈련한다.
+
+중국 알파카는 명령어 후속 데이터 세트의 조합으로 훈련된다. 데이터 세트의 각 예는 명령어와 출력으로 구성된다. 감독된 미세 조정 태스크는 인과 언어 모델링 태스크와 유사하다: 모델은 명령으로 프롬프트되고 출력을 자동으로 생성하도록 트레이닝된다. 명령은 프롬프트 템플릿으로 래핑되며 출력은 템플릿에 즉시 따라갑니다. 미세 조정 및 추론을 위해 스탠포드 알파카의 다음 템플릿을 채택하며 입력 시퀀스는 다음과 같습니다.
+
+_아래는 태스크를 설명하는 명령어이다. 요청을 적절하게 완료하는 응답을 작성합니다._
+
+_## Instruction:_
+
+_{instruction}_
+
+_## 응답: {output}_
+
+손실은 입력 시퀀스의 {_output_} 부분에서만 계산되며 다음과 같이 표현될 수 있다:
+
+\[\mathcal{L}_{\text{SFT}}(\theta)=\mathbb{E}_{\mathbf{x}\sim\mathcal{D}_{\text{PT}}}}\left[-\sum_{i\in\{\text{\emph{output}}}\}}\log p(x_{i}|x_{0},x_{1},\ldots,x _{i-1};\theta)\right] \tag{3}}\
+
+여기서, \(\theta\)는 모델 파라미터를 나타내고, \(\mathcal{D}_{\text{SFT}}\)는 미세 조정 데이터세트이며, \(\mathbf{x}=(x_{0},x_{1},\ldots)\)는 토큰화된 입력 시퀀스를 나타낸다.
+
+우리의 접근 방식과 Stanford Alpaca의 주요 차이점은 _input_ 필드가 없는 예제를 위해 설계된 프롬프트 템플릿만 사용하는 반면 Stanford Alpaca는 _input_ 필드가 있거나 없는 예제를 위해 두 개의 템플릿을 사용한다는 것입니다. 예제가 비어 있지 않은 _input_ 필드를 포함 하는 경우 _명령_ 및 _input_ 을 "\(\backslash\)"로 연결 하 여 새 명령을 형성 합니다. 중국어 알파카 모델에 대한 추가 패딩 토큰이 있어 어휘 크기가 49,954가 된다.
+
+Experimental Setups
+
+### 사전 훈련에 대한 실험 설정
+
+우리는 원래 LLaMA 가중치로 중국 LLaMA 모델을 초기화하고 7B 및 13B 모델에서 fp16을 사용하여 사전 훈련을 수행한다. 또한 33B 모델의 경우 비트 및 바이트 4 라이브러리를 사용하여 8비트 형식으로 훈련하여 효율성과 메모리 사용량을 향상시켰다. 우리는 임베딩과 LM 헤드를 훈련 가능한 것으로 설정하면서 훈련을 위해 관심 및 MLP에 LoRA를 직접 적용한다.
+
+각주 4: [https://github.com/TimDetmers/bitsandbytes](https://github.com/TimDetmers/bitsandbytes)
+
+중국 LLaMA-7B의 기본 버전을 위해 2단계 사전 훈련 접근법을 사용한다. 1단계에서는 모델 내에서 변압기 인코더의 파라미터를 고정하고 임베딩만을 훈련하여 외란을 최소화하면서 새로 추가된 한자어 벡터를 원래 모델에 적용한다. 2단계에서는 주의 메커니즘에 LoRA 가중치(어댑터)를 추가하고 임베딩, LM 헤드 및 새로 추가된 LoRA 매개변수를 훈련한다. 2단계 훈련은 예비 연구에서 덜 효율적이기 때문에 다른 모델 훈련에는 적용되지 않는다.
+
+다른 중국 LLaMA 모델(기본 버전)의 경우 사전 훈련을 위해 20GB 일반 중국 말뭉치를 활용하는데, 이는 중국 BERT-wvm(Cui et al., 2021), MacBERT(Cui et al., 2020), LERT(Cui et al., 2022) 등이 사용하는 말뭉치와 일치한다. 또한 커먼크롤(CC) 및 백과사전 소스의 추가 데이터를 통합하여 기본 개념에 대한 모델의 이해도를 높이는 사전 훈련 데이터를 120GB로 추가로 확장하는 "플러스" 버전을 제공한다. 사전 훈련을 위해 모든 데이터 세트와 블록 크기 512의 청크를 연결했다.
+
+모델은 A40 GPU(48GB VRAM)에서 하나의 에포크 동안 훈련되며, 모델 크기에 따라 최대 48개의 GPU를 차지한다. LoRA를 사용한 파라미터 효율적인 훈련은 PEFT library5를 사용하여 수행된다. 또한 훈련 과정에서 메모리 효율을 최적화하기 위해 DeepSpeed (Rasley et al., 2020)를 활용한다. AdamW 최적화기(Loshchilov and Hutter, 2019)를 사용하였으며, 최대 학습률은 2e-4와 5% 워밍업 코사인 스케줄러를 사용하였다. 또한, 전위 기울기 폭발을 완화하기 위해 1.0의 값을 갖는 기울기 클리핑을 적용한다.
+
+각주 5: [https://github.com/huggingface/peft](https://github.com/huggingface/peft)
+
+각 중국 LLaMA 모델에 대한 자세한 하이퍼파라미터는 표 2에 나열되어 있다.
+
+### 명령 미세 조정을 위한 실험 설정
+
+중국 LLaMA 모델을 얻은 후 섹션 2.5에 따라 미세 조정한다. 기본 모델의 모든 선형 레이어에 LoRA 모듈을 추가하여 효율적인 미세 조정을 위해 LoRA를 계속 사용한다. 번역(Xu, 2019)(550K 샘플링), pCLUE6(250K 샘플링), "NLU 유사" 데이터를 제외하고 스탠포드 알파카(50K+50K)를 포함하여 대략 2M에서 3M까지의 명령 데이터를 활용한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline
+**Settings** & **7B** & **Plus-7B** & **13B** & **Plus-13B** & **33B** \\ \hline Training data & 20 GB & 120 GB & 20 GB & 120 GB & 20 GB \\ Batch size & 1,024 & 2,304 & 2,304 & 2,304 & 2,304 \\ Peak learning rate & 2e-4/1e-4 & 2e-4 & 2e-4 & 2e-4 & 2e-4 \\ Max sequence length & 512 & 512 & 512 & 512 & 512 \\ LoRA rank & -/8 & 8 & 8 & 8 & 8 \\ LoRA alpha & -/32 & 32 & 32 & 32 & 32 \\ LoRA weights & -/QKVO & QKVO, MLP & QKVO, MLP & QKVO, MLP \\ Trainable params (\%) & 2.97\%/6.06\% & 6.22\% & 4.10\% & 4.10\% & 2.21\% \\ \hline \hline \end{tabular}
+\end{table}
+표 2: **중국 LLaMA에 대 한 사전 훈련 하이퍼 매개 변수** QKVO: 각 주의 모듈의 4개 행렬, 즉 쿼리, 키, 값 및 출력입니다. MLP: 각 MLP 계층에서 세 개의 행렬. 7B는 2단계 훈련 패러다임(설정은 ’\(\prime\)’에 의해 분리됨)을 사용하는데, 이는 다른 모델에서는 더 이상 채택되지 않는다.
+
+원본 및 번역된 모델의 경우), 기본 모델을 조정하기 위해 SFT 데이터를 크롤링했다. 플러스 버전의 경우 STEM(과학, 기술, 공학 및 수학) 데이터와 물리, 화학, 생물학, 의학 및 지구과학과 같은 여러 과학 분야를 통합하는 데 중점을 두고 데이터 세트를 약 4M에서 4.3M으로 확장한다. Alpaca-33B의 경우 OASST1 데이터 세트(Kopf 등, 2023)를 추가로 추가하며, 여기서 각 대화에서 첫 번째 쿼리-응답 쌍만 추출하고 gpt-3.5-터보 API를 사용하여 번역하여 대략 20K 데이터(원본 및 번역된 데이터)를 생성한다. 우리는 최대 시퀀스 길이를 512로 설정하고 배치에서 최대 길이로 배칭할 때 샘플을 동적으로 패딩한다.
+
+크롤링된 데이터는 Taori 등(2023a)에서 사용하는 ChatGPT(gpt-3.5-turbo API)에서 데이터를 자동으로 얻기 위한 자체 명령(Wang 등, 2022) 방법을 참조한다. 구체적으로, 대상 도메인 및 명령 유형에 대한 요구 사항만 있는 시드 작업을 필요로 하지 않는 보다 단순화된 템플릿을 활용한다. 템플릿 및 코드 세부 정보는 GitHub.7에서 사용할 수 있습니다.
+
+각주 7: [https://github.com/ymcui/Chinese-LLaMA-Alpaca/blob/main/scripts/crawl_prompt.py](https://github.com/ymcui/Chinese-LLaMA-Alpaca/blob/main/scripts/crawl_prompt.py)
+
+플러스 버전의 경우 기본 버전에 비해 더 큰 LoRA 순위를 활용합니다. 학습 속도와 배치 크기를 조정하는 것 외에도 사전 훈련 단계에서 사용되는 다른 하이퍼파라미터 및 설정과 일관성을 유지한다.
+
+명령어 미세 조정을 위한 하이퍼파라미터는 표 3에 나열되어 있다. 모든 알파카 모델은 각각의 LLaMA 모델에 기초하여 트레이닝된다. 예를 들어, 중국 Alpaca-Plus-13B는 중국 LLaMA-Plus-13B로 훈련된다.
+
+## 4 명령 후속 작업에 대 한 결과
+
+### 작업 설계 및 평가 방법
+
+텍스트 생성 과제의 성능을 평가하는 것은 그 형태의 편차가 크기 때문에 어려울 수 있으며, 이는 텍스트 분류 및 추출적 기계 독해와 같은 자연어 이해 과제와 크게 다르다. GPT-4(OpenAI, 2023)를 채점 방법으로 활용하는 이전 작업에 이어 GPT-4를 채택하여 각 샘플에 대해 전체 점수(10점 척도)를 제공하여 인간 평가보다 더 효율적이다. 그러나 GPT-4는 항상 정확한 점수를 제공하지 않을 수 있으므로 등급에 대한 수동 검사를 수행하고 필요한 경우 조정한다. 수동 검사는 점수가 일관되고 평가되는 모델의 실제 성능을 반영하는지 확인합니다. 다음 프롬프트 템플릿을 사용하여 시스템의 두 출력(여러 시스템으로 조정할 수 있음)을 채점합니다.
+
+_다음 내용은 두 ChatGPT 유사 시스템의 출력입니다. 각 점수에 대해 10점 척도로 전체 점수를 평가하고 점수를 정당화할 수 있는 설명을 해주십시오._
+
+_Prompt:_
+
+_{prompt-input}_
+
+_System1:_
+
+_{system1-output}_
+
+_System2:_
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline
+**Settings** & **7B** & **Plus-7B** & **13B** & **Plus-13B** & **33B** \\ \hline Training data & 2M & 4M & 3M & 4.3M & 4.3M \\ Batch size & 512 & 1,152 & 1,152 & 1,152 & 1,152 \\ Peak learning rate & 1e-4 & 1e-4 & 1e-4 & 1e-4 & 1e-4 \\ Max sequence length & 512 & 512 & 512 & 512 & 512 \\ LoRA rank & 8 & 64 & 8 & 64 & 8 \\ LoRA alpha & 32 & 128 & 32 & 128 & 32 \\ LoRA weights & QKVO, MLP & QKVO, MLP & QKVO, MLP & QKVO, MLP \\ Trainable params (\%) & 6.22\% & 8.08\% & 4.10\% & 5.66\% & 2.21\% \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 중국산 알파카에 대한 명령어 미세 조정 하이퍼파라미터.
+
+\[\{\textit{system2-output}\}\]
+
+수작업 검사와 함께 GPT-4를 채점 방법으로 사용하여 다양한 자연어 이해 및 생성 작업에 대한 중국 알파카 모델의 성능을 효과적으로 측정하는 신뢰할 수 있는 평가 프레임워크를 구축한다.
+
+우리의 평가 세트는 광범위한 자연어 이해 및 생성 작업에 걸쳐 중국 알파카 모델을 종합적으로 평가하도록 설계되었다. 집합은 질문 응답, 추론, 문학, 엔터테인먼트, 번역, 다중 회전 대화, 코딩 및 윤리 등을 포함한 10가지 별개의 작업을 포함하는 200개의 샘플로 구성된다. 특정 작업에 대한 전체 점수는 해당 작업 내의 모든 샘플에 대한 점수를 합산하고 총계를 100점 척도로 정규화하여 계산된다. 이 접근법은 평가 세트가 다양한 태스크들에 걸쳐 모델들의 능력을 반영하도록 보장하여, 그들의 성능에 대한 균형적이고 강건한 척도를 제공한다.
+
+### 디코딩을 위한 실험 설정
+
+LLM들의 디코딩 프로세스는 생성된 텍스트의 품질 및 다양성을 결정하는 데 중요한 역할을 한다. 실험에서는 다음과 같은 디코딩 하이퍼파라미터를 사용한다.
+
+* 컨텍스트 크기: 컨텍스트 크기를 2048로 설정하며, 이는 텍스트를 생성할 때 모델이 동시에 고려할 수 있는 최대 토큰 수를 결정합니다.
+* 최대 시퀀스 길이: 생성된 시퀀스 길이를 512 토큰으로 제한하여 출력이 집중되고 입력 프롬프트와 관련이 있는지 확인합니다.
+* 온도: 샘플링 프로세스의 임의성을 제어하는 온도를 0.2로 설정합니다. 낮은 값은 모델이 더 집중되고 결정론적 출력을 생성하도록 만드는 반면, 높은 값은 일관성의 비용으로 다양성을 증가시킨다. 멀티턴 대화 및 생성 작업의 경우 온도를 0.5로 약간 조정하여 보다 다양한 출력을 허용한다.
+* Top-\(k\) 샘플링: \(k=40\)로 Top-\(k\) 샘플링을 사용합니다. 즉, 모델이 각 단계에서 가장 가능성이 높은 상위 40개 토큰에서 다음 토큰을 선택하여 생성된 텍스트에 랜덤성과 다양성의 요소를 추가합니다.
+* Top-\(p\) 샘플링: 또한 \(p=0.9\)를 사용하여 Top-\(p\) 샘플링을 사용하며, 이는 확률 질량의 90%를 집합적으로 차지하는 동적 토큰 집합을 고려하여 다양성을 더욱 향상시킵니다.
+* 반복 패널티: 모델이 반복적인 텍스트를 생성하지 않도록 하기 위해 이미 선택한 토큰에 벌점을 부여하는 1.1의 팩터를 사용하여 반복 패널티를 적용합니다.
+
+이러한 값은 각 테스트 시나리오에 최적이 아닐 수 있습니다. 균형 잡힌 뷰를 유지하기 위해 각 작업에 대해 이러한 하이퍼파라미터에 대한 추가 튜닝을 수행하지 않았다.
+
+### Results
+
+중국 Alpaca-Plus-7B, Alpaca-Plus-13B 및 Alpaca-33B 모델로 얻은 결과를 제시하고 분석한다. Alpaca-33B 결과는 원래 모델(FP16)에 의해 생성되는 반면 Alpaca-Plus-7B 및 Alpaca-Plus-13B는 8비트 양자화된 버전을 채택한다. 8 전체 결과는 표 4에 나와 있다. 평가는 총 200개의 샘플을 포함하는 10개의 별개의 NLP 작업에 걸쳐 GPT-4 등급 결과를 기반으로 한다. 제시된 점수는 서로만 비교할 수 있지만 시스템을 활용해야 하는 다른 모델과는 비교할 수 없다는 점에 유의하는 것이 중요하다. 또한, 우리의 모델은 원래 LLaMA에 기반하기 때문에 이러한 관찰은 처음부터 훈련하기보다는 잘 확립된 모델에 기반할 때 더 나은 성능을 달성하는 데 중요한 측면으로 간주될 수 있다. 우리는 몇 가지 주요 범주의 발견에 대해 자세히 설명한다.
+
+각주 8: 6절에서 양자화 효과에 대해 논의할 것이다.
+
+우리는 주로 중국-LLaMA와 중국-알파카에 대한 결과를 제시한다. 중국-LLaMA-2 및 중국-알파카-2에 대한 결과는 부록 A에 나와 있다.
+
+#### 4.3.1 멀티턴 대화
+
+ChatGPT의 인상적인 성과 중 하나는 멀티턴 대화 인터페이스로 전달되는 풍부하고 유창한 맥락적 이해 능력이다. 우리가 볼 수 있듯이 플러스 시리즈 모델은 기본 모델에 비해 일관된 개선을 제공하지만 후자의 크기는 형성자의 몇 배이다. 이것은 더 나은 대화 경험을 달성하기 위해 단순히 모델의 파라미터 크기를 확장하는 것보다 더 많은 트레이닝 데이터를 수집하는 것이 훨씬 더 중요하다는 것을 나타낼 수 있다. 특히, 언어적 지식이 직접적으로 전달될 수 없는 LLaMA 원본으로부터 모델을 구축한다.
+
+#### 4.3.2 Text Generation
+
+텍스트 생성은 언어 모델을 위한 가장 기본적인 능력 중 하나이다. Alpaca-Plus-7B 및 Alpaca-Plus-13B에 비해 Alpaca-33B는 이 범주에서 열등한 결과를 보여준다. 표 5는 텍스트 생성 태스크의 일 예를 나타낸다. 우리는 Alpaca-Plus-7B와 Alpaca-Plus-13B 모두 사용자 프롬프트의 요구 사항을 충족하는 올바른 문자 스타일을 제공한다는 것을 알 수 있다. 알파카플러스13B는 신청자가 비자 신청을 위한 모든 자료를 철저히 준비했음을 알려 가장 포괄적인 것을 제공해 세 시스템 모두 최고의 생성 품질을 자랑한다. 그러나 Alpaca-33B는 글자체를 따르지 않고, 내용이 다소 간소화 되어 있어 다른 것에 비해 분명히 좋지 않다. 이는 더 적은 모델을 가진 더 많은 데이터를 가진 트레이닝이 더 적은 데이터를 가진 빅 모델보다 더 나은 성능을 제공할 수 있음을 보여준다.
+
+#### 4.3.3 수치계산 및 추론
+
+수치 추론은 대형 언어 모델의 추론 능력을 검토하는 데 있어 가장 중요한 과제 중 하나로 간주되어 왔다. 우리가 볼 수 있듯이 알파카-33B는 플러스-7B 및 플러스-13B 모델에 비해 상당한 개선을 달성한다. 표 6은 이 작업에 대한 예제 출력을 보여준다. 첫 번째 프롬프트는 추론 능력, 즉 "어떤 것이 더 무겁고, 면 1kg 또는 철 1kg?"을 조사하는 것으로 잘 알려져 있다. 플러스-7B와 플러스-13B 모두 '면이 철보다 가볍다'는 언급에 정답을 주지 못했다. 그러나 33B는 이 두 가지가 같은 무게라는 것을 정확하게 식별할 수 있었다. 두 번째 프롬프트는 "고양이와 닭의 다리가 몇 개인가"를 묻는 간단한 계산 작업이다. 그러나 우리가 볼 수 있듯이 Plus-7B와 Plus-13B 모두 고양이가 다리가 4개이고 닭이 2개라는 상식적인 지식을 가지고 있지 않아 오답이 발생한다. 마지막 프롬프트는 모델이 다음 배열 수를 예측하도록 하는 수치 추론 작업이다. 여전히 33B 모델만이 다음 숫자가 인덱스의 제곱이어야 한다는 주어진 배열의 패턴을 정확하게 식별한다. 이러한 관찰은 모델의 크기가 수치 추론 작업에서 필수적임을 나타낸다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline
+**Task** & **Alpaca-Plus-7B** & **Alpaca-Plus-13B** & **Alpaca-33B** \\ \hline Question Answering & 70.5 & 79.5 & **82.3** \\ Open-ended QA & **80.5** & 80.0 & 78.5 \\ Numerical Reasoning & 51.0 & 61.5 & **84.5** \\ Poetry, Literature, Philosophy & 78.5 & **81.3** & 76.0 \\ Music, Sports, Entertainment & 72.3 & **76.8** & 72.5 \\ Letters and Articles Writing & 81.0 & **86.5** & 79.0 \\ Translation & 86.8 & 89.3 & **92.3** \\ Multi-turn Dialogue & 80.3 & **81.3** & 78.0 \\ Coding & 62.5 & 67.5 & **84.0** \\ Ethics & 89.8 & 90.5 & **92.5** \\ \hline
+**Total** & 75.3 & 79.4 & **82.0** \\ \hline \hline \end{tabular}
+\end{table}
+표 4: **GPT-4 등급 결과는 중국 Alpaca-Plus-7B 및 Alpaca-Plus-13B 및 Alpaca-33B입니다. 결과는 이 모델 조합 내에서만 비교할 수 있습니다.**
+
+[MISSING_PAGE_FAIL:10]
+
+[MISSING_PAGE_FAIL:11]
+
+더 적은 데이터로. 또 다른 가능한 이유는 코딩 및 추론 능력이 상대적으로 언어 독립적인 원래의 LLaMA로부터 물려받은 능력일 것이다. 그러나 우리는 또한 Alpaca-33B가 텍스트 생성, 멀티턴 대화 등에서 열등한 결과를 가지고 있다는 것을 알아챘다. 플러스 시리즈 모델은 훨씬 더 많은 데이터에 대해 훈련됨에 따라 더 다양하고 풍부한 콘텐츠를 제공할 수 있습니다. Alpaca-Plus-33B를 사용할 수 있을 때 이러한 문제를 해결할 수 있을 것으로 예상하며, 이러한 능력은 수치 추론 및 코딩 관련 작업과 같이 높은 수준의 추론이 필요한 능력보다 상대적으로 극복하기 쉽기 때문이다. 완전한 비교, 등급 및 샘플 출력은 GitHub 리포지토리.9를 참조하세요.
+
+각주 9: [https://github.com/ymcui/Chinese-LLaMA-Alpaca/tree/main/examples](https://github.com/ymcui/Chinese-LLaMA-Alpaca/tree/main/examples)
+
+## 5 자연어 이해 작업 결과
+
+### Task Description
+
+명령어 후속 작업에 대한 생성 성능 테스트 외에도 다중 선택 질문 응답 데이터 세트인 C-Eval 데이터 세트(Huang et al., 2023)에서 모델을 테스트했다. C
+
+그림 2: **코딩 작업에 대한 출력 예제** 33B 모델이 Alpaca-Plus-7B 및 Alpaca-Plus-13B보다 훨씬 우수합니다.
+
+발표는 주로 STEM, 사회, 인문 및 기타의 네 가지 범주를 다루며 52개 분야의 거의 14K 샘플로 구성된다. RACE(Lai et al., 2017)와 같은 다른 다중 선택 QA 데이터 세트와 유사하게, 모델이 주어진 질문에 기초하여 올바른 옵션 라벨을 생성할 것을 요구한다. 우리는 모델의 예측 파일을 공식 리더보드에 제출하여 테스트 점수를 얻는 검증 분할(1,346개 샘플) 및 테스트 분할(12,342개 샘플)에서 모델을 주로 테스트했다.
+
+### Decoding Strategy
+
+이 데이터 세트에서 LLaMA 모델을 평가하기 위해 이러한 모델에 예를 직접 제공한다. Alpaca 모델을 평가할 때 2.5절에서 설명한 대로 프롬프트 템플릿에서 예제를 포장합니다. 그런 다음 모델은 한 단계 예측을 수행하고 다음 토큰의 확률 분포를 제공하라는 요청을 받습니다. 여기서 \(y\in\mathcal{V}\)(\(\mathcal{V}\)는 어휘입니다. {A, B, C, D}에서 확률 분포를 유효한 레이블 \(t\)에 매핑하기 위해 관련 토큰의 확률을 추출하고 수집한다. 각 레이블 \(t\)을 어휘의 토큰에 매핑하기 위해 언어화자 \(\mathcal{V}(\cdot)\)를 도입합니다.
+
+\[\mathcal{V}(\mathtt{A})=\{\text{`A'},\text{`\_}{\text{`A'}}\},\ \mathcal{V}(\mathtt{B})=\{\text{`B'},\text{`\_}{\text{`B'}}}\},\ \mathcal{V}(\mathtt{C})=\{\text{`C'},\text{`\_}{\text{`C'}}}\},\ \mathcal{V}(\mathtt{D})=\{\text{`D'},\text{`\_}{\text{`D'}}}\}\}\}
+
+예측 레이블 \(t\)의 확률은 다음과 같이 주어진다.
+
+\[p(t\in\{\mathtt{A},\mathtt{B},\mathtt{C},\mathtt{D}\}|\mathbf{x})=\sum_{t\in\mathcal{V}(\mathtt{i})}p(y=i|\mathbf{x}) \tag{4}\]
+
+최대 확률을 갖는 라벨은 최종 예측으로 취해진다.
+
+다음으로, 원래의 LLaMA 및 기타 모델과의 비교를 설명하기 위해 다음 두 하위 섹션에서 결과와 분석에 대해 자세히 설명한다.
+
+### 원본 LLaMA 비교
+
+그림 3은 원래 LLaMA를 기반으로 모델이 어떻게 진화하는지 보여준다. 자세한 결과는 표 8에 나와 있다. 우리는 주로 다음 측면에서 우리의 연구 결과를 설명한다.
+
+중국 LLaMA는 원래 LLaMA를 개선한다. 우리는 제안된 중국 LLaMA 모델이 원래 LLaMA보다 중간 정도의 개선을 가져온다는 것을 알 수 있으며, 이는 중국 데이터에 대한 사전 훈련이 C-Eval에 긍정적인 영향을 미치지만 항상 그렇지는 않다는 것을 보여준다. 중국 LLaMA와 LLaMA-Plus를 비교했을 때, 후자는 13B 설정에서 열등한 결과를 보이더라도 전자에 비해 큰 개선을 보이지 않는다. 이는 순수 언어 모델(LLaMA와 같은)이 C-Eval 또는 유사한 작업에 대해 좋은 선택이 아닐 수 있음을 나타낼 수 있으며 사전 훈련 데이터 크기(중국 LLaMA 및 LLaMA-Plus의 경우 각각 20G에서 120G로)를 증가시키는 데 큰 도움이 되지 않는다.
+
+그림 3: **C-Eval 유효 집합에 대한 결과** 입니다. 결과는 다른 설정(제로샷 및 5샷) 및 모델 크기(7B 및 13B)에 따라 그룹화됩니다.**
+
+Alpaca 모델은 LLaMA에 비해 상당한 개선을 보여준다. 0-shot 또는 5-shot과 같은 다양한 설정 중에서 Alpaca 모델 시리즈는 LLaMA 대응물에 비해 상당한 개선을 보여 명령 후속 모델이 순수 언어 모델보다 이러한 NLU 유사 작업을 더 잘 처리할 수 있음을 보여준다. LLaMA 시리즈에서 관찰된 현상과 달리 Alpaca-Plus 모델이 기본 Alpaca 모델에 비해 상당한 개선을 가져온다는 것을 알 수 있다. 이는 명령 후속 모델이 NLU와 유사한 작업을 더 잘 처리할 수 있고 더 많은 사전 훈련 데이터(LLaMA-Plus)를 사용하는 힘을 제거할 수 있음을 추가로 나타낼 수 있다.
+
+LLaMA는 일반적으로 몇 개의 샷 설정에서 더 나은 성능을 나타내는 반면 Alpaca는 0-샷을 선호한다. 일반적으로 5-샷 설정을 사용하는 LLaMA는 0-샷 설정보다 더 나은 성능을 나타내는 반면 Alpaca는 5-샷 설정보다 훨씬 더 나은 성능을 나타낸다. LLaMA는 명령어 후속을 위해 설계되지 않았기 때문에 소수의 샷 설정은 C-Eval에서 질문 응답 구조를 따르는 방법에 대한 귀중한 정보를 제공할 수 있다. 그러나 반대로 알파카는 이미 수백만 개의 명령어 데이터로 훈련되었기 때문에 추가 샷의 혜택을 덜 받을 가능성이 높다. 또한 공식 5샷 설정은 모든 샘플에 대해 동일한 프롬프트를 사용하여 알파카 모델의 주의를 분산시킵니다.
+
+이러한 관찰은 전적으로 C-Eval 데이터 세트의 결과를 기반으로 하며 다른 데이터 세트에 일반화할 수 있는지 여부는 추가 조사가 필요하다는 점을 강조하고자 한다. 향후에는 LLaMA 및 알파카 모델의 행동을 추가로 조사하기 위해 보다 포괄적인 테스트를 포함할 것이다.
+
+### 다른 모델 비교
+
+우리는 C-Eval 리더보드에 중국-Alpaca-33B와 중국-Alpaca-Plus-13B의 두 가지 가장 성능이 좋은 모델을 포함하여 오픈 소스 및 비 오픈 소스 모델을 모두 포함한 다른 LLM과 비교한다. C-Eval 리더보드에 대한 테스트 결과(2023년 6월 9일 기준)는 표 9와 같다.
+
+당연히 비오픈 소스 LLM은 오픈 소스 LLM보다 성능이 훨씬 우수합니다. 우리 모델의 경우 중국-Alpaca-33B와 중국-Alpaca-Plus-13B 모두 이 리더보드에서 오픈 소스 LLM 간에 경쟁 성능을 발휘하여 Bloomz-mt-176B(Scao et al., 2022) 및 GLM-130B(Zeng et al., 2023)와 중간 정도의 격차를 보이는 것을 볼 수 있으며, 후자의 모델은 몇 배의 크기를 가지며 우리보다 훨씬 더 많은 데이터로 훈련된다는 점을 고려할 수 있다.
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{2}{c}{**Valid Set**} & \multicolumn{2}{c}{**Test Set**} \\  & **Zero-shot** & **5-shot** & **Zero-shot** & **5-shot** \\ \hline _Random_ & _25.0_ & _25.0_ & _25.0_ & _25.0_ \\ \hline LLaMA-65B & 37.2 & 41.2 & 33.4 & 38.8 \\ LLaMA-33B & 34.5 & 37.9 & 32.4 & 36.0 \\ LLaMA-13B & 27.8 & 30.9 & 28.5 & 29.6 \\ LLaMA-7B & 25.6 & 25.3 & 26.7 & 27.8 \\ \hline Chinese-LLaMA-33B & 34.9 & 38.4 & 34.6 & 39.5 \\ Chinese-LLaMA-Plus-13B & 27.3 & 34.0 & 27.8 & 33.3 \\ Chinese-LLaMA-13B & 29.4 & 35.0 & 29.2 & 33.7 \\ Chinese-LLaMA-Plus-7B & 27.3 & 28.3 & 26.8 & 28.4 \\ Chinese-LLaMA-7B & 26.2 & 26.2 & 27.1 & 27.2 \\ \hline Chinese-Alpaca-33B & 43.3 & 42.6 & 41.6 & 40.4 \\ Chinese-Alpaca-Plus-13B & 43.3 & 42.4 & 41.5 & 39.9 \\ Chinese-Alpaca-13B & 37.1 & 36.3 & 36.7 & 34.5 \\ Chinese-Alpaca-Plus-7B & 36.7 & 32.9 & 36.4 & 32.3 \\ Chinese-Alpaca-7B & 30.8 & 32.5 & 30.7 & 29.2 \\ \hline \hline \end{tabular}
+\end{table}
+표 8: **C-Eval 유효 및 테스트 세트에 대한 결과**. 모든 예측 파일은 자체적으로 생성됩니다. 테스트 세트 점수는 예측 파일을 C-Eval 리더보드에 제출하여 얻습니다.
+
+또 다른 측면에서, Chinese-Alpaca-13B 및 Chinese-LLaMA-13B는 이전에 C-Eval에 의해 평가되었다. 또한 자체 구현으로 예측 파일을 리더보드에 수동으로 제출했습니다. 결과는 두 모델 모두 C-Eval에 의해 평가된 모델, 특히 Alpaca-13B 모델에 대해 상당한 개선을 보여 +5.8 평균 점수(30.9에서 36.7)를 산출했다. 또한 Alpaca-13B는 LLaMA-13B에 비해 이점을 보여주며, 이는 이전 연구 결과에 따른 것이다. 이러한 관찰은 적절한 디코딩 전략과 신속한 템플릿을 채택하는 것이 개별 LLM, 특히 명령 후속 모델의 경우 더 나은 성능을 달성하는 데 중요할 수 있음을 나타낸다.
+
+## 6 다른 양자화 방법의 효과
+
+개인 컴퓨터, 특히 CPU에 대규모 언어 모델을 배치하는 것은 엄청난 계산 요구 사항으로 인해 역사적으로 어려웠다. 그러나 llama.cpp(Gerganov, 2023)와 같은 많은 커뮤니티 노력의 도움으로 사용자는 LLM을 효율적으로 양자화할 수 있어 메모리 사용량과 계산 요구량을 크게 줄여 개인용 컴퓨터에 LLM을 쉽게 배치할 수 있다. 이는 또한 모델과의 더 빠른 상호 작용을 가능하게 하고 로컬 데이터 처리를 용이하게 한다. LLM을 정량화하고 개인용 컴퓨터에 배포하면 몇 가지 이점이 있습니다. 첫째, 민감한 정보가 외부 서버로 전송되지 않고 로컬 환경 내에 남아 있도록 함으로써 사용자가 데이터 프라이버시를 보호하는 데 도움이 된다. 둘째, 제한된 계산 자원을 가진 사용자가 LLMs에 더 쉽게 접근할 수 있도록 함으로써 LLMs에 대한 접근을 민주화한다. 마지막으로 지역 LLM 배포를 활용하는 새로운 응용 프로그램 개발 및 연구 방향을 촉진한다. 전반적으로, 1lama.cpp(또는 유사한)를 사용하여 개인용 컴퓨터에 LLMs를 배치하는 능력은 다양한 도메인에서 LLMs의 보다 다용도이고 프라이버시를 의식하는 활용의 길을 열어준다.
+
+이 절에서는 서로 다른 양자화 방법의 효과를 조사한다. 우리는 lama.cpp를 사용하여 Alpaca-Plus-7B, Alpaca-Plus-13B 및 Alpaca-33B를 양자화하고 중국 텍스트 말뭉치에 대한 복잡도를 계산한다. 이러한 모델을 2비트, 3비트, 4비트, 5비트, 6비트 및 8비트 형태로 양자화하여 원래 FP16과 비교한다.10 결과는 그림 4에 나와 있다.
+
+\begin{table}
+\begin{tabular}{l l l l l l l l l} \hline \hline
+**Model** & **N-Shot** & **Open** & **Avg** & **Avg-H** & **STEM** & **Social** & **Human** & **Others** \\ \hline GPT-4 & 5-shot & ✗ & 68.7 & 54.9 & 67.1 & 77.6 & 64.5 & 67.8 \\ InterLM (104B) & few-shot & ✗ & 62.7 & 46.0 & 58.1 & 76.7 & 64.6 & 56.4 \\ ChatGPT & 5-shot & ✗ & 54.4 & 41.4 & 52.9 & 61.8 & 50.9 & 53.6 \\ Claude-v1.3 & 5-shot & ✗ & 54.2 & 39.0 & 51.9 & 61.7 & 52.1 & 53.7 \\ Claude-instant-v1.0 & 5-shot & ✗ & 45.9 & 35.5 & 43.1 & 53.8 & 44.2 & 45.4 \\ Bloomz-mt (176B) & 0-shot & ✓ & 44.3 & 30.8 & 39.0 & 53.0 & 47.7 & 42.7 \\ GLM-130B & 0-shot & ✓ & 44.0 & 30.7 & 36.7 & 55.8 & 47.7 & 43.0 \\
+**Chinese-Alpaca-33B** & 0-shot & ✓ & 41.6 & 30.3 & 37.0 & 51.6 & 42.3 & 40.3 \\
+**Chinese-Alpaca-Plus-13B** & 0-shot & ✓ & 30.5 & 36.6 & 49.7 & 43.1 & 41.2 \\ CubeLM (13B) & few-shot & ✗ & 40.2 & 27.3 & 34.1 & 49.7 & 43.4 & 39.6 \\ ChatGLM-6B & 0-shot & ✓ & 38.9 & 29.2 & 33.3 & 48.3 & 48.3 & 38.0 \\ LLaMA-65B & 5-shot & ✓ & 38.8 & 31.7 & 37.8 & 45.6 & 36.1 & 37.1 \\
+**Chinese-Alpaca-13B\(\dagger\)** & 0-shot & ✓ & 36.7 & 28.4 & 33.7 & 28.4 & 33.1 & 43.7 & 38.4 & 35.0 \\
+**Chinese-LLaMA-13B\(\dagger\)** & 5-shot & ✓ & 33.7 & 28.1 & 31.9 & 38.6 & 33.5 & 32.8 \\ Chinese-LLaMA-13B & 5-shot & ✓ & 33.3 & 27.3 & 31.6 & 37.2 & 33.6 & 32.8 \\ MOSS (16B) & 0-shot & ✓ & 33.1 & 28.4 & 31.6 & 37.0 & 33.4 & 32.1 \\ Chinese-Alpaca-13B & 0-shot & ✓ & 30.9 & 24.4 & 27.4 & 39.2 & 32.5 & 28.0 \\ \hline \hline \end{tabular}
+\end{table}
+표 9: **평균 점수로 정렬된 C-Eval 리더보드에 대한 테스트 결과(2023년 6월 9일 기준)** 볼드체로 표시된 모델 이름은 제출을 나타내고 다른 결과는 C-Eval 관리에서 평가합니다. 추론 스크립트를 기반으로 \(\dagger\) (이러한 점수는 공개적으로 표시되지 않음)로 표시된 두 모델을 재평가했으며 C-Eval에 의해 평가된 모델보다 훨씬 나은 성능을 달성했다. 모델의 매개변수 크기는 사용 가능한 경우 괄호 안에 표시됩니다. 오픈: 오픈 소스. Avg-H : 평균(Hard).
+
+양자화 레벨은 메모리 사용량 및 추론 속도에 엄격하게 구속되므로, 적절한 양자화 레벨을 선택할 때 트레이드오프가 이루어져야 한다. 우리가 볼 수 있듯이, 8비트 양자화 방법은 원래의 FP16 모델에 비해 거의 동일하거나 심지어 더 낮은 복잡도를 가지며, 이는 FP16 모델의 절반 크기만으로 개인용 컴퓨터에 LLM을 배치하기에 좋은 선택임을 입증한다. 6비트 모델은 또한 8비트 모델에 필적하는 괜찮은 PPL을 달성하여 속도와 성능의 균형을 더 좋게 만든다. 보다 적극적인 양자화 레벨을 사용할 경우, 특히 3-비트 및 2-비트의 경우 성능이 급격히 감소한다(즉, 더 높은 PPL). 또한 더 큰 모델은 더 작은 모델보다 양자화 방법에 덜 민감하다는 것을 발견했다. 예를 들어, 33B 모델의 성능은 다른 모델보다 훨씬 더 온화하게 변한다. 플러스-7B와 플러스-13B 모델을 비교할 때도 유사한 결과가 관찰된다. 이는 2-비트 및 3-비트 양자화가 더 작은 모델에 대해서는 덜 효과적이지만, 상당한 성능 손실 없이 더 큰 모델을 배치하는 유망한 방법일 수 있음을 나타낼 수 있다. 이는 사용자가 제한된 컴퓨팅 리소스만 가지고 있고 여전히 대규모 언어 모델을 시도하고 싶을 때 매우 유용하다. 이것은 또한 양자화된 트레이닝 방법이 특히 트레이닝 자원이 제한된 언어 모델들을 트레이닝하기 위한 메인스트림 접근법이 될 수 있다는 것을 암시할 수 있다.
+
+## 7 Conclusion
+
+본 기술 보고서에서는 LLaMA 모형에 대한 중국인의 이해와 발전 역량을 제고하기 위한 접근 방법을 제시하였다. 원래의 LLaMA의 중국어 어휘의 한계를 인식하고 20K의 중국어 토큰을 추가로 통합하여 확장하여 중국어에 대한 인코딩 효율을 크게 높였다. 중국 LLaMA를 기반으로 명령 데이터로 감독 미세 조정을 사용하여 중국 알파카 모델이 향상된 명령 후속 기능을 나타낸다.
+
+모델을 효과적으로 평가하기 위해 10개의 고유한 작업 유형에 걸쳐 200개의 샘플에 주석을 달았고 평가를 위해 GPT-4를 활용했다. 우리의 실험은 제안된 모델이 중국 이해 및 생성 작업에서 원래의 LLaMA를 상당히 능가한다는 것을 보여주었다. 또한 C-Eval 데이터 세트에서 모델을 테스트했습니다. 그 결과 제안된 모델은 몇 배 더 큰 크기를 가진 모델에 비해 상당한 개선을 달성하고 경쟁 성능을 보일 수 있음을 보여준다.
+
+앞으로는 모델의 출력을 인간의 선호도와 더 맞추기 위해 인간 피드백으로부터의 강화 학습(RLHF) 또는 AI 지시 피드백으로부터의 강화 학습(RLAIF)을 탐색할 계획이다. 더욱이, GPTQ(Frantar et al., 2022)와 같은 보다 진보되고 효과적인 양자화 방법을 채택하고자 한다. 또한 대형 랜의 보다 효율적이고 효과적인 사전 훈련 및 미세 조정을 위해 LoRA의 대체 방법을 조사하는 것을 목표로 한다.
+
+그림 4: **다양한 양자화 방법에 대한 복잡성** 33B 모델은 다른 모델보다 적은 데이터에 대해 학습되므로 PPL이 더 높습니다.
+
+챌린지 모델은 궁극적으로 중국 NLP 커뮤니티 내의 다양한 작업에 걸쳐 성능과 적용 가능성을 향상시킨다.
+
+## Limitations
+
+이 프로젝트는 LLaMA 및 알파카 모델의 중국 이해 및 생성 능력을 성공적으로 향상시켰지만 몇 가지 한계를 인정해야 한다.
+
+* 유해하고 예측할 수 없는 내용: 우리 모델이 비윤리적 쿼리를 거부할 수 있지만 이러한 모델은 여전히 인간의 선호도 및 값과 유해하거나 잘못된 정렬을 생성할 수 있습니다. 이 문제는 학습 데이터의 편향이나 특정 컨텍스트에서 적절한 출력을 식별할 수 없는 모델의 무능성에서 발생할 수 있다.
+* 불충분한 훈련: 컴퓨팅 파워 및 데이터 가용성의 제약으로 인해, 모델들의 훈련은 최적의 성능을 위해 충분하지 않을 수 있다. 그 결과 모델들에 대한 중국어 이해 능력에서 여전히 개선의 여지가 있다.
+* 견고성 부족: 모델은 일부 상황에서 취성을 나타내어 적대적 입력 또는 희귀 언어 현상에 직면할 때 일관되지 않거나 무의미한 출력을 생성할 수 있다.
+* 종합 평가: 대형 언어 모델을 평가하는 것은 현 시대의 중요한 주제입니다. LLM에 대한 많은 평가 벤치마크를 보았지만 LLM에 대한 포괄성과 적절성은 잘 연구되고 조사되어야 한다. 보다 다양하고 포괄적인 LLM 평가 데이터 세트 및 벤치마크는 LLM 연구의 미래를 형성하는 데 큰 긍정적인 영향을 미칠 것이다.
+* 확장성 및 효율성: LoRA 및 양자화를 적용하여 모델을 보다 광범위한 커뮤니티에 더 쉽게 액세스할 수 있도록 했지만 원래 LLaMA와 결합할 때 모델의 큰 크기와 복잡성은 특히 제한된 계산 리소스를 사용하는 사용자의 경우 배포에 어려움을 초래할 수 있습니다. 이 문제는 다양한 응용 프로그램에서 모델의 접근성과 광범위한 채택을 방해할 수 있다.
+
+향후 작업은 이러한 한계를 해결하여 모델의 기능을 더욱 향상시켜 중국 NLP 커뮤니티의 광범위한 응용 프로그램에 더 강력하고 접근 가능하며 효과적이어야 한다.
+
+## Acknowledgments
+
+원안은 문법 수정 및 명확성 개선을 위해 OpenAI GPT-4에 의해 연마되었다. 오픈 소스 프로젝트에 기여해 주신 커뮤니티 구성원들께 감사드립니다.
+
+## References
+
+* Bai et al. (2023) Yushi Bai, Xin Lv, Jiajie Zhang, Hongchang Lyu, Jiankai Tang, Zhidian Huang, Zhengxiao Du, Xiao Liu, Aohan Zeng, Lei Hou, Yuxiao Dong, Jie Tang, and Juanzi Li. Longbench: 긴 컨텍스트 이해를 위한 이중 언어 다중 작업 벤치마크입니다. _ arXiv preprint arXiv:2308.14508_, 2023.
+* Chen et al. (2023) Shouyuan Chen, Sherman Wong, Liangjian Chen, and Yuandong Tian. 위치 보간을 통해 대규모 언어 모델의 컨텍스트 창을 확장합니다. _ arXiv preprint arXiv:2306.15595_, 2023.
+* Cui et al.(2020) Yiming Cui, Wanxiang Che, Ting Liu, Bing Qin, Shijin Wang, and Guoping Hu. 중국어 자연어 처리를 위해 미리 훈련된 모델을 다시 방문합니다. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: Findings_, pp. 657-668, Online, November 2020. Association for Computational Linguistics. URL [https://www.aclweb.org/anthology/2020.findings-ennlp.58](https://www.aclweb.org/anthology/2020.findings-ennlp.58).
+* Cui et al.(2021) Yiming Cui, Wanxiang Che, Ting Liu, Bing Qin, and Ziqing Yang. 중국어 버트를 위해 전체 단어 마스킹으로 사전 훈련합니다. _ IEEE/ACM Transactions on Audio, Speech, and Language Processing_, 29:3504-3514, 2021. doi: 10.1109/TASLP.2021.3124365.
+
+* Cui et al.(2022) Yiming Cui, Wanxiang Che, Shijin Wang, and Ting Liu. 리트: 언어적으로 동기를 부여한 사전 훈련된 언어 모델입니다. _ arXiv preprint arXiv:2211.05344_, 2022.
+* Dettmers 등(2023) Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. Qlora: 양자화된 llms의 효율적인 미세 조정입니다. _ arXiv preprint arXiv:2305.14314_, 2023.
+* Devlin 등(2019) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 언어 이해를 위한 딥 양방향 트랜스포머의 사전 훈련. In _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)_, pp. 4171-4186, Minneapolis, Minnesota, June 2019. Association for Computational Linguistics. URL [https://www.aclweb.org/anthology/N19-1423](https://www.aclweb.org/anthology/N19-1423).
+* Frantar et al. (2022) Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. GPTQ: 생성 미리 훈련된 변압기에 대한 정확한 훈련 후 압축입니다. _ arXiv preprint arXiv:2210.17323_, 2022.
+* Gerganov (2023) Georgi Gerganov. llama.cpp. [https://github.com/ggerganov/llama.cpp] (https://github.com/ggerganov/llama.cpp), 2023.
+* Hu et al.(2021) Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: 대규모 언어 모델의 하위 순위 적응 _ arXiv e-prints_, art. arXiv:2106.09685, June 2021. doi:10.48550/arXiv.2106.09685.
+*황 등(2023) 유전황, 유주백, 지하오주, 준레이장, 징한장, 탕준수, 준텡류, 추안청Lv, 이카이장, 지이이레이, 야오푸, 마오송선, 준셴허. C-평가: 기초 모델에 대한 다단계 다단계 중국어 평가 제품군 _ arXiv preprint arXiv:2305.08322_, 2023.
+* 대규모 언어 모델 정렬을 민주화하는 중입니다. _ arXiv e-prints_, art. arXiv:2304.07327, 4월 2023. doi:10.48550/arXiv.2304.07327.
+* Kudo and Richardson (2018) Taku Kudo and John Richardson. SentencePiece: 신경 텍스트 처리를 위한 간단하고 언어 독립적인 서브워드 토큰화기 및 디토큰화기. In _Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing: System Demonstrations_, pp. 66-71, Brussels, Belgium, November 2018. Association for Computational Linguistics. doi: 10.18653/v1/D18-2012. URL [https://aclanthology.org/D18-2012](https://aclanthology.org/D18-2012).
+* Lai et al.(2017) Guokun Lai, Qizhe Xie, Hanxiao Liu, Yiming Yang, and Eduard Hovy. RACE: 테스트에서 얻은 대규모 ReAding 이해 데이터 세트입니다. In _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing_, pp. 785-794, Copenhagen, Denmark, September 2017. Association for Computational Linguistics. doi: 10.18653/v1/D17-1082. URL [https://aclanthology.org/D17-1082](https://aclanthology.org/D17-1082).
+* Li et al.(2023) Haonan Li, Yixuan Zhang, Fajri Koto, Yifei Yang, Hai Zhao, Yeyun Gong, Nan Duan, and Timothy Baldwin. 2023년 중국어로 대량 멀티태스킹 언어 이해도 측정
+* Loshchilov and Hutter (2019) Ilya Loshchilov and Frank Hutter. 분리된 중량 감쇠 규칙화. 2019년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=Bkg6RiCqY7](https://openreview.net/forum?id=Bkg6RiCqY7)을 참조 하세요.
+* OpenAI (2022) OpenAI. chatgpt를 소개합니다. [https://openai.com/blog/chatgpt] (https://openai.com/blog/chatgpt), 2022.
+* OpenAI (2023) OpenAI. GPT-4 기술 보고서. _ arXiv e-prints_, art. arXiv:2303.08774, March 2023. doi:10.48550/arXiv.2303.08774.
+* Ouyang et al.(2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. 웨인라이트, 파멜라 미슈킨, 종장, 산디니 아가르왈, 카타리나 슬라마, 알렉스 레이, 존 슐만, 제이콥 힐튼, 프레이저 켈튼, 루크 밀러, 매디 시멘스, 아만다 아스켈, 피터 웰린더, 폴 크리스티아누, 얀 라이케, 라이언 로우. 언어 모델을 훈련하여 인간의 피드백으로 지침을 따르도록 합니다. _ arXiv e-prints_, art. arXiv:2203.02155, March 2022. doi:10.48550/arXiv.2203.02155.
+
+* Peng 등(2023) Bowen Peng, Jeffrey Quesnelle, Honglu Fan, and Enrico Shippole. Yarn: 대규모 언어 모델의 효율적인 컨텍스트 창 확장입니다. _ arXiv preprint arXiv:2309.00071_, 2023.
+* Radford 등(2018) Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya Sutskever. 생성 사전 훈련을 통해 언어 이해도를 향상시킵니다. 2018년.
+* Rasley et al.(2020) Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. 심층 속도: 시스템 최적화를 통해 1000억 개 이상의 파라미터를 가진 딥러닝 모델을 훈련할 수 있습니다. In _Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining_, pp. 3505-3506, 2020.
+* Scao 등(2022) Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, et al. Bloom: A 176b-parameter open-access multilingual language model. _ arXiv preprint arXiv:2211.05100_, 2022.
+* Shazeer (2020) Noam Shazeer. Glu 변형은 변압기, 2020을 개선합니다.
+* Su et al.(2021) Jianlin Su, Yu Lu, Shengfeng Pan, Bo Wen, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding, 2021.
+* Taori 등(2023a) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: 명령어 후속 llama 모델. [https://github.com/tatsu-lab/stanford_alpaca] (https://github.com/tatsu-lab/stanford_alpaca), 2023a.
+* Taori 등(2023b) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: 명령어 후속 llama 모델. [https://github.com/tatsu-lab/stanford_alpaca] (https://github.com/tatsu-lab/stanford_alpaca), 2023b.
+* Touvron 등(2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ arXiv preprint arXiv:2302.13971_, 2023.
+* Touvron 등(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_, 2023.
+* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 주목만 하시면 됩니다. 인규언 본 룩스버그, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, R. Garnett (eds.), _Advances in Neural Information Processing Systems_, volume 30. Curran Associates, Inc., 2017).
+* Wang et al.(2022) Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A. Smith, Daniel Khashabi, and Hannaneh Hajishirzi. 자체 지침: 언어 모델을 자체 생성 지침과 정렬합니다. _ arXiv e-prints_, art. arXiv:2212.10560, December 2022. doi:10.48550/arXiv.2212.10560.
+* Xu (2019) Bright Xu. Nlp chinese corpus: Large scale chinese corpus for nlp, September 2019. URL [https://doi.org/10.5281/zenodo.3402023](https://doi.org/10.5281/zenodo.3402023).
+* Yang et al.(2022) Ziqing Yang, Zihang Xu, Yiming Cui, Baoxin Wang, Min Lin, Dajong Wu, and Zigang Chen. CINO: 중국 소수자 사전 훈련 언어 모델. In _Proceedings of the 29th International Conference on Computational Linguistics_, pp. 3937-3949, Gyeongju, Republic, October 2022. International Committee on Computational Linguistics. URL [https://aclanthology.org/2022.coling-1.346](https://aclanthology.org/2022.coling-1.346).
+* Zeng et al. (2023) Aohan Zeng, Xiao Liu, Zhengxiao Du, Zihan Wang, Hanyu Lai, Ming Ding, Zhuoyi Yang, Yifan Xu, Wendi Zheng, Xiao Xia, Weng Lam Tam, Zixuan Ma, Yufei Xue, Jidong Zhai, Wenguang Chen, Zhiyuan Liu, Peng Zhang, Yuxiao Dong, and Jie Tang. GLM-130b: 개방형 이중 언어 사전 훈련 모델. _The Eleventh International Conference on Learning Representations_, 2023. URL [https://openreview.net/forum?id=-AwOrrrPUF](https://openreview.net/forum?id=-AwOrrrPUF).
+* Zhang and Sennrich (2019) Biao Zhang and Rico Sennrich. 루트 평균 제곱 층 정규화 2019년 캐나다 밴쿠버의 신경 정보 처리 시스템 32_에서 URL [https://openreview.net/references/pdf?id=S1qBAf6rr](https://openreview.net/references/pdf?id=S1qBAf6rr)을 참조 하세요.
+
+Appendix
+
+우리는 중국-LLaMA-2와 중국-Alpaca-2에 대한 기본 결과를 다음과 같이 제시한다. 대부분의 설정은 중국-LLaMA의 설정과 동일합니다.
+
+### C-Eval
+
+C-Eval(Huang et al., 2023)에 대한 결과는 표 10에 제시되어 있다.
+
+### Cmmlu
+
+CMMLU(Li 등, 2023)에 대한 결과는 표 11에 제시되어 있다.
+
+### LongBench
+
+LongBench(Bai et al., 2023)에 대한 결과는 표 12에 제시된다. 이 벤치마크는 LLM들의 긴 컨텍스트 능력을 테스트하기 위해 특별히 설계된다. 우리는 LongBench의 중국어 부분집합(코드 작업 포함)을 테스트한다. 16K로 표시된 모델은 16K 컨텍스트를 지원하는 Positional Interpolation(PI) 방법(Chen 등, 2023)을 사용하여 미세 조정되었다. 64K로 표시된 모델은 64K 컨텍스트를 지원하는 YaRN 방법(Peng 등, 2023)을 사용하여 미세 조정되었다.
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{2}{c}{**Valid Set**} & \multicolumn{2}{c}{**Test Set**} \\  & **Zero-shot** & **5-shot** & **Zero-shot** & **5-shot** \\ \hline Chinese-LLaMA-2-7B & 28.2 & 36.0 & 30.3 & 34.2 \\ Chinese-LLaMA-2-13B & 40.6 & 42.7 & 38.0 & 41.6 \\ \hline Chinese-Alpaca-2-7B & 41.3 & 42.9 & 40.3 & 39.5 \\ Chinese-Alpaca-2-13B & 44.3 & 45.9 & 42.6 & 44.0 \\ \hline \hline \end{tabular}
+\end{table}
+표 10: **C-Eval 유효 및 테스트 세트에 대한 결과** 입니다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{2}{c}{**Test Set**} \\  & **Zero-shot** & **Few-shot** \\ \hline Chinese-LLaMA-2-7B & 27.9 & 34.1 \\ Chinese-LLaMA-2-13B & 38.9 & 42.5 \\ \hline Chinese-Alpaca-2-7B & 40.0 & 41.8 \\ Chinese-Alpaca-2-13B & 43.2 & 45.5 \\ \hline \hline \end{tabular}
+\end{table}
+표 11: **CMMLU 테스트 세트에 대한 결과**.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c} \hline \hline
+**Model** & **S-QA** & **M-QA** & **Summ** & **FS-Learn** & **Code** & **Synthetic** & **Average** \\ \hline Chinese-L\(\Delta\)Ma-2-7B & 19.0 & 13.9 & 6.4 & 11.0 & 11.0 & 4.7 & 11.0 \\ Chinese-L\(\Delta\)Ma-2-7B-16K & 33.2 & 15.9 & 6.5 & 23.5 & 10.3 & 5.3 & 15.8 \\ Chinese-L\(\Delta\)Ma-2-7B-64K & 27.2 & 16.4 & 6.5 & 33.0 & 7.8 & 5.0 & 16.0 \\ Chinese-L\(\Delta\)Ma-2-13B-4K & 28.3 & 14.4 & 4.6 & 16.3 & 10.4 & 5.4 & 13.2 \\ Chinese-L\(\Delta\)Ma-2-13B-16K & 36.7 & 17.7 & 3.1 & 29.8 & 13.8 & 3.0 & 17.3 \\ \hline Chinese-Alpaca-2-7B & 34.0 & 17.4 & 11.8 & 21.3 & 50.3 & 4.5 & 23.2 \\ Chinese-Alpaca-2-7B-16K & 46.4 & 23.3 & 14.3 & 29.0 & 49.6 & 9.0 & 28.6 \\ Chinese-Alpaca-2-7B-64K & 44.7 & 28.1 & 14.4 & 39.0 & 44.6 & 5.0 & 29.3 \\ Chinese-Alpaca-2-13B & 38.4 & 20.0 & 11.9 & 17.3 & 46.5 & 8.0 & 23.7 \\ Chinese-Alpaca-2-13B-16K & 47.9 & 26.7 & 13.0 & 22.3 & 46.6 & 21.5 & 29.7 \\ \hline \hline \end{tabular}
+\end{table}
+표 12: **LongBench에 대한 결과(중국어 + 코드 작업).** S-QA: Single-doc QA, M-QA: Multi-doc QA, Summ: Summarization, FS-Learn: Few-shot Learning, Code: Code Completion, Synthetic: Synthetic Tasks.
