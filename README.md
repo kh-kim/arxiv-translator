@@ -12,6 +12,7 @@
 
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
+| 2402.14714v1 | Efficient and Effective Vocabulary Expansion Towards Multilingual Large Language Models | [arXiv](https://arxiv.org/abs/2402.14714v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.14714v1) |
 | 2402.08939v1 | Premise Order Matters in Reasoning with Large Language Models | [arXiv](https://arxiv.org/abs/2402.08939v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.08939v1) |
 | 2402.06196v2 | Large Language Models A Survey | [arXiv](https://arxiv.org/abs/2402.06196v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.06196v2) |
 | 2401.01055v2 | LLaMA Beyond English An Empirical Study on Language Capability Transfer | [arXiv](https://arxiv.org/abs/2401.01055v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.01055v2) |
