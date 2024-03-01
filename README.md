@@ -14,7 +14,7 @@
 |:---:|:---|:---:|:---:|
 | 2402.17764 | The Era of 1-bit LLMs All Large Language Models are in 158 Bits | [arXiv](https://arxiv.org/abs/2402.17764) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.17764) |
 | 2402.14714 | Efficient and Effective Vocabulary Expansion Towards Multilingual Large Language Models | [arXiv](https://arxiv.org/abs/2402.14714) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.14714) |
-| 2402.06196 | 2 Large Language Models A Survey | [arXiv](https://arxiv.org/abs/2402.06196) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.06196) |
+| 2402.06196v2 | 2 Large Language Models A Survey | [arXiv](https://arxiv.org/abs/2402.06196v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.06196v2) |
 
 ## Procedure
 
