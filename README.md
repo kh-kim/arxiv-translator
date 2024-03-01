@@ -10,8 +10,8 @@
 
 새 창 열기가 지원되지 않습니다. 직접 새 창으로 열기를 통해 열기를 권장합니다.
 
-| ArXiv ID | Title | Go to |
-|:--------:|-------|:-----:|
+| ArXiv ID | Title | ArXiv | Go to |
+|:---:|:---|:---:|:---:|
 | 2402.17764 | The Era of 1-bit LLMs All Large Language Models are in 158 Bits | [arXiv](https://arxiv.org/abs/2402.17764) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.17764) |
 | 2402.14714 | Efficient and Effective Vocabulary Expansion Towards Multilingual Large Language Models | [arXiv](https://arxiv.org/abs/2402.14714) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.14714) |
 | 2402.06196 | 2 Large Language Models A Survey | [arXiv](https://arxiv.org/abs/2402.06196) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.06196) |
