@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '[MISSING_PAGE_EMPTY:1]\n' +
+      '\n' +
+      'and makes a forecast; and (3) aggregation, which ensembles individual forecasts into an aggregated prediction. Each step makes use of an LM or a collection of LMs (either prompted or fine-tuned) (Figure 1).\n' +
+      '\n' +
+      'To optimize and evaluate our system, we collect a large dataset of forecasting questions from 5 competitive forecasting platforms. The test set consists only of (binary) questions published after June 1st, 2023. Since this is after the knowledge cut-off date of our models, this prevents leakage from pre-training. The train set contains questions before June 1st, 2023, which we use for hyperparameter search and fine-tuning our system.\n' +
+      '\n' +
+      'We use a self-supervised approach to fine-tune a LM to make accurate predictions and explanatory reasonings. We first prompt a base LM with various scratchpads to elicit forecasts to questions in our training set. We then fine-tune a new LM on the outputs that outperformed the crowd, which teaches the model what reasoning method to apply in a given context and improves forecasting performance. For hyperparameter search, we identify system configurations, including retrieval and LM prompting strategies, that lead to the best end-to-end performance.\n' +
+      '\n' +
+      'Our optimized system approaches the performance of aggregated human forecasts over the test set, as measured by Brier score, a standard metric in forecasting. To our knowledge, this is the first automated system with forecasting capability that nears the human crowd level, which is generally stronger than individual human forecasters (Section 3.1). We also consider a selective setting where our system uses heuristics, based on the LM\'s strengths, to decide whether to submit a forecast for a given question and date. In this setting, our system outperforms the human crowd.\n' +
+      '\n' +
+      'To summarize our main contributions:\n' +
+      '\n' +
+      '1. We curate the largest, most recent dataset of real-world forecasting questions to date, for evaluating and optimizing automated forecasting systems.\n' +
+      '2. We build a retrieval-augmented LM system that significantly improves upon the baseline and approaches the human crowd performance on competitive forecasting platforms.\n' +
+      '3. We propose and apply a self-supervised fine-tuning method to improve LM\'s capability in reasoning about forecasting tasks.\n' +
+      '\n' +
+      '## 2 Related Work\n' +
+      '\n' +
+      '**Event forecasting.** Machine learning systems that make accurate, automated forecasts can help inform human decision-making (Hendrycks et al., 2021). Jin et al. (2021) provided ForecastQA, the first dataset\n' +
+      '\n' +
+      'Figure 1: **Overview of our retrieval and reasoning systems**. Our retrieval system retrieves summarized new articles and feeds them into the reasoning system, which prompts LMs for reasonings and predictions that are aggregated into a final forecast.\n' +
+      '\n' +
+      'for this task, which contains questions created by crowdworkers based on events from news articles. Zou et al. (2022) introduced Autocast, a benchmark dataset compiled from forecasting competition questions up to 2022. In a competition with a large prize pool, no machine learning system was able to approach the performance of human forecasters on Autocast (Zou et al., 2022). The knowledge cut-offs of LMs have moved past 2022, necessitating more recent data. In this work, we source questions in 2023-2024, enabling us to apply recent LMs.\n' +
+      '\n' +
+      'Yan et al. (2024) built a retrieval system that led to improved accuracy on Autocast. They trained a Fusion-in-Decoder model to directly predict the final (binary) resolution (Izacard and Grave, 2021) and reported accuracy, whereas we elicit both explanatory reasonings and probability forecasts from LMs and measure performance with the standard Brier score metric.\n' +
+      '\n' +
+      'Schoenegger and Park (2023); Abolhasemi et al. (2023) evaluated GPT-4 and other LLMs on forecasting tournaments and found that they underperform the human crowd. This observation is in line with ours in Section 3.4. Unlike us, they make little or no efforts to improve these LMs on forecasting.\n' +
+      '\n' +
+      'Finally, there has been recent work on using transformer models or LMs for statistical time-series forecasting (Nie et al., 2023; Gruver et al., 2023; Dooley et al., 2023; Rasul et al., 2023; Jin et al., 2024; Das et al., 2024; Woo et al., 2024), but this is distinct from our focus on judgmental forecasting.\n' +
+      '\n' +
+      '**Information retrieval (IR).** IR can improve question-answering capabilities of LMs (Lewis et al., 2020; Shuster et al., 2021; Nakano et al., 2021). In event forecasting, access to diverse, up-to-date information is crucial (Tetlock and Gardner, 2015). Thus, a key component of our system is an IR architecture that furnishes the reasoning model with news articles, using LMs for query expansion, relevance ranking and summarization. Beyond our setting, using LMs for IR is an active research topic (Zhu et al., 2024).\n' +
+      '\n' +
+      '**Calibration.** Calibration is important for accurate forecasting (Tetlock and Gardner, 2015). Hence, on competitive forecasting tournaments, forecasters are evaluated by proper scoring rules, such as Brier score (Brier, 1950), which incentivize calibration (Gneiting and Raftery, 2007). There is a vast literature on calibration in deep learning; see Gawlikowski et al. (2021); Wang (2023) for surveys.\n' +
+      '\n' +
+      '## 3 Preliminaries: Data, Models and Baseline\n' +
+      '\n' +
+      '### Dataset\n' +
+      '\n' +
+      '**Data format**. Forecasting platforms such as Metaculus, Good Judgment Open, INFER, Polymarket, and Manifold invite participants to predict future events by assigning probabilities to outcomes of a question. Each question consists of a _background description_, _resolution criterion_, and 3 timestamps: a _begin date_ when the question was published, a _close date_ when no further forecasts can be submitted, and (eventually) a _resolve date_ when the outcome is determined. A forecast can be submitted between the begin date and min(resolve date, close date). See Table 1 for an example question with these main fields.\n' +
+      '\n' +
+      '**Crowd prediction.** On any given question, as individual forecasts are submitted, forecasting platforms continuously aggregate them into a crowd prediction; see Section A.3 for details about the aggregation\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l|c} \\hline \\hline\n' +
+      '**Field** & **Content** \\\\ \\hline Question & Will Starship achieve liftoff before Monday, May 1st, 2023? \\\\ Background & On April 14th, SpaceX received a launch license for its Starship spacecraft. A launch scheduled for April 17th was scrubbed due to a frozen valve. SpaceX CEO Elon Musk tweeted: “Learned a lot today, now offloading propellant, retrying in a few days...” \\\\ Resolution Criteria & This question resolves Yes if Starship leaves the launchpad intact and under its own power before 11:59pm ET on Sunday, April 30th. \\\\ Key Dates & Begin Date: 2023-04-17 \\(|\\) & Close Date: 2023-04-30 \\(|\\) & Resolve Date: 2023-04-20 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: **A sample question** with its background, resolution criteria, and key dates. The question resolved early (with a final resolution of Yes). See Table 12 for the complete sample point.\n' +
+      '\n' +
+      'mechanisms. The crowd prediction is a strong benchmark to compete with. For example, Metaculus (2023) shows that an ensemble of all forecasters consistently outperforms using just the top 5, 10,..., 30 best forecasters (based on past scores). In this work, we compare our system performance to the crowd aggregates.\n' +
+      '\n' +
+      '**Raw data.** We source forecasting questions from the 5 above-mentioned platforms. This yields a total of 48,754 questions and 7,174,607 user forecasts spanning from 2015 to 2024. The dataset includes 33,664 binary questions, 9,725 multiple-choice questions, 4,019 numerical questions, and 1,346 questions of other types. The questions cover a wide range of topics across the globe (Figure 10).\n' +
+      '\n' +
+      'The raw dataset contains questions that are ill-defined, overly personal, or of niche interests. Furthermore, recent questions are highly unbalanced, with over 80% of questions since June 1, 2023 coming from Manifold and Polymarket.\n' +
+      '\n' +
+      '**Data curation.** To address the above issues, we curate a subset by filtering ill-defined questions and removing questions that received few forecasts or trading volume on Manifold and Polymarket. We focus on predicting binary questions and split multiple-choice questions into binary ones.\n' +
+      '\n' +
+      'To guard potential leakage from LMs\' pre-training, we only include questions in the test set that appear after the knowledge cut-off for the models we use (June 1, 2024). All test set questions were opened after the date, and all train and validation questions were resolved before. Questions that span across the date are discarded.\n' +
+      '\n' +
+      'This yields a set of 5,516 binary questions, including 3,762 for training, 840 for validation, and 914 for testing (Table 1(a)). See Table 12 for a sample data point and Appendix C for details about the curation process.\n' +
+      '\n' +
+      '### Evaluation\n' +
+      '\n' +
+      '**Retrieval schedule.** We can simulate forecasting the future by leveraging the fact that models are only trained up to a cut-off date (Zou et al., 2022). To simulate a forecast for a question that has been resolved, we query a historical news corpus to retrieve articles between the question begin date and a specified _retrieval date_(Zou et al., 2022; Yan et al., 2024). The retrieval date can be viewed as the "simulated date" of the forecast, as we are mimicking the information the model would have had access to on that date.\n' +
+      '\n' +
+      'To create a set of retrieval dates for each question, we use geometrically increasing time points between the open and close dates. We choose this schedule for two reasons: (1) questions are often most active shortly after they open, and (2) some questions have overly conservative close dates that are long after the question resolves. We use \\(n=5\\) retrieval dates per question; the \\(k\\)th retrieval date is calculated as\n' +
+      '\n' +
+      '\\[\\text{retrieval\\_date}_{k}=\\text{date}_{\\text{begin}}+(\\text{date}_{ \\text{close}}-\\text{date}_{\\text{begin}}-1)^{k/n}. \\tag{1}\\]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\n' +
+      '\\end{table}\n' +
+      'Table 2: **(a) Distribution of our train, validation, and test sets across all 5 forecasting platforms.** Importantly, every question in the test set is from June 1, 2023 or later, after the training cut-off of our base LMs. Meanwhile, all questions in the train and validation sets were resolved before June 1, 2023, ensuring no leakage from the tuning process. **(b) Baseline performance** of pre-trained models on the test set, with 1 standard error (SE) (see full results in Table 7). Random baseline: 0.250; human crowd: 0.149. The results underscore that models are not naturally good at forecasting.\n' +
+      '\n' +
+      'For questions that resolve before they close, we exclude all dates occurring after the question has been resolved. Under this geometric retrieval schedule, we retain 86% of retrieval dates on average across all questions (Figure 10(b)). The average question window in our corpus is approximately 70 days, and the average time until resolution is 42 days.\n' +
+      '\n' +
+      'In our dataset, questions can get resolved long before their official close date. This occurs for questions like "Will \\(\\langle event\\rangle\\) happen by \\(\\langle date\\rangle\\)", where resolving early indicates that the event did occur (see Table 1 for an example). It is tempting to choose retrieval dates with respect to the resolve date so that each question can receive the same number of retrieval dates, e.g. by retrieving at geometric intervals between the open and resolve date. However, this would leak information, since the retrieval date would now depend on the resolve date, which, as we explained, correlates with the resolution.\n' +
+      '\n' +
+      '**Metric.** Our work focuses on binary questions and uses the Brier score as the performance metric, defined as \\((f-o)^{2}\\), where \\(f\\in[0,1]\\) is the probabilistic forecast and \\(o\\in\\{0,1\\}\\) is the outcome. The Brier score is a strictly proper scoring rule: assuming the true probability that \\(o=1\\) is \\(p\\), the optimal strategy is to report \\(f=p\\). This is desirable, since improper scoring rules would incentivize reporting distorted probabilities. As a baseline, an (unskilled) forecast of.5 attains a Brier score of.25.\n' +
+      '\n' +
+      'To compute the final Brier score, we first average the Brier scores across retrieval dates for each question, then average across questions. We also report standard errors; however, note that the computation of standard errors assumes the data are i.i.d., while our data are in fact time-series, so this likely underestimates the true error. Finally, we also measure calibration with root mean square (RMS) calibration error.\n' +
+      '\n' +
+      '### Models\n' +
+      '\n' +
+      'We evaluate 14 instruction-tuned LMs: GPT-3.5-Turbo, GPT-3.5-Turbo-1106 (Brown et al., 2020); GPT-4, GPT-4-1106-Preview (OpenAI, 2023); Llama-2-7B, Llama-2-13B, Llama-2-70B (Touvron et al., 2023); Mistral-7B-Instruct, Mistral-8x7B-Instruct (Jiang et al., 2024), Nous Hermes 2 Mistral-8x7B-DPO, Yi-34B-Chat, Claude-2, Claude-2.1 (Anthropic, 2023), and Gemini-Pro (Gemini Team, 2023); see Section A.1 for details.\n' +
+      '\n' +
+      '### Models are not naturally good at forecasting\n' +
+      '\n' +
+      'As a baseline, we evaluate all 14 LMs with no additional information retrieval. We use zero-shot prompts and scratchpad prompts (Nye et al., 2021). For each prompting strategy, we craft candidate prompts, pick the best prompt on the validation set, and report its Brier scores on the test set. The results are given in Table 2(b), where we report the best model in each series; see Table 7 for full statistics. The prompt choices appear in Figure 5 and Figure 6 and further details are in Appendix B.\n' +
+      '\n' +
+      'None of the models are naturally good at forecasting. Most models\' scores are around or worse than random guessing (.25). Only the GPT-4 and Claude-2 series beat the unskilled baseline by a large margin (\\(>.02\\)). Moreover, while GPT-4-1106-Preview achieves the lowest Brier score of.208, it trails significantly behind the human crowd performance of.149.\n' +
+      '\n' +
+      '## 4 Our System\n' +
+      '\n' +
+      'As observed in Table 2(b), all models perform poorly in the baseline setting. We intuit that models require detailed contexts and up-to-date information to make accurate forecasts. Our system addresses this issue via news retrieval and elicits better reasoning via optimized prompting strategies and fine-tuning.\n' +
+      '\n' +
+      '### Retrieval\n' +
+      '\n' +
+      'Our retrieval system consists of 4 steps: search query generation, news retrieval, relevance filtering and re-ranking, and text summarization (Figure 0(a)).\n' +
+      '\n' +
+      'First, we generate search queries that are used to invoke news APIs to retrieve historical articles. We initially implement a straightforward query expansion prompt (Figure 0(a)), instructing the model to create queriesbased on the question and its background. However, we find that this overlooks sub-considerations that often contribute to accurate forecasting. To achieve broader coverage, we prompt the model to decompose the forecasting question into sub-questions and use each to generate a search query (Min et al., 2019); see Figure 11(b) for the prompt. For instance, when forecasting election outcomes, the first approach searches directly for polling data, while the latter creates sub-questions that cover campaign finances, economic indicators, and geopolitical events. We combine both approaches for comprehensive coverage.\n' +
+      '\n' +
+      'Next, the system retrieves articles from news APIs using the LM-generated search queries. We evaluate 5 APIs on the relevance of the articles retrieved and select NewsCatcher1 and Google News (Section E.2).\n' +
+      '\n' +
+      'Footnote 1: [https://www.newscatcherapi.com/](https://www.newscatcherapi.com/)\n' +
+      '\n' +
+      'Our initial retrieval provides wide coverage at the cost of obtaining some irrelevant articles. To ensure that they do not mislead the model at the reasoning step, we prompt GPT-3.5-Turbo to rate the relevancy of all articles (Figure 14) and filter out low-scoring ones. Since the procedure is costly in run-time and budget, we only present the article\'s title and first 250 words to the model in context. We validate that this approach achieves high recall and precision while saving 70% cost (see Section E.3 for alternative methods and results).\n' +
+      '\n' +
+      'Since LMs are limited by their context window, we summarize the articles. In particular, we prompt GPT-3.5-Turbo to distill the most relevant details from each article with respect to the forecasting question (Figure 13). Finally, we present the top \\(k\\) article summaries to the LM, ordered by their relevancy. We choose the ranking criterion, article count \\(k\\), and summarization prompt based on end-to-end Brier scores over the validation set; see Section 5.2 for the hyperparameter sweep procedure.\n' +
+      '\n' +
+      '### Reasoning\n' +
+      '\n' +
+      'Prior work in forecasting has focused on eliciting predictions from models without requiring rationales (Zou et al., 2022; Yan et al., 2024). However, accurately predicting the future is a difficult task that often requires computation beyond a single forward pass. Having the model externalize its reasoning also allows us to understand the explanation for the forecast and improve it accordingly.\n' +
+      '\n' +
+      'We use open-ended scratchpad to structure model\'s reasoning paths. Our prompt begins with posing the question, providing a description, and specifying resolution criteria and key dates, followed by the top \\(k\\) relevant summaries (Figure 16). To guide the model to reason about the forecasting question, the optimal scratchpad prompt (Figure 15), as identified in Section 5.2, also incorporates four additional components:\n' +
+      '\n' +
+      '* First, to ensure that the model comprehends the question, we prompt it to rephrase the question. It is also instructed to expand the question with its own knowledge to provide further information. Intuitively, a more detailed and precise phrasing of the question elicits better responses (Deng et al., 2023).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline\n' +
+      '**Criteria** & \\multicolumn{3}{c}{**Brier Score \\(\\downarrow\\)**} & \\multicolumn{3}{c}{**\\% Accuracy \\(\\uparrow\\)**} & \\multicolumn{2}{c}{**\\% Data Retained \\(\\uparrow\\)**} \\\\ \\cline{2-7}  & **Ours** & **Crowd** & **Aggregate** & **Ours** & **Crowd** & **Aggregate** & **Forecasts** & **Questions** \\\\ \\hline\n' +
+      '**All Questions** &.179,003 &.149,003 & **.146,002** & 71.5 & 77.0 & **77.8,6** & 100\\% & 100\\% \\\\\n' +
+      '**Crowd Uncertain** & **.238,004** &.240,003 & **.233,002** & 58.1 & **58.3,3** & **60.2,12** & 51\\% & 56\\% \\\\\n' +
+      '**Early Retrieval** &.186,003 &.162,004 & **.159,003** & 70.0 & 74.4 & **75.0,8** & 84\\% & 100\\% \\\\\n' +
+      '**5+ Articles** &.175,003 &.142,003 & **.140,002** & 72.3 & 77.7 & **78.7,7** & 84\\% & 94\\% \\\\ \\hline\n' +
+      '**All Criteria** & **.240,005** &.247,004 & **.237,003** & **58.0,17** & 54.2,17 & **56.6,17** & 22\\% & 43\\% \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: **System performance on the test set. “All Questions” shows the Brier score on the full test set. Other rows show selective evaluation when specified criteria are met, averaging over qualifying questions and retrieval dates. “Crowd Uncertain” refers to questions with crowd predictions between 0.3-0.7. “Early Retrieval” refers to the first 3 retrieval dates. “5+ Articles” refers to forecasting when at least 5 relevant articles are retrieved. Finally, “All Criteria” refers to forecasting when the 3 criteria are jointly met. Notably, in every setting the aggregate (average) of our system and crowd prediction is the best. Subscript numbers indicate 1 standard error. We bold entries that outperform the crowd aggregate, and underline the best entry in each category.*** Forecasting requires a holistic consideration of the possibilities (Tetlock and Gardner, 2015). We next prompt the model to leverage the retrieved information and its pre-training knowledge to produce arguments for why the outcome may or may not occur.\n' +
+      '* The model can potentially generate weak arguments. To avoid treating all considerations as equal, it is instructed to weigh them by importance and aggregate them accordingly into an initial forecast.\n' +
+      '* Finally, to prevent potential bias and miscalibration, the model is asked to check if it is over- or under-confident and consider historical base rates (Tetlock and Gardner, 2015), prompting it to calibrate and amend the prediction accordingly.\n' +
+      '\n' +
+      '**Base model.** We prompt GPT-4-1106-Preview with the best scratchpads (found via hyperparameter sweep), since it consistently gives the lowest Brier scores among the LMs we test (see Section 5.2 on reasoning).\n' +
+      '\n' +
+      '**Fine-tuned model.** We also prompt a fine-tuned version of GPT-4 that we trained to generate reasonings with accurate predictions (Section 5.1). We prompt it with only the question\'s basic information (no scratchpad instructions) since our fine-tuned model is trained to reason without prescriptive instructions.\n' +
+      '\n' +
+      '### Ensembling\n' +
+      '\n' +
+      'Since the aggregate of predictions is usually superior to individual forecasts (Tetlock and Gardner, 2015), we elicit multiple predictions from the base and fine-tuned models.\n' +
+      '\n' +
+      'We prompt GPT-4-1106-Preview with the optimal scratchpad prompt (Figure 15), along with the 2 next best scratchpad prompts identified in Section 5.2. For our fine-tuned model, we set temperature \\(T=0.5\\) and prompt it 3 times to sample 3 additional forecasts. This gives us 6 forecasts in total: 3 from the base model, and 3 from the fine-tuned model. Given these forecasts, the system ensembles them into a final prediction by taking their trimmed mean, as this performs best on the validation set among the ensemble methods we implement (see Section 5.2 on ensembling).\n' +
+      '\n' +
+      'We provide further details about our system in Appendix D, including hyperparameters and prompt designs.\n' +
+      '\n' +
+      '## 5 Optimizing the System\n' +
+      '\n' +
+      'We now describe the procedure to optimize our retrieval and reasoning system and the results obtained.\n' +
+      '\n' +
+      '### Fine-tuning a Reasoning Model\n' +
+      '\n' +
+      'We fine-tune a LM to produce reasonings that lead to accurate forecasts. To generate the data for fine-tuning, we (1) collect a large set of forecasts on the train set, and then (2) select a subset where the model outperforms the human crowd.\n' +
+      '\n' +
+      'Figure 2: **Our procedure of generating data for self-supervised training. For each question, the method generates multiple candidate reasoning-prediction pairs and selects those that outperform human aggregates for fine-tuning.**\n' +
+      '\n' +
+      '**Collecting fine-tuning data.** To generate the preliminary data, we run our system at each retrieval date in the retrieval schedule and on each question in the train set, multiplied by 16 configurations described below.\n' +
+      '\n' +
+      'First, as a form of data augmentation, we retrieve 2 sets of articles for each question by sampling 2 (distinct) retrieval configurations (Figure 2, left). Specifically, we sample the retrieval prompt, number of queries, and articles per query, twice (Section 4), with relevancy filtering and summarization following the process described in Section 4.1. This results in 2 inputs to the reasoning model per question, each with the same question but a different set of articles.\n' +
+      '\n' +
+      'To increase the chance of attaining a prediction that outperforms the crowd, we generate 4 candidate outputs per input (8 total per question) by trying different scratchpad prompts. The first uses the optimal prompt found in Section 5.2 (Figure 15). We then sample 3 other scratchpad prompts, with probability inversely proportional to their Brier score on the validation set. We prompt both Claude-2.1 and GPT-4-Preview, since we find that Claude-2.1 is better on some questions. In total, this gives 16 candidate forecasts per question.\n' +
+      '\n' +
+      '**Selecting fine-tuning data.** We seek to fine-tune our model on strong forecasts. To select the data, we only keep outputs that give a lower Brier score than the crowd\'s. However, this can inadvertently cause overconfidence in our fine-tuned model. To mitigate this, we discard pairs where the prediction deviates by more than 0.15 from the crowd prediction, and we also average our prediction with the crowd prediction when constructing the target output.\n' +
+      '\n' +
+      'The resulting fine-tuning data has the following structure (Figure 2, right):\n' +
+      '\n' +
+      '* The **input** to the model consists of the question, description, and resolution criteria, followed by summarized articles.\n' +
+      '* The **target output** consists of a reasoning and a prediction.\n' +
+      '\n' +
+      'Importantly, the fine-tuning input excludes the scratchpad instructions. By doing so, we directly teach the model which reasoning to apply in a given context.\n' +
+      '\n' +
+      'In total, 73,632 reasonings are generated from which 13,253 meet the above desiderata. Finally, we fine-tune GPT-4-06132 on the 6,000 most recent points for 2 epochs, due to budget constraint (Figure 2, right).\n' +
+      '\n' +
+      'Footnote 2: While the more recent GPT-4-1106-Preview has 2 years of more recent knowledge, it was not available for fine-tuning.\n' +
+      '\n' +
+      '### Hyperparameter Sweep\n' +
+      '\n' +
+      'Our hyperparameter sweep optimizes an (intermediate) metric over a discrete set of choices, such as prompts and the number of articles presented. We share the key findings below and more details in Appendix E.\n' +
+      '\n' +
+      '**Methodology.** We divide the hyperparameters into groups of 1-2 and optimize them iteratively. For each group, we select the best configuration based on the average Brier score on the validation set, except for search query generation where we use proxy metrics for efficiency.\n' +
+      '\n' +
+      'We optimize the groups sequentially, fixing the optimal configurations from previous groups while sweeping the current one. The hyperparameters yet to be swept are randomized independently for each input question.\n' +
+      '\n' +
+      '**Retrieval.** Our retrieval uses LMs for search query generation, relevance rating, and summarization. We independently optimize the prompt choices for search query generation and summarization. The relevance rating prompt is fixed in our system (Figure 14).\n' +
+      '\n' +
+      'For search query generation, we evaluate the prompts by retrieving articles with the generated queries and examining two metrics: (1) the average relevance score across all retrieved articles, and (2) the average relevance score of articles exceeding a relevance threshold of 4 on a 6-point scale. The 2 high-scoring prompts perform similarly under both metrics and generate queries with little overlap. As a result, we use both prompts (Figure 12) to generate queries and take the union.\n' +
+      '\n' +
+      'For summarization, we run our system end-to-end and pick the top 1 prompt (Figure 13) with respect to the Brier score.\n' +
+      '\n' +
+      '**Reasoning.** The reasoning system takes a ranked list of article summaries and prompts LMs to make forecasts. We optimize: (1) the ordering criterion of the summaries (by relevance or recency); (2) the number \\(k\\) of article summaries presented to LMs; and (3) the choice of scratchpad instructions to elicit the forecasts.\n' +
+      '\n' +
+      'For efficiency, we optimize them in 2 independent stages:\n' +
+      '\n' +
+      '* In the first stage, we jointly optimize (1) and (2). Ranking by relevance and setting \\(k=15\\) achieve the lowest average Brier score.\n' +
+      '* In the second stage, we optimize (3) the reasoning prompt. We identify the top 3 prompts out of 15 candidates to elicit 3 predictions from our base model in our system; see Figure 15 for the best one.\n' +
+      '\n' +
+      'In optimizing the reasoning system, we test both Claude-2.1 and GPT-4-1106-Preview as candidate models for generating forecasts. GPT-4-1106-Preview consistently yields a 0.01-0.03 lower Brier score. Therefore, our final system elicits predictions from GPT-4-1106-Preview and the fine-tuned GPT-4-0613.\n' +
+      '\n' +
+      '**Ensembling.** We implement 5 ensembling methods, including mean, median, geometric mean, trimmed mean, and a variant of universal self-consistency (USC; Chen et al. (2023)). Trimmed mean performs the best in our evaluation; see Section E.1 for details.\n' +
+      '\n' +
+      '**Calibration.** Interestingly, our system is naturally well calibrated (Figure 2(b)), and we find that standard calibration methods such as binning or isotonic regression do not improve performance.\n' +
+      '\n' +
+      '## 6 Evaluations\n' +
+      '\n' +
+      'We evaluate our optimized system on the test set and find that it comes close to human crowd performance (Section 6.1). Next, we analyze its strengths and weaknesses (Section 6.2). Motivated by the observations, we introduce a relaxed setting, where the system may make forecasts selectively (given its identified strengths), and find that our system surpasses the crowd aggregate (Section 6.3). Finally, we demonstrate how our system can be used to complement aggregated human forecasts (Section 6.4).\n' +
+      '\n' +
+      '### System Nears Human Performance\n' +
+      '\n' +
+      'We first evaluate the Brier score of our end-to-end system on the test set. Note that all hyperparameters were chosen based on the validation set and all test set questions appear temporally after the validation questions, mirroring the setting of a real-time forecasting competition. In addition to the Brier score, we also report accuracy to compare with past work (Zou et al., 2022; Yan et al., 2024).\n' +
+      '\n' +
+      'As the main result, our averaged Brier score is.179, while the crowd achieves.149, resulting in a difference of.03. Our accuracy on the test set is 71.5%, whereas the community scores 77.0%, resulting in a difference of\n' +
+      '\n' +
+      'Figure 3: **Our system is naturally well calibrated on both (b) validation and (c) test. The crowd is also well calibrated, consistent with Zou et al. (2022)’s findings. In contrast, the base models in the zero-shot setting (a) are less calibrated (Section 3.4).**5.5%. In comparison with the baseline evaluation (Section 3.4), our system\'s Brier score (.179) significantly outperforms the best baseline model (.208 with GPT-4-1106-Preview)\n' +
+      '\n' +
+      'In prior work, Zou et al. (2022) evaluated their system on the forecasting dataset Autocast, which consists of questions from 3 of the platforms we use: Metaculus, INFER, and GJOpen. They achieved an accuracy of 65.4% compared to a community baseline of 92.8%. Yan et al. (2024) later improved this to 67.9%. Our results (Table 4) underscore the significant progress we make in automated forecasting--specifically, we achieve a better accuracy (71.5%) even though the questions we consider are harder (with a significantly lower crowd accuracy: 77.0%).\n' +
+      '\n' +
+      'Further detailed results across different platforms and categories can be found in Table 4. Across categories, our system exhibits noticeable variations: on Sports, our system nearly matches the crowd aggregate, and on Environment & Energy, it falls much behind. However, we caution against drawing strong conclusions from subcategories, since the sample size is smaller and variation could be due to noise.\n' +
+      '\n' +
+      'Finally, on the test set, we observe again that our system is well calibrated (Figure 2(c)) with RMS calibration error.42 (human crowd:.38). Interestingly, this is not the case in the baseline evaluations (Section 3.4), where the models are _not_ well calibrated in the zero-shot setting (Figure 2(a)). Through fine-tuning and ensembling, our system improves the calibration of the base models, without undergoing specific training for calibration.\n' +
+      '\n' +
+      '### System Strengths and Weaknesses\n' +
+      '\n' +
+      'We next seek to understand our system\'s strengths and weaknesses. We will investigate these on the validation set, and later use these insights to improve performance on the test set (Section 6.3).\n' +
+      '\n' +
+      'We find that our system performs best relative to the crowd on the validation set when (1) the crowd is less confident, (2) at earlier retrieval dates, and (3) when it retrieves many articles. Furthermore, we find that our system is well-calibrated.\n' +
+      '\n' +
+      'First, our system significantly outperforms the crowd when the crowd\'s predictions express high uncertainty. Specifically, when the crowd\'s predictions are between.3 and.7, our Brier score is.199 compared to the crowd\'s.246. However, our system underperforms the crowd on questions where they are highly certain, likely because it rarely outputs low probabilities (Figure 3(b)). We hypothesize that this stems from our model\'s tendency to hedge predictions due to its safety training (see Figure 17 for a qualitative example). Supporting this, our system achieves 7% higher accuracy on questions where the crowd\'s prediction is within.05 of 0 or 1, but the Brier score is worse by.04.\n' +
+      '\n' +
+      'Next, our system outperforms the crowd on earlier retrieval dates (1, 2, and 3) but not the later ones (4 and 5). Relative to the crowd, our Brier score improves at a slower rate as questions move towards their\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline \\multirow{2}{*}{**Category**} & \\multicolumn{2}{c}{**Brier Score \\(\\downarrow\\)**} & \\multicolumn{2}{c}{**Accuracy \\(\\uparrow\\)**} \\\\ \\cline{2-5}  & **Ours** & **Crowd** & **Ours** & **Crowd** \\\\ \\hline Science \\& Tech &.143.01 &.114.011 & 82.22.7 & 84.32.6 \\\\ Healthcare \\& Biology &.074.015 &.063.020 & 93.84.3 & 90.65.2 \\\\ Economics \\& Business &.198.007 &.147.009 & 68.82.1 & 78.31.9 \\\\ Politics \\& Governance &.172.006 &.145.007 & 72.61.4 & 78.21.3 \\\\ Education \\& Research &.163.024 &.129.04 & 80.66.7 & 77.80.7 \\\\ Arts \\& Recreation &.221.01 &.146.010 & 62.42.5 & 76.92.2 \\\\ Security \\& Defenses &.174.086 &.129.009 & 71.01.2 & 78.41.9 \\\\ Sports &.175.004 &.171.005 & 73.01.3 & 73.11.3 \\\\ \\hline\n' +
+      '**All Categories** & **.179.003** & **.149.003** & **71.5.7** & **77.0.7** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: **Results of system evaluation** by category **(left)** and by platform **(right)**. Subscript numbers are 1 standard error. Averaged across all retrieval dates, our optimal system, as described in Section 4, achieves.179 Brier score (human crowd:.149) and accuracy.715 (human crowd:.770).\n' +
+      '\n' +
+      'resolution (Figure 3(c)). This may be due to the aforementioned issue: Our model hedges, even as the evidence becomes more decisive.\n' +
+      '\n' +
+      'With respect to retrieval, our system nears the performance of the crowd when there are at least 5 relevant articles. We further observe that as the number of articles increases, our Brier score improves and surpasses the crowd\'s (Figure 3(a)). Intuitively, our system relies on high-quality retrieval, and when conditioned on more articles, it performs better.\n' +
+      '\n' +
+      'Our system is well calibrated on the validation set, with most of the calibration error coming from the system\'s underconfidence: predictions near 0 are observed to occur less frequently than anticipated, and similarly, events with predictions close to 1 also occur at a higher rate than the model suggests (Figure 2(b)).\n' +
+      '\n' +
+      '### System Beats Crowd in the Selective Setting\n' +
+      '\n' +
+      'In real-word forecasting competitions, forecasters do not have to make predictions on every question in the platform at every possible date. Instead, they typically make predictions on questions where they have expertise or interest in and at times that they choose. Therefore, it is natural to leverage our system\'s strengths and weaknesses and decide accordingly if we should forecast on a retrieval date \\(k\\) for a question \\(q\\).\n' +
+      '\n' +
+      'Leveraging the insights from Section 6.2, we outperform the crowd by making selective forecasts. Specifically, we report the performance when forecasting only under the conditions identified in Section 6.2:\n' +
+      '\n' +
+      '1. _Forecasting only on questions when the crowd prediction falls between \\(.3\\) and \\(.7\\)_. Here, our system attains a Brier score of \\(.238\\) (crowd aggregate: \\(.240\\)). This comprises 51% of forecasts and 56% of questions.\n' +
+      '2. _Forecasting only on earlier retrieval dates (1, 2, and 3)_. Our system\'s Brier score in this setting is \\(.185\\) (crowd aggregate: \\(.161\\)). This comprises 66% of forecasts and 100% of questions.\n' +
+      '3. _Forecasting only when the retrieval system provides at least \\(5\\) relevant articles._ Under this condition, our system\'s Brier score is \\(.175\\) (crowd aggregate: \\(.143\\)). This makes up 84% of forecasts and 94% of questions.\n' +
+      '4. Under all three conditions, our system attains Brier score \\(.240\\) (crowd aggregate: \\(.247\\)). This comprises 22% of forecasts and 43% of questions.\n' +
+      '\n' +
+      'The gap in Brier score between our system and the crowd shrinks under each heuristic, except the third one (Table 3). Under the first heuristic, we outperform the crowd by a small margin (\\(.238\\) vs. \\(.240\\)). This is\n' +
+      '\n' +
+      'Figure 4: **System strengths. Evaluating on the validation set, we note: (a) When provided enough relevant articles, our system outperforms the crowd. (b) For questions where the crowd is unsure (predictions between \\(.3\\) and \\(.7\\)), we outperform them (Brier score \\(.199\\) vs. \\(.246\\)). However, the crowd outperforms our system on questions where they are highly confident, e.g. predicting less than \\(.05\\). (c) Our system’s Brier score is better at the earlier retrieval dates. Finally, our system is well-calibrated (c.f. Figure 2(b)).**\n' +
+      '\n' +
+      'valuable as our system can be used to complement the crowd\'s prediction when there is greater uncertainty. When all three conditions are jointly met, our system beats the crowd significantly (by more than 1.5 standard errors in both Brier score and accuracy).\n' +
+      '\n' +
+      '### System Complements the Crowd\n' +
+      '\n' +
+      'Finally, we show that aggregates of our system with the crowd forecasts outperform either one in isolation.\n' +
+      '\n' +
+      'Combining the system\'s predictions with the crowd using a weighted average--4x weight for the crowd, which we find optimal on the validation set--improves the overall Brier score from.149 to.146 on the full test set (Table 3, top row).\n' +
+      '\n' +
+      'Moreover, our system excels under certain criteria (Section 6.2). It is especially useful in these cases to supplement the crowd prediction. We report these results in Table 3 as well, using an unweighted average (instead of the weighted average above). This outperforms the crowd prediction in all cases: For example, the crowd Brier score is.24 when the prediction is between.3 and.7, while the system achieves.237.\n' +
+      '\n' +
+      'Finally, beyond direct score improvements, our system can potentially aid human forecasters by providing effective news retrieval and novel perspectives in reasoning drawn from LM pre-training knowledge. We leave it as a future direction to explore how our system can interactively assist human forecasters.\n' +
+      '\n' +
+      '## 7 Ablations\n' +
+      '\n' +
+      'We conduct 3 ablation studies. The first validates that our performance is not solely due to the power of GPT-4. The last two show the benefits of our retrieval and fine-tuning methods.\n' +
+      '\n' +
+      '**Fine-tuning a less capable model.** To demonstrate that our system\'s performance does not hinge on the ability of the base model (i.e., GPT-4), we fine-tune GPT-3.5 on all our fine-tuning data (13,253 samples).\n' +
+      '\n' +
+      'We replace fine-tuned GPT-4 in our system with fine-tuned GPT-3.5, and evaluate using the same methodology as in Section 6.1. We find here that our Brier score is only slightly worse:.182 compared to the previous score of.179.\n' +
+      '\n' +
+      '**No fine-tuning.** To demonstrate the gain from fine-tuning (Section 5.1), we evaluate our optimal system, except we only use base GPT-4-Preview-1106 as the reasoning model.\n' +
+      '\n' +
+      'In this setup, the ablated system achieves a Brier score of.186, which increased on the original score by.007.\n' +
+      '\n' +
+      'Overall, the results suggest that fine-tuning the reasoning model yields a significant boost to our system\'s performance.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline\n' +
+      '**Criteria** & \\multicolumn{2}{c}{**Brier Score \\(\\downarrow\\)**} & \\multicolumn{2}{c}{**\\% Accuracy \\(\\uparrow\\)**} \\\\ \\cline{2-5}  & **Ours** & **Aggregate** & **Ours** & **Aggregate** \\\\ \\hline\n' +
+      '**Full System** &.179\\({}_{.003}\\) &.146\\({}_{.002}\\) & 71.5\\({}_{.7}\\) & **77.8\\({}_{.6}\\)** \\\\\n' +
+      '**Fine-tuned GPT-4-0613** &.182\\({}_{.002}\\) & **.146\\({}_{.002}\\)** & 70.7\\({}_{.7}\\) & **77.4\\({}_{.6}\\)** \\\\\n' +
+      '**Fine-tuned GPT-3.5 \\& Base GPT-4** &.181\\({}_{.002}\\) & **.147\\({}_{.002}\\)** & 70.9\\({}_{.7}\\) & **77.4\\({}_{.6}\\)** \\\\\n' +
+      '**Fine-tuned GPT-3.5** &.183\\({}_{.002}\\) & **.146\\({}_{.002}\\)** & 71.5\\({}_{.7}\\) & **77.4\\({}_{.6}\\)** \\\\\n' +
+      '**Base GPT-4** &.186\\({}_{.002}\\) & **.148\\({}_{.002}\\)** & 70.6\\({}_{.7}\\) & **77.1\\({}_{.6}\\)** \\\\\n' +
+      '**Base GPT-4; no IR** &.206\\({}_{.002}\\) &.150\\({}_{.002}\\) & 66.6\\({}_{.7}\\) & 76.9\\({}_{.6}\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: **Ablation study results.** The crowd Brier score and accuracy are.146 and 77.0%, respectively. “Aggregate” indicates the weighted average of our system with the crowd prediction. Our full system uses fine-tuned GPT-4-0613 and base GPT-4-1106-Preview **(row 1)**. The system yields similar performance with fine-tuned GPT-3.5 **(rows 3–4)**. Our system exhibits poorer performance without a fine-tuned reasoning model **(row 5)**, and further declines with neither retrieval nor a fine-tuned reasoning model **(row 6)**. Subscript numbers represent one standard error. We bold entries that surpass the crowd aggregate.\n' +
+      '\n' +
+      '**No fine-tuning and no retrieval.** We evaluate our optimal system without any news retrieval and using the base GPT-4-1106-Preview model. The ablated system attains a Brier score of.206.\n' +
+      '\n' +
+      'Recall that in our baseline evaluation (Section 3.4), the lowest Brier score attained by any model is.208. Our ablated system essentially deteriorates to this baseline level. Indeed, without any fine-tuning or retrieval, the only expected advantage of our system over the baseline evaluation setup is its reasoning prompt, found through searching a set of candidate prompts (Section 5). The experiment suggests that this gives fairly a minor improvement.\n' +
+      '\n' +
+      '## 8 Conclusion\n' +
+      '\n' +
+      'Our work presents the first ML system that can forecast at near human levels. We develop a novel retrieval mechanism that uses a LM to determine which information to source and how to evaluate its relevance. We also give a self-supervised fine-tuning method to generate reasonings with accurate predictions.\n' +
+      '\n' +
+      'To facilitate further research, we release our dataset: the largest and most recent forecasting dataset compiled from 5 real-world forecasting competitions. We discuss a few opportunities to improve these systems further.\n' +
+      '\n' +
+      '**Iterative self-supervision.** With a larger training corpus, our self-supervised fine-tuning approach can be used for iterative self-improvement. Specifically, after fine-tuning a model on its previous optimal predictions and reasonings, we can generate more fine-tuning data by using the same model again, which can be repeated until training data is exhausted.\n' +
+      '\n' +
+      '**Data.** While our forecasting benchmark is a good initial corpus to train a system, we believe that it is possible to use LMs with later training cut-offs to teach an earlier LM. This could be done by using later LMs to generate questions it knows the answer to but an earlier LM does not (postdiction). In addition, while we source questions from forecasting platforms, it is possible to collect historical data in the wild and re-formulate them as forecasting questions, leading to a larger training set.\n' +
+      '\n' +
+      '**Domain-adaptive training.** In Section B.3, we observe that in the baseline evaluations, the Brier scores across categories are correlated with models\' pre-training knowledge. This suggests that we may be able to specialize models to areas of particular interests by fine-tuning them on domain knowledge.\n' +
+      '\n' +
+      '**LMs get better at forecasting naturally.** We observe that as LMs improve, they naturally also become better at forecasting. In particular, in Section 3.4, we see that newer generations of models forecast better than older ones. For example, GPT-4-1106, released in 2023, outperforms GPT-4-0613, released in 2021, by.02 with respect to the Brier score. If we were to have fine-tuned the more recent model, we would expect better performance.\n' +
+      '\n' +
+      'At a high level, our results suggest that in the near future, LM-based systems may be able to generate accurate forecasts at the level of competitive human forecasters. We hope that our work paves the way for automated, scalable forecasting that can help to inform institutional decision making.\n' +
+      '\n' +
+      '## Acknowledgments\n' +
+      '\n' +
+      'We thank Jean-Stanislas Denain, Erik Jones, Ezra Karger, Jacob Pfau and Ruiqi Zhong for helpful discussions, and Jean-Stanislas Denain, Owain Evans, Dan Hendrycks, Horace He and Andy Zou for comments and feedbacks on an early draft of the paper. DH was supported by an award from the C3.ai Digital Transformation Institute. FZ was supported by NSF award CCF-2311648. JS was supported by the National Science Foundation SaTC CORE Award No. 1804794 and the Simons Foundation.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Abolghasemi et al. (2023) Abolghasemi, M., Ganbold, O., and Rotaru, K. (2023). Humans vs large language models: Judgmental forecasting in an era of advanced AI. _arXiv preprint arXiv:2312.06941_.\n' +
+      '* Adam (2020) Adam, D. (2020). Special report: The simulations driving the world\'s response to COVID-19. _Nature_, 580(7802):316-319.\n' +
+      '* Abolghasemi et al. (2019)* Anthropic (2023) Anthropic (2023). Model card and evaluations for Claude models. [https://www-cdn.anthropic.com/files/4zrzovbb/website/5c49cc247484cecf107c699baf29250302e5da70.pdf](https://www-cdn.anthropic.com/files/4zrzovbb/website/5c49cc247484cecf107c699baf29250302e5da70.pdf).\n' +
+      '* Armstrong (2001) Armstrong, J. S. (2001). _Principles of Forecasting: a Handbook for Researchers and Practitioners_. Springer.\n' +
+      '* Brier (1950) Brier, G. W. (1950). Verification of forecasts expressed in terms of probability. _Monthly Weather Review_, 78(1):1-3.\n' +
+      '* Brown et al. (2020) Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., Agarwal, S., Herbert-Voss, A., Krueger, G., Henighan, T., Child, R., Ramesh, A., Ziegler, D., Wu, J., Winter, C., Hesse, C., Chen, M., Sigler, E., Litwin, M., Gray, S., Chess, B., Clark, J., Berner, C., McCandlish, S., Radford, A., Sutskever, I., and Amodei, D. (2020). Language models are few-shot learners. In _Advances in Neural Information Processing Systems (NeurIPS)_.\n' +
+      '* Chen et al. (2023) Chen, X., Aksitov, R., Alon, U., Ren, J., Xiao, K., Yin, P., Prakash, S., Sutton, C., Wang, X., and Zhou, D. (2023). Universal self-consistency for large language model generation. _arXiv preprint arXiv:2311.17311_.\n' +
+      '* Das et al. (2024) Das, A., Kong, W., Sen, R., and Zhou, Y. (2024). A decoder-only foundation model for time-series forecasting. _arXiv preprint arXiv:2310.10688_.\n' +
+      '* Deng et al. (2023) Deng, Y., Zhang, W., Chen, Z., and Gu, Q. (2023). Rephrase and respond: Let large language models ask better questions for themselves. _arXiv preprint arXiv:2311.04205_.\n' +
+      '* Dooley et al. (2023) Dooley, S., Khurana, G. S., Mohapatra, C., Naidu, S. V., and White, C. (2023). ForecastPFN: Synthetically-trained zero-shot forecasting. In _Advanced in Neural Information Processing Systems (NeurIPS)_.\n' +
+      '* Gawlikowski et al. (2021) Gawlikowski, J., Tassi, C. R. N., Ali, M., Lee, J., Humt, M., Feng, J., Kruspe, A., Triebel, R., Jung, P., Roscher, R., Shahzad, M., Yang, W., Bamler, R., and Zhu, X. X. (2021). A survey of uncertainty in deep neural networks. _arXiv preprint arXiv:2107.03342_.\n' +
+      '* Gemini Team (2023) Gemini Team (2023). Gemini: a family of highly capable multimodal models. _arXiv preprint arXiv:2312.11805_.\n' +
+      '* Gneiting and Raftery (2007) Gneiting, T. and Raftery, A. E. (2007). Strictly proper scoring rules, prediction, and estimation. _Journal of the American Statistical Association_, 102(477):359-378.\n' +
+      '* Gruver et al. (2023) Gruver, N., Finzi, M. A., Qiu, S., and Wilson, A. G. (2023). Large language models are zero-shot time series forecasters. In _Advanced in Neural Information Processing Systems (NeurIPS)_.\n' +
+      '* Hanson (2007) Hanson, R. (2007). Logarithmic markets coring rules for modular combinatorial information aggregation. _The Journal of Prediction Markets_, 1(1):3-15.\n' +
+      '* Hendrycks et al. (2021) Hendrycks, D., Carlini, N., Schulman, J., and Steinhardt, J. (2021). Unsolved problems in ML safety. _arXiv preprint arXiv:2109.13916_.\n' +
+      '* Izacard and Grave (2021) Izacard, G. and Grave, E. (2021). Leveraging passage retrieval with generative models for open domain question answering. In _Proceedings of the 16th Conference of the European Chapter of the Association for Computational Linguistics (EACL)_.\n' +
+      '* Jiang et al. (2024) Jiang, A. Q., Sablayrolles, A., Roux, A., Mensch, A., Savary, B., Bamford, C., Chaplot, D. S., de las Casas, D., Hanna, E. B., Bressand, F., Lengyel, G., Bour, G., Lample, G., Lavaud, L. R., Saulnier, L., Lachaux, M.-A., Stock, P., Subramanian, S., Yang, S., Antoniak, S., Scao, T. L., Gervet, T., Lavril, T., Wang, T., Lacroix, T., and Sayed, W. E. (2024). Mistral of experts. _arXiv preprint arXiv:2401.04088_.\n' +
+      '* Jin et al. (2024) Jin, M., Wang, S., Ma, L., Chu, Z., Zhang, J. Y., Shi, X., Chen, P.-Y., Liang, Y., Li, Y.-F., Pan, S., and Wen, Q. (2024). Time-LLM: Time series forecasting by reprogramming large language models. In _International Conference on Learning Representations (ICLR)_.\n' +
+      '* Jin et al. (2021) Jin, W., Khanna, R., Kim, S., Lee, D.-H., Morstatter, F., Galstyan, A., and Ren, X. (2021). ForecastQA: A question answering challenge for event forecasting with temporal text data. In _Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (ACL)_.\n' +
+      '* Jin et al. (2020)Lewis, P. S. H., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., Kuttler, H., Lewis, M., Yih, W., Rocktaschel, T., Riedel, S., and Kiela, D. (2020). Retrieval-augmented generation for knowledge-intensive NLP tasks. In _Advances in Neural Information Processing Systems (NeurIPS)_.\n' +
+      '* Manifold (2022) Manifold (2022). Maniswap. [https://manifoldmarkets.notion.site/manifoldmarkets/Maniswap-ce406e1e897d417cbd491071ea8a0c39](https://manifoldmarkets.notion.site/manifoldmarkets/Maniswap-ce406e1e897d417cbd491071ea8a0c39).\n' +
+      '* Metaculus (2023) Metaculus (2023). Wisdom of the crowd vs. the best of the best of the best. [https://www.metaculus.com/notebooks/15760/wisdom-of-the-crowd-vs-the-best-of-the-best](https://www.metaculus.com/notebooks/15760/wisdom-of-the-crowd-vs-the-best-of-the-best).\n' +
+      '* Min et al. (2019) Min, S., Zhong, V., Zettlemoyer, L., and Hajishirzi, H. (2019). Multi-hop reading comprehension through question decomposition and rescoring. In _Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics (ACL)_.\n' +
+      '* Nakano et al. (2021) Nakano, R., Hilton, J., Balaji, S., Wu, J., Ouyang, L., Kim, C., Hesse, C., Jain, S., Kosaraju, V., Saunders, W., Jiang, X., Cobbe, K., Eloundou, T., Krueger, G., Button, K., Knight, M., Chess, B., and Schulman, J. (2021). WebGPT: Browser-assisted question-answering with human feedback. _arXiv preprint arXiv:2112.09332_.\n' +
+      '* Nie et al. (2023) Nie, Y., Nguyen, N. H., Sinthong, P., and Kalagnanam, J. (2023). A time series is worth 64 words: Long-term forecasting with transformers. In _International Conference on Learning Representations (ICLR)_.\n' +
+      '* Nye et al. (2021) Nye, M., Andreassen, A. J., Gur-Ari, G., Michalewski, H., Austin, J., Bieber, D., Dohan, D., Lewkowycz, A., Bosma, M., Luan, D., Sutton, C., and Odena, A. (2021). Show your work: Scratchpads for intermediate computation with language models. _arXiv preprint arXiv:2112.00114_.\n' +
+      '* OpenAI (2023) OpenAI (2023). GPT-4 technical report. _arXiv preprint arXiv:2303.08774_.\n' +
+      '* Polymarket (2023) Polymarket (2023). Polymarket/poly-market-maker: Market Maker Keeper for the polymarket CLOB. [https://github.com/Polymarket/poly-market-maker](https://github.com/Polymarket/poly-market-maker).\n' +
+      '* Rasul et al. (2023) Rasul, K., Ashok, A., Williams, A. R., Khorasani, A., Adamopoulos, G., Bhagwatkar, R., Bilos, M., Ghonia, H., Hassen, N. V., Schneider, A., Garg, S., Drouin, A., Chapados, N., Nevmyvaka, Y., and Rish, I. (2023). Lag-Llama: Towards foundation models for time series forecasting. _arXiv preprint arXiv:2310.08278_.\n' +
+      '* Schoenegger and Park (2023) Schoenegger, P. and Park, P. S. (2023). Large language model prediction capabilities: Evidence from a real-world forecasting tournament. _arXiv preprint arXiv:2310.13014_.\n' +
+      '* Shuster et al. (2021) Shuster, K., Poff, S., Chen, M., Kiela, D., and Weston, J. (2021). Retrieval augmentation reduces hallucination in conversation. In _Findings of the Association for Computational Linguistics (Findings of EMNLP)_.\n' +
+      '* Tetlock and Gardner (2015) Tetlock, P. E. and Gardner, D. (2015). _Superforecasting: The Art and Science of Prediction_. Crown.\n' +
+      '* Touvron et al. (2023) Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S., Bikel, D., Blecher, L., Ferrer, C. C., Chen, M., Cucurull, G., Esibou, D., Fernandes, J., Fu, J., Fu, W., Fuller, B., Gao, C., Goswami, V., Goyal, N., Hartshorn, A., Hosseini, S., Hou, R., Inan, H., Kardas, M., Kerkez, V., Khabsa, M., Kloumann, I., Korenev, A., Koura, P. S., Lachaux, M.-A., Lavril, T., Lee, J., Liskovich, D., Lu, Y., Mao, Y., Martinet, X., Mihaylov, T., Mishra, P., Molybog, I., Nie, Y., Poulton, A., Reizenstein, J., Rungta, R., Saladi, K., Schelten, A., Silva, R., Smith, E. M., Subramanian, R., Tan, X. E., Tang, B., Taylor, R., Williams, A., Kuan, J. X., Xu, P., Yan, Z., Zarov, I., Zhang, Y., Fan, A., Kambadur, M., Narang, S., Rodriguez, A., Stojnic, R., Edunov, S., and Scialom, T. (2023). Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_.\n' +
+      '* Wang (2023) Wang, C. (2023). Calibration in deep learning: A survey of the state-of-the-art. _arXiv preprint arXiv:2308.01222_.\n' +
+      '* Woo et al. (2024) Woo, G., Liu, C., Kumar, A., Xiong, C., Savarese, S., and Sahoo, D. (2024). Unified training of universal time series forecasting transformers. _arXiv preprint arXiv:2402.02592_.\n' +
+      '\n' +
+      'Yan, Q., Seraj, R., He, J., Meng, L., and Sylvain, T. (2024). Autocast++: Enhancing world event prediction with zero-shot ranking-based context retrieval. In _International Conference on Learning Representations (ICLR)_.\n' +
+      '* Zhang et al. (2018) Zhang, Y., Chen, X., and Park, D. (2018). Formal specification of constant product (xy= k) market maker model and implementation. _White paper_.\n' +
+      '* Zhu et al. (2024) Zhu, Y., Yuan, H., Wang, S., Liu, J., Liu, W., Deng, C., Dou, Z., and Wen, J.-R. (2024). Large language models for information retrieval: A survey. _arXiv preprint arXiv:2308.07107_.\n' +
+      '* Zou et al. (2022) Zou, A., Xiao, T., Jia, R., Kwon, J., Mazeika, M., Li, R., Song, D., Steinhardt, J., Evans, O., and Hendrycks, D. (2022). Forecasting future world events with neural networks. In _Advances in Neural Information Processing Systems (NeurIPS)_.\n' +
+      '\n' +
+      'Details about Models and Knowledge Accuracy\n' +
+      '\n' +
+      '### Models\n' +
+      '\n' +
+      'We give a list of detailed information of the models we use below. The weights of the open models are available publicly on Hugging Face, and we primarily use Together AI\'s serving API to access them. All cut-offs are based on official statements.\n' +
+      '\n' +
+      '### Testing Potential Leakage from Post-training\n' +
+      '\n' +
+      'GPT-4-1106-Preview and GPT-3.5-Turbo-1106, the two models we use in our system, were released in November, 2023. We find no evidence that the post-training phase leaks further information after their knowledge cut-offs (April, 2023 and January, 2021). As a test, we manually query the model on 20 major events in June, 2023-September, 20233, such as "Who won the 2023 Turkish presidential election?". For all 20 questions, both models either claim no knowledge or simply hallucinate.\n' +
+      '\n' +
+      'Footnote 3: sourced from [https://www.onthisday.com/events/date/2023/](https://www.onthisday.com/events/date/2023/).\n' +
+      '\n' +
+      'As a sanity check, we also prompt GPT-4-1106-Preview to answer another 20 questions about events during November, 2022-January, 2023, prior to its knowledge cut-off, such as "Which team won the 2022 FIFA World Cup Final?". The model answers all of them correctly.\n' +
+      '\n' +
+      '### Crowd Predictions\n' +
+      '\n' +
+      'On any given question, each platform computes a community prediction that aggregates all individual forecasts. The prediction is dynamically updated and recorded as the forecasts are made. We source the records directly from the platforms (instead of computing them from scratch using the individual forecasts). For binary questions, we provide more details on the aggregation mechanisms as follows.\n' +
+      '\n' +
+      '* On Metaculus, for a given question, each prediction of a forecaster is marked by \\(t\\) (starting at 1), from their earliest prediction to the latest. The platform computes the crowd prediction of the question by weighted median. The weight of the \\(t\\)th forecast from an individual forecaster is \\(e^{\\sqrt{t}}\\), so the more recent\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l r} \\hline \\hline\n' +
+      '**Model** & **Source** & **Open Weights** & **Knowledge Cut-off** & **Evaluation Cost** \\\\ \\hline GPT-4-1106-Preview & OpenAI & No & Apr 2023 & \\$0.01/1K tokens \\\\ GPT-4 (GPT-4-0613) & OpenAI & No & Sep 2021 & \\$0.03/1K tokens \\\\ GPT-3.5-Turbo-Instruct & OpenAI & No & Sep 2021 & \\$0.0015/1K tokens \\\\ GPT-3.5-Turbo-1106 & OpenAI & No & Sep 2021 & \\$0.001/1K tokens \\\\ Claude-1 & Anthropic & No & Dec 2022 & \\$0.024/1K tokens \\\\ Claude-2 & Anthropic & No & Dec 2022 & \\$0.024/1K tokens \\\\ Claude-2.1 & Anthropic & No & Dec 2022 & \\$0.024/1K tokens \\\\ Llama-2-7B-Chat & Meta & Yes & Sep 2022 & \\$0.0002/1K tokens \\\\ Llama-2-13B-Chat & Meta & Yes & Sep 2022 & \\$0.00025/1K tokens \\\\ Llama-2-70B-Chat & Meta & Yes & Sep 2022 & \\$0.0009/1K tokens \\\\ Mistral-7B-Instruct & Mistral AI & Yes & _Unknown_ & \\$0.0002/1K tokens \\\\ Mistral-8x7B-Instruct & Mistral AI & Yes & _Unknown_ & \\$0.0002/1K tokens \\\\ Mistral-8x7B-DPO & NousResearch & Yes & _Unknown_ & \\$0.0002/1K tokens \\\\ YI-34B-Chat & 01.AI & Yes & June 2023 & \\$0.000776/1K tokens \\\\ Gemini-Pro & Google & No & Early 2023 & \\$0.0005/1K characters \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 6: **Overview of the LMs we evaluate**: A breakdown of the LMs used in our study, including their sources, availability of weights, knowledge cut-off dates, and evaluation costs. The evaluation costs of the open-weight models are based on Together AI’s pricing. The knowledge cut-off of Gemini-Pro is claimed to be early 2023 (\\(\\sim\\) April 2023). We are not aware of the exact knowledge cut-offs of the Mistral series, as it is not publicly reported.\n' +
+      '\n' +
+      'forecasts receive higher weights. We remark that the platform also publishes another aggregated forecast called "Metaculus prediction" (which we do not use or compare with in this paper). This differs from the crowd prediction described above and is computed via a proprietary algorithm.\n' +
+      '* GJOpen computes the crowd predictions by the mean of the most recent 40% of the forecasts from each forecaster.\n' +
+      '* INFER initializes the crowd prediction to be the mean of all individual forecasts. As the question progresses, it reweights the forecasts, for example, by "putting more weight on the forecasts of individuals with the best track record."4 Exact details on the aggregation mechanisms are not found on their website. Footnote 4: [https://www.infer-pub.com/frequently-asked-questions](https://www.infer-pub.com/frequently-asked-questions)\n' +
+      '* Manifold and Polymarket are prediction markets, where the community predictions are the prices (between 0 and 1). The prices are adjusted by their automated market makers, as bets are made. The mechanisms are variants of constant-product market makers (Hanson, 2007; Zhang et al., 2018); see Polymarket (2023); Manifold (2022) for more details.\n' +
+      '\n' +
+      '## Appendix B Details about Base Evaluations\n' +
+      '\n' +
+      'In this section, we provide experimental details on our baseline evaluations (Section 3.4).\n' +
+      '\n' +
+      '### Evaluation Method\n' +
+      '\n' +
+      'For both zero-shot and scratchpad prompting, we conduct basic prompt optimization by by crafting 5 candidate zero-shot prompts and 4 candidate scratchpad prompts. We evaluate each prompt on the validation set by comparing Brier scores. Specifically, we randomly select 200 questions from the validation set and calculate the mean Brier scores across the 14 LMs under consideration.\n' +
+      '\n' +
+      '* The best zero-shot prompt achieves an average Brier score of 0.246, outperforming the others, which score 0.261, 0.276, 0.279, and 0.252, respectively.\n' +
+      '* For scratchpad, all prompts yield similar Brier scores. We observe that potentially due to safety training, models can sometimes refuse to answer forecasting questions by simply claiming "I don\'t know". Therefore, we use the number of "refuse to answer" responses as the deciding metric. The winning scratchpad prompt averages 88 "refuse to answer" responses, while the others average 106, 93, and 94, respectively.\n' +
+      '\n' +
+      'The best zero-shot and scratchpad prompts are shown in Figure 5 and Figure 6. In both prompting styles, models are only provided with the question, background, resolution criterion, and question\'s open and close dates (date_begin and date_end). All the data are sourced from the forecasting platforms and publicly available on the question page to human forecasters. We do no additional news retrieval.\n' +
+      '\n' +
+      'Finally, we use the best prompt of each prompting strategy to forecast on each question in the test set. In Section 3.4, we find that none of the models are naturally good at forecasting. We provide the full results next in Section B.2.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:19]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:20]\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:21]\n' +
+      '\n' +
+      'Dataset: Curation and Further Analysis\n' +
+      '\n' +
+      '### Data Collection and Curation\n' +
+      '\n' +
+      '**Scraping.** To compile our dataset from the forecasting platforms, we query their APIs or scrape the questions\' webpages for initial data gathering. For Metaculus, we first extract basic information via the API and scrape the resolution criteria from webpage. INFER (CSET) and Good Judgment Open data are gathered via web scraping, since no API provides the full data we need. Polymarket\'s data, except for community predictions, is obtained from their API. Manifold\'s data is fully scraped via API.\n' +
+      '\n' +
+      '**Assigning categories.** There is no standard, uniform categorization of the forecast questions across the platforms. We prompt GPT-3.5-Turbo to assign one of the 11 categories to each question. See Figure 8 for the category set and the prompt we use.\n' +
+      '\n' +
+      '**Screening and curation.** From manual examination, we notice that the initial dataset contains questions that are ambiguously formulated or overly personal. In a preliminary screening phase, we prompt GPT-3.5 to identify and exclude these questions. See Figure 9 for a prompt to detect ill-defined questions, where we provide several few-shot examples.\n' +
+      '\n' +
+      'Figure 8: **Prompt for categorizing questions based on the provided options**. The prompt presents the forecasting question, along with 11 candidate category choices, and prompts the model to classify the question into one of the categories.\n' +
+      '\n' +
+      'I\'m trying to assess the quality of an old forecasting dataset.\n' +
+      '\n' +
+      'Here is a forecasting question from the dataset: {question}.\n' +
+      '\n' +
+      'Please flag questions that don\'t sound like binary forecasting questions by outputting "flag". If it sounds like a reasonable question, output "ok".\n' +
+      '\n' +
+      'Examples of strings that should be flagged:\n' +
+      '\n' +
+      '* Will I finish my homework tonight?\n' +
+      '* Metaculus party 2023\n' +
+      '* Will Hell freeze over?\n' +
+      '* Heads or tails\n' +
+      '* Will this video reach 100k views by the EOD?\n' +
+      '\n' +
+      'Examples of strings that should not be flagged:\n' +
+      '\n' +
+      '* Will Megan Markle and Prince Harry have a baby by the end of the year?\n' +
+      '* Will the Brain Preservation Foundation\'s Large Mammal preservation prize be won by Feb 9th, 2017?\n' +
+      '* Will there be more novel new drugs approved by the FDA in 2016 than in 2015?\n' +
+      '\n' +
+      'If a question is already resolved, that doesn\'t mean it should be flagged. When in doubt, mark it as "ok".\n' +
+      '\n' +
+      'Your response should take the following structure:\n' +
+      '\n' +
+      'Insert thinking: {{ insert your concise thoughts here }}\n' +
+      '\n' +
+      'Classification: {{ insert "flag" or "ok" }}\n' +
+      '\n' +
+      'We then manually examine to eliminate all questions of low quality. This includes those with few community forecasts or trading engagement on platforms such as Manifold and Polymarket, as well as any ill-defined questions that GPT-3.5 is unable to identify during the initial screening.\n' +
+      '\n' +
+      '### Further Statistics and Samples\n' +
+      '\n' +
+      'We give a list of detailed statistics and plots on our data:\n' +
+      '\n' +
+      '* Figure 10 visualizes the location mentions in all the questions from our full dataset.\n' +
+      '* Table 11 gives the distribution of questions and forecasts across platforms in our full dataset.\n' +
+      '* Table 12 showcases a complete data sample in our curated set.\n' +
+      '* Table 13 shows a list of questions with how community predictions shift over time.\n' +
+      '* Figure 10(a) shows the opening dates of the questions in the full dataset.\n' +
+      '* Figure 10(b) shows the percentage of questions that receives the retrieval date at index \\(k=1,2,3,4,5\\).\n' +
+      '\n' +
+      'Figure 9: **The prompt for flagging ill-defined forecasting questions** in our dataset. The prompt contains several few-shot examples where the questions are ill-defined. A LM is prompted to filter out any questions of similar nature.\n' +
+      '\n' +
+      'Figure 11: **Question publish time distribution and retrieval dates**.\n' +
+      '\n' +
+      'Figure 10: **Location mentions in all binary questions in our full dataset**. We visualize all location mentions in our full dataset on a world map. This shows that the dataset provides a diverse coverage of topics across the globe.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r r r r} \\hline \\hline Platform & Questions (All) & Predictions (All) & Questions (Binary) & Predictions (Binary) & Brier Score (Binary) \\\\ \\hline Metaculus & \\(8,881\\) & \\(638,590\\) & \\(4,862\\) & \\(387,488\\) & \\(.130\\) \\\\ INFER & \\(308\\) & \\(73,778\\) & \\(192\\) & \\(47,918\\) & \\(.079\\) \\\\ GJOpen & \\(2,592\\) & \\(743,671\\) & \\(1,168\\) & \\(342,216\\) & \\(.134\\) \\\\ Manifold & \\(24,284\\) & \\(1,997,928\\) & \\(20,319\\) & \\(1,387,668\\) & \\(.155\\) \\\\ Polymarket & \\(12,689\\) & \\(3,720,640\\) & \\(7,123\\) & \\(1,879,035\\) & \\(.158\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 11: **Raw dataset statistics across platforms**. The Brier scores are calculated by averaging over all time points where the platforms provide crow aggregates.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Field** & **Information** \\\\ \\hline\n' +
+      '**Question** & Will Stanship achieve liftoff before Monday, May 1st, 2023? \\\\\n' +
+      '**Start Date** & 2023-04-17 \\\\\n' +
+      '**End Date** & 2023-04-30 \\\\\n' +
+      '**Resolve Date** & 2023-04-20 \\\\\n' +
+      '**Category** & Science \\& Technology \\\\\n' +
+      '**Platform** & Metaculus \\\\\n' +
+      '**Resolution** & 1.0 \\\\\n' +
+      '**URL** & [https://www.metaculus.com/api2/questions/15973/](https://www.metaculus.com/api2/questions/15973/) \\\\\n' +
+      '**Background** & On April 14th, SpaceX received a launch license for its Starship spacecraft. A launch scheduled for April 17th was scrubbed due to a frozen valve. SpaceX CEO Blon Musk tweeted: “Learned a lot today, now offloading propellant, retrying in a few days...” \\\\\n' +
+      '**Resolution Criteria** & This question resolves Yes if Starship leaves the launchpad intact and under its own power before 11:59pm ET on Sunday, April 30th. \\\\  & (2023-04-17, 0.725), (2023-04-17, 0.793), (2023-04-17, 0.71), (2023-04-17, 0.704), (2023-04-17, 0.722), \\\\  & (2023-04-18, 0.774), (2023-04-18, 0.747), (2023-04-18, 0.776), (2023-04-18, 0.707), (2023-04-18, 0.703), \\\\  & (2023-04-18, 0.701), (2023-04-18, 0.698), (2023-04-18, 0.666), (2023-04-18, 0.665), (2023-04-18, 0.668), \\\\  & (2023-04-18, 0.666), (2023-04-18, 0.636), (2023-04-18, 0.636), (2023-04-18, 0.652), (2023-04-18, 0.659), \\\\  & (2023-04-18, 0.663), (2023-04-18, 0.667), (2023-04-18, 0.687), (2023-04-18, 0.686), \\\\  & (2023-04-18, 0.686), (2023-04-18, 0.658), (2023-04-18, 0.685), (2023-04-18, 0.664), \\\\  & (2023-04-18, 0.671), (2023-04-18, 0.685), (2023-04-18, 0.685), (2023-04-18, 0.69), \\\\  & (2023-04-18, 0.689), (2023-04-18, 0.698), (2023-04-18, 0.670), (2023-04-18, 0.703), \\\\  & (2023-04-18, 0.704), (2023-04-18, 0.706), (2023-04-18, 0.702), (2023-04-18, 0.704), \\\\  & (2023-04-18, 0.704), (2023-04-18, 0.702), (2023-04-18, 0.702), (2023-04-18, 0.701), \\\\\n' +
+      '**Community Predictions** & (2023-04-18, 0.701), (2023-04-18, 0.689), (2023-04-18, 0.689), (2023-04-18, 0.686), (2023-04-18, 0.688), \\\\  & (2023-04-18, 0.686), (2023-04-18, 0.684), (2023-04-19, 0.688), (2023-04-19, 0.688), \\\\  & (2023-04-19\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l l l l l} \\hline \\hline\n' +
+      '**Sample Question** & **Category** & **Start** & **Close** & **Resolution** & **25\\%** & **50\\%** & **90\\%** & **Answer** \\\\  & & **Date** & **Date** & **Date** & **Date** & & & & \\\\ \\hline \\hline \\end{tabular} \n' +
+      '\\begin{tabular}{l l} Will AI doctors replace human doctors by & Science & 2023-07-27 & 2023-12-31 & 2023-12-30 & 0.073 & 0.087 & 0.102 & No \\\\ the end of 2023? & & & & & & & & \\\\ Will US CDC classify a SARS-CoV-2 & Healthcare & 2021-07-31 & 2021-11-01 & 2022-08-02 & 0.39 & 0.408 & 0.412 & No \\\\ variant as "high consequence" by August & \\& Biology & & & & & \\\\ Will Conbase file for bankruptcy in 2022? & Economics & 2022-05-12 & 2022-12-31 & 2023-01-01 & 0.08 & 0.079 & 0.072 & No \\\\  & & & & & & & \\\\ Will COP26 finalize the "Paris Rulebook" & Environment & 2021-08-26 & 2021-11-13 & 2021-11-14 & 0.063 & 0.074 & 0.13 & Yes \\\\ by November 16, 2021? & \\& Energy & & & & & \\\\ Will Bonbong Marcos win the 2022 & Politics & 2021-12-20 & 2022-05-08 & 2022-05-26 & 0.759 & 0.752 & 0.759 & Yes \\\\ Philippine Presidential Election? & \\& Governance & & & & & \\\\ Will UC Berkeley be primarily in-person & Education & 2021-01-22 & 2021-08-01 & 2021-08-26 & 0.723 & 0.74 & 0.765 & Yes \\\\ for Fall 2021? & \\& Research & & & & & \\\\ Will Trump issue another NFT Collection & Arts & 2023-11-01 & 2023-12-12 & 2023-12-12 & 0.484 & 0.585 & 0.556 & Yes \\\\ before the 2024 Presidential Election? & \\& Recreation & & & & & \\\\ Will a nuclear weapon be detonated in 2023 & Security & 2022-12-09 & 2023-12-31 & 2024-01-01 & 0.28 & 0.32 & 0.304 & No \\\\ (including tests and accidents)? & \\& Defense & & & & & \\\\ Will Charlotte Hornets beat Detroit & Sports & 2023-10-16 & 2023-10-28 & 2023-10-28 & 0.46 & 0.513 & 0.337 & No \\\\ Pistons on Oct 27, 2023, in the NBA? & & & & & & & \\\\ Will flight 1111 from Munich to Zurich on 2023-08-29 arrive on time or with more than & & & & & & \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 13: **One sample question from each category** along with the community’s predictions at different prediction dates (25%, 50%, and 90% from the start date to resolve date). As the questions approach their resolution dates, the crowd’s confidence in the outcome generally increases, reflecting the influence of new information.\n' +
+      '\n' +
+      'Details about Our System\n' +
+      '\n' +
+      'We provide details about our system, described at a high-level in Section 4. We specify the hyperparameters used in our (optimized) settings. Some of them are discovered by the hyperparameter sweep (Section 5.2).\n' +
+      '\n' +
+      '### Retrieval System\n' +
+      '\n' +
+      'Our retrieval system consists of 4 steps. We provide further details on each below.\n' +
+      '\n' +
+      '**Step 1: Search query generation.** We identify two good prompts to generate search queries in our hyperparameter sweep procedure, listed in Figure 12. Given a question, we ask GPT-4-Preview-1106 to generate 6 search queries using both prompts (at 0 temperature). We take the union of all the resulting search queries along with the question itself to query the news API\'s.\n' +
+      '\n' +
+      '**Step 2: News retrieval.** On each news API and each search query, our system is set to retrieve the top 10 articles published within a given retrieval date range. We use the default ranking of each API and only retrieve English-language articles.\n' +
+      '\n' +
+      'In cases where the background description of a question contains links to webpages, our system scrapes them, parses the clean texts, and presents the summaries to the reasoning model. We take measures to ensure that this leaks no information beyond the retrieval range. First, we maintain a whitelist of news websites that publish timestamped articles and only retrieve from the whitelist. Second, our system checks the publish date of each article and discard it if the date is not available or outside the retrieval range.\n' +
+      '\n' +
+      '**Step 3: Relevance ranking.** We use GPT-3.5-Turbo to rate the relevance of an article with respect to a question at 0 temperature. The prompt is given in Figure 14.\n' +
+      '\n' +
+      'Our retrieval system can retrieve a large number of texts (say, \\(>50\\) articles) at the initial stage prior to relevance filtering. To improve the run-time and save cost, we only present the article\'s title and its first 250 words to the model in context for relevance rating. In Section E.3, we test that this well approximates the result from giving the full texts.\n' +
+      '\n' +
+      'The system rates the relevance of each retrieved article at the scale of 1-6. Any article that receives a rating of \\(\\leq 3\\) is discarded. We do not make an attempt to optimize this threshold or the prompt choice here.\n' +
+      '\n' +
+      '**Step 4: Summarization.** We use GPT-3.5-Turbo to summarize the relevant articles. The temperature is set to be 0.2. In cases where the article length exceeds the context window, we simply truncate it to fit the window size. We remark that our prompt (Figure 13) also contains the question and its background description, and the model is instructed to keep any information in the article that is relevant to answering the question. Figure 13 shows the best prompt found via hyperparameter sweep on the validation set (Section 5.2).\n' +
+      '\n' +
+      '### Reasoning System\n' +
+      '\n' +
+      'We use both GPT-4-1106-Preview and our fine-tuned GPT-4 to generate forecasts. We prompt the former with our top 3 reasoning prompts, including Figure 15. The other prompts also conform to the basic template as shown in Figure 16, though with different scratchpad reasoning instructions following the retrieved information section. The fine-tuned model does not require detailed scratchpad instructions (Section 5.1). Thus, Figure 16 is the entire prompt structure to the fine-tuned model to elicit its reasonings.\n' +
+      '\n' +
+      'In addition, as we remarked in Section 5.1, Claude-2.1 was prompted to generate reasoning-prediction pairs for fine-tuning. However, it is not directly used for reasoning in our system.\n' +
+      '\n' +
+      'Figure 16: **All scratchpad prompts begin with a question’s basic information, followed by retrieval.** The fine-tuned model only takes this information and requires no further instructions.\n' +
+      '\n' +
+      'I will provide you with a forecasting question and the background information for the question.\n' +
+      '\n' +
+      'Question: {question}\n' +
+      '\n' +
+      'Background: {background}\n' +
+      '\n' +
+      'Task:\n' +
+      '\n' +
+      '- Generate brief search queries (up to {max_words} words each) to gather information on Google that could influence the forecast.\n' +
+      '\n' +
+      'You must generate this exact amount of queries: {num_keywords}\n' +
+      '\n' +
+      'Your response should take the following structure: Thoughts: {{ Insert your thinking here. }}\n' +
+      '\n' +
+      'Search Queries: {{ Insert the queries here. Use semicolons to separate the queries. }}\n' +
+      '\n' +
+      '(a) A straighforward search query expansion prompt\n' +
+      '\n' +
+      'I will provide you with a forecasting question and the background information for the question. I will then ask you to generate short search queries (up to {max_words} words each) that I\'ll use to find articles on Google News to help answer the question.\n' +
+      '\n' +
+      'Question: {question}\n' +
+      '\n' +
+      'Background: {background}\n' +
+      '\n' +
+      'You must generate this exact amount of queries: {num_keywords}\n' +
+      '\n' +
+      'Start off by writing down sub-questions. Then use your sub-questions to help steer the search queries you produce.\n' +
+      '\n' +
+      'Your response should take the following structure: Thoughts: {{ Insert your thinking here. }}\n' +
+      '\n' +
+      'Search Queries: {{ Insert the queries here. Use semicolons to separate the queries. }}\n' +
+      '\n' +
+      '(b) The second search query prompt we use. It first asks the model to consider sub-questions and use that to steer the outputs.\n' +
+      '\n' +
+      'Figure 12: **Prompts to generate search queries** based on the question’s data.\n' +
+      '\n' +
+      'Figure 13: **The summarization prompt we use in our retrieval system**. The prompt provides a question, its background, and a relevant article. It asks the LM to condense the article without removing any information relevant to the forecasting question.\n' +
+      '\n' +
+      'Please consider the following forecasting question and its background information. After that, I will give you a news article and ask you to rate its relevance with respect to the forecasting question.\n' +
+      '\n' +
+      'Question: {question}\n' +
+      '\n' +
+      'Question Background:{background}\n' +
+      '\n' +
+      'Resolution Criteria:{resolution_criteria}\n' +
+      '\n' +
+      'Article: {article}\n' +
+      '\n' +
+      'Please rate the relevance of the article to the question, at the scale of 1-6\n' +
+      '\n' +
+      '1 - irrelevant\n' +
+      '\n' +
+      '2 - slightly relevant\n' +
+      '\n' +
+      '3 - somewhat relevant\n' +
+      '\n' +
+      '4 - relevant\n' +
+      '\n' +
+      '5 - highly relevant\n' +
+      '\n' +
+      '6 - most relevant\n' +
+      '\n' +
+      'Guidelines:\n' +
+      '\n' +
+      '- You don\'t need to access any external sources. Just consider the information provided.\n' +
+      '\n' +
+      '- Focus on the content of the article, not the title.\n' +
+      '\n' +
+      '- If the text content is an error message about JavaScript, paywall, cookies or other technical issues, output a score of 1.\n' +
+      '\n' +
+      'Your response should look like the following:\n' +
+      '\n' +
+      ' Thought: {{ Insert your thinking }}\n' +
+      '\n' +
+      ' Rating: {{ Insert answer here }}\n' +
+      '\n' +
+      'Figure 14: **Prompt used to rate the relevance of an article with respect to a question**. The prompt asks a LM to rate the relevance of an article with respect to a question at the scale of 1–6. We extract the numerical value following “Rating:”.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:30]\n' +
+      '\n' +
+      'Details on Optimization of Our System\n' +
+      '\n' +
+      '### Hyperparameter Sweep\n' +
+      '\n' +
+      'Throughout the experiment, we set the retrieval date to be the midpoint between a question\'s open and resolve date. At this time point, the crowd aggregates achieve 0.160 Brier score, averaged over all questions in our validation set.\n' +
+      '\n' +
+      'All the hyperparameter sweeps below evaluate all questions in the validation set.\n' +
+      '\n' +
+      '**Search query prompt.** We sweep over 6 candidate prompts for generating search queries. The top 2 prompts lead to retrieved articles that have average relevance rating of 3.08 and 3.09, while other prompts below 3.04. Among all articles with rating at least 4, the average rating is 4.37 and 4.38 via the top 2 search query prompts, which is also the highest among all candidates.\n' +
+      '\n' +
+      '**Summarization prompt.** We sweep over 5 candidate prompts for summarization and evaluate the resulting Brier scores. The best summarization prompt gives a Brier score of 0.193 and the second gives 0.201. In this step of hyperparameter search, the ordering of the summaries, article count and reasoning prompt are randomly chosen for each question to avoid confounding.\n' +
+      '\n' +
+      '**Article ordering and count.** In this step, we sweep over both orderings of articles (by recency or relevance), and over 5 candidate choices of \\(k\\in[5,10,15,20,30]\\). We run our full system on all questions in the validation set. Presenting 15 article summaries and ordering them by relevance gives the lowest Brier score of 0.177 on GPT-4-1106-Preview. Similar performance can be achieved by presenting 20 articles summaries.\n' +
+      '\n' +
+      '**Reasoning prompt.** We hand-craft 15 prompts for eliciting forecasts and reasonings. The best prompt (Figure 15) achieves a Brier score of 0.167 on the validation set (while fixing the optimal hyperparameter choices found by the optimization stages above). Two other top prompts get 0.170 and 0.174. The best prompt is given in Figure 15.\n' +
+      '\n' +
+      '**Ensembling.** We implement 5 ensembling methods, including mean, median, geometric mean, trimmed mean, and a variant of universal self-consistency (USC) (Chen et al., 2023). The last two approaches are defined as follows:\n' +
+      '\n' +
+      '* For the trimmed mean, we assign uniform weights over the input forecasts, reduce the weight of the forecast furthest from the median by half, redistribute the half weight uniformly to the other forecasts, and finally output the weighted average. We remark that this is not a standard implementation of trimmed mean, and it is set this way since we only aggregate a small number (i.e., 6) of forecasts in our system.\n' +
+      '* For USC, we present the (external) reasoning-prediction pairs to a final LM, which is then prompted to form an aggregated forecast. In this hyperparameter sweep, we use GPT-4-1106-Preview as the aggregator model.\n' +
+      '\n' +
+      'We evaluate all these methods on the validation set by generating 6 base reasonings for ensembling, using our optimal system setup. Trimmed mean achieves the lowest Brier score; see Table 14 for the results. The USC method, in contrast, does not demonstrate improvement over the baseline.\n' +
+      '\n' +
+      '### News API Evaluations\n' +
+      '\n' +
+      'We justify our choice of the news API\'s. To begin with, we experiment with 5 eligible APIs to news corpus that accept retrieval date ranges, which, for our purpose, must be specified to prevent leakage. In particular,\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c} \\hline \\hline Ensemble Method & Brier Score \\\\ \\hline Mean & 0.1656 \\\\ Median & 0.1651 \\\\ Geometric Mean & 0.1655 \\\\\n' +
+      '**Trimmed Mean** & **0.1649** \\\\ USC (Chen et al., 2023) & 0.1691 \\\\ \\hline Baseline (No Ensemble) & 0.1676 \\\\ \\hline Human Crowd & 0.1600 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 14: **Brier scores across different ensembling methods on the validation set. “Baseline” refers to the average Brier score of the base predictions (i.e., the inputs to ensembling).**we assess Google News (accessed via Python open source package gnews), NewsCatcher, Newsdata.io, Aylien, and NewsAPI.org.\n' +
+      '\n' +
+      'To assess the quality of their retrievals, we first take 24 unresolved forecasting questions. Next, we prompt GPT-4-1106-Preview to generate two search queries for each of these 24 questions, similar to the first stage of our retrieval system (Section 4). We use these queries to search for articles via all 5 APIs, restricting the retrieval range to the last 24 hours.\n' +
+      '\n' +
+      'Finally, we prompt GPT-4 to rate the relevance of the articles with respect to the original questions. Higher scores indicate greater relevance. We compute the sum of scores of all retrieved articles for each API option. As a result, NewsCatcher and Google News achieve the highest scores of 35 and 39, respectively. The other three APIs, Newsdata.io, Aylien, and NewsAPI.org, score 16.5, 30.5, and 23.5.\n' +
+      '\n' +
+      '### Relevance Rating Approximations\n' +
+      '\n' +
+      'We prompt GPT-3.5 Turbo to score the relevance of all retrieved articles (from Google News and NewsCatcher) with respect to the question. Our prompt is given by Figure 14, where the question\'s metadata along with an article text is provided to the model in context. The prompt asks the LM to rate the relevance of an article to the given question at the scale of 1-6, where 6 is considered "most relevant" and 1 "irrelevant". In our system, we filter out articles with ratings below 4.\n' +
+      '\n' +
+      '**Methods.** Due to cost constraints, we cannot afford to evaluate relevance scores using the full article texts. We experimentally explore 3 cost-saving alternatives to approximate full text-based ratings:\n' +
+      '\n' +
+      '1. Title-only. We only give the article title to the model for relevance rating. Unfortunately, via manual inspection, we find the web scraper5 sometimes fails to to load the full text of an article page, usually due to rendering error or paywall. In such cases, the article content may be incomplete or simply a error message, whereas the title is retrieved and appears relevant. Consequently, the model may be misled by the title. Therefore, we believe that this approach is unviable. Footnote 5: [https://pypi.org/project/newspaper4k/](https://pypi.org/project/newspaper4k/)\n' +
+      '2. Title + first 250 words. We give the article title and the first 250 words to the model for rating.\n' +
+      '3. Embedding similarity. We embed the article text and question text metadata and compute their cosine similarities. We threshold by the similarities to filter articles.\n' +
+      '\n' +
+      '**Experiment.** We experiment with approach (ii) and (iii) above. For (ii), we prompt GPT-3.5-Turbo and Mixtral-8x7B-DPO for relevance rating with the same prompt template (Figure 14). For (iii), we use OpenAI\'s text-embedding-3-large as the embedding model.\n' +
+      '\n' +
+      'To generate raw articles, we randomly sample 15 questions from the validation set, run our retrieval system up to relevant rating, and collect 169 articles in total.\n' +
+      '\n' +
+      'We evaluate the relevance scores of the full texts via GPT-4 (considered as gold labels) and compare with the approximations described above. An article is said be relevant if its rating is at least 4 from the full text query via GPT-4. We compute the recall and precision of the approximate methods as follows.\n' +
+      '\n' +
+      '* At a threshold of 4, title + first 250 words via GPT-3.5-Turbo gives recall of 0.73 and precision of 0.65.\n' +
+      '* At a threshold of 3, title + first 250 words via Mixtral-8x7B-DPO gives recall of 0.70 and precision of 0.63.\n' +
+      '* At a threshold of 0.48, the cosine similarity method gives recall of 0.73 and precision of 0.54.\n' +
+      '\n' +
+      'In sum, fixing recall at above 70%, querying GPT-3.5-Turbo with title + first 250 words attains the highest precision. The average token length of the articles is 1087.6. Hence, the method of using first 250 words (or roughly 330 tokens) saves about 70% of the cost.\n' +
+      '\n' +
+      'Example Outputs\n' +
+      '\n' +
+      'We provide 5 qualitative example outputs from our fine-tuned GPT-4 model on the test set.\n' +
+      '\n' +
+      '1. Rephrased and Expanded Question: Is it likely that Kevin McCarthy, the former House Speaker, will make a public announcement or have his resignation reported by credible sources, indicating his departure from the United States House of Representatives, before the end of November 30, 2023? This question takes into account the current political climate, McCarthy\'s recent loss of the Speaker position, his consideration of not seeking re-election, and the potential impact of his decision on the Republican Party and the 20th District of California. The resolution of this market hinges on whether McCarthy will officially declare his intention to vacate his seat within the specified timeframe.\n' +
+      '2. Reasons why the answer might be no:\n' +
+      '\n' +
+      '- McCarthy has not made a final decision and has expressed uncertainty about his future in Congress, which could mean he is still weighing his options and may not choose to resign within the given timeframe. (Strength: Strong)\n' +
+      '\n' +
+      '- The articles suggest that while there is speculation and consideration of resignation, there is no definitive statement or action indicating an imminent resignation. (Strength: Strong)\n' +
+      '\n' +
+      '- McCarthy may be waiting to see how the political landscape shifts or to make a decision after discussing with his family, which could extend beyond the November 30 deadline. (Strength: Moderate)\n' +
+      '\n' +
+      '- Given his history of strong financial support and political influence, McCarthy may feel compelled to stay and influence the political process, especially with the upcoming 2024 elections. (Strength: Moderate)\n' +
+      '\n' +
+      '3. Reasons why the answer might be yes:\n' +
+      '\n' +
+      '- There are reports and hints from McCarthy himself that he is considering resignation and may want to "get the hell out," which could indicate a potential for an early departure. (Strength: Moderate)\n' +
+      '\n' +
+      '- The pressure from political opponents and the recent loss of the Speaker position may contribute to a decision to resign, especially if he feels his influence is waning. (Strength: Moderate)\n' +
+      '\n' +
+      '- The possibility of a special election being called could provide an opportunity for a controlled transition of power, which might be appealing to McCarthy. (Strength: Weak)\n' +
+      '\n' +
+      '4. Aggregate Considerations:\n' +
+      '\n' +
+      'While there is speculation and some suggestive comments from McCarthy about the possibility of resignation, there is no concrete evidence or announcement that he will resign by the specified date. His history of fundraising and political influence, as well as the lack of a definitive statement about his future, suggest that a resignation by November 30 is not certain.\n' +
+      '\n' +
+      '5. Initial Probability:\n' +
+      '\n' +
+      'Given the considerations above, the initial probability of McCarthy resigning by November 30 seems low.\n' +
+      '\n' +
+      '6. Adjusted Probability Considerations:\n' +
+      '\n' +
+      '- The calculated probability should not be excessively confident in either direction due to the uncertainty expressed by McCarthy himself.\n' +
+      '\n' +
+      '- The base rate for such high-profile resignations in the face of uncertainty is not well-established, which adds to the difficulty in predicting this event.\n' +
+      '\n' +
+      '- Intuitively, politicians often weigh their options carefully, and a decision to resign is not typically rushed, especially without a clear strategic reason.\n' +
+      '\n' +
+      '7. Final Answer: *0.20*\n' +
+      '\n' +
+      'Figure 17: A response of the fine-tuned model on the question “Will Kevin McCarthy resign from the House by Nov 30?” (resolved NO) at the last retrieval index. Inspecting the original prompt (not shown here), we notice that our retrieval system presents articles, published on November 30, that clearly state that no official announcement had yet been made about Kevin McCarthy’s potential resignation. On the day of November, 30, the community prediction had dropped to 1%, but our system hedges by claiming 20%.\n' +
+      '\n' +
+      '1. Will Reddit make any official announcements prior to the 1st of July, 2023, regarding alterations to the pricing structure or a postponement of the implementation of fees for its Application Programming Interface (API), which is currently set to charge developers for higher usage? This question will be resolved affirmatively if Reddit communicates any of the following changes: a different pricing model than the current *$0.24 per 1K API calls,* adjustments to the free API usage thresholds, a delay in the implementation date beyond July 1, 2023, or any negotiations for specific rates with individual organizations do not count. The resolution of this question will be determined by Metaculus, and the question may be annulled if the announcement is unclear or does not meet the specified criteria. 2. Reasons why the answer might be no: - Reddit\'s CEO, Steve Huffman, has consistently shown a firm stance on the API changes, emphasizing the necessity for the company to move forward with the new pricing structure to ensure profitability and sustainability. This resolute position suggests that a change in the announced API fee pricing is unlikely. - Despite the significant backlash and coordinated protests from thousands of Reddit communities, there has been no indication from Reddit\'s internal communications or public statements that they are considering altering the API fee pricing or its implementation timeline. - The internal memo from Reddit\'s CEO, where he mentioned that the protest *will pass" and that there has been no significant revenue impact from the protests, indicates that the company may be prepared to weather the discontent and proceed with the changes as planned. 3. Reasons why the answer might be yes: - The widespread protest and the large number of communities going dark could potentially lead to a significant user and developer exodus, which might force Reddit to reconsider its position to avoid a substantial negative impact on its platform\'s activity and content. - The specific mention of negotiations with individual organizations for different rates could be a sign that Reddit is open to adjusting the pricing for certain parties, which might lead to broader changes if the protests continue or if key developers threaten to shut down their apps. - The negative publicity and user dissatisfaction could reach a tipping point where the company decides that the long-term damage to its brand and community is not worth the short-term financial gain, prompting a change in the API fee pricing policy. 4. Rating the strength of each reason: - The strength of the resolute stance of Reddit\'s CEO is high, as it is based on consistent public statements and the company\'s broader financial strategy. - The lack of any indication of a potential change in the API fee pricing is also a strong reason, given the proximity to the implementation date and the current lack of communication suggesting otherwise. - The internal memo\'s dismissive tone about the protests and lack of revenue impact is a moderate reason, as it reflects the current mindset of the company but does not preclude a change in response to escalating pressure. - The potential for a user and developer exodus is a moderate reason, as it is speculative and depends on the actual impact of the protests, which has not been fully realized yet. - The mention of negotiations with individual organizations is a weak reason for a broader change, as it does not necessarily indicate a willingness to change the policy for all developers. - The possibility of a tipping point due to negative publicity is a moderate reason, as it is based on the assumption that Reddit will prioritize its long-term brand and community over short-term financial gains, which is uncertain. 5. Aggregate your considerations: Considering the strong and consistent stance of Reddit\'s leadership, the lack of any public indications of a change, and the dismissal of the protests\' impact on revenue, it seems unlikely that Reddit will announce changes to its API fee pricing before July 1, 2023. However, the potential for negative publicity and the impact of the protests on the platform\'s activity cannot be entirely dismissed, which introduces some uncertainty into the forecast. 6. Output your answer: Given the information available and the considerations above, the likelihood of Reddit announcing changes or a delay to its proposed API fee pricing before July 1, 2023, seems low. My answer, therefore, is: *0.2*\n' +
+      '\n' +
+      'Figure 18: A response from our fine-tuned model on the question “Will Reddit announce changes or a delay to its proposed API fee pricing before July 1, 2023?” (resolved NO). The forecast was made at the retrieval date June, 14, 2023, one day after the question was opened. At the time, the community gives a forecast of 40%, where this response suggests 20% which turned out to be closer to the resolution.\n' +
+      '\n' +
+      '1. Rephrased and Expanded Question: Considering the current geopolitical tensions and recent historical events, is it likely that the State of Israel will engage in a military operation that results in the death of at least five Iranian nationals within Iran\'s borders, and subsequently either publicly claim responsibility for this action or execute the operation in such a clear and overt manner that credible sources can unambiguously attribute the attack to Israel, all before the end of the year 2023?\n' +
+      '2. Decision Tree Outline:\n' +
+      '\n' +
+      '- Yes Outcome:\n' +
+      '\n' +
+      '- Israel conducts a military operation against Iran.\n' +
+      '\n' +
+      '- The operation is overt and clearly attributable to Israel.\n' +
+      '\n' +
+      '- Israel publicly acknowledges and takes credit for the operation.\n' +
+      '\n' +
+      '- The operation results in at least five Iranian deaths within a 24-hour period.\n' +
+      '\n' +
+      '- No Outcome:\n' +
+      '\n' +
+      '- Israel does not conduct a military operation against Iran.\n' +
+      '\n' +
+      '- Israel conducts an operation, but it is covert and not attributable.\n' +
+      '\n' +
+      '- Israel conducts an operation, but does not publicly acknowledge it.\n' +
+      '\n' +
+      '- The operation does not result in at least five Iranian deaths within a 24-hour period.\n' +
+      '\n' +
+      '3. Branch Probability Analysis:\n' +
+      '\n' +
+      '- Yes Outcome:\n' +
+      '\n' +
+      '- Given the recent escalation in tensions and historical precedents, there is a non-negligible chance that Israel could conduct a military operation against Iran.\n' +
+      '\n' +
+      '- The likelihood of Israel publicly acknowledging such an operation is lower, as they often maintain plausible deniability.\n' +
+      '\n' +
+      '- The probability of an operation resulting in at least five Iranian deaths is uncertain and would depend on the scale and nature of the operation.\n' +
+      '\n' +
+      '- No Outcome:\n' +
+      '\n' +
+      '- The probability of no military operation or a covert operation is higher, given Israel\'s historical preference for covert actions and the potential for international backlash.\n' +
+      '\n' +
+      '- The likelihood of Israel not acknowledging an operation is also high, as this is a common practice to avoid direct conflict and international pressure.\n' +
+      '\n' +
+      '- The chance of an operation not meeting the death threshold is also possible, especially if the operation is designed to be limited or surgical.\n' +
+      '\n' +
+      '4. Discussion on Wildcards:\n' +
+      '\n' +
+      '- A significant escalation in the conflict between Israel and Iran, such as a direct attack on Israeli soil attributed to Iran, could increase the probability of a \'Yes\' outcome.\n' +
+      '\n' +
+      '- International diplomatic efforts or significant pressure on Israel to de-escalate could decrease the probability of a \'Yes\' outcome.\n' +
+      '\n' +
+      '- Unpredictable events, such as a major terrorist attack or a sudden change in leadership in either country, could also impact the forecast.\n' +
+      '\n' +
+      '5. Initial Probability (Prediction):\n' +
+      '\n' +
+      'Given the current information and the outlined decision tree, the initial probability of a \'Yes\' outcome seems low but not impossible. I would estimate it to be around 0.20.\n' +
+      '\n' +
+      '6. Adjusted Probability Thoughts:\n' +
+      '\n' +
+      '- The calculated probability may be too confident given the volatile nature of the Middle East and the unpredictability of military engagements.\n' +
+      '\n' +
+      '- The recent death of an Iranian general in an Israeli airstrike could escalate tensions, potentially increasing the likelihood of a \'Yes\' outcome.\n' +
+      '\n' +
+      '- The lack of direct evidence linking Iran to the October 7 Hamas attack and the potential for covert operations could decrease the likelihood of a \'Yes\' outcome.\n' +
+      '\n' +
+      '7. Final Answer: *0.15*\n' +
+      '\n' +
+      'Figure 19: A response from our fine-tuned model on the question “Will Israel carry out and explicitly acknowledge a deadly attack on Iran before 2024?” (resolved NO). In our fine-tuning phase, one of the prompts we use to generate strong reasonings asks the model to build a decision tree and assign probabilities. The fine-tuned model learns the reasoning path (without being explicitly prompted to do so).\n' +
+      '\n' +
+      '1. Rephrased and Expanded Question: Is it confirmed that former President Donald J. Trump will be present and actively participate in the inaugural Republican National Committee (RNC) presidential primary debate for the 2024 election cycle, which is scheduled to take place on August 23, 2023? The criteria for his participation include him speaking at least once during the debate and being recognized by the debate\'s moderator. This applies even if he joins the debate remotely. The resolution of this question will consider all segments of the debate if it is spread over multiple days. However, if the debate is postponed beyond September 30, 2023, the market will resolve to "No." The resolution will be based primarily on the actual debate footage, supplemented by a consensus from credible news reports.\n' +
+      '2. Reasons why the answer might be no: - Trump may choose to skip the debate to maintain a strategic advantage or to avoid early confrontations with other candidates.\n' +
+      '\n' +
+      '- He might not want to share the stage with candidates he perceives as less significant, which could dilute his brand or message.\n' +
+      '\n' +
+      '- There could be concerns about the debate format or the choice of moderators, which might lead to a decision not to participate.\n' +
+      '\n' +
+      '3. Reasons why the answer might be yes:\n' +
+      '\n' +
+      '- Participating in the debate would give Trump a platform to outline his policies and vision, which could be beneficial for his campaign.\n' +
+      '\n' +
+      '- It would allow him to directly engage with and challenge his opponents, potentially strengthening his position.\n' +
+      '\n' +
+      '- Trump might want to demonstrate leadership and confidence by being present at the first major event of the primary season.\n' +
+      '\n' +
+      '4. Rating the strength of each reason:\n' +
+      '\n' +
+      '- The strategic advantage of skipping the debate: Moderate. Trump has a history of unconventional campaign strategies, but skipping the first debate is a risky move.\n' +
+      '\n' +
+      '- Avoiding sharing the stage: Moderate. Trump\'s brand is strong, but he may not want to risk being overshadowed or challenged by multiple opponents.\n' +
+      '\n' +
+      '- Concerns about format or moderators: Moderate to High. Trump has previously expressed dissatisfaction with debate arrangements, which could influence his decision.\n' +
+      '\n' +
+      '- Benefiting from outlining policies: High. The debate is a significant opportunity to reach a large audience and make a case for his candidacy.\n' +
+      '\n' +
+      '- Engaging with opponents: High. Trump is known for his confrontational style, which could play out to his advantage in a debate setting.\n' +
+      '\n' +
+      '- Demonstrating leadership: High. As a former president, Trump might want to assert his dominance in the Republican field from the outset.\n' +
+      '\n' +
+      '5. Aggregate your considerations:\n' +
+      '\n' +
+      'Considering the reasons and their strengths, it seems there is a balanced set of factors that could influence Trump\'s decision to participate or not. His history of unconventional tactics and concerns about debate arrangements could lead to a "No," while the potential benefits of participating in terms of policy promotion, engaging opponents, and demonstrating leadership suggest a "Yes." The decision will likely depend on the specific circumstances closer to the debate date and Trump\'s assessment of the strategic value of his participation.\n' +
+      '\n' +
+      '6. Output your answer: Given the balanced considerations and the unpredictable nature of Trump\'s campaign strategies, I would assign a probability that leans slightly towards participation due to the high benefits it offers, but not overwhelmingly so due to the potential strategic considerations against it. *0.55*\n' +
+      '\n' +
+      'Figure 20: A response from our fine-tuned model on the question “Will Trump attend the first RNC debate?” (resolved NO on August, 23, 2023). The forecast was made at the retrieval index 1 on June 15, 2023, 2 days after the question was opened. At the time, the community predicted 60%, close to our model’s forecast of 55% from this response.\n' +
+      '\n' +
+      '1. Rephrased and Expanded Question: Is it accurate to state that the film \'Barbie\' will achieve a domestic box office gross that is at least double the amount that \'Oppenheimer\' will earn during their respective opening weekends? This comparison will be based on the final reported figures for the three-day opening weekend (July 21-23) in the United States, as documented on Box Office Mojo. The outcome will be determined by comparing the "Domestic Weekend" grosses of \'Barbie\' and \'Oppenheimer,\' and the market will resolve in favor of \'Yes\' if \'Barbie\'s gross is at least twice that of \'Oppenheimer.\' If no final data is available by July 31, 2023, an alternative credible source will be used to resolve the market.\n' +
+      '2. Reasons why the answer might be no:\n' +
+      '\n' +
+      '- \'Oppenheimer\' could have a stronger than expected performance, reducing the ratio between the two films\' grosses. (Strength: Weak, given the current projections and reports.)\n' +
+      '\n' +
+      '- There could be a significant underestimation of \'Oppenheimer\'s appeal to a specific demographic that turns out in large numbers. (Strength: Weak, as current data does not support this.)\n' +
+      '\n' +
+      '- Unforeseen events could negatively impact \'Barbie\'s attendance, such as controversies or widespread technical issues in theaters. (Strength: Weak, as there is no indication of such events.)\n' +
+      '\n' +
+      '3. Reasons why the answer might be yes:\n' +
+      '\n' +
+      '- \'Barbie\' has already been reported to have a significantly higher opening weekend gross than \'Oppenheimer,\' with figures exceeding the 2x mark. (Strength: Strong, based on multiple reports.)\n' +
+      '\n' +
+      '- \'Barbie\' is playing in more theaters than \'Oppenheimer,\' which could contribute to a higher gross. (Strength: Moderate, as screen count can influence box office performance.)\n' +
+      '\n' +
+      '- \'Barbie\' has broader appeal and targets a wider demographic, including families and younger audiences, which could lead to higher attendance. (Strength: Moderate, as demographic appeal is a significant factor in box office performance.)\n' +
+      '\n' +
+      '4. Aggregate your considerations: Considering the information provided, \'Barbie\' has a strong lead over \'Oppenheimer\' in terms of opening weekend gross, with multiple reports indicating that it has already achieved more than double the gross of \'Oppenheimer.\' The wider release and demographic appeal of \'Barbie\' further support the likelihood of it maintaining at least a 2x lead in gross over \'Oppenheimer.\' There is little evidence to suggest that \'Oppenheimer\' will close the gap significantly enough to prevent \'Barbie\' from doubling its gross.\n' +
+      '\n' +
+      '5. Initial probability (prediction): Given the strong evidence in favor of \'Barbie\' doubling \'Oppenheimer\'s gross, the initial probability is high.\n' +
+      '\n' +
+      '6. Evaluate whether your calculated probability is excessively confident or not confident enough: The calculated probability seems confident, but it is based on concrete data and reports from reliable sources. However, it is important to consider the possibility of unforeseen factors that could affect the final outcome. While the probability is high, it should not be absolute to account for any potential uncertainties.\n' +
+      '\n' +
+      '7. Output your final prediction: *0.95*\n' +
+      '\n' +
+      'Figure 21: A response from our fine-tuned model on the question “Will ‘Barbie’ gross 2x more than ‘Oppenheimer’ on opening weekend?”. The question resolved NO on July 24, 2023. On July 20, 2023, the community gave 73% and the response above gives 95%. In the original prompt (not shown here), our news retrieval provides projections that Barbie will likely outperform Oppenheimer at the box office. However, the model hallucinates them as facts (“[...] with figures exceeding the 2x mark”), resulting in overconfidence.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
