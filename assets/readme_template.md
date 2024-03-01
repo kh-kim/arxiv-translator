@@ -2,7 +2,11 @@
 
 [ArXiv Version]({arxiv_url})
 
-[Ar5iv Version]({ar5iv_url})
+Arxiv HTML version may not be shown if they don't provide HTML version.
+
+[Arxiv HTML English Version]({raw_en_html_url})
+
+[Arxiv HTML Korean Version]({raw_ko_html_url})
 
 [English Version]({en_html_url})
 

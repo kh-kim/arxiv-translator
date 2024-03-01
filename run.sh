@@ -14,6 +14,13 @@ paper $ARXIV_ID -p -d papers/$ARXIV_ID
 PDF_FN=$(ls -1 papers/$ARXIV_ID/*.pdf | head -n 1)
 echo $PDF_FN
 
+# Download HTML paper version from "https://arxiv.org/html/{arxiv_id}"
+HTML_FN=papers/$ARXIV_ID/paper.raw.en.html
+if [ ! -f $HTML_FN ]; then
+    echo https://arxiv.org/html/$ARXIV_ID
+    python download.py https://arxiv.org/html/$ARXIV_ID > $HTML_FN
+fi
+
 # If the directory is empty, remove it
 # Exit if the directory is empty
 if [ ! "$(ls -A papers/$ARXIV_ID)" ]; then
@@ -21,8 +28,11 @@ if [ ! "$(ls -A papers/$ARXIV_ID)" ]; then
     exit 1
 fi
 
+# Translate the paper with raw HTML
+python translate_html.py --arxiv_id $ARXIV_ID
+
 # Extract the text
-nougat $PDF_FN -o papers/$ARXIV_ID
+CUDA_VISIBLE_DEVICES=0 nougat $PDF_FN -o papers/$ARXIV_ID
 MMD_FN=$(echo $PDF_FN | sed 's/pdf/mmd/g')
 echo $MMD_FN
 

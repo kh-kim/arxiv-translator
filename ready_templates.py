@@ -131,6 +131,16 @@ def main(en_mmd_fn):
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
         ),
+        raw_en_html_url="https://raw.githubusercontent.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.en.html".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        ),
+        raw_ko_html_url="https://raw.githubusercontent.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.ko.html".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        ),
     )
 
     with open(os.path.join(PAPER_DIR, arxiv_id, "README.md"), "w") as f:
