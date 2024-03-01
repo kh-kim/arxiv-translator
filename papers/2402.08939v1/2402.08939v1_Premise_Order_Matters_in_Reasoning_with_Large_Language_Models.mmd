@@ -1,0 +1,214 @@
+# Premise Order Matters in Reasoning with Large Language Models
+
+Xinyun Chen
+
+1
+
+Ryan A. Chi
+
+2
+
+Xuezhi Wang
+
+1 and Denny Zhou
+
+1Equal contribution, 1Google DeepMind, 2Stanford University {xinyunchen,xuezhiw,dennyzhou}@google.com, ryanchi@cs.stanford.edu
+
+###### Abstract
+
+Large language models (LLMs) have accomplished remarkable reasoning performance in various domains. However, in the domain of reasoning tasks, we discover a frailty: LLMs are surprisingly brittle to the _ordering of the premises_, despite the fact that such ordering does not alter the underlying task. In particular, we observe that LLMs achieve the best performance when the premise order aligns with the context required in intermediate reasoning steps. For example, in deductive reasoning tasks, presenting the premises in the same order as the ground truth proof in the prompt (as opposed to random ordering) drastically increases the model's accuracy. We first examine the effect of premise ordering on deductive reasoning on a variety of LLMs, and our evaluation shows that permuting the premise order can cause a performance drop of over 30%. In addition, we release the benchmark R-GSM, based on GSM8K, to examine the ordering effect for mathematical problem-solving, and we again observe a significant drop in accuracy, relative to the original GSM8K benchmark.
+
+## 1 Introduction
+
+Large language models (LLMs) have demonstrated impressive performance across a variety of reasoning tasks (Austin et al., 2021; Chen et al., 2021; Cobbe et al., 2021; Hendrycks et al., 2021; Wei et al., 2022). In particular, recent state-of-the-art LLMs have reached or even surpassed human performance on multiple reasoning benchmarks, including STEM problem-solving and code generation (Bubeck et al., 2023; Gemini, 2023; Li et al., 2022). However, recent works show that LLMs exhibit failure modes that align with human-like cognitive bias (Berglund et al., 2023; Hagendorff et al., 2023; Jones and Steinhardt, 2022; McCoy et al., 2023; Shi et al., 2023). For example, Berglund et al. (2023) revealed the _Reversal Curse_; i.e., LLMs trained on "A is B" tend to fail to infer that "B is A." Distractibility is another failure mode (Jones and Steinhardt, 2022; Shi et al., 2023), where the LLM performance drastically decreases when irrelevant context is included in the task description.
+
+In this work, we investigate the effect that premise order has on LLM reasoning. Specifically, in deductive reasoning, changing the order of premises alone does not change the conclusion. Consider the following illustrative example:
+
+1. If \(A\) then \(B\).
+2. If \(B\) then \(C\).
+3. \(A\) is True.
+
+We can derive that \(C\) is True regardless of the order of these 3 premises. While some studies show that humans have a preference on the premise order to facilitate their reasoning (Dekeyser et al., 2000; Girotto et al., 1997), the premise order does not drastically affect human performance, especially for problems that only involve _modus ponens_ (if P then Q; P; therefore Q), which are relatively straightforward for humans.
+
+In contrast to humans, we observe that for LLMs, the premise order has a significant impact on reasoning performance. In particular, LLMs reach the best performance when the premises are arranged **in the same order** as they appear in the ground-truth proof. Taking the illustrative problem above as an example, we observe two phenomena:
+
+1. Presenting "If A then B" before "If B then C" in the prompt generally achieves a higher accuracy compared to the reversed order.
+2. The performance gap is more significant when the number of premises increases.
+
+Intuitively, such a preference on the premise order aligns with human preference (Dekeyser et al., 2000) because in the preferred order, each derivation step can be done on-the-fly while looking at premises one by one, without needing to look back and forth across all premises at each step.
+
+We conduct a systematic study on the premise order effect using a variety of SoTA LLMs, including GPT-4-turbo, GPT-3.5-turbo (OpenAI, 2023), PaLM 2-L (Google, 2023), and Gemini Pro (Gemini, 2023). Our primary focus is deductive reasoning, and we benchmark all LLMs on problems that only involve _modus ponens_ (if P then Q; P; therefore Q), where all LLMs in our evaluation at least achieve decent performance with a small number of premises. We show that the accuracy decrease caused by different ordering can be more than 30%. The ordering effect is further amplified when irrelevant premises (i.e., premises that are not needed to derive a conclusion) are presented in the prompt. Figure 1 illustrates a failure case, where all LLMs fail to generate the proof after changing the order of relevant rules. Interestingly, while all LLMs perform best when the premise order follows the ground truth proof, they reveal different preferences on other alternative orderings. Specifically, compared to randomly ordering the premises, GPT-4-turbo and GPT-3.5-turbo generally achieve betterperformance when the premise order is exactly the reverse of the ground truth proof, which enables LLMs to perform derivation via backward chaining. On the other hand, PaLM 2-L generally achieves the **worst performance** with such a reversed order.
+
+Besides logical reasoning, we construct R-GSM to further investigate the ordering effect on mathematical reasoning. Specifically, we build R-GSM on top of a subset of GSM8K experiments, where we change the order of sentences in the problem description and manually verify that the ground truth answer remains the same. Our experiments again show that the performance of all LLMs notably drop, especially on longer problems that require more reasoning steps.
+
+Our evaluation highlights that even in reasoning domains where the premise order **does not matter**, premise order **does matter in LLM reasoning**. Specifically, the premise ordering effect indicates that LLMs are more comfortable reasoning via reading left-to-right instead of back-and-forth, which can be attributed to the auto-regressive model design or the reasoning bias learned from the training corpus. We leave proposing new training and modeling techniques to mitigate the premise order effect as future work.
+
+## 2 Benchmarks
+
+### Logical Reasoning
+
+Prior work has revealed the weaknesses of LLMs in logical reasoning (Han et al., 2022; Saparov and He, 2022; Saparov et al., 2023; Wan et al., 2024; Xu et al., 2023), especially when the proof is long and requires the knowledge of multiple deduction theorems. To isolate the effect of premise orders, we focus on a confined problem space adapted from SimpleLogic (Zhang et al., 2022), which only includes propositional logic problems with definite clauses. Specifically, each problem includes: (1) a set of facts \(A_{1}\),\(\ldots\), \(A_{n}\) that hold true; (2) a set of rules of the form "If \(X\), then \(Y\)", "If \(X_{0}\) and \(X_{1}\), then \(Y\)", or "If \(X_{0}\) and \(X_{1}\) and \(X_{2}\), then \(Y\)"; and (3) a conclusion "\(C\) is True" to be proved. As opposed to SimpleLogic -- which formulates the problem as a binary classification task (i.e., indicate whether the conclusion is True or False) -- in our benchmark, every problem has a ground-truth label of True, and we consider the prediction to be correct only when the generated proof is completely valid. With these strict criteria, the LLM is required to produce the step-by-step deduction that leads to the conclusion, and any hallucination of non-existent facts and rules is considered erroneous.
+
+The key characteristic of our benchmark is that for each logical reasoning problem, we **synthetically generate variants** with **different premise orders.** Specifically, we denote the order that conforms to the ground truth proof with forward chaining as the _forward_ order, where the rule applied in each derivation step is sequentially presented in the problem description. Intuitively, presenting premises in the forward order simplifies the problem for humans, as this allows us to write the proof on-the-fly while reading the premises. Conversely, a premise ordering that is more random increases the task difficulty, since carrying out the derivation requires us to repetitively look for premises for each reasoning step. Motivated by this intuition, we categorize different premise orders based on their Kendall tau distance \(\tau\)(Cicirello, 2019; Sen, 1968) to the forward order, normalized into the range \([-1,1]\). Specifically, \(\tau=1\) is the _forward_ order, and we denote the order with \(\tau=-1\) as the _backward_ order, which is the reverse of the forward order and aligns with the proof via backward chaining. \(\tau\approx 0\) suggests that there is no strong correlation between the premise order in the problem description and the proof. To thoroughly investigate the LLM preference on different premise orders, we evaluate the model performance on \(\tau=0.5\), \(0\) and \(-0.5\), in addition to the forward (\(\tau=1\)) and backward (\(\tau=-1\)) orders. We present examples with \(\tau=1\) and \(0\) in Figure 1, and defer examples with other \(\tau\) values to Figure 11 in Appendix B.
+
+We measure the premise order effect by varying the following two factors:* **Number of rules required in the proof.** It is expected that the premise order effect is more significant with more rules. For our benchmark, we generate problems whose numbers of rules range from 4 to 12.
+* **Number of distracting rules** (i.e., rules that are not useful for the proof) presented in the problem. The presence of distracting rules also complicates the problem, as premise selection itself is challenging (Ferreira and Freitas, 2020; Irving et al., 2016; Wang et al., 2017), and LLMs are shown to be easily distracted by irrelevant context (Shi et al., 2023). We include problem variants with 0, 5 and 10 distracting rules.
+
+We generate 200 problems for each number of required rules. Considering different premise orders and numbers of distracting rules, each problem includes 15 variants, resulting in a total of 27K problems in our benchmark.
+
+### R-GSM for Mathematical Reasoning
+
+To further assess the effect of premise orders beyond logical reasoning, we construct the R-GSM dataset based on GSM8K (Cobbe et al., 2021), which is a popular benchmark of grade school math word problems. Specifically, we first select GSM8K test problems with at least 5 sentences in the problem description, then filter out those problems where there is no alternative ordering that does not change the ground truth answer, e.g., problem statements that follow the causal order of an event series. For each of the remaining problem, we keep the last sentence untouched and rewrite the problem description with a different ordering of other sentences. Minor editing on words is allowed to ensure the grammatical correctness of the problem description. To facilitate the annotation
+
+Figure 2: R-GSM example where the original problem can be correctly solved by all LLMs in our evaluation, but all of them failed on the reordered one. Different calculation steps and their corresponding problem statements are annotated in light blue. Specifically, the reasoning steps of the original problem follows the ordering of problem statements, while the reordered problem does not.
+
+process, for each problem, we write a simple function to enumerate all alternative orderings of problem statements until an ordering that causes the LLM prediction failure is discovered, which can be used for our manual rewriting if the alternative ordering found in the enumeration process happens to preserve the ground truth answer. In total, our R-GSM benchmark contains 220 pairs of problems, including both the original GSM8K problem description and the manually rewritten one with a different ordering of problem statements. Despite that over 60% of problems in R-GSM only have 5 sentences, and all problems have at most 8 sentences, our evaluation shows that all LLMs still perform considerably worse on rewritten problems. Figure 2 presents an example in R-GSM where all LLMs correctly solve the original problem but not the rewritten one. Specifically, the reasoning steps for the original problem follows the ordering of problem statements, while for the rewritten problem, the second calculation step in the correct solution should refer to the second-to-last sentence instead of the second sentence in the problem description. We provide a more detailed case study in Section 3.3, and present the full dataset statistics in Appendix A.
+
+## 3 Experiments
+
+### Experimental Setup
+
+We evaluate the premise ordering effect on GPT-4-turbo, GPT-3.5-turbo, PaLM 2-L and Gemini Pro. We perform the greedy decoding with the temperature 0, and apply the zero-shot prompting in all experiments. On R-GSM, the model input only contains the problem description without additional instructions. For logical reasoning, as shown in Figure 1, we add an instruction in the prompt to ask for a derivation that specifies which premise is used in each step.
+
+### Logical Reasoning
+
+Figure 4 | Logical reasoning with distracting rules. See Tables 6 and 7 for accuracy numbers.
+
+Figure 3 presents the results with different numbers of relevant rules included in ground truth proofs, where the problem does not contain distracting rules, and the shuffled accuracy is the aggregation of
+
+Figure 3: Logical reasoning without distracting rules. See Table 5 in Appendix D for accuracy numbers.
+
+[MISSING_PAGE_FAIL:6]
+
+1. _wrong refutation_: the LLM wrongly claims that the conclusion can not be proved;
+2. _rule hallucination_: the LLM generates rules that do not exist in the problem;
+3. _fact hallucination_: the LLM generates facts that do not exist in the problem and are unproven.
+
+We observe that for all LLMs, fact hallucination is typically the most common error pattern, and this error type escalates dramatically with the decrease of \(\tau\). The main reason is that LLMs are inclined to use the rules in the sequential order as they present in the problem, so when the next rule in the problem is not yet applicable, LLMs might still hallucinate facts to complete the proof step. Simultaneously, we observe that the percentage of wrong refutation is generally lower for \(\tau=-1\) than for \(|\tau|<1\). We present an example of wrong refutation in Figure 1, and we include more examples of rule and fact hallucination in Figure 10 of Appendix B.
+
+Table 1 \(|\) Error analysis for logical reasoning with 12 relevant rules and no distracting rules.
+
+### R-GSM for Mathematical Reasoning
+
+\begin{tabular}{l c c} \hline \hline  & Init Acc & Reorder Acc \\ \hline GPT-4-turbo & 94.1\% & 85.0\% \\ PaLM 2-L & 86.4\% & 79.5\% \\ Gemini Pro & 80.5\% & 69.1\% \\ GPT-3.5-turbo & 67.3\% & 51.8\% \\ \hline \hline \end{tabular}
+
+Table 2 \(|\) Results on the R-GSM dataset: (a) accuracies on the full dataset; (b) for each model, the accuracies on the R-GSM subset where the original problems are correctly solved, thus the initial accuracy is 100% for all models.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline  & \(\tau\) & Correct & \multicolumn{2}{c}{Wrong} & \multicolumn{2}{c}{Hallucination} \\  & & & Refutation & Rule & Fact \\ \hline  & 1 & 96.5\% & 0.5\% & 1.5\% & 1.5\% \\  & 0.5 & 76.0\% & 10.5\% & 2.0\% & 11.5\% \\ GPT-4-turbo & 0 & 82.0\% & 4.5\% & 3.5\% & 10.0\% \\  & -0.5 & 84.5\% & 1.0\% & 4.5\% & 10.0\% \\  & -1 & 84.0\% & 0.0\% & 3.5\% & 12.5\% \\ \hline  & 1 & 30.0\% & 24.5\% & 9.5\% & 35.5\% \\  & 0.5 & 1.0\% & 54.5\% & 9.5\% & 33.0\% \\ GPT-3.5-turbo & 0 & 0.5\% & 55.0\% & 7.5\% & 34.5\% \\  & -0.5 & 2.0\% & 50.0\% & 8.5\% & 37.5\% \\  & -1 & 1.5\% & 34.5\% & 14.5\% & 47.0\% \\ \hline  & 1 & 88.0\% & 0.5\% & 3.0\% & 8.5\% \\  & 0.5 & 74.5\% & 1.5\% & 9.5\% & 14.5\% \\ PaLM 2-L & 0 & 65.5\% & 2.0\% & 11.0\% & 21.5\% \\  & -0.5 & 59.5\% & 1.5\% & 10.0\% & 29.0\% \\  & -1 & 57.5\% & 1.0\% & 11.5\% & 30.0\% \\ \hline  & 1 & 16.5\% & 28.0\% & 5.0\% & 50.5\% \\  & 0.5 & 0.0\% & 59.0\% & 3.5\% & 37.5\% \\ Gemini Pro & 0 & 0.0\% & 34.0\% & 9.0\% & 57.0\% \\  & -0.5 & 0.5\% & 24.5\% & 9.5\% & 65.5\% \\  & -1 & 0.5\% & 27.5\% & 11.5\% & 60.5\% \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: Error analysis for logical reasoning with 12 relevant rules and no distracting rules.
+
+[MISSING_PAGE_FAIL:8]
+
+based on the preceding sentences, since the number of fish remains unknown up to that point, and the LLM must read the remaining sentences and calculate the number of fish first. However, the prediction from GPT-3.5-turbo instead uses the number calculated in the previous step (i.e., the number of rabbits) to calculate the number of gerbils, resulting in an error. Such a failure mode is less common with PaLM 2-L, but still constitutes a non-negligible proportion of prediction errors for the other LLMs. We present more examples of model predictions in Appendix C.
+
+## 4 Related Work
+
+**Failure modes of LLMs.** The premise order effect in this work is connected to several failure modes of LLMs in the literature, including the reversal curse (Berglund et al., 2023), distractibility (Shi et al., 2023), and limited capability of logical reasoning (Han et al., 2022; Saparov and He, 2022; Saparov et al., 2023; Wan et al., 2024; Xu et al., 2023; Zhu et al., 2023). Specifically, Shi et al. (2023) show that including irrelevant context in the problem statement leads to a considerable performance drop on GSM8K and other reasoning benchmarks, revealing that LLMs are _distractible_. This finding is in-line with our evaluation on logical reasoning, where we observe that adding irrelevant rules not
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline  & Temporal & Unknown & Others \\ \hline GPT-4-turbo & 45.0\% & 15.0\% & 40.0\% \\ GPT-3.5-turbo & 21.6\% & 19.6\% & 58.8\% \\ PaLM 2-L & 34.8\% & 4.3\% & 60.9\% \\ Gemini Pro & 29.5\% & 18.2\% & 52.3\% \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: Error analysis on R-GSM. “Temporal” refers to the temporal order, and “Unknown” refers to the unknown variables.
+
+Figure 9: \(|\) R-GSM example where the original problem can be correctly solved by all LLMs, but GPT-3.5-Turbo fails on the reordered version while all the other LLMs still solve it correctly.
+
+only degrades the overall logical reasoning performance, but also escalates the premise order effect. The _Reversal Curse_(Berglund et al., 2023) unveils another perspective of the order effect, where they show that an LLM that recognizes "A is B" does not necessarily learn that "B is A." While their work studies the order effect between two entities within a single factual statement, our work focuses on reasoning problems with multiple premises, without restrictions on the number of (or relationship between) entities. In particular, for logical reasoning, we demonstrate that random permutations of premises often result in **worse** accuracy than the purely backward order.
+
+**Order effect for human logical reasoning.** Although the premise order does not matter in deductive reasoning, several studies show that the premise order can impact the human reasoning performance (Dekeyser et al., 2000; Girotto et al., 1997). Dekeyser et al. (2000) described _co-reference_ as a human preference of premise order; i.e., humans prefer the premises to be presented in an order where they can draw immediate conclusions after seeing each one. In this work, we show that LLMs also have such a preference, and they achieve the best performance when the ordering of rules follows the ground truth proof. Girotto et al. (1997) studied how the premise order affects logical reasoning for humans, and found that the premise order has a significant effect in solving _modus tollens_ problems (i.e., if P, then Q; not Q; therefore, not P), but not _modus ponens_ problems (i.e., if P, then Q; P; therefore, Q). However, differing from our work, they studied the influence of different ordering between rules and facts, e.g., their experiments on _modus tollens_ problems show that presenting negation statements (not Q) before rules (if P, then Q) improves the performance over the reverse order. On the other hand, our work focuses on _modus ponens_ problems that are easier for both humans and LLMs, and we show that the LLM performance is still quite sensitive to the ordering of the premises.
+
+**Order effect of language models.** Some prior works show that language models are able to understand permuted texts to some extent, i.e., after a random permutation of words, models usually preserve a reasonable performance (Abdou et al., 2022; Sinha et al., 2020). Moreover, Cao et al. (2023) shows that even when a large fraction of words are scrambled, GPT-4 still achieves decent performance on several reasoning benchmarks. In contrast to permuted texts in these works that are typically unnatural and nonsensical, our premise order permutations do not alter the semantic meaning and remain syntactically valid (we manually verify this). Nevertheless, we demonstrate that LLM reasoning performance is highly brittle to the ordering of the premises.
+
+## 5 Conclusion
+
+In this work, we show that the premise order significantly affects LLMs' performance on reasoning tasks, even when the premise order does not change the underlying task itself. Our comprehensive evaluation demonstrates that LLM tendencies resemble human preference w.r.t. premise order, i.e., LLMs achieve the best performance when the premise order follows the intermediate reasoning steps to solve the problem. Conversely, LLMs face difficulties when the reasoning problem requires the model to read the problem description back-and-forth, resulting in a performance drop of over 30%. We further extend the study to mathematical reasoning and present the R-GSM benchmark, and again experimentally confirm the ordering effect.
+
+While humans also have a preference of premise orders for reasoning problems, LLMs are much more susceptible to such ordering effects. We can attempt to ascribe the premise order effect to several candidate factors, such as the auto-regressive model design, training objectives, and training data mixture. However, we leave proposing theoretical explanations of this limitation and developing new techniques towards addressing the premise order effect as future work.
+
+## Acknowledgment
+
+We would like to thank Chen Liang and Dale Schuurmans for helpful discussion and feedback.
+
+## References
+
+* Abdou et al. [2022] M. Abdou, V. Ravishankar, A. Kulmizev, and A. Sogaard. Word order does matter and shuffled language models know it. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 6907-6919, 2022.
+* Austin et al. [2021] J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, et al. Program synthesis with large language models. _arXiv preprint arXiv:2108.07732_, 2021.
+* Berglund et al. [2023] L. Berglund, M. Tong, M. Kaufmann, M. Balesni, A. C. Stickland, T. Korbak, and O. Evans. The reversal curse: Llms trained on" a is b" fail to learn" b is a". _arXiv preprint arXiv:2309.12288_, 2023.
+* Bubeck et al. [2023] S. Bubeck, V. Chandrasekaran, R. Eldan, J. Gehrke, E. Horvitz, E. Kamar, P. Lee, Y. T. Lee, Y. Li, S. Lundberg, et al. Sparks of artificial general intelligence: Early experiments with gpt-4. _arXiv preprint arXiv:2303.12712_, 2023.
+* Cao et al. [2023] Q. Cao, T. Kojima, Y. Matsuo, and Y. Iwasawa. Unnatural error correction: Gpt-4 can almost perfectly handle unnatural scrambled text. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 8898-8913, 2023.
+* Chen et al. [2021] M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. d. O. Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, et al. Evaluating large language models trained on code. _arXiv preprint arXiv:2107.03374_, 2021.
+* Cicirello [2019] V. A. Cicirello. Kendall tau sequence distance: Extending kendall tau from ranks to sequences. _arXiv preprint arXiv:1905.02752_, 2019.
+* Cobbe et al. [2021] K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, et al. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021.
+* Dekeyser et al. [2000] M. Dekeyser, W. Schroyens, W. Schaeken, O. Spitaels, and G. dYdewalle. Preferred premise order in propositional reasoning: Semantic informativeness and co-reference. _Deductive reasoning and strategies_, pages 73-95, 2000.
+* Ferreira and Freitas [2020] D. Ferreira and A. Freitas. Premise selection in natural language mathematical texts. In _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pages 7365-7374, 2020.
+* Gemini [2023] Gemini. Gemini: a family of highly capable multimodal models. _arXiv preprint arXiv:2312.11805_, 2023.
+* Girotto et al. [1997] V. Girotto, A. Mazzocco, and A. Tasso. The effect of premise order in conditional reasoning: A test of the mental model theory. _Cognition_, 63(1):1-28, 1997.
+* Google [2023] Google. Palm 2 technical report. _arXiv preprint arXiv:2305.10403_, 2023.
+* Hagendorff et al. [2023] T. Hagendorff, S. Fabi, and M. Kosinski. Human-like intuitive behavior and reasoning biases emerged in large language models but disappeared in chatgpt. _Nature Computational Science_, 3(10):833-838, 2023.
+
+* Han et al. (2022) S. Han, H. Schoelkopf, Y. Zhao, Z. Qi, M. Riddell, L. Benson, L. Sun, E. Zubova, Y. Qiao, M. Burtell, et al. Folio: Natural language reasoning with first-order logic. _arXiv preprint arXiv:2209.00840_, 2022.
+* Hendrycks et al. (2021) D. Hendrycks, C. Burns, S. Kadavath, A. Arora, S. Basart, E. Tang, D. Song, and J. Steinhardt. Measuring mathematical problem solving with the math dataset. _arXiv preprint arXiv:2103.03874_, 2021.
+* Irving et al. (2016) G. Irving, C. Szegedy, A. A. Alemi, N. Een, F. Chollet, and J. Urban. Deepmath-deep sequence models for premise selection. _Advances in neural information processing systems_, 29, 2016.
+* Jones and Steinhardt (2022) E. Jones and J. Steinhardt. Capturing failures of large language models via human cognitive biases. _Advances in Neural Information Processing Systems_, 35:11785-11799, 2022.
+* Li et al. (2022) Y. Li, D. Choi, J. Chung, N. Kushman, J. Schrittwieser, R. Leblond, T. Eccles, J. Keeling, F. Gimeno, A. Dal Lago, et al. Competition-level code generation with alphacode. _Science_, 378(6624):1092-1097, 2022.
+* McCoy et al. (2023) R. T. McCoy, S. Yao, D. Friedman, M. Hardy, and T. L. Griffiths. Embers of autoregression: Understanding large language models through the problem they are trained to solve. _arXiv preprint arXiv:2309.13638_, 2023.
+* OpenAI (2023) OpenAI. Gpt-4 technical report. _arXiv preprint arXiv:2303.08774_, 2023.
+* Saparov and He (2022) A. Saparov and H. He. Language models are greedy reasoners: A systematic formal analysis of chain-of-thought. _arXiv preprint arXiv:2210.01240_, 2022.
+* Saparov et al. (2023) A. Saparov, R. Y. Pang, V. Padmakumar, N. Joshi, S. M. Kazemi, N. Kim, and H. He. Testing the general deductive reasoning capacity of large language models using ood examples. _arXiv preprint arXiv:2305.15269_, 2023.
+* Sen (1968) P. K. Sen. Estimates of the regression coefficient based on kendall's tau. _Journal of the American statistical association_, 63(324):1379-1389, 1968.
+* Shi et al. (2023) F. Shi, X. Chen, K. Misra, N. Scales, D. Dohan, E. H. Chi, N. Scharli, and D. Zhou. Large language models can be easily distracted by irrelevant context. In _International Conference on Machine Learning_, pages 31210-31227. PMLR, 2023.
+* Sinha et al. (2020) K. Sinha, P. Parthasarathi, J. Pineau, and A. Williams. Unnatural language inference. _arXiv preprint arXiv:2101.00010_, 2020.
+* Wan et al. (2024) Y. Wan, W. Wang, Y. Yang, Y. Yuan, J.-t. Huang, P. He, W. Jiao, and M. R. Lyu. A & b= = b & a: Triggering logical reasoning failures in large language models. _arXiv preprint arXiv:2401.00757_, 2024.
+* Wang et al. (2017) M. Wang, Y. Tang, J. Wang, and J. Deng. Premise selection for theorem proving by deep graph embedding. _Advances in neural information processing systems_, 30, 2017.
+* Wei et al. (2022) J. Wei, X. Wang, D. Schuurmans, M. Bosma, F. Xia, E. Chi, Q. V. Le, D. Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. _Advances in Neural Information Processing Systems_, 35:24824-24837, 2022.
+* Xu et al. (2023) F. Xu, Q. Lin, J. Han, T. Zhao, J. Liu, and E. Cambria. Are large language models really good logical reasoners? a comprehensive evaluation from deductive, inductive and abductive views. _arXiv preprint arXiv:2306.09841_, 2023.
+
+H. Zhang, L. H. Li, T. Meng, K.-W. Chang, and G. V. d. Broeck. On the paradox of learning to reason from data. _arXiv preprint arXiv:2205.11502_, 2022.
+* Zhu et al. [2023] Z. Zhu, Y. Xue, X. Chen, D. Zhou, J. Tang, D. Schuurmans, and H. Dai. Large language models can learn rules. _arXiv preprint arXiv:2310.07064_, 2023.
+
+[MISSING_PAGE_FAIL:14]
+
+Figure 10 | Examples of hallucinated rules (left) and facts (right) produced by GPT-3.5-Turbo while solving our logical reasoning benchmark.
+
+[MISSING_PAGE_EMPTY:16]
+
+Figure 12 \(|\) R-GSM example where the original problem can be correctly solved by GPT-4 Turbo, but the model fails on the reordered one.
+
+Figure 13: \(R\)-GSM example where the original problem can be correctly solved by all models, but GPT-4 Turbo and Gemini Pro failed on the reordered one.
+
+Figure 14 \(|\) R-GSM example where both the original and the reordered problems were correctly solved by all LLMs in our evaluation.
+
+Figure 15 \(|\) R-GSM example where both the original and the reordered problems were correctly solved by all LLMs in our evaluation.
+
+[MISSING_PAGE_FAIL:21]
+
+\begin{table}
+
+\end{table}
+Table 6: Results corresponding to Figure 4 with 5 distracting rules.
+
+\begin{table}
+
+\end{table}
+Table 7: Results corresponding to Figure 4 with 10 distracting rules.
+
+\begin{table}
+
+\end{table}
+Table 8: Result table corresponding to Figure 5.
+
+\begin{table}
+
+\end{table}
+Table 9: Results corresponding to Figure 6 with 5 distracting rules.
+
+\begin{table}
+
+\end{table}
+Table 10: Results corresponding to Figure 6 with 10 distracting rules.
+
+\begin{table}
+
+\end{table}
+Table 12: Results corresponding to Figure 8.

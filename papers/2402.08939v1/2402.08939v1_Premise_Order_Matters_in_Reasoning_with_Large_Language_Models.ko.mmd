@@ -1,0 +1,214 @@
+# 대규모 언어 모델을 사용한 추론에서 전제 순서 문제
+
+Xinyun Chen
+
+1
+
+라이언 치
+
+2
+
+Xuezhi Wang
+
+1, 데니저우
+
+1Equal contribution, 1Google DeepMind, 2Stanford University {xinyunchen,xuezhiw,dennyzhou}@google.com, ryanchi@cs.stanford.edu
+
+###### Abstract
+
+대규모 언어 모델(LLM)은 다양한 영역에서 놀라운 추론 성능을 달성했다. 그러나 추론 작업 영역에서 취약성을 발견합니다. LLM은 이러한 순서가 기본 작업을 변경하지 않는다는 사실에도 불구하고 _전제의 순서화_ 에 놀라울 정도로 취약합니다. 특히, 전제 순서가 중간 추론 단계에서 요구되는 컨텍스트와 일치할 때 LLM이 최상의 성능을 달성한다는 것을 관찰한다. 예를 들어, 연역적 추론 작업에서, (무작위 순서와 대조적으로) 프롬프트에서 지상 진실 증명과 동일한 순서로 전제를 제시하는 것은 모델의 정확도를 급격히 증가시킨다. 우리는 먼저 다양한 LLMs에 대한 연역적 추론에 대한 전제 순서의 영향을 조사하며, 우리의 평가는 전제 순서의 순열이 30% 이상의 성능 저하를 유발할 수 있음을 보여준다. 또한, 수학적 문제 해결을 위한 순서화 효과를 조사하기 위해 GSM8K를 기반으로 하는 벤치마크 R-GSM을 출시하고, 원래의 GSM8K 벤치마크에 비해 정확도가 크게 떨어지는 것을 다시 관찰한다.
+
+## 1 Introduction
+
+대형 언어 모델들(LLMs)은 다양한 추론 태스크들에 걸쳐 인상적인 성능을 입증했다(Austin et al., 2021; Chen et al., 2021; Cobbe et al., 2021; Hendrycks et al., 2021; Wei et al., 2022). 특히, 최근의 최첨단 LLM은 STEM 문제 해결 및 코드 생성을 포함하는 다중 추론 벤치마크에서 인간 성능에 도달하거나 심지어 능가하고 있다(Bubeck et al., 2023; Gemini, 2023; Li et al., 2022). 그러나, 최근의 연구들은 LLMs가 인간-유사 인지 편향과 정렬되는 실패 모드들을 나타낸다는 것을 보여준다(Berglund et al., 2023; Hagendorff et al., 2023; Jones and Steinhardt, 2022; McCoy et al., 2023; Shi et al., 2023). 예를 들어, Berglund et al. (2023)은 "역전적 저주"를 밝혔는데, 즉 "A는 B이다"에서 훈련된 LLM은 "B는 A이다"라고 추론하지 못하는 경향이 있다. 분산성은 다른 실패 모드이다(Jones and Steinhardt, 2022; Shi et al., 2023). 여기서 LLM 성능은 관련 없는 컨텍스트가 태스크 설명에 포함될 때 급격히 감소한다.
+
+이 연구에서는 전제 질서가 LLM 추론에 미치는 영향을 조사한다. 구체적으로 연역적 추론에서 전제의 순서를 바꾼다고 해서 결론이 달라지는 것은 아니다. 다음의 예시적인 예를 고려한다:
+
+1. \(A\) 이면 \(B\).
+2. \(B\)이면 \(C\).
+3. \(A\)는 True이다.
+
+우리는 이 세 전제의 순서에 관계없이 \(C\)가 참임을 도출할 수 있다. 일부 연구에 따르면 인간은 추론을 용이하게 하기 위해 전제 순서에 대한 선호를 가지고 있지만(Dekeyser 등, 2000; Girotto 등, 1997), 전제 순서는 특히 인간에게 비교적 간단한 _modus ponens_(P then Q; P; therefore Q)만 포함하는 문제에 대해 인간의 성능에 크게 영향을 미치지 않는다.
+
+인간과 달리, 우리는 LLM에 대해 전제 순서가 추론 성능에 상당한 영향을 미친다는 것을 관찰한다. 특히 LLM은 구제가 지상 진실 증명에 나타나는 것과 **동일한 순서로** 배열될 때 최상의 성능에 도달합니다. 위의 예시적인 문제를 예로 들면, 우리는 두 가지 현상을 관찰한다:
+
+1. 프롬프트에서 "If B then C" 이전에 "If A then B"를 제시하는 것은 일반적으로 역순에 비해 더 높은 정확도를 달성한다.
+2. 성능 격차는 전제의 수가 증가할 때 더 현저하다.
+
+직관적으로, 전제 순서에서의 이러한 선호도는 인간의 선호도와 정렬된다(Dekeyser et al., 2000). 왜냐하면 선호되는 순서에서, 각각의 도출 단계는 각각의 단계에서 모든 전제에 걸쳐 앞뒤로 볼 필요 없이, 전제를 하나씩 보면서 즉흥적으로 수행될 수 있기 때문이다.
+
+우리는 GPT-4-turbo, GPT-3.5-turbo (OpenAI, 2023), PaLM 2-L (Google, 2023), Gemini Pro (Gemini, 2023) 등 다양한 SoTA LLM을 사용하여 전제 주문 효과에 대한 체계적인 연구를 수행한다. 우리의 주요 초점은 연역적 추론이며, 우리는 _modus ponens_(P then Q; P; therefore Q)만 포함하는 문제에 대해 모든 LLM을 벤치마킹하며, 여기서 평가의 모든 LLM은 최소한 적은 수의 전제에서 적절한 성능을 달성한다. 우리는 서로 다른 오더링으로 인한 정확도 저하가 30% 이상일 수 있음을 보여준다. 주문 효과는 관련 없는 전제(즉, 결론을 도출하는 데 필요하지 않은 전제)가 프롬프트에 제시될 때 더욱 증폭된다. 그림 1은 모든 LLM이 관련 규칙의 순서를 변경한 후 증명을 생성하지 못하는 실패 사례를 보여준다. 흥미롭게도 모든 LLM은 전제 순서가 사실 증명을 따를 때 가장 잘 수행되지만 다른 대체 순서에 대해 다른 선호도를 드러낸다. 구체적으로, 전제를 무작위로 순서화하는 것과 비교하여, GPT-4-터보 및 GPT-3.5-터보는 일반적으로 전제 순서가 정확히 지상 진리 증명의 반대일 때 더 나은 성능을 달성하며, 이는 LLM이 역방향 체인을 통해 유도를 수행할 수 있게 한다. 반면에 PaLM 2-L은 일반적으로 이러한 역순으로 **최악의 성능** 을 달성합니다.
+
+논리적 추론 외에도 수학적 추론에 대한 순서화 효과를 추가로 조사하기 위해 R-GSM을 구성한다. 구체적으로, 우리는 GSM8K 실험의 부분집합 위에 R-GSM을 구축하는데, 여기서 문제 서술에서 문장의 순서를 변경하고, 진실의 정답이 동일하게 유지되는지 수동으로 검증한다. 우리의 실험은 특히 더 많은 추론 단계가 필요한 더 긴 문제에서 모든 LLM의 성능이 현저하게 떨어짐을 다시 보여준다.
+
+우리의 평가는 전제 순서가 **중요하지 않음** 인 추론 도메인에서도 전제 순서가 **LLM 추론에서 중요함** 을 강조합니다. 구체적으로, 전제 순서화 효과는 LLM이 앞뒤로 읽기 대신 왼쪽에서 오른쪽으로 읽기를 통해 더 편안한 추론을 한다는 것을 나타내며, 이는 자동 회귀 모델 설계 또는 훈련 말뭉치에서 학습된 추론 편향에 기인할 수 있다. 우리는 향후 작업으로 전제 순서 효과를 완화하기 위한 새로운 훈련 및 모델링 기술을 제안한다.
+
+## 2 Benchmarks
+
+### Logical Reasoning
+
+선행 연구는 논리적 추론에서 LLMs의 약점을 밝혀냈다 (Han et al., 2022; Saparov and He, 2022; Saparov et al., 2023; Wan et al., 2024; Xu et al., 2023), 특히 증명이 길고 다중 추론 정리에 대한 지식을 필요로 할 때. 전제명령의 효과를 분리하기 위해 SimpleLogic(Zhang et al., 2022)에서 채택된 제한된 문제 공간에 초점을 맞추며, 이 공간에는 명확한 절을 가진 명제 논리 문제만 포함된다. 구체적으로, 각각의 문제는, (1) 참을 유지하는 사실의 집합 \(A_{1}\),\(\ldots\),\(A_{n}\); (2) "If \(X\), then \(Y\), "If \(X_{0}\) and \(X_{1}\), then \(Y\)", 또는 "If \(X_{0}\) and \(X_{1}\) and \(X_{2}\), then \(Y\)"; 및 (3) 결론 "\(C\)는 참이다. 이진 분류 작업(즉, 결론이 참인지 거짓인지를 나타냄)으로 문제를 공식화하는 SimpleLogic과 대조적으로, 벤치마크에서 모든 문제는 참의 지상-진실 레이블을 가지고 있으며 생성된 증명이 완전히 유효한 경우에만 예측이 올바른 것으로 간주한다. 이러한 엄격한 기준으로 LLM은 결론에 이르는 단계적 연역을 산출하도록 요구되며, 존재하지 않는 사실과 규칙에 대한 환각은 잘못된 것으로 간주된다.
+
+벤치마크의 주요 특징은 각 논리적 추론 문제에 대해 **다른 전제 순서** 를 사용하여 **합성적으로 변형** 을 생성한다는 것입니다.* * 구체적으로, 각 도출 단계에서 적용된 규칙이 문제 설명에 순차적으로 표시되는 *전진 순서* 로 순방향 연쇄를 사용하여 사실 증명에 부합하는 순서를 나타냅니다. 직관적으로 전제를 전방 순서로 제시하는 것은 인간의 문제를 단순화하는데, 이는 우리가 전제를 읽으면서 즉석에서 증명을 쓸 수 있게 하기 때문이다. 반대로, 유도를 수행하려면 각 추론 단계에 대한 전제를 반복적으로 찾아야 하기 때문에 더 무작위적인 전제 순서는 과제 난이도를 증가시킨다. 이러한 직관에 의해 동기화된 Kendall tau 거리 \(\tau\)(Cicirello, 2019; Sen, 1968)에서 정방향 차수 \([-1,1]\)로 정규화된 전제의 차수를 분류한다. 구체적으로, \(\tau=1\)은 _forward_ 차수이고, \(\tau=-1\)을 _backward_ 차수로 하는 차수를 나타내며, 이는 순방향 차수의 역이고 역방향 체인을 통해 증명과 정렬된다. \ (\tau\approx 0\)는 문제 서술에서 전제 순서와 증명 사이에 강한 상관관계가 없음을 시사한다. 전제 차수에 따른 LLM 선호도에 대해 철저히 조사하기 위해 순방향(\(\tau=1\)) 및 역방향(\(\tau=-1\)) 차수에 추가하여 \(\tau=0.5\), \(0\) 및 \(-0.5\)에 대한 모델 성능을 평가한다. 우리는 그림 1에서 \(\tau=1\) 및 \(0\) 값을 가진 예를 제시하고, 부록 B의 그림 11로 다른 \(\tau\) 값을 가진 예를 연기한다.
+
+다음 두 가지 요인을 변경하여 전제 순서 효과를 측정합니다.* **증명에서 필요한 규칙 수** 더 많은 규칙으로 전제 순서 효과가 더 중요할 것으로 예상됩니다. 벤치마크의 경우 규칙의 수가 4에서 12까지인 문제를 생성한다.
+* 문제에 제시된 **산만 규칙 수** (즉, 증명에 유용하지 않은 규칙)입니다. 산만 규칙의 존재는 또한 문제를 복잡하게 만드는데, 전제 선택 자체가 도전적이기 때문이다(Ferreira and Freitas, 2020; Irving et al., 2016; Wang et al., 2017), LLMs는 관련 없는 맥락에 의해 쉽게 산만해지는 것으로 나타난다(Shi et al., 2023). 우리는 0, 5 및 10 방해 규칙이 있는 문제 변형을 포함한다.
+
+우리는 필요한 규칙의 수마다 200개의 문제를 생성한다. 다른 전제 순서와 산만한 규칙의 수를 고려할 때 각 문제에는 15개의 변형이 포함되어 있어 벤치마크에서 총 27K개의 문제가 발생한다.
+
+### 수학적 추론에 대한 R-GSM
+
+논리적 추론을 넘어 전제 순서의 영향을 추가로 평가하기 위해 초등학교 수학 문장제의 인기 벤치마크인 GSM8K(Cobbe et al., 2021)를 기반으로 R-GSM 데이터 세트를 구축한다. 구체적으로, 우리는 먼저 문제 서술에서 적어도 5개의 문장으로 GSM8K 테스트 문제를 선택하고, 그 다음, 그라운드 진실 답변을 변경하지 않는 대안적인 순서, 예를 들어 사건 시리즈의 인과 순서를 따르는 문제 진술이 없는 문제들을 걸러낸다. 나머지 문제 각각에 대해 마지막 문장은 그대로 유지하고 다른 문장의 순서를 다르게 하여 문제 설명을 다시 쓴다. 문제 서술의 문법적 정확성을 보장하기 위해 단어에 대한 사소한 편집이 허용된다. 주석을 용이하게 하려면
+
+그림 2: 원래 문제가 우리의 평가에서 모든 LLM에 의해 올바르게 해결될 수 있지만 모두 순서가 변경된 문제에서 실패한 R-GSM 예제. 상이한 계산 단계들 및 그들의 대응하는 문제 문장들은 밝은 파란색으로 주석이 달린다. 구체적으로, 원래 문제의 추론 단계는 문제 진술의 순서를 따르는 반면, 재정렬된 문제는 그렇지 않다.
+
+각 문제에 대해 LLM 예측 실패의 원인이 되는 순서가 발견될 때까지 문제 진술의 모든 대체 순서를 열거하는 간단한 함수를 작성하며, 이는 열거 과정에서 발견된 대체 순서가 진실 해답을 보존하기 위해 발생할 경우 수동 재작성에 사용될 수 있다. 우리의 R-GSM 벤치마크에는 원래 GSM8K 문제 설명과 문제 문장의 순서가 다른 수동으로 다시 작성된 문제를 포함하여 총 220쌍의 문제가 포함되어 있다. R-GSM의 60% 이상의 문제는 5개의 문장만 가지고 있고 모든 문제는 최대 8개의 문장을 가지고 있음에도 불구하고, 우리의 평가는 모든 LLM이 여전히 재작성된 문제에 대해 상당히 더 나쁜 성능을 발휘한다는 것을 보여준다. 그림 2는 모든 LLM이 원래 문제를 올바르게 해결하지만 다시 작성된 문제는 해결하지 않는 R-GSM의 예를 보여준다. 구체적으로, 원래 문제에 대한 추론 단계들은 문제 문장들의 순서를 따르는 반면, 재작성된 문제에 대해, 올바른 해결책에서의 제2 계산 단계는 문제 설명에서의 제2 문장 대신에 제2-마지막 문장을 참조해야 한다. 섹션 3.3에서 보다 자세한 사례 연구를 제공하고 부록 A에 전체 데이터 세트 통계를 제시한다.
+
+## 3 Experiments
+
+### Experimental Setup
+
+우리는 GPT-4-터보, GPT-3.5-터보, PaLM 2-L 및 제미니 프로에 대한 전제 순서 효과를 평가한다. 온도 0으로 그리디 디코딩을 수행하고, 모든 실험에서 제로샷 프롬프트를 적용한다. R-GSM에서 모델 입력에는 추가 지침 없이 문제 설명만 포함됩니다. 논리적 추론을 위해 그림 1과 같이 프롬프트에 명령어를 추가하여 각 단계에서 어떤 전제가 사용되는지 명시하는 유도를 요청한다.
+
+### Logical Reasoning
+
+그림 4 | 규칙을 산만하게 하는 논리적 추론입니다. 정확도 숫자는 표 6과 표 7을 참조하십시오.
+
+그림 3은 지상 진실 증명에 포함된 관련 규칙의 수가 다른 결과를 제시하며, 여기서 문제는 산만한 규칙을 포함하지 않으며 셔플된 정확도는 함수의 집합이다.
+
+그림 3: 규칙을 산만하게 하지 않는 논리적 추론. 정확도 숫자는 부록 D의 표 5를 참조하십시오.
+
+[MISSING_PAGE_FAIL:6]
+
+1. _잘못된 반박_: LLM이 결론을 증명할 수 없다고 잘못 주장함;
+2. _규칙 환각_: LLM은 문제에 존재하지 않는 규칙을 생성함;
+3. _사실 환각_: LLM은 문제에 존재하지 않고 입증되지 않은 사실을 생성합니다.
+
+우리는 모든 LLM에 대해 사실 환각이 일반적으로 가장 일반적인 오류 패턴이며 이 오류 유형은 \(\tau\)의 감소와 함께 극적으로 증가한다는 것을 관찰한다. 주된 이유는 LLMs가 문제에 제시된 규칙과 같이 순차적인 순서로 규칙을 사용하는 경향이 있기 때문에 문제의 다음 규칙이 아직 적용되지 않을 때 LLMs는 증명 단계를 완료하기 위해 여전히 사실을 환각할 수 있기 때문이다. 동시에, 우리는 잘못된 반박의 백분율이 일반적으로 \(\tau=-1\)에서 \(|\tau|<1\)보다 낮다는 것을 관찰한다. 우리는 그림 1에서 잘못된 반박의 예를 제시하고, 부록 B의 그림 10에서 규칙과 사실 환각의 더 많은 예를 포함한다.
+
+표 1 \(|\) 12개의 관련 규칙과 산만한 규칙이 없는 논리적 추론을 위한 오류 분석.
+
+### 수학적 추론에 대한 R-GSM
+
+\begin{tabular}{l c c} \hline \hline  & Init Acc & Reorder Acc \\ \hline GPT-4-turbo & 94.1\% & 85.0\% \\ PaLM 2-L & 86.4\% & 79.5\% \\ Gemini Pro & 80.5\% & 69.1\% \\ GPT-3.5-turbo & 67.3\% & 51.8\% \\ \hline \hline \end{tabular}
+
+표 2 \(|\) R-GSM 데이터 세트에 대한 결과: (a) 전체 데이터 세트에 대한 정확도; (b) 각 모델에 대해, 원래 문제가 올바르게 해결된 R-GSM 서브세트에 대한 정확도, 따라서 초기 정확도는 모든 모델에 대해 100%이다.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline  & \(\tau\) & Correct & \multicolumn{2}{c}{Wrong} & \multicolumn{2}{c}{Hallucination} \\  & & & Refutation & Rule & Fact \\ \hline  & 1 & 96.5\% & 0.5\% & 1.5\% & 1.5\% \\  & 0.5 & 76.0\% & 10.5\% & 2.0\% & 11.5\% \\ GPT-4-turbo & 0 & 82.0\% & 4.5\% & 3.5\% & 10.0\% \\  & -0.5 & 84.5\% & 1.0\% & 4.5\% & 10.0\% \\  & -1 & 84.0\% & 0.0\% & 3.5\% & 12.5\% \\ \hline  & 1 & 30.0\% & 24.5\% & 9.5\% & 35.5\% \\  & 0.5 & 1.0\% & 54.5\% & 9.5\% & 33.0\% \\ GPT-3.5-turbo & 0 & 0.5\% & 55.0\% & 7.5\% & 34.5\% \\  & -0.5 & 2.0\% & 50.0\% & 8.5\% & 37.5\% \\  & -1 & 1.5\% & 34.5\% & 14.5\% & 47.0\% \\ \hline  & 1 & 88.0\% & 0.5\% & 3.0\% & 8.5\% \\  & 0.5 & 74.5\% & 1.5\% & 9.5\% & 14.5\% \\ PaLM 2-L & 0 & 65.5\% & 2.0\% & 11.0\% & 21.5\% \\  & -0.5 & 59.5\% & 1.5\% & 10.0\% & 29.0\% \\  & -1 & 57.5\% & 1.0\% & 11.5\% & 30.0\% \\ \hline  & 1 & 16.5\% & 28.0\% & 5.0\% & 50.5\% \\  & 0.5 & 0.0\% & 59.0\% & 3.5\% & 37.5\% \\ Gemini Pro & 0 & 0.0\% & 34.0\% & 9.0\% & 57.0\% \\  & -0.5 & 0.5\% & 24.5\% & 9.5\% & 65.5\% \\  & -1 & 0.5\% & 27.5\% & 11.5\% & 60.5\% \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 12개의 관련 규칙과 방해되지 않는 규칙으로 논리적 추론을 위한 오류 분석.
+
+[MISSING_PAGE_FAIL:8]
+
+앞 문장을 기준으로 할 때, 그 시점까지 물고기의 수는 알려지지 않은 채로 남아 있고, LLM은 남은 문장을 읽고 먼저 물고기의 수를 계산해야 하기 때문이다. 그러나 GPT-3.5-터보로부터의 예측은 대신 이전 단계에서 계산된 수(즉, 토끼의 수)를 사용하여 저빌스의 수를 계산하므로 오류가 발생한다. 이러한 고장 모드는 PaLM 2-L에서 덜 일반적이지만 여전히 다른 LLM에 대한 예측 오차의 무시할 수 없는 비율을 구성한다. 우리는 부록 C에서 모델 예측의 더 많은 예를 제시한다.
+
+## 4 관련 작업
+
+**LLM의 실패 모드** 이 작업의 전제 순서 효과는 역전 저주(Berglund et al., 2023), 분산성(Shi et al., 2023), 논리적 추론의 제한된 능력(Han et al., 2022; Saparov and He, 2022; Saparov et al., 2023; Wan et al., 2024; Xu et al., 2023; Zhu et al., 2023)을 포함한 문헌의 LLM의 여러 실패 모드와 연결됩니다. 특히 Shi et al. (2023)은 문제문에 관련 없는 컨텍스트를 포함하면 GSM8K 및 기타 추론 벤치마크에서 상당한 성능 저하를 초래하여 LLM이 _산만할 수 있음을 보여준다. 이 발견은 논리적 추론에 대한 우리의 평가와 일맥상통하며, 여기서 관련 없는 규칙을 추가하지 않는다는 것을 관찰한다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline  & Temporal & Unknown & Others \\ \hline GPT-4-turbo & 45.0\% & 15.0\% & 40.0\% \\ GPT-3.5-turbo & 21.6\% & 19.6\% & 58.8\% \\ PaLM 2-L & 34.8\% & 4.3\% & 60.9\% \\ Gemini Pro & 29.5\% & 18.2\% & 52.3\% \\ \hline \hline \end{tabular}
+\end{table}
+표 3: R-GSM에 대한 오차 분석. "Temporal"은 시간적 순서를 의미하고, "Unknown"은 미지의 변수를 의미한다.
+
+그림 9: \(|\) R-GSM 예제 원본 문제를 모든 LLM에서 올바르게 해결할 수 있지만 GPT-3.5-터보는 순서가 변경된 버전에서 실패하지만 다른 모든 LLM은 여전히 올바르게 해결합니다.
+
+논리 추론의 전반적인 성능을 저하시킬 뿐 아니라, 전제 순서 효과를 상승시킨다. 역전적 저주_(Berglund et al., 2023)는 주문 효과에 대한 또 다른 관점을 공개하는데, 여기서 "A가 B이다"를 인식하는 LLM이 반드시 "B가 A이다"를 학습하지 않는다는 것을 보여준다. 그들의 작업은 단일 사실 진술 내에서 두 개체 사이의 주문 효과를 연구하지만, 우리의 작업은 개체의 수(또는 개체 간의 관계)에 대한 제한 없이 여러 전제를 가진 추론 문제에 초점을 맞춘다. 특히 논리적 추론의 경우 전제의 무작위 순열이 순전히 역방향 순서보다 **더 나쁜** 정확도를 초래하는 경우가 많다는 것을 보여준다.
+
+**인간 논리적 추론에 대한 주문 효과** 연역적 추론에서 전제 순서는 중요하지 않지만 여러 연구에서 전제 순서가 인간 추론 성능에 영향을 미칠 수 있음을 보여준다(Dekeyser et al., 2000; Girotto et al., 1997). Dekeyser et al. (2000)은 _co-reference_를 전제 순서의 인간 선호로 설명했는데, 즉 인간은 전제가 각각을 본 후 즉각적인 결론을 도출할 수 있는 순서로 제시되는 것을 선호한다. 본 연구에서는 LLMs도 이러한 선호도를 가지고 있으며, 규칙의 순서가 사실 증명을 따를 때 최상의 성능을 달성한다는 것을 보여준다. Girotto et al. (1997)은 전제 순서가 인간에 대한 논리적 추론에 어떻게 영향을 미치는지 연구한 결과, 전제 순서가 _modus tollens_ 문제(즉, P이면 Q; Q가 아님; 따라서 P가 아님)를 해결하는 데 중요한 영향을 미치지만 _modus ponens_ 문제(즉, P이면 Q; P; 따라서 Q)는 해결하지 않는다는 것을 발견했다. 그러나 우리의 작업과 달리, 그들은 규칙과 사실 사이의 다른 순서의 영향을 연구했는데, 예를 들어 _modus tollens_ 문제에 대한 그들의 실험은 규칙(P, Q) 이전에 부정 진술(Q가 아닌)을 제시하는 것이 역순보다 성능을 향상시킨다는 것을 보여준다. 반면에 우리의 작업은 인간과 LLM 모두에게 더 쉬운 _modus ponens_ 문제에 초점을 맞추고 있으며 LLM 성능이 여전히 전제의 순서에 상당히 민감하다는 것을 보여준다.
+
+**언어 모델의 순서 효과** 일부 이전 작업은 언어 모델이 순열된 텍스트를 어느 정도 이해할 수 있음을 보여주며, 즉 단어의 무작위 순열 후에 모델은 일반적으로 합리적인 성능을 보존한다(Abdou 등, 2022; Sinha 등, 2020). 더욱이 Cao et al. (2023)은 단어의 많은 부분이 스크램블된 경우에도 GPT-4는 여러 추론 벤치마크에서 여전히 괜찮은 성능을 달성한다는 것을 보여준다. 일반적으로 부자연스럽고 무의미한 이러한 작업에서 순열된 텍스트와 대조적으로, 우리의 전제 순서 순열은 의미적 의미를 변경하지 않고 구문적으로 유효한 상태로 유지된다(우리는 이것을 수동으로 검증한다). 그럼에도 불구하고, 우리는 LLM 추론 성능이 전제의 순서에 매우 취약하다는 것을 보여준다.
+
+## 5 Conclusion
+
+이 연구에서 우리는 전제 순서가 기본 작업 자체를 변경하지 않는 경우에도 추론 작업에 대한 LLM의 성능에 상당한 영향을 미친다는 것을 보여준다. 우리의 종합적인 평가는 LLM 경향이 인간의 선호 w.r.t. 전제 순서와 유사하다는 것을 보여주며, 즉 전제 순서가 문제를 해결하기 위한 중간 추론 단계를 따를 때 LLM이 최상의 성능을 달성한다는 것을 보여준다. 반대로, LLMs는 추론 문제가 모델이 문제 설명을 앞뒤로 읽어야 할 때 어려움에 직면하여 30% 이상의 성능 저하를 초래한다. 우리는 연구를 수학적 추론으로 확장하고 R-GSM 벤치마크를 제시하고 다시 실험적으로 순서 효과를 확인한다.
+
+인간도 추론 문제에 대한 전제 순서를 선호하지만 LLM은 그러한 순서 효과에 훨씬 더 취약하다. 우리는 전제 순서 효과를 자기 회귀 모델 설계, 훈련 목표 및 훈련 데이터 혼합과 같은 여러 후보 요인에 귀속시키려고 시도할 수 있다. 그러나 이러한 한계에 대한 이론적 설명을 제안하고 향후 작업으로 전제 질서 효과를 해결하기 위한 새로운 기술을 개발하는 것을 남겨둔다.
+
+## Acknowledgment
+
+도움이 되는 토론과 피드백에 대해 천 량과 데일 슈어먼스에게 감사드립니다
+
+## References
+
+* Abdou et al. [2022] M. Abdou, V. Ravishankar, A. Kulmizev, and A. Sogaard. Word order does matter and shuffled language models know it. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 6907-6919, 2022.
+* Austin et al. [2021] J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, et al. Program synthesis with large language models. _arXiv preprint arXiv:2108.07732_, 2021.
+* Berglund et al. [2023] L. Berglund, M. Tong, M. Kaufmann, M. Balesni, A. C. Stickland, T. Korbak, and O. Evans. The reversal curse: Llms trained on" a is b" fail to learn" b is a". _arXiv preprint arXiv:2309.12288_, 2023.
+* Bubeck et al. [2023] S. Bubeck, V. Chandrasekaran, R. Eldan, J. Gehrke, E. Horvitz, E. Kamar, P. Lee, Y. T. Lee, Y. Li, S. Lundberg, et al. Sparks of artificial general intelligence: Early experiments with gpt-4. _arXiv preprint arXiv:2303.12712_, 2023.
+* Cao et al. [2023] Q. Cao, T. Kojima, Y. Matsuo, and Y. Iwasawa. Unnatural error correction: Gpt-4 can almost perfectly handle unnatural scrambled text. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 8898-8913, 2023.
+* Chen et al. [2021] M. Chen, J. Tworek, H. Jun, Q. Yuan, H. P. d. O. Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, et al. Evaluating large language models trained on code. _arXiv preprint arXiv:2107.03374_, 2021.
+* Cicirello [2019] V. A. Cicirello. 켄달 타우 시퀀스 거리: 켄달 타우를 랭크에서 시퀀스로 확장합니다. _ arXiv preprint arXiv:1905.02752_, 2019.
+* Cobbe et al. [2021] K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, et al. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021.
+* Dekeyser et al. [2000] M. Dekeyser, W. Schroyens, W. Schaeken, O. Spitaels, and G. dYdewalle. Preferred premise order in propositional reasoning: Semantic informativeness and co-reference. _Deductive reasoning and strategies_, pages 73-95, 2000.
+* Ferreira and Freitas [2020] D. Ferreira and A. Freitas. 자연어 수학 텍스트의 전제 선택. [컴퓨팅 언어학 협회 제58차 연례 회의]에서 2020년 7365-7374페이지를 참조하십시오.
+* 제미니 [2023] 제미니. 제미니: 매우 유능한 멀티모달 모델 가족입니다. _ arXiv preprint arXiv:2312.11805_, 2023.
+* Girotto et al. [1997] V. Girotto, A. Mazzocco, and A. Tasso. The effect of premise order in conditional reasoning: A test of the mental model theory. _Cognition_, 63(1):1-28, 1997.
+* Google [2023] Google. 팜 2 기술 보고서입니다. _ arXiv preprint arXiv:2305.10403_, 2023.
+* Hagendorff et al. [2023] T. Hagendorff, S. Fabi, and M. Kosinski. Human-like intuitive behavior and reasoning biases emerged in large language models but disappeared in chatgpt. _Nature Computational Science_, 3(10):833-838, 2023.
+
+* Han et al.(2022) S. 한희철엽 자오 기민 리델 벤슨 L. 선의주보바 차오민 Burtell, et al. Folio: Natural language reasoning with first-order logic _ arXiv preprint arXiv:2209.00840_, 2022.
+* Hendrycks et al.(2021) D. Hendrycks, C. Burns, S. 카다바스 아로라 바사르트, E. Tang, D. Song, J. 스타인하르트. 수학 데이터 세트를 사용하여 수학 문제 풀이를 측정하는 중입니다. _ arXiv preprint arXiv:2103.03874_, 2021.
+*Irving et al.(2016) G. Irving, C. Szegedy, A. A. Alemi, N. Een, F. Chollet, J. Urban. 전제 선택을 위한 심층 수학 심화 시퀀스 모델입니다. _ 신경 정보 처리 시스템의 진보_, 29, 2016.
+* Jones and Steinhardt (2022) E. Jones and J. Steinhardt. 인간의 인지 편향을 통해 대규모 언어 모델의 오류를 포착합니다. _ Advances in Neural Information Processing Systems_, 35:11785-11799, 2022.
+*Li et al.(2022) Y. 최정남 Kushman, J. Schrittwieser, R. Leblond, T. Eccles, J. Keeling, F. Gimeno, A. Dal Lago, et al. Competition-level code generation with alphacode. _ Science_, 378(6624):1092-1097, 2022.
+* McCoy et al. (2023) R. T. McCoy, S. 야오드프리드만 하디와 T. L. 그리피스 자기 회귀의 불씨: 큰 언어 모델을 문제를 통해 이해합니다. _ arXiv preprint arXiv:2309.13638_, 2023.
+* OpenAI (2023) OpenAI. Gpt-4 기술 보고서입니다. _ arXiv preprint arXiv:2303.08774_, 2023.
+* Saparov and He (2022) A. Saparov and H. He. 언어 모델은 탐욕스러운 추론기입니다. 생각의 연쇄에 대한 체계적인 형식 분석입니다. _ arXiv preprint arXiv:2210.01240_, 2022.
+* Saparov et al.(2023) A. Saparov, R. Y. Pang, V. 파드마쿠마르 조시수미카제미 김현희 ood 예를 사용하여 대규모 언어 모델의 일반적인 연역적 추론 능력을 테스트합니다. _ arXiv preprint arXiv:2305.15269_, 2023.
+* Sen(1968) P. K. Sen. 켄달의 tau를 기준으로 회귀 계수를 추정합니다. _ Journal of the American statistical association_, 63(324):1379-1389, 1968.
+* Shi et al.(2023) F. Shi, X. 천근 미즈라 비늘, D. Dohan, E. H. Chi, N. 찰리와 D. Zhou. 큰 언어 모델은 관련 없는 맥락에 의해 쉽게 산만해질 수 있다. _International Conference on Machine Learning_에서 31210-31227 페이지. PMLR, 2023.
+* Sinha et al.(2020) K. 신하, P. 파르타사라티, J. 피나우 및 A. 윌리엄스. 부자연스러운 언어 추론입니다. _ arXiv preprint arXiv:2101.00010_, 2020.
+* Wan et al.(2024) Y. 완완 왕영 양영 원종태 황필희 Jiao, M. R. Lyu. A & b= = b & a: 대규모 언어 모델에서 논리적 추론 오류를 유발합니다. _ arXiv preprint arXiv:2401.00757_, 2024.
+* Wang et al.(2017) M. 왕영 Tang, J. Wang, J. Deng. 깊은 그래프 임베딩에 의한 정리 증명에 대한 전제 선택 _ 신경 정보 처리 시스템의 발전_, 30, 2017.
+* Wei et al.(2022) J. Wei, X. 왕동수만 Bosma, F. Xia, E. Chi, Q. V. Le, D. Zhou, et al. Chain-of-thought prompting elicits in large language models. _ Advances in Neural Information Processing Systems_, 35:24824-24837, 2022.
+* Xu et al.(2023) F. Xu, Q. 임진한 자오, J. 류, E. 캄브리아. 대형 언어 모델은 정말 논리적인 추론 능력이 좋은가요? 연역적, 귀납적, 귀납적 관점에서 종합적으로 평가. _ arXiv preprint arXiv:2306.09841_, 2023.
+
+장일희 멍경 -W. Chang, G. V. D. 브룩. 데이터에서 추론에 대한 학습의 역설입니다. _ arXiv preprint arXiv:2205.11502_, 2022.
+* Zhu et al. [2023] Z. Zhu, Y. Xue, X. Chen, D. Zhou, J. Tang, D. Schuurmans, and H. Dai. Large language models can learn rules. _arXiv preprint arXiv:2310.07064_, 2023.
+
+[MISSING_PAGE_FAIL:14]
+
+그림 10 | 논리적 추론 벤치마크를 해결하는 동안 GPT-3.5-터보에 의해 생성된 환각 규칙(왼쪽) 및 사실(오른쪽)의 예입니다.
+
+[MISSING_PAGE_EMPTY:16]
+
+그림 12 \(|\) R-GSM 예제에서는 원래 문제를 GPT-4 Turbo로 올바르게 해결할 수 있지만 모델이 순서가 바뀌면 실패합니다.
+
+그림 13: \(R\)-GSM 예제 원본 문제는 모든 모델에서 올바르게 해결할 수 있지만 GPT-4 터보 및 제미니 프로는 순서가 변경된 모델에서 실패했습니다.
+
+그림 14 \(|\) R-GSM 예제에서 원본 문제와 재정렬된 문제가 모두 평가에서 모든 LLM에 의해 올바르게 해결되었습니다.
+
+그림 15 \(|\) R-GSM 예제에서 원본 문제와 재정렬된 문제가 모두 평가에서 모든 LLM에 의해 올바르게 해결되었습니다.
+
+[MISSING_PAGE_FAIL:21]
+
+\begin{table}
+
+\end{table}
+표 6: 5개의 산만 규칙을 갖는 도 4에 대응하는 결과.
+
+\begin{table}
+
+\end{table}
+표 7: 10개의 산만 규칙을 갖는 도 4에 대응하는 결과.
+
+\begin{table}
+
+\end{table}
+표 8: 도 5에 대응하는 결과표.
+
+\begin{table}
+
+\end{table}
+표 9: 5개의 산만 규칙을 갖는 도 6에 대응하는 결과.
+
+\begin{table}
+
+\end{table}
+표 10: 10개의 산만 규칙을 갖는 도 6에 대응하는 결과.
+
+\begin{table}
+
+\end{table}
+표 12: 도 8에 대응하는 결과.
