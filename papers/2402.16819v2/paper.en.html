@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Nemotron-4 15B Technical Report\n' +
+      '\n' +
+      'Jupinder Parmar Shrimai Prabhumoye Joseph Jennings Mostofa Patwary\n' +
+      '\n' +
+      'Equal contribution, corresponding authors: {jupinderp,sprabhumoye,jjennings,mpatwary}@nvidia.com. Work done while at NVIDIA.\n' +
+      '\n' +
+      'and coding text and was developed to be the best general-purpose large language model (LLM) that can fit on a single NVIDIA A100 or H100 GPU.\n' +
+      '\n' +
+      'As demonstrated in Figure 1, Nemotron-4 15B exhibits high downstream accuracies across a wide range of English, code, and multilingual evaluation areas. In comparison to leading similarly-sized, open models we show that Nemotron-4 15B is significantly better than LLaMA-2 34B (Touvron et al., 2023b), which has over twice the number of parameters, and is better than Mistral 7B (Jiang et al., 2023) on all English evaluation areas. Additionally, Nemotron-4 15B achieves competitive accuracies to QWEN 14B (Bai et al., 2023) and Gemma 7B (Gemma Team, 2024). In a comparison across a wide range of programming languages, we find that Nemotron-4 15B achieves better average accuracy, and in particular on low-resource programming languages, than Starcoder (Li et al., 2023), a code-specific model, and Mistral 7B. As Nemotron-4 15B was trained on significant amount of multilingual data, it is currently the state-of-the-art general purpose model in its size class on all multilingual benchmarks. We find that Nemotron-4 is better than PALM 62B-Cont (Slav Petrov and et al., 2023), and also outperforms multilingual-specific models such as XGLM (Lin et al., 2022) and mGPT (Shliazhko et al., 2022).\n' +
+      '\n' +
+      '## 2 Architecture Details\n' +
+      '\n' +
+      'Nemotron-4 uses a standard decoder-only Transformer architecture (Vaswani et al., 2017), with causal attention masks. Exact hyper-parameters affecting size are shown in Table 1. Nemotron-4 has 3.2 billion embedding parameters and 12.5 billion non-embedding parameters. We use Rotary Position Embeddings (RoPE) (Su et al., 2021), SentencePiece tokenizer (Kudo and Richardson, 2018), squared ReLU activations in the MLP layers, no bias terms, dropout rate of zero, and untied input-output embeddings. We use grouped\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c} \\hline \\hline Number of & Hidden & Number of & Number of & Sequence & Vocabulary \\\\ transformer layers & dimension & attention heads & KV heads & length & size \\\\ \\hline\n' +
+      '32 & 6144 & 48 & 8 & 4096 & 256,000 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Key hyper-parameters affecting size of Nemotron-4 15B.\n' +
+      '\n' +
+      'Figure 1: Comparison of Nemotron-4 15B across seven evaluation areas against similarly sized models. The composition of tasks that form each evaluation area can be found, along with more detailed evaluation results, in Section 3\n' +
+      '\n' +
+      'query attention (GQA) (Ainslie et al., 2023) for faster inference and lower memory footprint.\n' +
+      '\n' +
+      'Data.We train Nemotron-4 15B on a pre-training dataset consisting of 8 trillion tokens. At a high-level, the data blend is split into three different types of data: English natural language data (70%), multilingual natural language data (15%), and source-code data (15%).\n' +
+      '\n' +
+      'The English corpus consists of curated documents from a variety of sources and domains including web documents, news articles, scientific papers, books, etc and the distribution used in our pre-training set is highlighted in Figure 2. The code and multilingual data consists of a diverse set of natural and programming languages. We find that appropriately sampling tokens from these languages is key to strong accuracies in these domains. We share the distributions used for both code and multilingual tokens in our pre-training dataset in Figure 3 and Figure 4 respectively.\n' +
+      '\n' +
+      'In constructing the pre-training corpus, we remove any possible duplicates via document-level exact and near-deduplication (Jennings et al., 2023). We additionally applied document-level quality filtering across our corpus using a language-model based filtering approach similar to (Wenzek et al., 2019) in addition to a series of heuristic filters as described in (Rae et al., 2022) and (Raffel et al., 2020).\n' +
+      '\n' +
+      'We train a BPE tokenizer in SentencePiece (Kudo and Richardson, 2018) on data that is randomly sampled from the final 8T token dataset. To have better coverage of low-resource languages in the tokenizer, we upsample non-English data relative to the final training dataset distribution. Our tokenizer preserves whitespaces (including leading and trailing ones), splits numbers into their individual digits (Chowdhery et al., 2022), and relies on byte-level backoff to handle unknown character sequences. The final vocabulary size is 256,000 tokens.\n' +
+      '\n' +
+      'Figure 2: Data composition of the English tokens used for pre-training\n' +
+      '\n' +
+      'Pre-training.Nemotron-4 was trained using 384 DGX H100 nodes; each node contains 8 H100 80GB SXM5 GPUs based on the NVIDIA Hopper architecture (NVIDIA, 2022). Each H100 GPU has a peak throughput of 989 teraFLOP/s when doing 16-bit floating point (bfloat16) arithmetic without sparsity. Within each node, GPUs are connected by NVLink and NVSwitch (nvl); the GPU-to-GPU bandwidth is 900 GB/s (450 GB/s in each direction). Each node has 8 NVIDIA Mellanox 400 Gbps HDR InfiniBand Host Channel Adapters (HCAs) for inter-node communication.\n' +
+      '\n' +
+      'We used a combination of 8-way tensor parallelism (Shoeybi et al., 2019) and data parallelism to train the model; we also use a distributed optimizer to shard the optimizer state over the data-parallel replicas. The degree of data parallelism was varied from 96 to 384 as the batch size was ramped up. Table 2 summarizes the 3 stages of batch size ramp, and includes the per-iteration time and model FLOP/s utilization (MFU) (Chowdhery et al., 2022; Korthikanti et al., 2022). MFU quantifies how efficiently the GPUs are utilized in model training. Training was completed in approximately 13 calendar days.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c} \\hline \\hline Data-parallel size & GPUs & Iteration time (secs) & MFU (\\%) & Batch size & Tokens (B) & Time (days) \\\\ \\hline\n' +
+      '96 & 768 & 0.57 & 34.3 & 384 & 200 & 0.8 \\\\\n' +
+      '192 & 1,536 & 0.58 & 33.3 & 768 & 200 & 0.4 \\\\\n' +
+      '288 & 2,304 & 0.64 & 30.5 & 1,152 & 7,600 & 11.9 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Batch size rampup schedule, along with time and efficiency metrics for the Nemotron-4 15B parameter model.\n' +
+      '\n' +
+      'Figure 3: Data distribution of the 43 programming languages used for pre-training. The number within each bar indicates the percent of the overall code distribution that an individual language comprises.\n' +
+      '\n' +
+      'Continued Training.Similar to recent work (Google, 2023), we find that switching the data distribution and learning rate decay schedule at the end of model training greatly improves model quality. Concretely, after having trained over the entirety of our 8T pre-training dataset, we use the same loss objective and perform continued training on small number of tokens in comparison to the pre-training tokens.\n' +
+      '\n' +
+      'In this additional phase of continued training, we utilize two distinct data distributions. The first distribution is where the majority of tokens during continued training are sampled from. It utilizes tokens that have already been introduced during pre-training but with a distribution that places larger sampling weight on higher quality sources. The second distribution introduces a small number of benchmark-style alignment examples to better allow the model to respond to such questions in downstream evaluations while also up-weighting data sources that come from areas of low model performance. In accompaniment with a learning rate schedule that prioritizes a steeper slope of decay than magnitude of learning rate, we find that such an ordering and style of data distributions allows for the model to gently transition from the pre-training dataset and better learn newly emphasized data areas.\n' +
+      '\n' +
+      '## 3 Results\n' +
+      '\n' +
+      'We evaluate Nemotron-4 15B on a variety of downstream evaluation areas covering a diverse range of tasks and domains. In all evaluations, we adhere to the standardized task setup and share the exact settings used. The covered evaluation categories include:\n' +
+      '\n' +
+      '* **Commonsense Reasoning (0-shot):** SIQA (Sap et al., 2019), ARC easy and challenge (Clark et al., 2018), PIQA (Bisk et al., 2020), Winogrande (Sakaguchi et al., 2020), and Hellaswag (Zellers et al., 2019)\n' +
+      '\n' +
+      'Figure 4: Data distribution of the 53 natural languages, aside from English,we used for pre-training. The number within each bar indicates the percent of the overall multilingual distribution that an individual language comprises.\n' +
+      '\n' +
+      '* **Popular Aggregated Benchmarks:** MMLU (5-shot) (Hendrycks et al., 2020) and BBH (3-shot) (Suzgun et al., 2022)\n' +
+      '* **Math:** GSM8K (8-shot with maj@1) (Cobbe et al., 2021)\n' +
+      '* **Code:** Pass@1 scores on HumanEval (0-shot) (Chen et al., 2021), MBPP (3-shot) (Austin et al., 2021), and MultiPL-E (0-shot) (Cassano et al., 2023a)\n' +
+      '* **Multilingual:** classification via XCOPA (0 and 4-shot) (Ponti et al., 2020), machine translation with FLORES-101 (8-shot) (Goyal et al., 2021), and generation tasks such as MGSM (8-shot) (Shi et al., 2022) and TyDiQA (1-shot) (Clark et al., 2020)\n' +
+      '\n' +
+      'In our evaluations, we compare against a number of external decoder-only transformer language models and unless otherwise stated we use the numbers published in the reports of the corresponding models. For English and code tasks, we share detailed results for Nemotron-4 15B, LlaMA-2 13B and 34B (Touvron et al., 2023b), Mistral 7B (Jiang et al., 2023), Baichuan-2 13B (Yang et al., 2023), QWEN 14B (Bai et al., 2023), and Gemma 7B (Gemma Team, 2024). For multilingual benchmarks, we report results against PaLM 62B and 62B-cont (Chowdhery et al., 2022) as well as models specially trained for multilingual capabilities such as mGPT 13B (Shliazhko et al., 2022) and XGLM 7.5B (Lin et al., 2022).\n' +
+      '\n' +
+      '### Commonsense Reasoning\n' +
+      '\n' +
+      'We use the LM-Evaluation Harness (Gao et al., 2021) to evaluate Nemotron-4 15B across all aforementioned tasks. Table 3 showcases that Nemotron-4 15B achieves the strongest average performance on this diverse set of tasks.\n' +
+      '\n' +
+      '### Popular Aggregated Benchmarks\n' +
+      '\n' +
+      'The MMLU (Hendrycks et al., 2020) and Big Bench Hard (BBH) (Suzgun et al., 2022) benchmarks have been developed as a challenging assessment of language models\' capabilities on a wide range of tasks and domains. As seen from Table 4, Nemotron-4 15B achieves the best score on BBH across existing models\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c} \\hline \\hline  & Size & SIQA & ARC-c & ARC-e & PIQA & Winogrande & Hellaswag & AVG \\\\ \\hline \\multirow{2}{*}{LLaMA-2} & 13B & 50.3 & 49.4 & 77.3 & 79.8 & 72.8 & 80.7 & 68.4 \\\\  & 34B & 50.9 & 54.5 & 79.4 & 81.9 & 76.7 & 83.3 & 71.1 \\\\ \\hline Baichuan-2 & 13B & - & - & - & 78.1 & - & 70.8 & - \\\\ \\hline QWEN & 14B & 77.9 & 84.4 & 90.3 & 79.9 & - & 80.2 & - \\\\ \\hline Mistral & 7B & 47.0\\({}^{*}\\) & 55.5 & 80.0 & 83.0 & 75.3 & 81.3 & 70.4 \\\\ \\hline Gemma & 7B & 51.8 & 53.2 & 81.5 & 81.2 & 72.3 & 81.2 & 70.2 \\\\ \\hline Nemotron-4 & 15B & 60.9 & 55.5 & 80.9 & 82.4 & 78.0 & 82.4 & **73.4** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: Results on standard reasoning benchmarks in the zero-shot setting. We report the average across all tasks where possible for a fair comparison. The values marked with \\(*\\) are read from Gemma Team (2024)\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:7]\n' +
+      '\n' +
+      'related tasks - disregarding an evaluation of their capabilities on other programming languages. In Table 6, we demonstrate results of Nemotron-4 15B on the Multiple-E (Cassano et al., 2023b) benchmark across 11 diverse programming languages and compare it against Mistral 7B and Starcoder (Li et al., 2023), a 15B parameter model that has been specially trained for code. We find that Nemotron-4 15B attains strong coding performance across a wide assortment of programming languages and outperforms both Starcoder and Mistral 7B on average. We especially highlight the superior performance of Nemotron-4 15B on low-resource programming languages such as Scala, Julia, and R.\n' +
+      '\n' +
+      '### Multilingual\n' +
+      '\n' +
+      'We demonstrate the outstanding multilingual ability of Nemotron-4 15B using four widely-studied benchmarks in previous works that cover a diverse range of high to low resource natural languages. For classification we use accuracy as the metric; for generative tasks, we use exact match; and for machine translation, we evaluate using the sacreBLEU (Post, 2018) implementation of BLEU(Papineni et al., 2002), using spm-floes-101 tokenization to obtain spBLEU scores.\n' +
+      '\n' +
+      '**1. Classification:** Cross-lingual Choice of Plausible Alternatives (XCOPA) (Ponti et al., 2020) tests causal commonsense reasoning in 11 languages\n' +
+      '\n' +
+      'We compare Nemotron-4 15B to existing multilingual language models: XGLM (Lin et al., 2022), mGPT (Shliazhko et al., 2022), and BLOOM (Scao et al., 2023). XGLM and mGPT are models specially trained to have improved multilingual ability by up-sampling the presence of non-English languages in the training data. In contrast, BLOOM, like Nemotron-4, is a general purpose language model that was trained on a combination of English, multilingual, and code data. In Table 7, we clearly see that Nemotron-4 achieves the best performance amongst all models - realizing almost a 12% improvement in the four-shot setting.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c c c c} \\hline \\hline  & Size & JavaScript & Julia & Java & Lua & C++ & C-Sharp & PHP & Shell & TypeScript & R & Scala & AVG \\\\ \\hline Starcoder & 15B & 30.8 & 23.0 & 30.2 & 23.9 & 31.6 & 21.0 & 26.1 & 10.5 & 32.3 & 15.5 & 27.6 & 24.2 \\\\ Mistral & 7B & 34.2 & 22.0 & 26.0 & 25.3 & 29.1 & 22.8 & 27.9 & 8.9 & 28.5 & 11.8 & 22.2 & 23.6 \\\\ Nemotron-4 & 15B & 28.6 & 24.8 & 24.8 & 24.2 & 35.4 & 21.1 & 27.3 & 8.9 & 32.9 & 18.6 & 27.3 & **24.5** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 6: Nemotron-4 15B attains high competency in coding performance across a broad range of programming languages. Results for Mistral are from our runs of Mistral in the same setting as Nemotron-4.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c c c c} \\hline \\hline Mode & Model & Size & ET & HT & ID & IT & QU & SW & TA & TH & TR & VI & ZH & AVG \\\\ \\hline \\multirow{4}{*}{Zero-Shot} & BLOOM & 176B & - & - & \\(57.5^{*}\\) & - & - & \\(59.5^{*}\\) & \\(54.7^{*}\\) & - & - & \\(58.2^{*}\\) & \\(57.7^{*}\\) & - \\\\  & XGLM & 7.5B & 57.6 & 57.0 & 59.0 & 49.2 & 52.4 & 55.0 & 55.6 & 57.8 & 55.0 & 59.0 & 53.6 & 55.6 \\\\  & mGPT & 13B & 49.8 & 50.4 & 63.4 & 61.6 & 50.4 & 57.6 & 57.0 & 54.0 & 58.2 & 60.4 & 54.6 & 56.1 \\\\  & Nemotron-4 & 15B & 62.8 & 47.4 & 66.6 & 67.0 & 53.8 & 50.4 & 62.0 & 59.6 & 57.4 & 65.2 & 62.2 & **59.5** \\\\ \\hline \\multirow{4}{*}{4-Shot} & XGLM & 7.5B & 64.7 & 60.4 & 67.3 & 64.0 & 50.0 & 61.8 & 56.7 & 61.5 & 60.1 & 68.5 & 59.9 & 61.4 \\\\  & mGPT & 13B & 48.6 & 48.6 & 62.6 & 60.8 & 50.6 & 56.6 & 55.4 & 54.8 & 57.4 & 61.8 & 58.4 & 56.0 \\\\  & Nemotron-4 & 15B & 72.9 & 52.8 & 79.6 & 79.2 & 50.2 & 52.2 & 72.8 & 66.6 & 77.2 & 78.6 & 76.0 & **68.9** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: Comparison of Nemotron-4 15B against existing large language models on XCOPA under the zero- and four-shot setting. Our reported results for XGLM are from the runs of the model in (Shliazhko et al., 2022) given that we use the same prompt template used by mGPT. The values marked with \\(*\\) are read from figures in (Scao et al., 2023).\n' +
+      '\n' +
+      '## 2 Generation:\n' +
+      '\n' +
+      'We consider two generative tasks: TyDiQA-GoldP (Clark et al., 2020) and Multilingual Grade School Math (MGSM) (Shi et al., 2022). TyDiQA-GoldP is a question answering task while MGSM evaluates the arithmetic reasoning ability of language models in 10 languages.\n' +
+      '\n' +
+      'In comparing the performance of Nemotron-4 15B on TyDiQA-GoldP to a range of models, Table 8 shows that Nemotron-4 15B achieves the best performance. Impressively, Nemotron-4 15B is able to significantly improve upon the next best model, PaLM 62B-cont.\n' +
+      '\n' +
+      'Further demonstrating the impressive multilingual ability of Nemotron-4 15B, Table 9 shows the performance on MGSM. We report using the English chain-of-thought setting introduced in (Shi et al., 2022) where all chain of thought explanations are presented to the model in English rather than in the language of the task. On this challenging task which assesses the intersection of mathematical and multilingual ability, Nemotron-4 15B achieves the best performance amongst compared models and improves upon the closest score by nearly 30%.\n' +
+      '\n' +
+      '## 3 Machine Translation:\n' +
+      '\n' +
+      'We additionally evaluate the translation ability of our models through the FLORES-101 (Goyal et al., 2021) benchmark. The ability to translate between languages is a good test of the model\'s ability to relate and understand semantic relationships between languages.\n' +
+      '\n' +
+      'As seen in Table 10, Nemotron-4 15B hefily outperforms both LLaMA-2 13B and Baichuan-2 13B - improving upon their performance by 90.2% and 44.1% respectively. Nemotron-4 15B does not solely perform well on translating from Chinese into English but is able to attain impressive results on the direct translation of Chinese into other languages. This ability highlights the strong understanding that Nemotron-4 15B has across a broad spectrum of natural languages.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c r r r r r r r r r r} \\hline \\hline Model & Size & AR & BN & FI & ID & KO & RU & SW & TE & AVG \\\\ \\hline \\multirow{2}{*}{PaLM} & 62B & 31.2 & 42.5 & 41.7 & 41.6 & 49.3 & 29.2 & 58.1 & 30.6 & 40.5 \\\\  & 62B-cont & 39.4 & 48.7 & 44.0 & 49.2 & 52.5 & 35.6 & 60.9 & 35.3 & 45.7 \\\\ LLaMA-2 & 13B & - & - & - & - & - & - & - & - & 33.2 \\\\ Baichuan-2 & 13B & - & - & - & - & - & - & - & - & - & 30.8 \\\\ QWEN & 14B & - & - & - & - & - & - & - & - & - & 39.8 \\\\ Nemotron-4 & 15B & 39.1 & 55.8 & 52.2 & 54.5 & 55.1 & 37.8 & 54.5 & 55.0 & **50.5** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 8: Comparative results in the one-shot setting on TyDiQA-GoldP. Results for LLaMA-2 13B, Baichuan-2 13B and QWEN 14B are taken from (Chen et al., 2024).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c r r r r r r r r r r r} \\hline \\hline Mode & Model & Size & DE & FR & ES & RU & ZH & JA & TH & TE & BN & SW & AVG \\\\ \\hline Native-COT & PaLM & 62B & 24.0 & 24.0 & 26.0 & 22.8 & 24.8 & 14.8 & 18.0 & 11.6 & 13.6 & 9.6 & 18.9 \\\\ \\hline \\multirow{3}{*}{English-COT} & PALM & 62B-cont & 44.8 & 39.2 & 44.4 & 36.8 & 33.6 & 24.0 & 28.0 & 19.6 & 28.0 & 21.2 & 32.0 \\\\  & Mistral & 7B & 33.2 & 35.2 & 35.6 & 35.2 & 33.2 & 18.8 & 10.0 & 0.0 & 8.0 & 9.2 & 21.8 \\\\  & Nemotron-4 & 15B & 46.8 & 46.0 & 50.0 & 45.6 & 40.0 & 40.0 & 43.6 & 41.6 & 43.6 & 16.0 & **41.3** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 9: Eight-shot accuracy results on MGSM. Results for Mistral are from our runs of Mistral in the same setting as Nemotron-4.\n' +
+      '\n' +
+      '## 4 Conclusion\n' +
+      '\n' +
+      'We present Nemotron-4 15B, a decoder-only transformer-based large language model. It is trained on 8 trillion tokens spanning English, 53 additional natural languages as well as 43 programming languages. Nemotron-4 15B exhibits the strongest multilingual performance of any general purpose language model at its scale - even outperforming models specialized for the multilingual domain. Nemotron-4 demonstrates that pre-training sets for large language models can continue to be scaled up even further in order to improve the abilities of models.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* N. Ainslie, J. Lee-Thorp, M. de Jong, Y. Zemlyanskiy, F. Lebron, and S. Sanghai (2023)GQA: training generalized multi-query transformer models from multi-head checkpoints. arXiv preprint arXiv:2305.13245. Cited by: SS1.\n' +
+      '* L. Ben Allal, R. Li, D. Kocetkov, C. Mou, C. Akiki, C. M. Ferrandis, N. Muennighoff, M. Mishra, A. Gu, M. Dey, L. Kumar Umapathi, C. J. Anderson, Y. Zi, J. L. Poirier, H. Schoelkopf, S. Troshin, D. Abulkhanov, M. Romero, M. L. Lappert, F. De Toni, B. Garcia del Rio, Q. Liu, S. Bose, U. Bhattacharyya, T. Yue Zhuo, I. Yu, P. Villegas, M. Zocca, S. Mangrulkar, D. Lansky, H. Nguyen, D. Contractor, L. Villa, J. Li, D. Bahdanau, Y. Jernite, S. Hughes, D. Fried, A. Guha, H. de Vries, and L. von Werra (2023)SantaCoder: don\'t reach for the stars!. External Links: 2309.16609 Cited by: SS1.\n' +
+      '* J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, and C. Sutton (2021)Program synthesis with large language models. External Links: 2102.02108 Cited by: SS1.\n' +
+      '* J. Bai, S. Bai, Y. Chu, Z. Cui, K. Dang, Y. Fan, W. Ge, Y. Han, F. Huang, et al. (2023)Qwen technical report. arXiv preprint arXiv:2309.16609. Cited by: SS1.\n' +
+      '* Y. Bisk, R. Zellers, R. L. Bras, J. Gao, and Y. Choi (2020)PIQA: reasoning about physical commonsense in natural language. In AAAI, Cited by: SS1.\n' +
+      '* T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss,\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c} \\hline \\hline  & Size & ZH-EN & ZH-FR & ZH-ES & ZH-AR & ZH-RU & ZH-JA & ZH-DE & AVG \\\\ \\hline LLaMA-2 & 13B & 25.4 & 19.2 & 17.5 & 1.4 & 10.3 & 0.1 & 11.1 & 12.2 \\\\ \\hline Baichuan-2 & 13B & 30.6 & 22.1 & 17.3 & 2.4 & 14.2 & 11.6 & 14.5 & 16.1 \\\\ \\hline Nemotron-4 & 15B & 34.0 & 28.1 & 21.3 & 16.8 & 21.2 & 23.1 & 18.1 & **23.2** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 10: Eight-shot results on Flores sub-tasks translating out of Chinese. All results for external models were obtained from (Yang et al., 2023)\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:11]\n' +
+      '\n' +
+      'Leo Gao, Jonathan Tow, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Kyle McDonell, Niklas Muennighoff, Jason Phang, Laria Reynolds, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. A Framework for Few-shot Language Model Evaluation, September 2021. URL [https://doi.org/10.5281/zenodo.5371628](https://doi.org/10.5281/zenodo.5371628).\n' +
+      '* DeepMind [2024] Google DeepMind Gemma Team. Gemma: Open Models Based on Gemini Research and Technology, 2024.\n' +
+      '* Gemini [2023] Google. Gemini: A Family of Highly Capable Multimodal Models, 2023.\n' +
+      '* Goyal et al. [2021] Naman Goyal, Cynthia Gao, Vishrav Chaudhary, Peng-Jen Chen, Guillaume Wenzek, Da Ju, Sanjana Krishnan, Marc\'Aurelio Ranzato, Francisco Guzman, and Angela Fan. The FLORES-101 Evaluation Benchmark for Low-Resource and Multilingual Machine Translation. _CoRR_, abs/2106.03193, 2021. URL [https://arxiv.org/abs/2106.03193](https://arxiv.org/abs/2106.03193).\n' +
+      '* Hendrycks et al. [2020] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring Massive Multitask Language Understanding. _arXiv preprint arXiv:2009.03300_, 2020.\n' +
+      '* Hoffmann et al. [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training Compute-Optimal Large Language Models. _arXiv preprint arXiv:2203.15556_, 2022.\n' +
+      '* Jennings et al. [2023] Joseph Jennings, Mostofa Patwary, Sandeep Subramanian, Shrimai Prabhumoye, Ayush Dattagupta, Mohammad Shoeybi, and Bryan Catanzaro. Curating Trillion-Token Datasets: Introducing NVIDIA NeMo Data Curator. [https://developer.nvidia.com/blog/curating-trillion-token-datasets-introducing-nemo-data-curator/](https://developer.nvidia.com/blog/curating-trillion-token-datasets-introducing-nemo-data-curator/), 2023.\n' +
+      '* Jiang et al. [2023] Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7B. _arXiv preprint arXiv:2310.06825_, 2023.\n' +
+      '* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling Laws for Neural Language Models. _arXiv preprint arXiv:2001.08361_, 2020.\n' +
+      '* Korthikanti et al. [2022] Vijay Korthikanti, Jared Casper, Sangkug Lym, Lawrence McAfee, Michael Andersch, Mohammad Shoeybi, and Bryan Catanzaro. Reducing Activation Recomputation in Large Transformer Models, 2022.\n' +
+      '* Kudo and Richardson [2018] Taku Kudo and John Richardson. Sentencepiece: A Simple and Language Independent Subword Tokenizer and Detokenizer for Neural Text Processing. _arXiv preprint arXiv:1808.06226_, 2018.\n' +
+      '* Li et al. [2020] Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Kocetkov, Chenghao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, Qian Liu, Evgenii Zheltonozhskii, Terry Yue Zhuo, Thomas Wang, Olivier Dehaene, Mishig Davaadorj, Joel Lamy-Poirier, Joao Monteiro, Oleh Shliazhko, Nicolas Gontier, Nicholas Meade, Armel Zebaze, Ming-Ho Yee, Logesh Kumar Umapathi, Jian Zhu, Benjamin Lipkin, Muhtasham Oblokulov, Zhiruo Wang, Rudra Murthy, Jason Stillerman, Siva Sankalp Patel, Dmitry Abulkhanov, Marco Zocca, Manan Dey, Zhihan Zhang, Nour Fahmy, Urvashi Bhattacharyya, Wenhao Yu, Swayam Singh, Sasha Luccioni, Paulo Villegas, Maxim Kunakov, Fedor Zhdanov, Manuel Romero, Tony Lee, Nadav Timor, Jennifer Ding, Claire Schlesinger, Hailey Schoelkopf, Jan Ebert, TriDao, Mayank Mishra, Alex Gu, Jennifer Robinson, Carolyn Jane Anderson, Brendan Dolan-Gavitt, Danish Contractor, Siva Reddy, Daniel Fried, Dzmitry Bahdanau, Yacine Jernite, Carlos Munoz Ferrandis, Sean Hughes, Thomas Wolf, Arjun Guha, Leandro von Werra, and Harm de Vries. StarCoder: May the Source be with You!, 2023.\n' +
+      '* Lin et al. (2022) Xi Victoria Lin, Todor Mihaylov, Mikel Artetxe, Tianlu Wang, Shuohui Chen, Daniel Simig, Myle Ott, Naman Goyal, Shruti Bhosale, Jingfei Du, Ramakanth Pasunuru, Sam Shleifer, Punit Singh Koura, Vishrav Chaudhary, Brian O\'Horo, Jeff Wang, Luke Zettlemoyer, Zornitsa Kozareva, Mona Diab, Veselin Stoyanov, and Xian Li. Few-shot Learning with Multilingual Language Models, 2022.\n' +
+      '* NVIDIA (2022) NVIDIA. H100 Tensor Core GPU Architecture Overview, 2022.\n' +
+      '* Papineni et al. (2002) Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. BLEU: A Method for Automatic Evaluation of Machine Translation. In _Proceedings of the 40th Annual Meeting on Association for Computational Linguistics_, ACL \'02, page 311-318, USA, 2002. Association for Computational Linguistics. doi: 10.3115/1073083.1073135. URL [https://doi.org/10.3115/1073083.1073135](https://doi.org/10.3115/1073083.1073135).\n' +
+      '* Ponti et al. (2020) Edoardo Maria Ponti, Goran Glavas, Olga Majewska, Qianchu Liu, Ivan Vulic, and Anna Korhonen. XCOPA: A Multilingual Dataset for Causal Commonsense Reasoning. _CoRR_, abs/2005.00333, 2020. URL [https://arxiv.org/abs/2005.00333](https://arxiv.org/abs/2005.00333).\n' +
+      '* Post (2018) Matt Post. A Call for Clarity in Reporting BLEU Scores. _CoRR_, abs/1804.08771, 2018. URL [http://arxiv.org/abs/1804.08771](http://arxiv.org/abs/1804.08771).\n' +
+      '* Rae et al. (2019) Jack W. Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susannah Young, Eliza Rutherford, Tom Hennigan, Jacob Menick, Albin Cassirer, Richard Powell, George van den Driessche, Lisa Anne Hendricks, Maribeth Rauh, Po-Sen Huang, Amelia Glaese, Johannes Welbl, Sumanth Dathathri, Saffron Huang, Jonathan Uesato, John Mellor, Irina Higgins, Antonia Creswell, Nat McAleese, Amy Wu, Erich Elsen, Siddhant Jayakumar, Elena Buchatskaya, David Budden, Esme Sutherland, Karen Simonyan, Michela Paganini, Laurent Sifre, Lena Martens, Xiang Lorraine Li, Adhiguna Kuncoro, Aida Nematzadeh, Elena Gribovskaya, Domenic Donato, Angeliki Lazaridou, Arthur Mensch, Jean-Baptiste Lespiau, Maria Tsimpoukelli, Nikolai Grigorev, Doug Fritz, Thibault Sottiaux, Mantas Pajarskas, Toby Pohlen, Zhitao Gong, Daniel Toyama, Cyprien de Masson d\'Autume, Yujia Li, Tayfun Terzi, Vladimir Mikulik, Igor Babuschkin, Aidan Clark, Diego de Las Casas, Aurelia Guy, Chris Jones, James Bradbury, Matthew Johnson, Blake Hechtman, Laura Weidinger, Iason Gabriel, William Isaac, Ed Lockhart, Simon Osindero, Laura Rimell, Chris Dyer, Oriol Vinyals, Kareem Ayoub, Jeff Stanway, Lorrayne Bennett, Demis Hassabis, Koray Kavukcuoglu, and Geoffrey Irving. Scaling Language Models: Methods, Analysis & Insights from Training Gopher, 2022.\n' +
+      '* Raffel et al. (2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer. _The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.\n' +
+      '* Sakaguchi et al. (2020) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. WINOGRANDE: An Adversarial Winograd Schema Challenge at Scale. In _AAAI_, 2020.\n' +
+      '* Sap et al. (2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan LeBras, and Yejin Choi. Socialiqa: Commonsense reasoning about social interactions, 2019.\n' +
+      '* Zhang et al. (2019)Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, Jonathan Tow, Alexander M. Rush, Stella Biderman, Albert Webson, Pawan Sasanka Ammanamachi, Thomas Wang, Benoit Sagot, Niklas Muennighoff, Albert Villanova del Moral, Olatunji Ruwase, Rachel Bawden, Stas Bekman, Angelina McMillan-Major, Iz Beltagy, Huu Nguyen, Lucile Saulnier, Samson Tan, Pedro Ortiz Suarez, Victor Sanh, Hugo Laurencon, Yacine Jernite, Julien Launay, Margaret Mitchell, Colin Raffel, Aaron Gokaslan, Adi Simhi, Aitor Soroa, Alham Fikri Aji, Amit Alfassy, Anna Rogers, Ariel Kreisberg Nitzav, Canwen Xu, Chenghao Mou, Chris Emezue, Christopher Klamm, Colin Leong, Daniel van Strien, David Ifeoluwa Adelani, Dragomir Radev, Eduardo Gonzalez Ponferrada, Efrat Levkovizh, Ethan Kim, Eyal Bar Natan, Francesco De Toni, Gerard Dupont, German Kruszewski, Giada Pistilli, Hady Elsahar, Hamza Benyamina, Hieu Tran, Ian Yu, Idris Abdulmumin, Isaac Johnson, Itziar Gonzalez-Dios, Javier de la Rosa, Jenny Chim, Jesse Dodge, Jian Zhu, Jonathan Chang, Jorg Frohberg, Joseph Tobing, Joydeep Bhattacharjee, Khalid Almubarak, Kimbo Chen, Kyle Lo, Leandro Von Werra, Leon Weber, Long Phan, Loubna Ben allal, Ludovic Tanguy, Manan Dey, Manuel Romero Munoz, Maraim Masoud, Maria Grandury, Mario Sasko, Max Huang, Maximin Coavoux, Mayank Singh, Mike Tian-Jian Jiang, Minh Chien Vu, Mohammad A. Jauhar, Mustafa Ghaleb, Nishant Subramani, Nora Kassner, Nurulaqilla Khamis, Olivier Nguyen, Omar Espejel, Ona de Gibert, Paulo Villegas, Peter Henderson, Pierre Colombo, Priscilla Amuok, Quentin Lhoest, Rhea Harliman, Rishi Bommasani, Roberto Luis Lopez, Rui Ribeiro, Salomey Osei, Sampo Pyysalo, Sebastian Nagel, Shamik Bose, Shamsuddeen Hassan Muhammad, Shanya Sharma, Shayne Longpre, Somaieh Nikpoor, Stanislav Silberberg, Suhas Pai, Sydney Zink, Tiago Timponi Torrent, Timo Schick, Tristan Thrush, Valentin Danchev, Vassilina Nikoulina, Veronika Laippala, Violette Lepercq, Vrinda Prabhu, Zaid Alyafeai, Zeerak Talat, Arun Raja, Benjamin Heinzerling, Chenglei Si, Davut Emre Tasar, Elizabeth Salesky, Sabrina J. Mielke, Wilson Y. Lee, Abheesht Sharma, Andrea Santilli, Antoine Chaffin, Arnaud Stiegler, Debajyoti Datta, Eliza Szczechla, Gunjan Chhablani, Han Wang, Harshit Pandey, Hendrik Strobelt, Jason Alan Fries, Jos Rozen, Leo Gao, Lintang Sutawika, M Saiful Bari, Maged S. Al-shaibani, Matteo Manica, Nihal Nayak, Ryan Techan, Samuel Albanie, Sheng Shen, Srulik Ben-David, Stephen H. Bach, Taewoon Kim, Tali Bers, Thibault Fevry, Trishala Neeraj, Urmish Thakker, Vikas Raunak, Xiangru Tang, Zheng-Xin Yong, Zhiqing Sun, Shaked Brody, Yallow Uri, Hadar Tojarieh, Adam Roberts, Hyung Won Chung, Jaesung Tae, Jason Phang, Ofir Press, Conglong Li, Deepak Narayanan, Hatim Bourfoune, Jared Casper, Jeff Rasley, Max Ryabinin, Mayank Mishra, Minjia Zhang, Mohammad Shoeybi, Myriam Peyrounette, Nicolas Patry, Nouamane Tazi, Omar Sanseveriero, Patrick von Platen, Pierre Cornette, Pierre Francois Lavallee, Remi Lacroix, Samyam Rajbhandari, Sanchit Gandhi, Shaden Smith, Stephane Requena, Suraj Patil, Tim Dettmers, Ahmed Baruwa, Amanpreet Singh, Anastasia Cheveleva, Anne-Laure Ligozat, Arjun Subramonian, Aurelie Neveol, Charles Lovering, Dan Garrette, Deepak Tunuguntla, Ehud Reiter, Ekaterina Taktasheva, Ekaterina Voloshina, Eli Bogdanov, Genta Indra Winata, Hailey Schoelkopf, Jan-Christoph Kalo, Jekaterina Novikova, Jessica Zosa Forde, Jordan Clive, Jungo Kasai, Ken Kawamura, Liam Hazan, Marine Carpuat, Miruna Clinciu, Najoung Kim, Newton Cheng, Oleg Serikov, Omer Antverg, Oskar van der Wal, Rui Zhang, Ruochen Zhang, Sebastian Gehrmann, Shachar Mirkin, Shani Pais, Tatiana Shavrina, Thomas Scialom, Tian Yun, Tomasz Limisiewicz, Verena Rieser, Vitaly Protasov, Vladislav Mikhailov, Yada Pruksachatkun, Yonatan Belinkov, Zachary Bamberger, Zdenek Kasner, Alice Rueda, Amanda Pestana, Amir Feizpour, Ammar Khan, Amy Faranak, Ana Santos, Anthony Hevia, Antigona Unldreaj, Arash Aghagol, Arezoo Abdollahi, Aycha Tammour, Azadeh HajiHosseini, Bahareh Behroozi, Benjamin Ajibade, Bharat Saxena, Carlos Munoz Ferrandis, Danish Contractor, David Lansky, Davis David, Douwe Kiela, Duong A. Nguyen, Edward Tan, Emi Baylor, Ezinwanne Ozoani, Fatima Mirza, Frankline Ononiwu, Habib Rezanejad, Hessie Jones, Indrani Bhattacharya, Irene Solaiman, Irina Sedenko, Isar Nejadgholi, Jesse Passmore, Josh Seltzer, Julio Bonis Sanz, Livia Dutra, Mairon Samagaio, Maraim Elbadri, Margot Mieskes, Marissa Gerchick, Martha Akinolu, Michael McKenna, Mike Qiu, Muhammed Ghauri, Mykola Burynok, Nafis Abrar, Nazneen Rajani, Nour Elkott, Nour Fahmy, Olanrewaju Samuel, Ran An, Rasmus Kromann, Ryan Hao, Samira Alizadeh, Sarmad Shubber, Silas Wang, Sourav Roy, Sylvain Viguier, Thanh Le, Tobi Oyebade, Trieu Le, Yoyo Yang, Zach Nguyen, Abhinav Ramesh Kashyap, Alfredo Palasciano, Alison Callahan, Anima Shukla, Antonio Miranda-Escalada, Ayush Singh, Benjamin Beilharz, Bo Wang, Caio Brito, Chenxi Zhou, Chirag Jain, Chuxin Xu, Clementine Fourrier, Daniel Leon Perinan, Daniel Molano, Dian Yu, Enrique Manjavacas, Fabio Barth, Florian Fuhrmann, Gabriel Altay, Giyaseddin Bayrak, Gully Burns, Helena U. Vrabec, Imane Bello, Ishani Dash, Jihyun Kang, John Giorgi, Jonas Golde, Jose David Posada, Karthik Rangasai Sivaraman, Lokesh Bulchandani, Lu Liu, Luisa Shinzato, Madeleine Hahn de Bykhovetz, Maiko Takeuchi, Marc Pamies, Maria A Castillo, Marianna Nezhurina, Mario Sanger, Matthias Samwald, Michael Cullan, Michael Weinberg, Michiel De Wolf, Mina Mihaljcic, Minna Liu, Moritz Freidank, Myungsun Kang, Natasha Seelam, Nathan Dahlberg, Nicholas Michio Broad, Nikolaus Muellner, Pascale Fung, Patrick Haller, Ramya Chandrasekhar, Renata Eisenberg, Robert Martin, Rodrigo Canalli, Rosaline Su, Ruisi Su, Samuel Cahyawijaya, Samuele Garda, Shlok S Deshmukh, Shubhanshu Mishra, Sid Kiblawi, Simon Ott, Sinee Sang-aroonsiri, Srishti Kumar, Stefan Schweter, Sushil Bharati, Tanmay Laud, Theo Gigant, Tomoya Kainuma, Wojciech Kusa, Yanis Labrak, Yash Shailesh Bajaj, Yash Venkataraman, Yifan Xu, Yingxin Xu, Yu Xu, Zhe Tan, Zhongli Xie, Zifan Ye, Mathilde Bras, Younes Belkada, and Thomas Wolf. BLOOM: A 176B-Parameter Open-Access Multilingual Language Model, 2023.\n' +
+      '* Shi et al. (2022) Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das, and Jason Wei. Language Models are Multilingual Chain-of-Thought Reasoners, 2022.\n' +
+      '* Shliazhko et al. (2022) Oleh Shliazhko, Alena Fenogenova, Maria Tikhonova, Vladislav Mikhailov, Anastasia Kozlova, and Tatiana Shavrina. mGPT: Few-Shot Learners Go Multilingual, 2022.\n' +
+      '* Shoeybi et al. (2019) Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. Megatron-LM: Training Multi-Billion Parameter Language Models using Model Parallelism. _arXiv preprint arXiv:1909.08053_, 2019.\n' +
+      '* Dai et al. (2022) Andrew M. Dai Slav Petrov, Yonghui Wu and et al. PaLM 2 Technical Report, 2023. URL [https://ai.google/static/documents/palm2techreport.pdf](https://ai.google/static/documents/palm2techreport.pdf).\n' +
+      '* Smith et al. (2022) Shaden Smith, Mostofa Patwary, Brandon Norick, Patrick LeGresley, Samyam Rajbhandari, Jared Casper, Zhun Liu, Shrimai Prabhumoye, George Zerveas, Vijay Korthikanti, Elton Zheng, Rewon Child, Reza Yazdani Aminabadi, Julie Bernauer, Xia Song, Mohammad Shoeybi, Yuxiong He, Michael Houston, Saurabh Tiwary, and Bryan Catanzaro. Using DeepSpeed and Megatron to Train Megatron-Turing NLG 530B, A Large-Scale Generative Language Model. _CoRR_, abs/2201.11990, 2022. URL [https://arxiv.org/abs/2201.11990](https://arxiv.org/abs/2201.11990).\n' +
+      '* Su et al. (2021) Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, and Yunfeng Liu. Roformer: Enhanced Transformer with Rotary Position Embedding. _arXiv preprint arXiv:2104.09864_, 2021.\n' +
+      '* Suzgun et al. (2022) Mirac Suzgun, Nathan Scales, Nathanael Scharli, Sebastian Gehrmann, Yi Tay, Hyung Won Chung, Aakanksha Chowdhery, Quoc V. Le, Ed H. Chi, Denny Zhou, and Jason Wei. Challenging big-bench tasks and whether chain-of-thought can solve them, 2022.\n' +
+      '* Su et al. (2021)\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:16]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

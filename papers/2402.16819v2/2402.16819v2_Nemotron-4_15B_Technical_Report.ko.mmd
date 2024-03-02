@@ -1,0 +1,178 @@
+# Nemotron-4 15B Technical Report
+
+Jupinder Parmar Shrimai Prabhumoye Joseph Jennings Mostof Patwary
+
+동일한 기여, 상응하는 저자: {jupinderp,sprabhumoye,jjennings,mpatwary}@nvidia.com. 엔비디아에 있는 동안 일했어요
+
+그리고 텍스트를 코딩하며 단일 NVIDIA A100 또는 H100 GPU에 적합할 수 있는 최고의 범용 대용량 언어 모델(LLM)로 개발되었다.
+
+도 1에서 입증된 바와 같이, 네모트론-4 15B는 광범위한 영어, 코드 및 다국어 평가 영역에 걸쳐 높은 다운스트림 정확도를 나타낸다. 유사한 크기의 오픈 모델과 비교하여 네모트론-4 15B가 매개변수 수의 두 배 이상을 갖는 LLaMA-2 34B(Touvron et al., 2023b)보다 훨씬 우수하고 모든 영어 평가 영역에서 미스트랄 7B(Jiang et al., 2023)보다 우수함을 보여준다. 또한, Nemotron-4 15B는 QWEN 14B(Bai et al., 2023) 및 Gemma 7B(Gemma Team, 2024)에 대한 경쟁 정확도를 달성한다. 광범위한 프로그래밍 언어들에 걸친 비교에서, 우리는 Nemotron-4 15B가 코드-특정 모델인 Starcoder(Li 등, 2023) 및 Mistral 7B보다 더 나은 평균 정확도, 특히 낮은 자원 프로그래밍 언어들에 대해 달성한다는 것을 발견한다. 네모트론-4 15B는 상당한 양의 다국어 데이터에 대해 훈련되었기 때문에 현재 모든 다국어 벤치마크에 대한 크기 클래스에서 최첨단 범용 모델이다. 우리는 Nemotron-4가 PALM 62B-Cont (Slav Petrov and et al., 2023)보다 우수하다는 것을 발견했고, 또한 XGLM (Lin et al., 2022) 및 mGPT (Shliazhko et al., 2022)와 같은 다국어-특정 모델보다 우수하다는 것을 발견했다.
+
+## 2 아키텍처 세부 정보
+
+네모트론-4는 인과적 주의 마스크와 함께 표준 디코더 전용 트랜스포머 아키텍처(Vaswani et al., 2017)를 사용한다. 크기에 영향을 미치는 정확한 하이퍼-파라미터는 표 1에 나타나 있다. 네모트론-4는 32억 개의 임베딩 파라미터와 125억 개의 비- 임베딩 파라미터를 갖는다. Rotary Position Embeddings (RoPE) (Su et al., 2021), SentencePiece tokenizer (Kudo and Richardson, 2018), 제곱 ReLU activations in the MLP layers, no bias terms, dropout rate of zero, and unied input-output embeddings. 그룹화 사용
+
+\begin{table}
+\begin{tabular}{c c c c c c} \hline \hline Number of & Hidden & Number of & Number of & Sequence & Vocabulary \\ transformer layers & dimension & attention heads & KV heads & length & size \\ \hline
+32 & 6144 & 48 & 8 & 4096 & 256,000 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 네모트론-4 15B의 크기에 영향을 미치는 주요 하이퍼-파라미터.
+
+그림 1: 유사한 크기의 모델에 대한 7개의 평가 영역에 걸친 네모트론-4 15B의 비교. 각 평가 영역을 형성하는 과제의 구성은 3절에서 보다 상세한 평가 결과와 함께 찾아볼 수 있다.
+
+더 빠른 추론 및 더 낮은 메모리 풋프린트를 위한 쿼리 어텐션(GQA)(Ainslie et al., 2023).
+
+데이터.우리는 8조 개의 토큰으로 구성된 사전 훈련 데이터 세트에서 네모트론-4 15B를 훈련한다. 높은 수준에서 데이터 혼합은 영어 자연어 데이터(70%), 다국어 자연어 데이터(15%), 소스 코드 데이터(15%)의 세 가지 다른 유형의 데이터로 분할된다.
+
+영어 코퍼스는 웹 문서, 뉴스 기사, 과학 논문, 책 등을 포함한 다양한 출처와 도메인의 선별된 문서로 구성되며 사전 훈련 세트에 사용된 배포는 그림 2에 강조 표시되어 있다. 코드와 다국어 데이터는 다양한 자연 언어 및 프로그래밍 언어로 구성된다. 우리는 이러한 언어에서 토큰을 적절하게 샘플링하는 것이 이러한 도메인에서 강력한 정확도의 핵심이라는 것을 발견했다. 우리는 그림 3과 그림 4의 사전 훈련 데이터 세트에서 코드와 다국어 토큰 모두에 사용된 분포를 각각 공유한다.
+
+사전 트레이닝 코퍼스를 구성함에 있어서, 우리는 문서-레벨 정확 및 근접 중복제거를 통해 임의의 가능한 중복을 제거한다(Jennings et al., 2023). 우리는 (Rae et al., 2022) 및 (Raffel et al., 2020)에 설명된 일련의 휴리스틱 필터에 추가하여 (Wenzek et al., 2019)와 유사한 언어 모델 기반 필터링 접근법을 사용하여 코퍼스에 걸쳐 문서 수준 품질 필터링을 추가로 적용했다.
+
+최종 8T 토큰 데이터 세트에서 무작위로 샘플링된 데이터에 대해 SentencePiece(Kudo and Richardson, 2018)에서 BPE 토큰화기를 훈련한다. 토큰나이저에서 낮은 리소스 언어의 적용 범위를 높이기 위해 최종 훈련 데이터 세트 분포에 비해 영어가 아닌 데이터를 업샘플링한다. 토키나이저는 화이트 스페이스(선행 및 후행 포함)를 보존하고, 숫자를 개별 숫자로 분할하고(Chowdhery 등, 2022), 바이트 수준 백오프에 의존하여 알려지지 않은 문자 시퀀스를 처리합니다. 최종 어휘 크기는 256,000 토큰입니다.
+
+그림 2: 사전 훈련에 사용되는 영어 토큰의 데이터 구성
+
+사전 훈련.Nemotron-4는 384개의 DGX H100 노드를 사용하여 훈련되었으며, 각 노드는 NVIDIA Hopper 아키텍처(NVIDIA, 2022)에 기반한 8개의 H100 80GB SXM5 GPU를 포함한다. 각 H100 GPU는 희소성 없이 16비트 부동 소수점(bfloat16) 산술을 수행할 때 989 teraFLOP/s의 피크 처리량을 갖는다. 각 노드 내에서 GPU는 NVLink와 NVSwitch (nvl)로 연결 되며 GPU 대 GPU 대역폭은 900 GB/s (각 방향으로 450 GB/s)입니다. 각 노드에는 노드 간 통신을 위한 8개의 NVIDIA Mellanox 400 Gbps HDR InfiniBand 호스트 채널 어댑터(HCAs)가 있다.
+
+모델 학습을 위해 8-way tensor parallelism (Shoeybi et al., 2019)과 data parallelism의 조합을 사용하였으며, 데이터-병렬 복제본 위에 최적화기 상태를 샤드하기 위해 분산 최적화기를 사용하였다. 데이터 병렬성의 정도는 배치 크기가 증가함에 따라 96에서 384까지 다양했다. 표 2는 배치 크기 램프의 3단계를 요약하고, 반복당 시간 및 모델 FLOP/s 이용률(MFU)(Chowdhery et al., 2022; Korthikanti et al., 2022)을 포함한다. MFU는 GPU가 모델 훈련에서 얼마나 효율적으로 활용되는지를 정량화한다. 교육은 약 13일 만에 완료되었다.
+
+\begin{table}
+\begin{tabular}{c c c c c c c} \hline \hline Data-parallel size & GPUs & Iteration time (secs) & MFU (\%) & Batch size & Tokens (B) & Time (days) \\ \hline
+96 & 768 & 0.57 & 34.3 & 384 & 200 & 0.8 \\
+192 & 1,536 & 0.58 & 33.3 & 768 & 200 & 0.4 \\
+288 & 2,304 & 0.64 & 30.5 & 1,152 & 7,600 & 11.9 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 네모트론-4 15B 매개변수 모델에 대한 시간 및 효율성 메트릭과 함께 배치 크기 램프업 일정.
+
+그림 3: 사전 훈련에 사용된 43개의 프로그래밍 언어의 데이터 분포이다. 각 막대 내의 숫자는 개별 언어가 구성하는 전체 코드 분포의 백분율을 나타냅니다.
+
+지속적인 훈련.최근 작업(구글, 2023)과 유사하게, 우리는 모델 훈련이 끝날 때 데이터 분포 및 학습률 감소 스케줄을 전환하는 것이 모델 품질을 크게 향상시킨다는 것을 발견한다. 구체적으로, 8T 사전 훈련 데이터 세트 전체에 대해 훈련한 후 동일한 손실 목표를 사용하고 사전 훈련 토큰과 비교하여 적은 수의 토큰에 대해 지속적인 훈련을 수행한다.
+
+계속된 훈련의 이 추가 단계에서 우리는 두 가지 별개의 데이터 분포를 활용한다. 첫 번째 분포는 지속적인 훈련 동안 대부분의 토큰이 샘플링되는 곳입니다. 사전 훈련 중에 이미 도입되었지만 더 높은 품질의 소스에 더 큰 샘플링 가중치를 두는 분포와 함께 토큰을 활용한다. 두 번째 분포는 모델이 다운스트림 평가에서 이러한 질문에 더 잘 응답할 수 있도록 하는 동시에 모델 성능이 낮은 영역에서 나오는 데이터 소스를 가중화할 수 있도록 소수의 벤치마크 스타일 정렬 예를 도입한다. 학습 속도의 크기보다 더 가파른 감쇠 기울기를 우선시하는 학습 속도 스케줄과 함께, 이러한 데이터 분포의 순서와 스타일이 모델이 사전 훈련 데이터 세트로부터 부드럽게 전이하고 새로 강조된 데이터 영역을 더 잘 학습할 수 있게 한다는 것을 발견한다.
+
+## 3 Results
+
+우리는 다양한 범위의 작업과 영역을 포함하는 다양한 다운스트림 평가 영역에서 네모트론-4 15B를 평가한다. 모든 평가에서 표준화된 작업 설정을 준수하고 사용된 정확한 설정을 공유합니다. 상기 커버링된 평가 카테고리들은,
+
+* **상식 추론(0-shot):** SIQA(Sap et al., 2019), ARC easy and challenge(Clark et al., 2018), PIQA(Bisk et al., 2020), Winogrande(Sakaguchi et al., 2020), 및 Hellaswag(Zellers et al., 2019)
+
+그림 4: 영어 외에 53개 자연어의 데이터 분포를 사전 훈련에 사용하였다. 각 막대 내의 숫자는 개별 언어가 구성하는 전체 다국어 분포의 백분율을 나타냅니다.
+
+* **Popular Aggregated Benchmarks:** MMLU(5-shot)(Hendrycks et al., 2020) 및 BBH(3-shot)(Suzgun et al., 2022)
+* **Math:** GSM8K (8-shot with maj@1)(Cobbe et al., 2021)
+* **Code:** Pass@1 score on HumanEval(0-shot)(Chen et al., 2021), MBPP(3-shot)(Austin et al., 2021), and MultiPL-E(0-shot)(Cassano et al., 2023a)
+* **다국어:** XCOPA (0 및 4-shot)를 통한 분류 (Ponti 등, 2020), FLORES-101 (8-shot)을 사용한 기계 번역 (Goyal 등, 2021), MGSM (8-shot) (Shi 등, 2022) 및 TyDiQA (1-shot)과 같은 생성 작업 (Clark 등, 2020)
+
+우리의 평가에서 우리는 많은 외부 디코더 전용 변압기 언어 모델과 비교하고 달리 명시되지 않는 한 해당 모델의 보고서에 게시된 번호를 사용한다. 영어 및 코드 태스크의 경우, 우리는 Nemotron-4 15B, LlaMA-2 13B 및 34B(Touvron 외, 2023b), Mistral 7B(Jiang 외, 2023), Baichuan-2 13B(Yang 외, 2023), QWEN 14B(Bai 외, 2023), 및 Gemma 7B(Gemma Team, 2024)에 대한 상세한 결과를 공유한다. 다국어 벤치마크의 경우 PaLM 62B 및 62B-cont(Chowdhery et al., 2022)에 대한 결과와 mGPT 13B(Shliazhko et al., 2022) 및 XGLM 7.5B(Lin et al., 2022)와 같은 다국어 능력을 위해 특별히 훈련된 모델을 보고한다.
+
+### Commonsense Reasoning
+
+우리는 LM-평가 Harness(Gao et al., 2021)를 사용하여 앞서 언급한 모든 작업에 걸쳐 Nemotron-4 15B를 평가한다. 표 3은 네모트론-4 15B가 이러한 다양한 작업 세트에서 가장 강력한 평균 성능을 달성한다는 것을 보여준다.
+
+### 인기 있는 집계 벤치마크
+
+MLU(Hendrycks et al., 2020) 및 Big Bench Hard(BBH)(Suzgun et al., 2022) 벤치마크는 광범위한 작업 및 도메인에 대한 언어 모델의 능력에 대한 도전적인 평가로서 개발되었다. 표 4에서 볼 수 있듯이, 네모트론-4 15B는 기존 모델에 걸쳐 BBH에 대해 최상의 점수를 달성한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c} \hline \hline  & Size & SIQA & ARC-c & ARC-e & PIQA & Winogrande & Hellaswag & AVG \\ \hline \multirow{2}{*}{LLaMA-2} & 13B & 50.3 & 49.4 & 77.3 & 79.8 & 72.8 & 80.7 & 68.4 \\  & 34B & 50.9 & 54.5 & 79.4 & 81.9 & 76.7 & 83.3 & 71.1 \\ \hline Baichuan-2 & 13B & - & - & - & 78.1 & - & 70.8 & - \\ \hline QWEN & 14B & 77.9 & 84.4 & 90.3 & 79.9 & - & 80.2 & - \\ \hline Mistral & 7B & 47.0\({}^{*}\) & 55.5 & 80.0 & 83.0 & 75.3 & 81.3 & 70.4 \\ \hline Gemma & 7B & 51.8 & 53.2 & 81.5 & 81.2 & 72.3 & 81.2 & 70.2 \\ \hline Nemotron-4 & 15B & 60.9 & 55.5 & 80.9 & 82.4 & 78.0 & 82.4 & **73.4** \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 제로 샷 설정에서 표준 추론 벤치마크에 대한 결과. 우리는 공정한 비교를 위해 가능한 모든 작업에서 평균을 보고한다. \(*\)로 표시된 값은 젬마 팀(2024)에서 읽습니다.
+
+[MISSING_PAGE_FAIL:7]
+
+관련 업무 - 다른 프로그래밍 언어에 대한 능력 평가를 무시합니다. 표 6에서, 11개의 다양한 프로그래밍 언어에 걸친 Multiple-E(Cassano 등, 2023b) 벤치마크 상의 Nemotron-4 15B의 결과를 보여주고, 코드에 대해 특별히 트레이닝된 15B 파라미터 모델인 Mistral 7B 및 Starcoder(Li 등, 2023)와 비교한다. 우리는 네모트론-4 15B가 다양한 프로그래밍 언어에 걸쳐 강력한 코딩 성능을 달성하고 스타코더와 미스트랄 7B보다 평균적으로 더 우수하다는 것을 발견했다. 특히 Scala, Julia 및 R과 같은 자원이 적은 프로그래밍 언어에서 Nemotron-4 15B의 우수한 성능을 강조한다.
+
+### Multilingual
+
+우리는 다양한 범위의 높은 자원에서 낮은 자원 자연 언어를 다루는 이전 연구에서 널리 연구된 4개의 벤치마크를 사용하여 네모트론-4 15B의 뛰어난 다국어 능력을 보여준다. 분류는 정확도를 메트릭으로 사용하고, 생성 작업은 정확한 매칭을 사용하며, 기계 번역은 BLEU(Papineni et al., 2002)의 sacreBLEU(Post, 2018) 구현을 사용하여 spm-floes-101 토큰화를 사용하여 spBLEU 점수를 얻는다.
+
+**1. 분류:** XCOPA(교차 언어 선택) (Ponti 등, 2020) 11개 언어에서 인과적 상식 추론을 테스트합니다.
+
+우리는 Nemotron-4 15B를 기존의 다국어 언어 모델인 XGLM(Lin et al., 2022), mGPT(Shliazhko et al., 2022), BLOOM(Scao et al., 2023)과 비교한다. XGLM 및 mGPT는 훈련 데이터에 비영어 언어의 존재를 업 샘플링하여 향상된 다국어 능력을 갖도록 특별히 훈련된 모델이다. 대조적으로, BLOOM은 네모트론-4와 마찬가지로 영어, 다국어 및 코드 데이터의 조합으로 훈련된 범용 언어 모델이다. 표 7에서 우리는 네모트론-4가 모든 모델 중에서 최상의 성능을 달성한다는 것을 분명히 알 수 있으며, 이는 4샷 설정에서 거의 12% 개선을 실현한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c c c c} \hline \hline  & Size & JavaScript & Julia & Java & Lua & C++ & C-Sharp & PHP & Shell & TypeScript & R & Scala & AVG \\ \hline Starcoder & 15B & 30.8 & 23.0 & 30.2 & 23.9 & 31.6 & 21.0 & 26.1 & 10.5 & 32.3 & 15.5 & 27.6 & 24.2 \\ Mistral & 7B & 34.2 & 22.0 & 26.0 & 25.3 & 29.1 & 22.8 & 27.9 & 8.9 & 28.5 & 11.8 & 22.2 & 23.6 \\ Nemotron-4 & 15B & 28.6 & 24.8 & 24.8 & 24.2 & 35.4 & 21.1 & 27.3 & 8.9 & 32.9 & 18.6 & 27.3 & **24.5** \\ \hline \hline \end{tabular}
+\end{table}
+표 6: 네모트론-4 15B는 광범위한 프로그래밍 언어에 걸쳐 코딩 성능에서 높은 역량을 달성한다. 미스트랄에 대한 결과는 네모트론-4와 동일한 환경에서 미스트랄의 실행에서 가져온 것이다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c c c c} \hline \hline Mode & Model & Size & ET & HT & ID & IT & QU & SW & TA & TH & TR & VI & ZH & AVG \\ \hline \multirow{4}{*}{Zero-Shot} & BLOOM & 176B & - & - & \(57.5^{*}\) & - & - & \(59.5^{*}\) & \(54.7^{*}\) & - & - & \(58.2^{*}\) & \(57.7^{*}\) & - \\  & XGLM & 7.5B & 57.6 & 57.0 & 59.0 & 49.2 & 52.4 & 55.0 & 55.6 & 57.8 & 55.0 & 59.0 & 53.6 & 55.6 \\  & mGPT & 13B & 49.8 & 50.4 & 63.4 & 61.6 & 50.4 & 57.6 & 57.0 & 54.0 & 58.2 & 60.4 & 54.6 & 56.1 \\  & Nemotron-4 & 15B & 62.8 & 47.4 & 66.6 & 67.0 & 53.8 & 50.4 & 62.0 & 59.6 & 57.4 & 65.2 & 62.2 & **59.5** \\ \hline \multirow{4}{*}{4-Shot} & XGLM & 7.5B & 64.7 & 60.4 & 67.3 & 64.0 & 50.0 & 61.8 & 56.7 & 61.5 & 60.1 & 68.5 & 59.9 & 61.4 \\  & mGPT & 13B & 48.6 & 48.6 & 62.6 & 60.8 & 50.6 & 56.6 & 55.4 & 54.8 & 57.4 & 61.8 & 58.4 & 56.0 \\  & Nemotron-4 & 15B & 72.9 & 52.8 & 79.6 & 79.2 & 50.2 & 52.2 & 72.8 & 66.6 & 77.2 & 78.6 & 76.0 & **68.9** \\ \hline \hline \end{tabular}
+\end{table}
+표 7: 제로- 및 4-샷 설정 하에서 XCOPA 상의 기존 대형 언어 모델에 대한 네모트론-4 15B의 비교. XGLM에 대해 보고된 결과는 mGPT에서 사용하는 것과 동일한 프롬프트 템플릿을 사용한다는 점을 감안할 때 (Shliazhko et al., 2022) 모델의 실행에서 가져온 것이다. \(*\)로 표시된 값은 (Scao 등, 2023)의 그림에서 읽힌다.
+
+## 2 Generation:
+
+우리는 TyDiQA-GoldP(Clark et al., 2020)와 다국어 초등학교 수학(MGSM)(Shi et al., 2022)의 두 가지 생성 과제를 고려한다. TyDiQA-GoldP는 질의 응답 작업이며 MGSM은 10개 언어로 언어 모델의 산술 추론 능력을 평가한다.
+
+TyDiQA-GoldP 상의 네모트론-4 15B의 성능을 다양한 모델과 비교할 때, 표 8은 네모트론-4 15B가 최상의 성능을 달성함을 보여준다. 인상적으로, 네모트론-4 15B는 차선책인 PaLM 62B-cont에서 크게 개선할 수 있다.
+
+네모트론-4 15B의 인상적인 다국어 능력을 추가로 입증하기 위해, 표 9는 MGSM에 대한 성능을 보여준다. 우리는 (Shi et al., 2022)에서 소개된 영어 사고 연쇄 설정을 사용하여 보고하며, 여기서 모든 사고 연쇄 설명은 과제의 언어가 아닌 영어로 모델에 제시된다. 수학적 능력과 다국어 능력의 교차점을 평가하는 이 도전적인 과제에서 네모트론-4 15B는 비교된 모델 중에서 최고의 성능을 달성하고 가장 가까운 점수를 거의 30% 향상시킨다.
+
+## 3 Machine Translation:
+
+또한 FLORES-101 (Goyal et al., 2021) 벤치마크를 통해 모델의 번역 능력을 평가한다. 언어 간 번역 능력은 언어 간의 의미적 관계를 관계화하고 이해하는 모델의 능력에 대한 좋은 테스트이다.
+
+표 10에서 볼 수 있듯이 네모트론-4 15B는 LLaMA-2 13B와 바이촨-2 13B를 모두 능가하며, 성능이 각각 90.2%와 44.1% 향상된다. 네모트론-4 15B는 중국어에서 영어로 번역하는 데만 좋은 성과를 내는 것이 아니라 중국어를 다른 언어로 직접 번역하는 데에도 인상적인 결과를 얻을 수 있다. 이 능력은 네모트론-4 15B가 광범위한 자연 언어에 걸쳐 가지고 있는 강력한 이해를 강조한다.
+
+\begin{table}
+\begin{tabular}{c r r r r r r r r r r} \hline \hline Model & Size & AR & BN & FI & ID & KO & RU & SW & TE & AVG \\ \hline \multirow{2}{*}{PaLM} & 62B & 31.2 & 42.5 & 41.7 & 41.6 & 49.3 & 29.2 & 58.1 & 30.6 & 40.5 \\  & 62B-cont & 39.4 & 48.7 & 44.0 & 49.2 & 52.5 & 35.6 & 60.9 & 35.3 & 45.7 \\ LLaMA-2 & 13B & - & - & - & - & - & - & - & - & 33.2 \\ Baichuan-2 & 13B & - & - & - & - & - & - & - & - & - & 30.8 \\ QWEN & 14B & - & - & - & - & - & - & - & - & - & 39.8 \\ Nemotron-4 & 15B & 39.1 & 55.8 & 52.2 & 54.5 & 55.1 & 37.8 & 54.5 & 55.0 & **50.5** \\ \hline \hline \end{tabular}
+\end{table}
+표 8: TyDiQA-GoldP에 대한 원샷 설정에서의 비교 결과. LLaMA-2 13B, 바이촨-2 13B 및 QWEN 14B에 대한 결과는 (Chen 등, 2024)로부터 취해진다.
+
+\begin{table}
+\begin{tabular}{c c r r r r r r r r r r r} \hline \hline Mode & Model & Size & DE & FR & ES & RU & ZH & JA & TH & TE & BN & SW & AVG \\ \hline Native-COT & PaLM & 62B & 24.0 & 24.0 & 26.0 & 22.8 & 24.8 & 14.8 & 18.0 & 11.6 & 13.6 & 9.6 & 18.9 \\ \hline \multirow{3}{*}{English-COT} & PALM & 62B-cont & 44.8 & 39.2 & 44.4 & 36.8 & 33.6 & 24.0 & 28.0 & 19.6 & 28.0 & 21.2 & 32.0 \\  & Mistral & 7B & 33.2 & 35.2 & 35.6 & 35.2 & 33.2 & 18.8 & 10.0 & 0.0 & 8.0 & 9.2 & 21.8 \\  & Nemotron-4 & 15B & 46.8 & 46.0 & 50.0 & 45.6 & 40.0 & 40.0 & 43.6 & 41.6 & 43.6 & 16.0 & **41.3** \\ \hline \hline \end{tabular}
+\end{table}
+표 9: MGSM에 대한 8-샷 정확도 결과. 미스트랄에 대한 결과는 네모트론-4와 동일한 환경에서 미스트랄의 실행에서 가져온 것이다.
+
+## 4 Conclusion
+
+우리는 디코더 전용 트랜스포머 기반 대용량 언어 모델인 네모트론-4 15B를 제시한다. 영어에 걸쳐 있는 8조 개의 토큰, 53개의 추가 자연 언어 및 43개의 프로그래밍 언어로 교육됩니다. 네모트론-4 15B는 그 규모에서 모든 범용 언어 모델의 가장 강력한 다국어 성능을 나타내며, 심지어 다국어 도메인에 특화된 모델도 능가한다. 네모트론-4는 모델의 능력을 향상시키기 위해 대형 언어 모델에 대한 사전 훈련 세트가 계속해서 더 확장될 수 있음을 보여준다.
+
+## References
+
+* N. 이소프 아인슬리 드종영 Zemlyanskiy, F. Lebron, S. 상하이(2023)GQA: 훈련 일반화된 다중 쿼리 변압기 모델을 다중 헤드 체크포인트로부터 획득한다. arXiv preprint arXiv:2305.13245. 인용: SS1.
+* L. 벤 알랄 Li, D. Kocetkov, C. Mou, C. Akiki, C. M. Ferrandis, N. Muennighoff 미슈라 아구 디엘 쿠마르 우마파티, C. J. 앤더슨, Y. Zi, J. L. Poirier, H. Schoelkopf, S. D. Abulkhanov, Troshin Romero, M. L. Lappert, F. De Toni, B. Garcia del Rio, Q. 유승 보세우 바타차리야, T. 유주옥 조카 Mangrulkar, D. Lansky, H. Nguyen, D. Contractor, L. J. Lee, D. Bahdanau, Y. 저니트 Hughes, D. Fried, A. Guha, H. de Vries, and L. 본 베라(2023) 산타코더: 별을 향해 손을 뻗지 마세요! 외부 링크: 2309.16609 인용: SS1.
+* J. Austin, A. Odena, M. 나민 Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. 테리 큐 Le, and C. Sutton (2021)Program synthesis with large language models. 외부 링크: 2102.02108 인용: SS1.
+* J. Bai, S. 배영 주종근 최광 당영 팬우 계영 Han, F. Huang, et al. (2023)Qwen technical report. arXiv preprint arXiv:2309.16609. 인용: SS1.
+* Y. 비스크 젤러스, R. L. Bras, J. Gao, 그리고 Y. 최(2020)PIQA: 자연어의 물리적 상식에 대한 추론. AAAI에서 인용: SS1.
+* T. B. Brown, B. Mann, N. 라이더 Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. 아가르왈, A. 허버트 보스
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline  & Size & ZH-EN & ZH-FR & ZH-ES & ZH-AR & ZH-RU & ZH-JA & ZH-DE & AVG \\ \hline LLaMA-2 & 13B & 25.4 & 19.2 & 17.5 & 1.4 & 10.3 & 0.1 & 11.1 & 12.2 \\ \hline Baichuan-2 & 13B & 30.6 & 22.1 & 17.3 & 2.4 & 14.2 & 11.6 & 14.5 & 16.1 \\ \hline Nemotron-4 & 15B & 34.0 & 28.1 & 21.3 & 16.8 & 21.2 & 23.1 & 18.1 & **23.2** \\ \hline \hline \end{tabular}
+\end{table}
+표 10: 플로레스 서브 태스크에 대한 8-샷 결과 중국어로 번역됨. 외부 모델에 대한 모든 결과는 (Yang et al., 2023)로부터 얻었다.
+
+[MISSING_PAGE_FAIL:11]
+
+레오 가오, 조나단 토우, 스텔라 바이더만, 시드 블랙, 앤서니 디포피, 찰스 포스터, 로렌스 골딩, 제프리 슈, 카일 맥도넬, 니클라스 무엔니고프, 제이슨 팡, 라리아 레이놀즈, 에릭 탕, 애니쉬 티트, 벤 왕, 케빈 왕, 앤디 주. 2021년 9월 Few-shot 언어 모델 평가를 위한 프레임워크. URL [https://doi.org/10.5281/zenodo.5371628](https://doi.org/10.5281/zenodo.5371628).
+* DeepMind [2024] Google DeepMind Gemma Team. Gemma: Gemini Research and Technology, 2024에 기반한 오픈 모델.
+* Gemini [2023] Google. 제미니: 2023년, 고성능 멀티모달 모델 패밀리.
+* Goyal et al. [2021] Naman Goyal, Cynthia Gao, Vishrav Chaudhary, Peng-Jen Chen, Guillaume Wenzek, Da Ju, Sanjana Krishnan, Marc'Aurelio Ranzato, Francisco Guzman, and Angela Fan. The FLORES-101 Evaluation Benchmark for Low-Resource and Multilingual Machine Translation. _CoRR_, abs/2106.03193, 2021. URL [https://arxiv.org/abs/2106.03193](https://arxiv.org/abs/2106.03193).
+* Hendrycks et al. [2020] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring Massive Multitask Language Understanding. _arXiv preprint arXiv:2009.03300_, 2020.
+* Hoffmann et al. [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training Compute-Optimal Large Language Models. _arXiv preprint arXiv:2203.15556_, 2022.
+* Jennings et al. [2023] Joseph Jennings, Mostofa Patwary, Sandeep Subramanian, Shrimai Prabhumoye, Ayush Dattagupta, Mohammad Shoeybi, and Bryan Catanzaro. Curating Trillion-Token Datasets: Introducing NVIDIA NeMo Data Curator. [https://developer.nvidia.com/blog/curating-trillion-token-datasets-introducing-nemo-data-curator/](https://developer.nvidia.com/blog/curating-trillion-token-datasets-introducing-nemo-data-curator/), 2023.
+* Jiang et al. [2023] Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7B. _arXiv preprint arXiv:2310.06825_, 2023.
+* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling Laws for Neural Language Models. _arXiv preprint arXiv:2001.08361_, 2020.
+* Korthikanti et al. [2022] Vijay Korthikanti, Jared Casper, Sangkug Lym, Lawrence McAfee, Michael Andersch, Mohammad Shoeybi, and Bryan Catanzaro. Reducing Activation Recomputation in Large Transformer Models, 2022.
+* Kudo and Richardson [2018] Taku Kudo and John Richardson. 문장편: 신경망 텍스트 처리를 위한 단순하고 언어 독립적인 서브워드 토큰화기와 디토큰화기 _ arXiv preprint arXiv:1808.06226_, 2018.
+* Li et al. [2020] Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Kocetkov, Chenghao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, Qian Liu, Evgenii Zheltonozhskii, Terry Yue Zhuo, Thomas Wang, Olivier Dehaene, Mishig Davaadorj, Joel Lamy-Poirier, Joao Monteiro, Oleh Shliazhko, Nicolas Gontier, Nicholas Meade, Armel Zebaze, Ming-Ho Yee, Logesh Kumar Umapathi, Jian Zhu, Benjamin Lipkin, Muhtasham Oblokulov, Zhiruo Wang, Rudra Murthy, Jason Stillerman, Siva Sankalp Patel, Dmitry Abulkhanov, Marco Zocca, Manan Dey, Zhihan Zhang, Nour Fahmy, Urvashi Bhattacharyya, Wenhao Yu, Swayam Singh, Sasha Luccioni, Paulo Villegas, Maxim Kunakov, Fedor Zhdanov, Manuel Romero, Tony Lee, Nadav Timor, Jennifer Ding, Claire Schlesinger, Hailey Schoelkopf, Jan Ebert, TriDao, Mayank Mishra, Alex Gu, Jennifer Robinson, Carolyn Jane Anderson, Brendan Dolan-Gavitt, Danish Contractor, Siva Reddy, Daniel Fried, Dzmitry Bahdanau, Yacine Jernite, Carlos Munoz Ferrandis, Sean Hughes, Thomas Wolf, Arjun Guha, Leandro von Werra, and Harm de Vries. StarCoder: May the Source be with You!, 2023.
+* Lin 등 (2022) Xi Victoria Lin, Todor Mihaylov, Mikel Artetxe, Tianlu Wang, Shuohui Chen, Daniel Simig, Myle Ott, Naman Goyal, Shruti Bhosale, Jingfei Du, Ramakanth Pasunuru, Sam Shleifer, Punit Singh Koura, Vishrav Chaudhary, Brian O'Horo, Jeff Wang, Luke Zettlemoyer, Zornitsa Kozareva, Mona Diab, Veselin Stoyanov, and Xian Li. 다국어 언어 모델을 사용한 소수 샷 학습, 2022.
+* NVIDIA (2022) NVIDIA. H100 텐서 코어 GPU 아키텍처 개요, 2022.
+* Papineni et al. (2002) Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. BLEU: 기계 번역의 자동 평가 방법. In _Proceedings of the 40th Annual Meeting on Association for Computational Linguistics_, ACL '02, page 311-318, USA, 2002. Association for Computational Linguistics. doi: 10.3115/1073083.1073135. URL [https://doi.org/10.3115/1073083.1073135](https://doi.org/10.3115/1073083.1073135).
+* Ponti 등 (2020) Edoardo Maria Ponti, Goran Glavas, Olga Majewska, Qianchu Liu, Ivan Vulic, and Anna Korhonen. XCOPA: 인과 상식 추론을 위한 다국어 데이터 세트입니다. _ CoRR_, abs/2005.00333, 2020. URL [https://arxiv.org/abs/2005.00333](https://arxiv.org/abs/2005.00333).
+* Post (2018) Matt Post. BLEU 점수 보고에 대한 명확성 요청 _ CoRR_, abs/1804.08771, 2018. URL [http://arxiv.org/abs/1804.08771](http://arxiv.org/abs/1804.08771).
+* Rae et al.(2019) Jack W. 라에, 세바스티안 보르게우, 트레보르 카이, 케이티 밀리칸, 조던 호프만, 프란시스 송, 존 아슬란데스, 사라 헨더슨, 로만 링, 수잔나 영, 엘라이자 러더포드, 톰 헤니건, 야콥 메닉, 알빈 카시어, 리차드 파웰, 나트 맥알레, 에이미 우, 에리히 엘젠, 시드한 자야쿠마르, 엘레나 부카야, 다비드 버드덴, 에이미 수더랜드, 카렌 시모니안, 미켈라 파가니니, 로랑 시프르, 티볼트 레스파우, 마리아 심포우, 니콜라 바부스키킨, 아단 클라크, 디에고 데 라스 카사스, 오렐리아 가이, 크리스 존스, 제임스 브래드베리, 매튜 존슨, 로라 바이딩거, 이슨 가브리엘, 윌리엄 아이작, 에드 록하트, 사이먼 오신데로, 로라 리멜, 크리스 다이아, 오리올 빈얄, 카림 아유브, 제프 스탠웨이, 로라린 베넷, 데미스 Scaling Language Models: Methods, Analysis & Insights from Training Gopher, 2022.
+* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Unified Text-to-Text Transformer를 사용한 전이 학습의 한계 탐색 _ The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.
+* Sakaguchi et al.(2020) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 적대적 위노그라드 스키마 챌린지 2020년 _AAAI_에서.
+* Sap et al.(2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan LeBras, and Yejin Choi. 소셜리카: 사회적 상호 작용에 대한 상식 추론, 2019.
+* Zhang et al. (2019)Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, Jonathan Tow, Alexander M. 루쉬, 스텔라 비드만, 알버트 웨슨, 파완 사산카 암나마치, 토마스 왕, 베노이트, 후응우엔, 루실라 사울니에, 삼손 탄, 페드로 오르티즈 수아레즈, 빅토르 산, 위고 로렌콘, 야신 예르니테, 줄리엔 라펠, 아론 고카슬란, 아디 시미히, 아토르 소로아, 알함 피크리 아지, 카나르 미첼, 아드르 시멜, 아디 시멜, 아데르 소로아, 알함 피크리 아지, 아드 로가스, 알함 프리스코 데 토니, 제라드 도지, 지안 주, 조나단 창, 조르그 압둘무민, 조셉 토빙, 조디프 바타차르지, 칼리드 알무바락, 킴보 첸, 카일 로, 레안드로 폰 베르라, 루도비치 탕구, 마난 데이, 마누엘 로메로 무뇨스, 마레임 마수드, 마리아 그란두리, 마리오 사스코, 막스 황, 막시민 코 리, 아비에쉬트 샤르마, 안드레아 산틸리, 앙투안 차핀, 아르나우 스티글러, 데바요티 다타, 엘리자 슈체클라, 군잔 차블라니, 한 왕, 하르시트 판데이, 헨드릭 스트로벨트, 제이슨 앨런 프라이즈, 조스 로젠, 레오 가오, 린탕 수타위카, 엠 사이풀 바리, 메이지 S. 알샤바니, 마테오 마니카, 니할 나약, 라이언 테찬, 사무엘 알바니, 션 션, 스룰릭 벤 다비드, 스테판 H. 바흐, 태운 김, 탈리 베르스, 티볼트 페브리, 트리샤라 네라지, 우르미시 타케르, 비카스 라우낙, 샹루 탕, 정-신 용, 즈칭 선, 샤케드 브로디, 옐로우 우리, 하다르 토자리에, 아담 로버츠, 형원 청, 재성 태, 제이슨 팡, 오피르 프레스, 콩롱 리, 디팍 나라이안, 하딤 부르푸네, 제라드 캐스퍼, 제프 라슬리, 막스 라비닌, 마얀크 미슈라, 민지아 장, 모하마드 쇼이비, 미리암 캐스퍼, 제프 라슬리, 막스 라비닌, 마얀크 미슈라, 민지아 장, 모하마드 쇼이비, 미리암 페루네트, 니콜라 파트리, 노우아메드 바루와, 아만프레아 싱, 아나스타시아 체베라타, 브라벡, 이마네 벨로, 이샤니 대시, 강지현, 존 지오르기, 조나스 골드, 호세 다비드 포사다, 카르티크 랑가사이 시바만, 로케시 불찬다니, 루 류, 루이사 신자토, 마리아 아 카스티요, 마데익 랑가사이 시바만, 마라이코 다이크타니, 마라이코 다이크타니, 루 리우, 루이사 신자토, 마리아 아카스티요, 마티아스 아카스티요, 미할지치, 미나 리우, 모리츠 프레이댕크, 로버트 마르틴, 로드리고 카날리, 라미야 카날리, 니콜라우 무엘너, 파스칼 풍, 패트릭 홀러, 라미야 카날리, 니콜라우 미슈라, 시드 키블랑, 시몬 오트, 시네 상아룬시리, 스리시 구마르, 스테판 슈베르, 수실 바라티, 탄마이에 쿠사, 테오 기간트, 토모야 카이누마, 우지크 쿠사, 야니스 라브락, BLOOM: 176B-파라미터 오픈 액세스 다국어 언어 모델, 2023.
+* Shi et al.(2022) Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das, and Jason Wei. 언어 모델은 2022년 다국어 사상 추론기입니다.
+* Shliazhko et al.(2022) Oleh Shliazhko, Alena Fenogenova, Maria Tikhonova, Vladislav Mikhailov, Anastasia Kozlova, and Tatiana Shavrina. mGPT: Few-Shot Learners Go Multilingual, 2022.
+* Shoeybi et al. (2019) Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. 메가트론-LM: 모델 병렬성을 사용하여 수십억 개의 매개변수 언어 모델을 학습합니다. _ arXiv preprint arXiv:1909.08053_, 2019.
+* Dai et al.(2022) Andrew M. Dai Slav Petrov, Yonghui Wu 및 기타 PaLM 2 Technical Report, 2023. URL [https://ai.google/static/documents/palm2techreport.pdf](https://ai.google/static/documents/palm2techreport.pdf).
+* Smith et al. (2022) Shaden Smith, Mostofa Patwary, Brandon Norick, Patrick LeGresley, Samyam Rajbhandari, Jared Casper, Zhun Liu, Shrimai Prabhumoye, George Zerveas, Vijay Korthikanti, Elton Zheng, Rewon Child, Reza Yazdani Aminabadi, Julie Bernauer, Xia Song, Mohammad Shoeybi, Yuxiong He, Michael Houston, Saurabh Tiwary, and Bryan Catanzaro. DeepSpeed와 Megatron을 사용하여 Megatron-Turing NLG 530B를 훈련하는 대규모 생성 언어 모델입니다. _ CoRR_, abs/2201.11990, 2022. URL [https://arxiv.org/abs/2201.11990](https://arxiv.org/abs/2201.11990).
+* Su et al.(2021) Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, and Yunfeng Liu. Roformer: Rotary Position Embedding을 가진 Enhanced Transformer. _ arXiv preprint arXiv:2104.09864_, 2021.
+* Suzgun et al. (2022) Mirac Suzgun, Nathan Scales, Nathanael Scharli, Sebastian Gehrmann, Yi Tay, Hyung Won Chung, Aakanksha Chowdhery, Quoc V. 레, 에드 치, 데니 저우, 제이슨 웨이 큰 벤치 과제들과 고민의 사슬이 그것들을 해결할 수 있는지 2022년.
+* Su et al.(2021)
+
+[MISSING_PAGE_FAIL:16]
