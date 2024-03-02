@@ -22,6 +22,7 @@
 | 2402.06196v2 | Large Language Models A Survey | [arXiv](https://arxiv.org/abs/2402.06196v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.06196v2) |
 | 2402.00838v3 | OLMo Accelerating the Science of Language Models | [arXiv](https://arxiv.org/abs/2402.00838v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.00838v3) |
 | 2401.16380v1 | Rephrasing the Web A Recipe for Compute and Data-Efficient Language Modeling | [arXiv](https://arxiv.org/abs/2401.16380v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.16380v1) |
+| 2401.08417v3 | Contrastive Preference Optimization Pushing the Boundaries of LLM Performance in Machine Translation | [arXiv](https://arxiv.org/abs/2401.08417v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.08417v3) |
 | 2401.01055v2 | LLaMA Beyond English An Empirical Study on Language Capability Transfer | [arXiv](https://arxiv.org/abs/2401.01055v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.01055v2) |
 | 2311.12023v2 | LQ-LoRA Low-rank Plus Quantized Matrix Decomposition for Efficient Language Model Finetuning | [arXiv](https://arxiv.org/abs/2311.12023v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.12023v2) |
 | 2304.08177v3 | Efficient and Effective Text Encoding for Chinese LLaMA and Alpaca | [arXiv](https://arxiv.org/abs/2304.08177v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2304.08177v3) |

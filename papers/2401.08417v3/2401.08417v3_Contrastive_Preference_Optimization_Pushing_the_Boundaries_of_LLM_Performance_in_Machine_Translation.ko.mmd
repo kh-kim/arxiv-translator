@@ -1,0 +1,405 @@
+대비 선호 최적화: 기계 번역에서 LLM 성능 경계 푸싱
+
+Haoran Xu
+
+Amr Sharaf
+
+Yunmo Chen
+
+Weiting Tan
+
+Lingfeng Shen
+
+벤저민 반 더렘
+
+Kenton Murray
+
+김영진
+
+동등한 기여. Microsoft에서 인턴을 하는 동안 작업을 수행 합니다. \ ({}^{\spadesuit}\)Johns Hopkins University \({}^{\diamondsuit}\)Microsoft. 상응성 : Haoran Xu \(<\)hxu6@jhu.edu\(>\), Kenton Murray \(<\)kenton@jhu.edu\(>\), Young Jin Kim \(<\)youki@microsoft.com\(>\).
+
+사례, 그림 1에서 볼 수 있듯이 일부 강력한 번역 모델이 금 참조보다 우수한 번역을 생성할 수 있다는 것을 알 수 있다. 둘째, SFT는 모델이 번역의 실수를 거부하는 것을 방지하는 메커니즘이 부족하다. 강력한 번역 모델은 고품질 번역을 생성할 수 있지만 간혹 번역의 일부를 생략하는 등 사소한 오류를 나타냅니다. _ 이러한 거의 완벽하지만 궁극적으로 결함이 있는 번역의 생산을 방지하는 것은 필수적이다. 이러한 문제를 해결하기 위해 본 논문에서는 특별히 선별된 선호도 데이터를 이용하여 ALMA 모델을 학습시키는 대조적 선호도 최적화(Contrastive Preference Optimization, CPO)를 소개한다. CPO 훈련 후 ALMA-R 모델은 GPT-4 및 WMT 경쟁 우승자와 일치하거나 심지어 능가하는 성능 수준을 달성하면서 현저한 개선을 보여준다.
+
+우리의 주요 기여는 다음과 같이 요약된다.
+
+**참조 Gold 또는 Gilded입니까?* * ALMA 모델에서 활용 되는 학습 데이터 (FLORES-200 데이터)에 대 한 심층 분석을 수행 했습니다. 우리는 참조 번역의 품질을 강력한 번역 모델에 의해 생성된 것과 세심하게 비교했다. 우리의 연구 결과는 많은 경우에 인간이 작성한 병렬 데이터의 품질이 시스템 생성 번역의 품질보다 훨씬 열등하다는 것을 보여준다. 이 관찰은 참조 번역 복제를 위한 훈련 모델이 가장 효과적인 접근법이 아닐 수 있으며 참조 기반 평가에 대한 의존도에 결함이 있을 수 있다는 중요한 통찰력을 강조한다.
+
+**SFT의 성능 경계 푸시** 메모리 효율성, 속도 및 결정적으로 번역 품질 개선의 향상된 효과 측면에서 이점을 제공하는 대비 선호 최적화를 소개합니다. CPO는 SFT의 참조 모방 학습 과정에 내재된 성능 병목 현상을 깨고, SFT 학습을 통해 포화에 도달한 모델의 성능 경계를 밀어낸다.
+
+**기본 설정 데이터** 기계 번역 영역에 대 한 고품질 기본 설정 데이터를 빌드 하 고 릴리스 합니다.
+
+2 골드? 아님 골드? 금 기준 품질 평가
+
+대상 참조의 중요성은 기계 번역 작업에서 가장 중요하다. 기계 번역 작업에 대한 학습 모델의 패러다임은 모델이 예측된 출력과 금 참조 사이의 차이를 최소화하기 위해 정의된 손실을 사용하여 일반적으로 최적화되기 때문에 참조의 품질에 크게 의존한다. 데이터세트 \(\mathcal{D}\)는 소스 문장 \(x\)과 그에 대응하는 타겟 문장(금 참조) \(y\)으로 표현되며, \(\mathcal{D}=\left\{x^{(i)},y^{(i)}\right\}_{i=1}^{N}\로 표현되며, 여기서 \(N\)은 병렬 문장의 총 개수이다. 이러한 병렬 문장에 대한 음의 로그 우도 손실은 \(\theta\)에 의해 파라미터화된 모델 \(\pi_{\theta}\)과 관련하여 다음과 같이 정의된다:
+
+\[\mathcal{L}_{\text{NLL}}=-\mathbb{E}_{(x,y)\sim\mathcal{D}}[\log\pi_{\theta}(y |x)]. \tag{1}\]
+
+따라서, 효과적으로 번역하는 모델들의 능력은 고품질 번역 쌍들의 가용성에 좌우된다(Xu 등, 2023; Maillard 등, 2023). 또한, BLEU(Papineni et al., 2002) 및 COMET-22(Rei et al., 2022)와 같은 널리 퍼진 평가 도구는 주로 참조 기반 메트릭에 의존한다. 그러나, 이러한 평가들의 정밀도는 표준 이하의 참조들에 민감하고 손상된다(Kocmi et al., 2023; Freitag et al., 2023). 최근 연구(Xu et al., 2023; Kocmi et al., 2023; Freitag et al., 2023)는 병렬 데이터 세트의 품질을 평가하는 것에 대한 관심을 이동시켰으며, 이는 타겟 참조가 일관되게 최고 품질을 나타내지 않을 수 있음을 나타낸다. 그림 2에서는 FLORES-200 데이터 세트의 번역 예를 취하고 골드 참조 번역을 최상의 ALMA 모델 및 GPT-4의 출력과 비교한다. 이 비교는 골드 참조가 정보의 일부를 생략하기 때문에 결함이 있는 번역인 반면 시스템이 생성한 출력은 우수한 품질을 보여준다. 이렇게 하면 다음과 같은 질문이 표시됩니다. _참조(인간이 작성했음에도 불구하고 참조)가 진정으로 금본위제와 동등합니까?_ 금본위제 참조와 현대 고성능 번역 모델의 출력 모두의 품질을 철저히 평가하기 위해,
+
+그림 1: GPT-4 및 WMT 승자와 같은 최고 성능의 번역 시스템뿐만 아니라 최근에 출시된 다른 13B LLM 기반 모델과 제안된 모델 ALMA-13B-R을 특징으로 하는 성능 비교. 이 평가는 독일어, 체코어, 중국어, 러시아어에 대한 영어 번역과 영어 번역을 포함하는 8가지 방향에 걸친 WMT의 22 테스트 데이터를 다룬다. 점수는 wmt23-cometkiwi-da-xxl, XCOMET-XXL 및 wmt22-cometkiwi-da의 세 가지 다른 참조 없는 모델에 의해 평균화되고 모든 방향에 걸쳐 평균화된다. 금 참조는 참조 없는 접근법으로 인해 평가되기도 한다. 제안된 CPO 방법을 사용하여 ALMA-13B-LoRA를 추가로 훈련하여 개발된 우리의 모델 ALMA-13B-R은 가장 진보된 번역 모델과 일치하거나 능가한다. 부록 A의 그림에 제시된 모든 시스템에 대한 상세한 수치 데이터를 보여준다.
+
+본 논문에서는 참조 없는 평가 프레임워크를 사용하여 이러한 결과를 평가하는 것을 제안한다.
+
+**모델** ALMA-13B-LoRA2의 번역 출력과 가장 최근의 GPT-4(gpt-4-1106-미리 보기)의 제로 샷 번역을 조사합니다. 이러한 출력의 품질을 평가하기 위해 각각 10B 매개변수 크기를 가지며 인간 판단과 매우 높은 상관 관계를 보여주는 최신 및 가장 큰 참조 없는 모델 중 두 가지를 사용한다(Freitag 등, 2023). 이러한 모델은 Unbabel/wmt23-cometkiwi-da-xxl (이하, **K1WI-XXL** 이라고 함) (Rei 등, 2023) 및 Unbabel/XCOMET-XXL (이후, **XCOMET** 이라고 함)입니다 (Guerreiro 등, 2023).
+
+각주 2: ALMA-13B-LoRA는 ALMA 계열에서 최고의 13B 번역 모델이다. 처음에는 단일 언어 데이터에 대해 _전체 가중치_ 미세 조정을 거친 다음 _낮은 순위 적응_(LoRA)(Hu 등, 2022)을 사용하여 고품질 인간 작성 병렬 데이터에 대해 미세 조정을 거칩니다.
+
+**데이터** 골드 참조를 모델에 의해 생성된 출력과 비교하기 위해 개발 및 테스트 데이터를 모두 포함하는 고품질 및 인간 작성 FLORES-200 데이터 세트(NLLB TEAM 등, 2022)를 고려한다. ALMA-13B-LoRA와 GPT-4를 사용하여 5개의 영어 중심 언어 쌍에 걸쳐 번역을 수행하여 영어 및 영어로의 번역을 모두 포함했다. 이 쌍에는 독일어(de), 체코어(cs), 아이슬란드어(is), 중국어(zh), 러시아어(ru)가 포함되며 아이슬란드어는 자원 부족 언어로 분류되고 나머지는 자원 부족 언어로 분류된다.
+
+**Prompt** ALMA 모델을 사용하여 번역을 생성하는 데 사용된 프롬프트는 Xu 등(2023)에서 사용된 프롬프트와 일치합니다. GPT-4 번역 생성을 위해 Hendy et al.(2023)이 제시한 지침을 따른다. 이러한 프롬프트의 세부 사항은 부록 B에 자세히 설명되어 있다.
+
+**모델 출력이 더 나은 참조가 될 수 있음** 표 1에서 금 참조, ALMA-13B-LoRA 출력 및 GPT-4 출력에 대한 K1WI-XXL 및 XCOMET의 평가 점수를 제시한다. 또한 모델 출력이 금본위제 참조를 초과하는 경우의 비율을 반영하여 _승률_을 보고합니다. 이러한 메트릭은 5개 언어에 걸쳐 평균으로 계산됩니다. 놀랍게도, 고품질 Flores-200 데이터셋과 비교하더라도 xx\(\rightarrow\)en 번역에서 번역 모델의 평균 성능은 참고문헌의 평균 성능을 크게 상회하여 K1WI-XXL에서 약 3-4 포인트 증가, XCOMET에서 약 4-6 포인트 이득을 보였다. 특히, 출력의 상당 부분은 K1WI-XXL(예: ALMA의 경우 **73.24%**)에 의해 참조보다 높게 평가되며, XCOMET(ALMA의 경우 **60.17%**)를 사용하여 평가할 때 약간 감소했지만 여전히 상당한 비율이 평가된다. En\(\rightarrow\)xx 방향에서는 참조 변환과 두 시스템 사이의 전체 성능이 비슷하지만 약 40%는 여전히 참조 변환보다 우수한 것으로 간주된다.
+
+**동기: 모델 거부 학습 도움말** 앞서 언급한 결과는 고급 모델에 의해 생성된 번역이 간혹 금본위제 참조 품질을 능가할 수 있음을 보여줍니다. 이는 그러한 자료를 어떻게 효과적으로 활용할 것인가의 문제를 제기한다. 간단한 접근법은 출처와 우수한 번역을 참조로 사용하여 모델을 미세 조정하는 것을 포함한다. 이것은 모델의 번역 능력을 향상시킬 수 있지만, 모델에는 그림 2에 묘사된 "좋지만 완벽하지 않은" 번역으로 예시되는 최적이 아닌 번역을 식별하고 생성하는 것을 피하기 위한 분별력이 갖추어지지 않는다. 결과적으로, 이러한 상황은 단단한 부정적인 예를 가진 대조적 학습 스타일로, 고품질 번역의 생성을 우선시하고 더 적은 번역을 거부하는 모델을 지시하는 새로운 훈련 목표를 개발하도록 동기를 부여한다(Oord et al., 2018; Chen et al., 2020; He et al., 2020; Robinson et al., 2021; Tan et al., 2023). 이 목표는 단순히 참조를 향한 교차 엔트로피 손실을 최소화하는 것에 대한 전통적인 초점을 넘어 이동한다.
+
+## 3 대조적 선호도 최적화
+
+우수한 번역을 육성하고 열등한 번역을 거부하는 목적을 배우기 위해 레이블이 지정된 선호도 데이터에 액세스하는 것은
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline  & K1WI-XXL & Win Ratio (\%) & XCOMET & Win Ratio (\%) \\ \hline \multicolumn{5}{c}{_Translating to English_ (xx\(\rightarrow\)en)} \\ \multicolumn{5}{c}{Reference} & 85.31 & 85.82 & - \\ ALMA-13B-LoRA & 88.33 & 73.24 & 92.68 & 60.17 \\ GPT-4 & 89.21 & 79.43 & 94.66 & 54.25 \\ \hline \multicolumn{5}{c}{_Translating from English_ (xx\(\rightarrow\)xx)} \\ \multicolumn{5}{c}{_Translessential, yet such data is scarce in machine translation. In this section, we first describe the construction of our preference data and then introduces a preference learning technique, contrastive preference optimization (CPO).
+
+### Triplet Preference Data
+
+본 논문에서는 선호도 데이터를 구성하는 방법 \(\mathcal{D}\)에 대해 자세히 설명한다. 이 데이터세트는 FLORES-200 데이터(개발 및 테스트 세트 모두)를 사용하여 개발되며 섹션 2에서 논의된 것과 동일한 언어 쌍을 포함한다. 각 언어 쌍에 대해 데이터세트는 2009 병렬 문장을 포함한다.
+
+주어진 소스 문장 \(x\)에 대해 GPT-4와 ALMA-13B-LoRA를 모두 사용하여 각각의 번역을 생성하며, 이는 \(y_{\text{grt-4}}}\)와 \(y_{\text{alma}}}\)로 표시된다. 원래 대상 참조 \(y_{\text{ref}}\)와 함께 입력 \(x\)에 대한 세 가지 다른 번역 출력을 나타내는 트리플렛 \(\mathbf{y}=(y_{\text{ref}},y_{\text{grt-4}},y_{\text{alma}})\를 형성한다. 참조 없는 평가 모델 KIWI-XXL과 XCOMET을 사용하여 평균 점수를 \(\mathbf{s}=(s_{\text{ref}},s_{\text{grt-4}},s_{\text{alma}})\로 표시한다. 3 가장 높은 점수를 받은 번역은 선호 번역 \(y_{w}\), 가장 낮은 점수를 받은 번역은 선호 번역 \(y_{l}\), 즉 \(y_{w}=\mathbf{y}_{\arg\max_{i}(\mathbf{s})},y_{l}=\mathbf{y}_{\arg\min_{i}(\mathbf{s})}\로 표시되며, 여기서 \(i\)는 트리플렛의 인덱스를 나타낸다. 중간 점수를 가진 번역은 고려하지 않는다. 이러한 선택 프로세스의 예시적인 예가 그림 3에 묘사되어 있다. 선호되지 않는 번역조차도 고품질일 수 있다는 점에 유의하는 것이 중요하다. '비선호'라는 명칭은 아마도 사소한 세부 사항의 추가를 통해 여전히 개선의 여지가 있음을 나타낸다. 고품질이지만 결함이 없는 번역을 선호되지 않는 데이터로 사용하는 이러한 접근법은 생성된 번역에서 세부 사항을 개선하고 완벽성을 달성하기 위해 모델을 훈련하는 데 도움이 된다.
+
+각주 3: XCOMET 또는 KIWI-XXL만을 사용하는 것과 같은 상이한 평가 모델을 사용하는 것의 영향은 섹션 5.1에서 탐색된다.
+
+### CPO Objective 도출
+
+우리는 직접 선호 최적화(DPO)의 분석을 시작으로 CPO 목표의 도출에 대해 논의한다(Rafailov et al., 2023). DPO는 인간 피드백(RLHF)으로부터의 강화 학습에서 활용되는 보다 직접적인 최적화 목표를 나타낸다(Ziegler et al., 2019; Ouyang et al., 2022). 원문 \(x\)이 주어졌을 때, 선호하는 번역 대상 \(y_{w}\) 및 덜 선호하는 문장 \(y_{l}\)과 함께, 우리는 \(\mathcal{D}=\left\{x^{(i)},y_{w}^{(i)},y_{l}^{(i)}\right\}_{i=1}^{N}\로 표시된 정적 비교 데이터 세트에 액세스할 수 있다. DPO에 대한 손실 함수는 매개변수화된 정책에 대한 최대 우도 목적으로 구성됩니다 \(\pi_{\theta}\):
+
+\[\mathcal{L}(\pi_{\theta};\pi_{\text{ref}})= -\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\sigma \Big{(}\beta\log\frac{\pi_{\theta}(y_{w}|x)}{\pi_{\text{ref}}(y_{w}|x)}\] \[-\beta\log\frac{\pi_{\theta}(y_{l}|x)}{\pi_{\text{ref}}(y_{l}|x)}\Big{]}, \tag{2}\
+
+여기서, \(\pi_{\text{ref}}\)는 사전 훈련된 언어(번역) 모델 \(\sigma\)는 시그모이드 함수이고, \(\beta\)는 하이퍼파라미터이다. DPO 훈련은 레이블이 지정된 선호도 데이터에만 의존하고 에이전트와 환경 간의 상호 작용이 필요하지 않기 때문에 감독된 미세 조정 스타일로 수행할 수 있다.
+
+그러나 DPO는 일반적인 SFT에 비해 눈에 띄는 단점이 있다. 첫째, DPO는 **메모리가 부족함**: 매개 변수화된 정책과 참조 정책을 동시에 저장하려면 메모리 용량의 두 배가 필요합니다. 둘째, **속도 부족**: 두 정책에 대해 모델을 순차적으로 실행하면 처리 시간이 두 배로 늘어납니다. 이러한 비효율성을 해결하기 위해 대비 선호 최적화를 도입합니다.
+
+메모리 비효율성은 \(\pi_{\text{ref}}}(y_{w}|x)\)와 \(\pi_{\text{ref}}(y_{l}|x)\)의 항이 서로 상쇄됨에 따라 \(\pi_{\text{ref}}}(y_{l}|x)\)를 균일한 이전 \(U\)로 설정할 때 해결될 수 있다. 이는 정책 모델 자체를 넘어 추가적인 계산 및 스토리지의 필요성을 무효화한다. 따라서, 우리는 처음에 DPO 손실이 균일한 참조 모델을 사용하여 효과적으로 근사화될 수 있음을 입증한다:
+
+\[\mathcal{L}(\pi_{\theta};U)= -\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\sigma \Big{(}\beta\log\pi_{\theta}(y_{w}|x)\] \[-\beta\log\pi_{\theta}(y_{l}|x)\Big{)}\Big{]}. \tag{3}\
+
+구체적으로, 우리는 부록 C에서 아래 정리를 증명한다.
+
+**정리 1**.: _\(\pi_{\text{ref}}\)를 원하는 데이터의 실제 데이터 분포와 정확하게 정렬하는 이상적인 정책인 \(\pi_{w}\로 정의하면 DPO 손실 \(\mathcal{L}(\pi_{\theta};\pi_{w})+C\)는 \(\mathcal{L}(\pi_{\theta};U)\로 상한이 되며, 여기서 \(C\)는 상수입니다._
+
+식 3의 근사치는 DPO 손실의 상부 경계를 최소화하므로 효과적이다. 증거
+
+그림 3: 참조가 없는 모델에 의해 평가된 각각의 점수와 함께 모델이 생성되거나 참조에서 파생된 번역의 삼중항이다. 주어진 소스 문장에 대해, 가장 높은 점수를 갖는 번역은 선호 번역으로 지정되고, 가장 낮은 점수를 갖는 번역은 비선호된 것으로 간주되며, 중간 점수를 갖는 번역은 무시된다.
+
+relies on the important assumption of \(\pi_{\text{ref}}=\pi_{w}\). \(\pi_{\text{ref}}\)가 초기 SFT 체크포인트로 설정되는 일반적인 관행과 달리, 우리의 접근법은 그것을 우리가 도달하고자 하는 이상적인 정책으로 간주한다. 이상적인 정책 \(\pi_{w}\)은 모델 훈련 동안 알려지지 않고 달성할 수 없지만, 근사치 이후의 손실에는 관여하지 않는다.
+
+또한, \(\pi_{\theta}\)가 선호되는 데이터 분포를 벗어나지 않도록 하기 위해 행동 복제(BC) 정규화기(Hejna et al., 2023)를 통합한다:
+
+\[\min_{\theta}\mathcal{L}(\pi_{\theta},U)\] \[\text{s.t.}\ \mathbb{E}_{(x,y_{w})\sim\mathcal{D}}\Big{[}\mathbb{KL}( \pi_{w}(y_{w}|x)||\pi_{\theta}(y_{w}|x))\Big{]}<\epsilon, \tag{4}\
+
+여기서 \(\epsilon\)는 작은 양의 상수이고 \(\mathbb{KL}\)는 Kullback-Leibler(KL) 발산이다. 정규화기는 선호되는 데이터에 SFT 항을 추가하는 것으로 귀결될 수 있다(부록 C에 상세한 설명이 제공된다):
+
+\[\min_{\theta}\underbrace{\mathcal{L}(\pi_{\theta},U)}_{\mathcal{L}_{\text{ prefer}}}\underbrace{-\mathbb{E}_{(x,y_{w})\sim\mathcal{D}}[\log\pi_{\theta}(y_{w}|x)]}_{\mathcal{L}_{\text{KL}}}. \tag{5}\]
+
+이는 CPO 손실의 공식화로서 하나의 선호 학습 용어 \(\mathcal{L}_{\text{prefer}}\)와 하나의 음의 로그 우도 용어 \(\mathcal{L}_{\text{NLL}}\)를 포함한다.
+
+## 4 Experiments
+
+### Data
+
+2절에 이어, 우리는 논문에서 cs+en, de+en, is+en, zh+en, ru+en의 10가지 번역 방향을 고려한다. 본 연구는 ALMA 모델(Xu et al., 2023)을 기반으로, 소량의 고품질 데이터가 인상적인 번역 결과를 얻을 수 있다는 통찰을 바탕으로, 우리의 훈련 데이터 세트는 훨씬 더 컴팩트하다. 섹션 3.1에서 자세히 설명된 바와 같이, 우리의 선호 훈련 데이터는 ALMA 모델의 훈련에도 사용된 FLORES-200 데이터 세트로부터 파생된다. 이는 총 \(2\text{K}\times 10\) 방향 \(=20\text{K}\) 쌍을 이루는 문장으로 귀결된다. 대규모 평가 모델에 의해 평가된 선호도 데이터에 더하여, 우리의 데이터 세트는 인간의 선호와 함께 선호 및 비선호 번역을 포함하는 1K개의 내부 인간 라벨 선호도 데이터를 통합한다. 그러나 인간 라벨 데이터는 인간의 선호와 함께 선호 및 비선호 번역을 포함하는 2개의 번역 방향으로 제한된다. 인간 라벨 데이터의 구성 및 영향에 대한 세부 사항은 부록 D.4 (2023)에서 Xu et al.과 정렬하여, 다른 언어에 대한 WMT'21 및 WMT'22에서 도출된 테스트 세트에 초점을 맞춘다. 또한, 우리는 WMT'23에 대해 de+en, zh+en 및 ru+en의 6가지 방향을 포함하는 보조 실험을 수행한다.
+
+각주 4: TL;DR: 이 인간 라벨 데이터의 영향에 대한 간략한 개요는 최소한의 효과를 시사한다.
+
+### Training Setup
+
+ALMA-13B-LoRA를 초기 체크포인트로 시작하여 _many-to-many_ 다국어 기계 번역 방식으로 모델을 훈련한다. 훈련 단계에서는 추가된 LoRA 매개변수의 가중치를 업데이트하는 데에만 초점을 맞춥니다. 이러한 가중치는 16의 순위를 가지며 모델의 원래 13B 크기에 추가 12M 파라미터만 추가한다. 우리는 Rafailov et al. (2023)이 제안한 0.1의 기본 \(\beta\) 값을 고수한다. ALMA-13B-LoRA의 미세 조정 프로세스는 배치 크기 128, 웜업 비율 0.01, 단일 에폭에 걸쳐 있으며 최대 길이가 512 토큰인 시퀀스를 수용한다. 훈련 효율을 최적화하기 위해, 우리는 딥 스피드 툴(Rasley et al., 2020)을 통합한다. 우리는 Xu et al.(2023)과 동일한 프롬프트를 사용하며 프롬프트에 대한 손실을 계산하지 않는다. 우리의 주요 초점은 13B 모델의 성능에 있지만 CPO는 7B 모델에도 현저한 이점을 제공한다. 결과적으로 ALMA-7B-R도 출시하고 부록 A에서 성능에 대한 자세한 논의를 제공한다.
+
+### Baselines
+
+**SoTA 모델** 이 범주에서 벤치마크는 우리가 아는 한 공개적으로 사용할 수 있는 가장 강력한 번역 모델에 대해 설정됩니다. 우리는 먼저 WMT'21 및 WMT'22 모두에서 NLLB-54B와 같은 주목할만한 기존 모델을 능가하는 최상위 중간 크기 언어 모델 기반 번역 시스템 중 하나로 인식되는 **ALMA-13B-LoRA** 와 비교한다. 또한, 최근에 출시된 LLM 기반 번역 모델 및 해당 분야의 현대 작업인 **TowerInstruct5** 와도 비교한다. 또한, 현재 모든 LLM 기반 번역 시스템 중 최고의 번역 모델로 보여지는 최신 **GPT-4** (gpt-4-1106-preview)의 제로 샷 성능에 대해 평가한다(Xu 등, 2023; Zhang 등, 2023; Zeng 등, 2023; Jiao 등, 2023). 마지막으로, 우승 모델은 언어 방향에 따라 다르다는 점에 주목하지만 경쟁 내에서 번역 모델의 최고 표준을 나타내는 **WMT 경쟁 우승자**와의 비교를 포함한다.
+
+각주 5: [https://huggingface.co/datasets/Unbabel/TowerBlocks-v0.1](https://huggingface.co/datasets/Unbabel/TowerBlocks-v0.1).
+
+각주 6: TowerInstruct는 훈련에 WMT의 22 테스트 데이터를 사용했기 때문에 WMT의 22 테스트 데이터 세트의 비교에서 제외한다.
+
+**SFT 및 DPO** 다른 교육 목표도 비교합니다. CPO가 선호 데이터를 향해 학습을 조정하도록 설계되었다는 점을 감안할 때, 간단한 벤치마크는 동일한 선호 데이터 세트에서 직접 SFT와 성능을 비교하는 것이다. 또한 CPO가 DPO의 진화라는 점을 고려하여 DPO와의 비교 분석도 포함한다.
+
+### WMT'21 및 WMT'22 결과
+
+우리는 각각 표 2와 표 3에서 en\(\rightarrow\)xx와 xx\(\rightarrow\)en에 대한 주요 결과를 제시한다. 금 참조의 신뢰성에 의문을 제기하고 품질이 좋지 않은 참조에 의해 평가가 손상될 수 있음을 강조하는 섹션 2의 분석 때문에 주로 참조 없는 평가 모델에 중점을 둔다(Kocmi 등, 2023; Freitag 등, 2023). 이러한 모델에는 KIWI-XXL, XCOMET 및 더 작지만 인기 있는 모델인 Unbabel/wmt22-cometkiwi-da(이하 **KIWI-22** 라고 함)가 포함됩니다. **굵게** 표시된 점수는 모든 시스템에서 달성된 가장 높은 점수를 나타냅니다. 포괄적인 비교를 위해 부록 A의 sacreBLEU(Post, 2018) 및 COMET-22(Unbabel/wmt22-comet-da)(Rei 등, 2022)를 사용한 참조 기반 평가도 포함한다.
+
+**SoTA 모델과의 비교** ALMA-13B-LoRA가 최상위 중간 크기 LLM 번역 모델 중 하나로 순위를 매기는 동안 GPT-4 및 WMT 경쟁 승자 뒤로 약간 이동합니다. 그러나 CPO의 통합은 ALMA의 능력을 크게 향상시켜 GPT-4 및 WMT 수상자와 비슷하거나 심지어 능가하는 수준으로 성과를 올린다. 예를 들어, ALMA-13B-R은 KIWI-XXL에서 평균 85.74, XCOMET에서 en\(\rightarrow\)xx 번역에서 94.05의 점수를 얻었다. 이 점수는 KIWI-XXL에서 83.83, XCOMET에서 93.23을 기록하는 GPT-4를 능가하며 WMT 수상자는 KIWI-XXL에서 84.81, XCOMET에서 93.78을 기록한다.
+
+**SFT 및 DPO와 비교** 본 연구의 모든 훈련 목표는 ALMA-13B-LoRA 모델을 기반으로 미세 조정됩니다. 표 2와 3에서 우리는 선호 데이터에 대한 SFT가 xx\(\rightarrow\)en에 대한 ALMA 모델의 번역 능력을 약간 향상시키고 en\(\rightarrow\)xx에 대해 약간의 열화를 초래한다는 것을 관찰한다. 유사하게, DPO는 모델 성능을 약간 감소시킨다. 대조적으로, CPO는 모든 번역 방향에 걸쳐 상당한 개선을 보여준다.
+
+### WMT'23 Results
+
+우리는 표 4의 여섯 방향 모두에 걸친 평균 결과를 보여주며, 공간 제약으로 인해 부록 G에서 각 방향의 성능을 제공한다. WMT'21 및 WMT'22의 관찰과 일치하게 ALMA-13B-R은 ALMA-13B-LoRA 및 TowerInstruct와 같은 현대 중간 크기의 LLM 기반 번역기를 능가하며 WMT 수상자와 일치하거나 초과한다.
+
+## 5 Analyses
+
+모든 분석에서는 WMT'21 및 WMT'22 테스트 세트를 사용하며 평균 성능이 보고된다.
+
+### 변환이 정말 나은가요, 아니면 그냥 Metric-Preferred인가요?
+
+본 연구에서는 선호되는 데이터가 참조 없는 모델에 의해 선택되고 동일한 모델이 평가에 사용되기 때문에 채점 과정에서 '부정'의 가능성을 조사한다. 구체적으로, 우리는 개선되었는지에 의문을 제기한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline  & \multicolumn{3}{c}{de} & \multicolumn{3}{c}{cs} & \multicolumn{3}{c}{is} \\ \cline{2-10} Models & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET \\ \hline Gold Reference & 82.67 & 84.01 & **97.85** & 83.19 & 81.83 & 90.27 & 80.51 & 85.20 & 91.52 \\ WMT Winners & **83.56** & 83.70 & 96.99 & 85.31 & **87.27** & **94.38** & 81.77 & 84.94 & 91.61 \\ GPT-4 & 83.48 & **84.91** & 97.56 & 84.81 & 85.35 & 93.48 & 81.03 & 81.21 & 90.00 \\ ALMA-13B-LoRA & 82.62 & 81.64 & 96.49 & 84.14 & 84.24 & 92.38 & 81.71 & 83.31 & 91.20 \\ + SFT on preferred data & 82.75 & 81.85 & 96.67 & 84.14 & 83.46 & 91.99 & 81.48 & 82.11 & 90.30 \\ + DPO & 82.40 & 81.20 & 96.40 & 83.86 & 83.45 & 91.68 & 81.43 & 82.66 & 90.33 \\ + CPO (Ours, ALMA-13B-R) & 83.28 & 84.25 & 97.48 & **84.99** & 87.06 & **93.61** & **82.18** & **85.68** & **91.93** \\ \hline \hline \end{tabular}
+\begin{tabular}{l c c c c c c c c} \hline \hline Models & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET \\ \hline Gold Reference & 80.92 & 81.70 & 90.42 & 82.96 & 84.62 & 94.17 & 82.05 & 83.47 & 92.85 \\ WMT Winners & 82.04 & 81.13 & 91.14 & **84.35** & 87.01 & 94.79 & **83.41** & 84.81 & 93.78 \\ GPT-4 & 81.73 & 81.53 & 90.79 & 83.64 & 86.15 & 94.3 & 82.94 & 83.83 & 93.23 \\ ALMA-13B-LoRA & 80.82 & 79.96 & 89.92 & 83.10 & 84.17 & 93.79 & 82.48 & 82.66 & 92.76 \\ + SFT on preferred data & 81.25 & 80.51 & 90.18 & 83.23 & 84.15 & 93.54 & 82.57 & 82.42 & 92.54 \\ + DPO & 80.74 & 79.64 & 89.58 & 82.94 & 83.40 & 93.25 & 82.27 & 82.07 & 92.25 \\ + CPO (Ours, ALMA-13B-R) & 82.25 & 84.32 & **92.03** & 83.98 & **87.37** & **95.22** & 83.34 & **85.74** & **94.05** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: WNT’21 및 WMT’22에 대한 en\(\rightarrow\)xx의 전체 결과. ALMA-13B-LoRA 모델을 미세 조정하기 위해 CPO 방법을 적용하면 WMT 경쟁 승자와 GPT-4의 성능과 동등하거나 능가하는 성능이 크게 향상된다. **굵은** 숫자는 모든 시스템에서 가장 높은 점수를 나타낸다. 진한 파란색 상자는 원래 ALMA 모델에 대한 개선이 인간 판단으로 _최소 80% 추정 정확도_ 를 달성함을 나타낸다(Kocmi 등, 2024). 특히, KIWI-XXL과 XCOMET의 경우 최소 \(\geq 1.24\), KIWI-22의 경우 \(\geq 0.53\)의 개선이 필요하다는 것을 알 수 있다. 추정 정확도에 대한 자세한 내용은 부록 F에 나와 있으며, 더 적은 개선이 얕은 파란색 상자에서 강조된다. 성능 저하에는 노란색 상자가 표시됩니다.
+
+번역 점수는 진정으로 더 나은 번역을 반영하거나 단순히 평가 모델의 선호도와 더 밀접하게 정렬된다. 이 조사는 두 부분으로 다루어진다.
+
+메트릭 수준에서 특정 메트릭(예: KIWI-XXL)이 선호하는 데이터에 대한 모델을 훈련하면 다른 메트릭에서 일관된 개선 효과가 발생하는지 조사합니다. 이를 조사하기 위해 KIWI-XXL 또는 XCOMET만을 사용하여 선호도 데이터를 재구성하고 CPO 방법을 사용하여 ALMA-13B-LoRA 모델을 재훈련한다. 표 5에 제시된 결과는 선호 데이터를 선택하는 데 사용되는 메트릭에 대한 유의한 편향을 나타내지 않는다. 선호하는 데이터를 선택하는 데 사용되는 특정 메트릭에 관계없이 모든 메트릭에서 유사하고 일관된 개선을 관찰했다. Comet-series 모델이 양의 상관 관계가 있을 수 있다는 점을 고려하여, 비-comet 메트릭인 BLEURT(Sellam et al., 2020)를 사용하여 ALMA-R을 추가로 평가하고, 또한 부록 H에서 상당한 개선을 관찰한다. 제3자 평가 메트릭의 포함은 ALMA-R의 우수한 번역 품질을 더욱 입증한다.
+
+방법 수준에서 우리는 메트릭 선호 데이터에 대한 훈련이 우리가 사용하는 방법에 관계없이 항상 해당 메트릭에 대한 더 나은 점수로 이어지는지 여부를 질문한다. 그러나 연결은 간단하지 않으며, 예를 들어 선호되는 데이터에 대한 SFT는 역설적으로 표 2와 같이 세 가지 메트릭 모두에 걸쳐 성능이 감소한다.
+
+결과적으로, 우리의 분석은 선호도 데이터를 구성하고 평가 목적으로 KIWI-XXL 및 XCOMET과 같은 참조 없는 모델을 사용하는 것의 견고성과 유효성을 지원하며, 이는 이 접근법에서 편향의 부재를 강조한다. 또한 표 5는 KIWI-XXL, XCOMET 또는 둘 다의 앙상블을 사용하는 것 사이의 선택이 결과에 최소한의 영향을 미친다는 것을 보여준다.
+
+### Ablation Study
+
+**CPO 손실 구성 요소** CPO 손실 함수는 선호도 학습을 위한 \(\mathcal{L}_{\text{prefer}}\)와 모델이 선호되는 데이터 분포에서 크게 벗어나지 않도록 하는 \(\mathcal{L}_{\text{NLL}}\의 두 구성 요소로 구성됩니다. 각 항의 중요성을 설명하기 위해 구성 요소 중 하나로만 모델을 다시 훈련한다. \(\mathcal{L}_{\text{NLL}}\)만으로 훈련하는 것은 선호되는 데이터에 대한 SFT의 기준 시나리오와 동일하다는 점에 유의하는 것이 중요하다. 그림 4의 왼쪽에서 볼 수 있듯이 두 항을 모두 포함하면 최적의 성능이 나오는 반면 둘 중 하나가 없으면 성능이 감소한다. 부록 I에서, 우리는 또한 \(\mathcal{L}_{\text{NLL}}}\)를 포함시키는 것을 보여준다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline  & KIWI-22 & KIWI-XXL & XCOMET \\ \hline Gold Reference & 78.74 & 75.56 & 86.30 \\ WMT Winners & **80.57** & 77.72 & 88.24 \\ TowerInfructr & 80.31 & 77.18 & 88.11 \\ ALMA-13B-LoRA & 79.48 & 76.00 & 87.16 \\ + CPG (Ours, ALMA-13B-K) & 80.55 & **78.97** & **89.74** \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 6가지 방향 모두에 걸쳐 WMT’23의 평균 성능이며, 가장 높은 점수는 굵게 강조되었다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline Models & \multicolumn{3}{c}{de} & \multicolumn{3}{c}{c} \(\texttt{c8}\) & \multicolumn{3}{c}{\(\texttt{1}\texttt{.8}\)} \\ \cline{2-10}  & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET \\ \hline Gold Reference & 78.74 & 78.56 & 88.82 & 82.08 & 83.11 & 84.60 & 80.88 & 85.04 & 76.16 \\ WMT Winners & 81.38 & 83.59 & 93.74 & 82.47 & 82.53 & 85.65 & 81.39 & 85.60 & 78.14 \\ GPT-4 & **81.50** & **84.58** & **94.47** & 82.52 & 83.55 & **88.48** & 81.49 & **85.90** & **81.11** \\ ALMA-13B-LoRA & 81.14 & 83.57 & 93.30 & 81.96 & 82.97 & 83.95 & 80.90 & 85.49 & 76.68 \\ + SPT on preferred data & 81.36 & 83.98 & 93.84 & 82.36 & 83.15 & **86.61** & 81.32 & 85.61 & 80.20 \\ + DPO & 81.13 & 83.52 & 93.25 & 81.82 & 82.69 & 83.84 & 80.89 & 85.22 & 76.09 \\ + CPO (Ours, ALMA-13B-R) & **81.50** & 83.97 & 94.20 & **82.63** & **83.75** & **88.03** & **81.57** & 85.73 & 80.49 \\  & \multicolumn{3}{c}{zh} & \multicolumn{3}{c}{tu} & \multicolumn{3}{c}{Avg.} \\ \cline{2-10}  & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET & KIWI-22 & KIWI-XXL & XCOMET \\ \hline Gold Reference & 77.09 & 74.19 & 90.70 & 80.74 & 79.59 & 88.56 & 79.91 & 80.10 & 85.77 \\ WMT Winners & 77.66 & 73.28 & 87.2 & 81.71 & 80.97 & 90.91 & 80.92 & 81.19 & 87.13 \\ GPT-4 & **79.33** & **77.65** & **92.60** & 81.57 & 81.34 & 90.95 & 81.28 & **82.60** & **89.41** \\ ALMA-13B-LoRA & 77.32 & 74.41 & 89.88 & 81.31 & 81.05 & 89.89 & 80.53 & 81.50 & 86.74 \\ + SFT on preferred data & 78.32 & 76.03 & 90.65 & 81.46 & 81.17 & 90.65 & 80.96 & 81.99 & 88.40 \\ + DPO & 77.50 & 74.50 & 89.94 & 81.19 & 80.88 & 89.76 & 80.51 & 81.36 & 86.58 \\ + CPO (Ours, ALMA-13B-R) & **79.24** & 77.17 & 91.65 & **81.72** & **81.54** & **91.18** & **81.33** & 82.43 & 89.11 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: WMT’21과 WMT’22에 대한 xx\(\rightarrow\)en의 전체 결과는 표 2와 같다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline Models for Building Preference Data & KIWI-22 & KIWI-XXL & XCOMET \\ \hline \multicolumn{3}{c}{_Translating to English_ (xx\(\rightarrow\)en)} \\ N/A (ALMA-13B-LoRA baseline) & 80.53 & 81.50 & 86.74 \\ KIWI-XXL & **81.33** & **82.59** & 88.82 \\ XCOMET & 81.27 & 82.33 & **89.17** \\ Ensemble of above (Original) & **81.33** & 82.43 & 89.11 \\ \hline \multicolumn{3}{c}{_Translating from English_ (en\(\rightarrow\)xx)} \\ N/A (ALMA-13B-LoRA baseline) & 82.48 & 82.66 & 92.76 \\ KIWI-XXL & 83.31 & **85.87** & 93.97 \\ XCOMET & 83.09 & 85.43 & **94.09** \\ Ensemble of above (Original) & **83.34** & 85.74 & 94.05 \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 선호도 데이터 생성을 위해 다양한 참조 없는 모델을 채택한 영향. 그 결과 KIWI-XXL, XCOMET 또는 이들의 조합 앙상블만을 사용하든 최종 성능 차이가 최소화됨을 알 수 있었다.
+
+DPO 손실은 상당한 개선을 가져온다.
+
+**기본 설정 데이터 구성 요소**: 기본 설정 데이터 선택에는 GPT-4, ALMA 및 골드 참조의 출력으로 구성된 트리플렛에서 선호되고 선호되지 않는 번역을 선택하는 것이 포함됩니다. 그림 4의 오른쪽에서 ALMA와 GPT-4에 의해 생성된 데이터의 중요성을 강조한다. 결과는 ALMA 데이터가 en\(\rightarrow\)xx 방향으로 제외될 때 성능의 현저한 감소를 나타낸다. 반대로 GPT-4 데이터를 생략하면 xx\(\rightarrow\)en 방향으로 성능이 크게 감소한다. 이는 두 시스템에 의해 생성된 데이터가 모델 성능을 향상시키는 데 유용한 역할을 한다는 것을 보여준다.
+
+### 선호되는 데이터의 품질?
+
+실험 설정에서 선호되지 않는 데이터는 강력한 번역 모델에서 비롯되지만 다른 두 번역 출력과 비교할 때 가장 낮은 점수를 받는다. 적절한 질문이 제기된다: 선호되지 않는 데이터의 품질이 모델 성능에 상당한 영향을 미치며, 고품질(불완전하긴 하지만) 선호되지 않는 데이터가 번역 개선에 도움이 될 수 있는가? 이를 탐색하기 위해 자연 유래 고품질 번역이 아닌 선호되지 않는 번역(\(y_{l}\))이 인위적으로 생성되는 새로운 선호도 데이터 세트를 구성했다.
+
+이 새로운 데이터 세트에서 선호 번역(\(y_{w}\))은 섹션 3.1과 동일한 방식으로 선택된 세 개의 번역 후보 중 가장 좋은 것으로 유지된다. 그러나 선호되지 않은 번역은 의도적으로 \(y_{w}\)의 노이즈 버전이 되도록 수정된다. Zeng et al.(2023)이 제안한 방법에 따라 확률 0.15인 단어의 무작위 삭제와 확률 0.3인 단어 스왑을 적용하였다. 이 접근법은 인위적인 더 나쁜 번역을 생성한다.
+
+표 6은 이러한 수동으로 노이즈가 제거된 선호 데이터와 자연적으로 발생하는 고품질 선호 데이터를 사용할 때의 성능을 비교한다. 결과는 선호되지 않는 데이터가 수동으로 노이즈 처리될 때 세 가지 메트릭과 두 번역 방향 모두에 걸쳐 성능이 크게 감소했음을 보여주며 번역 성능을 향상시키는 데 있어 선호되지 않는 데이터의 품질의 중요성을 강조한다.
+
+## 6 Conclusion
+
+이 연구에서 우리는 처음에 MT 작업에서 금 참조의 잠재적인 품질 문제를 제안하여 고급 번역 모델이 이러한 참조를 능가할 수 있는 사례를 강조했다. 이 발견은 SFT를 통한 모델 훈련뿐만 아니라 참조 기반 메트릭을 사용하는 평가 절차에 도전한다. 다음으로 DPO의 보다 효율적인 변형인 대비 선호 최적화를 소개한다. 이 방법은 모델 생성 데이터와 참조 데이터를 모두 활용하여 거의 완벽하지만 결함이 있는 번역을 피하고 우수한 번역을 학습하도록 모델을 안내한다. 개발된 모델인 ALMA-13B-R은 일치하는 최초의 중간 크기의 LLM 기반 번역 모델로 두드러지며, 경우에 따라 GPT-4 및 WMT 경쟁 승자의 성능을 능가하여 MT 분야에서 상당한 발전을 보였다.
+
+\begin{table}
+\begin{tabular}{c c c c} \hline \hline Dis-Preferred Data & KIWI-22 & KIWI-XXL & XCOMET \\ \hline \multicolumn{4}{c}{_Translating to English_ (xx\(\rightarrow\)en)} \\ Manually Noised & 81.01 & 82.18 & 88.23 \\ Natural (Ours) & **81.33** & **82.43** & **89.11** \\ \hline \multicolumn{4}{c}{_Translating from English_ (en\(\rightarrow\)xx)} \\ Manually Noised & 82.71 & 83.13 & 92.80 \\ Natural (Ours) & **83.34** & **85.74** & **94.05** \\ \hline \hline \end{tabular}
+\end{table}
+표 6: 노이즈 데이터를 선호하지 않는 데이터로 가장 낮은 점수를 받는 자연스럽고 고품질 번역과 대조하여 선호하지 않는 데이터 품질의 영향을 조사한다. 연구 결과는 선호되지 않는 데이터의 품질의 중요성을 강조한다.
+
+그림 4: **왼쪽:** CPO 손실 함수에서 개별 구성요소의 중요성을 평가하는 절제 연구, 특히 선호도 학습 손실 \(\mathcal{L}_{\text{prefer}}\) 및 로그 가능성 손실 \(\mathcal{L}_{\text{NLL}}\)이 각각 번역 성능을 향상시키는 데 어떻게 기여하는지 분석한다. **오른쪽:** 번역 트리플렛에서 각 구성 요소의 중요성을 평가하는 절제 연구. 선호 트리플렛에서 ALMA 또는 GPT-4 생성 데이터를 제외하고 모델을 재훈련함으로써 각각의 영향을 평가한다. 연구 결과는 en\(\rightarrow\)xx 번역에 대한 ALMA 생성 데이터와 xx\(\rightarrow\)en 번역에 대한 GPT-4 생성 데이터의 중요성을 강조한다.
+
+## Impact Statements
+
+본 논문은 기계번역 분야의 발전을 목표로 하는 작업을 제시한다. 우리의 작업에는 많은 잠재적인 사회적 결과가 있으며, 우리가 여기서 특별히 강조되어야 한다고 느끼는 것은 없다.
+
+## Acknowledgements
+
+우리는 히우 호앙, 마르신 준치스-다우문트, 후다 카이랄라, 탐메 고우다, 비카스 라우낙, 매트 포스트, 아눕 쿤추쿠탄, 로만 그룬드키에비츠, 필립 코엔, 하니 하산 아와달라, 아룰 메네스, 비샬 차우데리가 우리의 작업을 크게 풍요롭게 한 매력적이고 가치 있는 토론에 대해 깊은 감사를 표한다. 추정된 정확도에 의해 결정된 동적 임계값을 사용하여 수치 데이터 가시성을 향상시키기 위한 혁신적인 제안으로 톰 콕미에게 특별한 감사를 표한다. 우리의 감사함은 또한 CPO 이론에 대한 통찰력 있는 권고에 대해 푸시펜드르 라스토기와 조이 헤자나에게로 확장된다. 또한 비COMET 메트릭을 분석에 통합하는 데 대한 귀중한 조언에 대해 언바벨 팀을 인정합니다.
+
+## References
+
+* Almazrouei et al. (2023) Almazrouei, E., Alobeidli, H., Alshamsi, A., Cappelli, A., Cojocaru, R., Debbah, M., Goffinet, E., Heslow, D., Launay, J., Malartic, Q., Noune, B., Pannier, B., and Penedo, G. Falcon-40B: a open large language model with the state-of-the-art performance. 외부 링크: 2302.0214 인용: SS1.
+*T. 브라운만 라이더 Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G., Askell, et al. (2020)Language models are few-shot learners. Advances in neural information processing systems33, pp. 1877-1901. Cited by: SS1.
+*T. 천성호 콘블리스 Norouzi and G. Hinton (2020)A simple framework for contrastive learning of visual representation. In International conference on machine learning, pp. 1597-1607. Cited by: SS1.
+* Y. 천영 유범명 Chen, J. Xu, and J. Zhou (2023)Improving translation faithfulness of large language models via augmenting instructions. arXiv preprint arXiv:2308.12674. 인용: SS1.
+* A. Fan, S. Bhosale, H. Schwenk, Z. 마아엘키쉬키 고얄 오베인스 젤레비, G.원젝, V. Chaudhary, et al.(2021)Beyond English-centric multilingual machine translation. Journal of Machine Learning Research22, pp. 1-48. Cited by: SS1.
+* M. Freitag Mathur, C. Lo, E. Avramidis, R. 레이비톰슨 Kocmi, F. Blain, D. Deutsch, C. Stewart, C. Zerva, S. Castilho, A. Lavie, and G. Foster (2020)Results of WMT23 metrics shared task: metrics might guilty but references not innocent. In Proceedings of the Eighth Conference on Machine Translation, pp. 578-628. Cited by: SS1.
+* N. M. Guerreiro, R. Rei, D. van Stigt, L., P. Coheur, P. Colombo, and A. F. Martins (2023)xcomet: transparent machine translation evaluation through fine-grained error detection. arXiv preprint arXiv:2310.10482. 인용: SS1.
+* K. 허환환 우상욱 Xie, R. Girshick (2020)Momentum contrast for unsupervised visual representation learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pp.9729-9738. Cited by: SS1.
+* J. Hejna, R. Rafailov, H. Sikchi, C. Finn, S. Niekum, W. B. Knox, and D. Sadigh (2023)Contrastive preference learning: learning from human feedback without rl. arXiv preprint arXiv:2310.13639. 인용: SS1.
+* A. Hendy, M. 압델레힘 A. 샤라프 라우낙 가브, H. 마쓰시타, Y. J. 김민 Afify, H. Awadalla (2023) 기계 번역에서 gpt 모델은 얼마나 좋은가요? 종합평가. arXiv preprint arXiv:2302.09210. 인용: SS1.
+* E. J. Hu, S. yelong shen, P. Wallis, Z. 알렌주 이성훈 왕락 왕, 우. Chen (2022)LoRA: 대형 언어 모델의 저순위 적응. 국제 학습 표상 회의에서 외부 링크: 2202.08177: SS1 인용.
+* A. Q. Jiang, A. Sablayrolles, A. Mensch, C. Bamford, D. S. Chaplot, D. d. I. Casas, F. Bressand, G. Lample, L. Saulnier, et al. (2023)Mistral 7b. arXiv preprint arXiv:2310.06825. 인용: SS1.
+* W. 자오정황 왕지웅 허태 량석 왕성 Shi, Z. Tu(2020)ParroT: 인간 번역 및 피드백으로 튜닝된 대형 언어 모델을 사용하여 채팅 중에 번역. In Findings of the Association for Computational Linguistics: EMNLP 2023, pp. 15009-15020. 인용: SS1.
+* W. 차오원 황원 왕지웅 허태 량석 왕성 Shi, Z. Tu(2020)ParroT: 인간 번역 및 피드백으로 튜닝된 대형 언어 모델을 사용하여 채팅 중에 번역. In Findings of the Association for Computational Linguistics: EMNLP 2023, pp. 15009-15020. 인용: SS1.
+* W. 차오원 왕진황 Wang, Z. Tu (2023) 챗옵트가 번역을 잘 하나요? 예비 연구 arXiv preprint arXiv:2301.08745. 인용: SS1.
+
+* Kocmi et al. (2023) Kocmi, T., Avramidis, E., Bawden, R., Bojar, O., Dvorkovich, A., Federmann, C., Fishel, M., Freitag, M., Gowda, T., Grundkiewicz, R., Haddow, B., Koehn, P., Marie, B., Monz, C., Morishita, M., Murray, K., Nagata, M., Nakazawa, T., Popel, M., Popovic, M., and Shmatova, M. 기계 번역(WMT23)에 관한 2023년 회의의 결과: LLM은 여기 있지만 아직 거기까지는 아니다. Koehn, P., Haddow, B., Kocmi, T., and Monz, C. (eds.), _Proceedings of the Eighth Conference on Machine Translation_, pp. 1-42, Singapore, December 2023. Association for Computational Linguistics. URL [https://aclanthology.org/2023.wmt-1.1](https://aclanthology.org/2023.wmt-1.1).
+* Kocmi et al. (2024) Kocmi, T., Zouhar, V., Federmann, C., and Post, M. 메트릭 미로 탐색: 점수 크기와 정확도를 조정합니다. _ arXiv preprint arXiv:2401.06760_, 2024.
+* Kudugunta et al. (2023) Kudugunta, S., Caswell, I., Zhang, B., Garcia, X., Choquette-Choo, C. A., Lee, K., Xin, D., Kusupati, A., Stella, R., Bapna, A., and Firat, O. Madlad-400: 다국어 및 문서 수준의 대규모 감사 데이터 세트, 2023.
+* Li et al.(2023) Li, J., Zhou, H., Huang, S., Chen, S., and Chen, J. Eliciting the translation ability of large language models via multilingual finetuning with translation instructions _ arXiv preprint arXiv:2305.15083_, 2023.
+* Maillard et al. (2023) Maillard, J., Gao, C., Kalbassi, E., Sadagopan, K. R., Goswami, V., Koehn, P., Fan, A., and Guzman, F. Small data, big impact: Leveraging minimal data for effective machine translation. Rogers, A., Boyd-Graber, J., and Okazaki, N. (eds.), _Proceedings of the 61th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pp. 2740-2756, Toronto, Canada, July 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.acl-long.154. URL [https://aclanthology.org/2023.acl-long.154](https://aclanthology.org/2023.acl-long.154)
+* NLLB TEAM 등(2022) NLLB TEAM, Costa-jussa, M. R., Cross, J., Celebi, O., Elbayad, M., Heafield, K., Heffernan, K., Kalbassi, E., Lam, J., Licht, D., Maillard, J., et al. No language left behind: Scaling human-centered machine translation _ arXiv preprint arXiv:2207.04672_, 2022.
+* Oord 등 (2018) Oord, A. v. d., Li, Y., and Vinyals, O. 대비 예측 코딩을 사용한 표현 학습입니다. _ arXiv preprint arXiv:1807.03748_, 2018.
+* OpenAI (2023) OpenAI. Gpt-4 기술 보고서, 2023년
+* Ouyang et al.(2022) Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. Training language models to follow instructions with human feedback. _ Advances in Neural Information Processing Systems_, 35:27730-27744, 2022.
+* Papineni et al. (2002) Papineni, K., Roukos, S., Ward, T., and Zhu, W. J Bleu: 기계 번역의 자동 평가를 위한 방법. Isabelle, P., Charniak, E., and Lin, D. (eds.), _Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics_, pp. 311-318, Philadelphia, Pennsylvania, USA, July 2002. Association for Computational Linguistics. doi: 10.3115/1073083.1073135. URL [https://aclanthology.org/P02-1040](https://aclanthology.org/P02-1040).
+* Post (2018) Post, M. BLEU 점수 보고의 명확성을 요구합니다. In _Proceedings of the Third Conference on Machine Translation: Research Papers_, pp. 186-191, Brussels, Belgium, October 2018. Association for Computational Linguistics. doi: 10.18653/v1/W18-6319. URL [https://aclanthology.org/W18-6319](https://aclanthology.org/W18-6319).
+* Rafailov et al. (2023) Rafailov, R., Sharma, A., Mitchell, E., Ermon, S., Manning, C. D., and Finn, C. Direct preference optimization: Your language model is secretly a reward model. _ arXiv preprint arXiv:2305.18290_, 2023.
+* Rasley et al. (2020) Rasley, J., Rajbhandari, S., Ruwase, O., and He, Y. 딥-스피드: 시스템 최적화는 1000억 개 이상의 파라미터를 갖는 딥 러닝 모델을 트레이닝할 수 있게 한다. In _Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining_, pp. 3505-3506, 2020.
+* Rei et al. (2022) Rei, R., C. de Souza, J. G., Alves, D., Zerva, C., Farinha, A. C., Glushkova, T., Lavie, A., Coheur, L., and Martins, A. F. T. COMET-22: Unbabel-IST 2022 submission for the metrics shared task. In _Proceedings of the Seventh Conference on Machine Translation (WMT)_, pp. 578-585, Abu Dhabi, United Arab Emirates (Hybrid), December 2022. Association for Computational Linguistics. URL [https://aclanthology.org/2022.wmt-1.52](https://aclanthology.org/2022.wmt-1.52).
+* Rei et al. (2023) Rei, R., Guerreiro, N. M., Pombal, J., van Stigt, D., Treviso, M., Coheur, L., de Souza, J. G., and Martins, A. F. Scaling up cometkiwi: Unbabel-ist 2023 submission for the quality estimation shared task. _ arXiv preprint arXiv:2309.11925_, 2023.
+* Robinson et al. (2021) Robinson, J. D., Chuang, C.-Y., Sra, S., and Jegelka, S. 단단한 음성 샘플을 사용한 대비 학습입니다. 2021년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=CR1XQ0QUTh-](https://openreview.net/forum?id=CR1XQ0QUTh-).
+* Sellam 등(2020) Sellam, T., Das, D., and Parikh, A. BLEURT: Learning robust metrics for text generation. Jurafsky, D., Chai, J., Schluter, N., and Tetreault, J. (eds.), _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pp. 7881-7892, Online, July 2020. Association for Computational Linguistics.
+* Sellam 등 (2020)tics. 외부 링크: 연결된 링크: SS2입니다.
+* W. 탄경 Hefferman, H. Schwenk, and P. Koehn (2023)Multilingual representation distillation with contrastive learning. In Proceedings of the 17th Conference of the European Chapter of the Association for Computational Linguistics, pp. 1469-1482. 인용: SS2.
+* H. Touvron, T. 라브릴, G. 이자카드, X. 마틴 라쇼 라크루아 B. 로지에르 Goyal, E. Hambro, F. Azhar, et al. (2023)Llama: open and efficient foundation language models. arXiv preprint arXiv:2302.13971. 인용: SS2.
+* H. Touvron, L. 마틴 스톤, P. 알버트, A. 알마하이리, Y. 바배이 바슐리코프 바트라, P. 바가바, S. Bhosale, et al.(2023)Llama 2: open foundation and fine-tuned chat models. arXiv preprint arXiv:2307.09288. 인용: SS2.
+* A. Vaswani, N. 노셰이저 파르마, J. Uszkoreit, L. 존스 A. N. 고메즈 Kaiser와 I. Polosukhin (2017)의 관심만 있으면 됩니다. 신경 정보 처리 시스템 30에서의 진보: SS2에 의해 인용된다.
+* Y. Wu and G. Hu (2023)Exploring prompt engineering with GPT language models for document-level machine translation: insights and findings. In Proceedings of the Eighth Conference on Machine Translation, pp. 166-169. Cited by: SS2.
+* H. Xu, B. Van Durme, and K. Murray (2021)BERT, mBERT, 또는 BiBERT? 신경 기계 번역을 위한 맥락화된 임베딩에 관한 연구 In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 6663-6675. External Links: Link Cited by: SS2.
+* H. Xu, Y. J. Kim, A. Sharaf, and H. H. Awadalla (2023)A paradigm shift in machine translation: boosting translation performance of large language models. 외부 링크: 2303.0301 인용: SS2.
+* L. 설남 Constant, A. Roberts, M. 케일 Al-Rfou, A. Siddhant, A. Barua, and C. Raffel (2021)mT5:massively multilingual pre-trained text-to-text transformer. In Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Online, pp. 483-498. External Links: Link Cited by: SS2.
+* W. Yang, C. Li, J. Zhang 및 C. Zong(2023)Bigtrans: 100개 이상의 언어에 대한 다국어 번역 능력을 갖춘 대형 언어 모델을 증강합니다. arXiv preprint arXiv:2305.18098. 인용: SS2.
+* J. Zeng, F. Meng, Y. 음, J. Zhou (2023)TEM: 비교와 함께 번역하기 위해 큰 언어 모델을 가르치는 것. arXiv preprint arXiv:2307.04408. 인용: SS2.
+* S. 장규 팽지웅 장중 마영 주락 황민 부승 귀영 천숙 Chen, et al. (2023)Bayling: bridging cross-language alignment and instruction following through interactive translation for large language models. arXiv preprint arXiv:2306.10968. 인용: SS2.
+* W. 주현유 동종석 공진천 이순석 황(2023) 대형 언어 모델을 이용한 다국어 기계 번역: 실증 결과 및 분석. arXiv preprint arXiv:2304.04675. 인용: SS2.
+* W. 주영 Lv, Q. 동화원 황락 공진천 Li (2023) 언어를 정렬하여 큰 언어 모델을 비영어로 외삽합니다. arXiv preprint arXiv:2308.04948. 인용: SS2.
+* D. M. Ziegler, N. Stiennon, J. Wu, T. B. Brown, A. Radford, D. Amodei, P. Christiano, and G. Irving(2019)Fine-tuning language models from human preferences. arXiv preprint arXiv:1909.08593. 인용: SS2.
+
+## 부록 WMT'21 및 WMT'22 종합 결과
+
+우리는 표 7의 en\(\rightarrow\)xx와 표 8의 xx\(\rightarrow\)en에 대한 포괄적인 결과를 보여준다. 이 섹션에서는 베일링-13B(Zhang et al., 2023), 빅트랜슬레이트(Yang et al., 2023), ALMA-13B-LoRA(Xu et al., 2023), LLaMA-1-13B(Touvron et al., 2023a) 및 LLaMA-2-13B(Touvron et al., 2023b)를 포함한 최근에 출시된 LLM 기반 번역기의 결과를 추가로 포함한다. 우리는 또한 이것들을 WMT 경쟁 우승자들, GPT-4, GPT-3.5-text-davinci-003, Google Translate, NLLB-3.3B, 및 MADLAD-10B와 같은 가장 진보된 현재의 번역 모델들과 비교한다(Kudugunta et al., 2023). 중요하게도, CPO 방법으로 AMLA-7B-LoRA를 미세 조정하는 **ALMA-7B-R** 의 성능도 여기에 제시합니다. 참조 없는 평가를 제외하고, 우리는 또한 일반적으로 사용되는 두 가지 참조 기반 메트릭인 sacreBLEU(Post, 2018; Papineni et al., 2002) 및 COMET-22(Rei et al., 2022)를 보고한다.
+
+**ALMA-7B-R 도입** 이 연구에서는 ALMA-13B-R 훈련 방법론을 ALMA-13B-R과 동일한 선호도 데이터로 CPO 방법을 사용하여 ALMA-7B-LoRA를 미세 조정하는 7B 모델 크기로 확장합니다. ALMA-13B-R의 연구 결과와 일치하게 CPO의 적용은 성능을 크게 향상시킨다.
+
+**고급 번역 모델과 비교** 우리의 모델 ALMA-13B-R은 가장 진보된 현재 모델에 대해 벤치마킹되어 GPT-4 및 WMT 승자와 유사한 성능을 보여줍니다. 많은 경우 구글 번역과 같은 주요 상용 번역 도구와 NLLB, MADLAD-10B 및 GPT-3.5와 같은 상위 다국어 번역 모델을 능가한다.
+
+**중지 BLEU 사용 중지** 수십 년 동안 광범위하게 활용 된 메트릭인 BLEU는 종종 신경 기반 및 참조 없는 메트릭에서 분기 되며, 이는 이전 연구에서도 관찰 되는 현상입니다 (Xu 등, 2023; Freitag 등, 2023). 예를 들어, WMT 경쟁 승자는 BLEU(또는 COMET-22)에 따라 종종 우수한 성능을 나타내지만, 이는 참조 없는 모델에 의해 확증되지 않는다. WMT 승자가 cs\(\rightarrow\)en 번역에서 예외적으로 높은 64.14 BLEU를 기록하여 다른 모델보다 20 BLEU 포인트만큼 우수한 경우를 예로 들 수 있다. 그러나 참조 없는 평가는 이러한 번역이 우리의 모델 및 GPT-4에 의해 생성된 것보다 열등하다는 것을 시사한다. 우리는 이러한 불일치가 WMT 테스트 세트와 밀접하게 관련된 도메인 특정 데이터에 대해 훈련되는 WMT 모델에서 발생할 수 있으며, 이는 높은 어휘 일치를 초래하지만 신경 기반 메트릭에 의해 평가되는 의미론적 깊이가 부족할 수 있다고 가정한다. BLEU 점수는 약한 모델에서 기본 기능을 평가하는 데 효과적이지만 다양한 번역을 생성할 수 있는 고급 번역 모델에서는 유용성이 감소한다. 이러한 맥락에서 평가를 위해 BLEU에만 의존하는 것은 점점 더 구식인 것으로 판단된다.
+
+**참조 없는 메트릭을 위해** COMET-22와 같은 신경 기반 참조 종속 메트릭은 BLEU에 비해 참조 없는 메트릭과 더 큰 일관성과 견고성을 보여줍니다. 예를 들어, COMET-22의 경우, 우리의 모델은 ALMA-13B-LoRA보다 다른 참조 없는 모델과 마찬가지로 상당한 개선 및 GPT-4와 유사한 성능(예: 87.74(우리) 대)을 보여준다. 87.68 (GPT-4) at en\(\rightarrow\)xx. 그러나 참조가 없는 메트릭에 따르면 금 참조는 종종 시스템 생성 번역보다 열등하여 COMET-22 평가에 영향을 미칠 수 있는 참조의 품질 문제를 잠재적으로 나타낸다. 결과적으로 COMET-22와 XCOMET과 같은 참조 없는 모델 사이에는 불일치가 여전히 존재한다. 예를 들어, XCOMET의 ALMA-R 모델은 평균적으로 WMT 당첨자(89.11 vs. 87.13)보다 높다. 반면, COMET-22는 WMT 수상자들(85.21 대 85.60)을 선호한다. Freitag et al.(2023)의 권장 사항에 따라, 우리는 참조의 잠재적인 품질 문제를 피하기 위해 참조 없는 모델의 사용을 옹호한다.
+
+[MISSING_PAGE_FAIL:13]
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c} \hline \hline  & \multicolumn{6}{c}{\(\mathrm{de}\)} & \multicolumn{6}{c}{\(\mathrm{c\leq 5}\)} \\ \cline{2-10}  & BLEU & COMET-22 & KINW-22 & KINW-XXL & XCOMET & BLEU & COMET-22 & KINW-22 & KINW-XXL & XCOMET \\ \hline Gold Reference & - & - & 78.74 & 78.56 & 88.82 & - & - & 82.08 & 83.11 & 84.60 \\ WMT Winners & 33.34 & 85.04 & 81.38 & 83.59 & 93.74 & **64.14** & **89.00** & 82.47 & 82.53 & 85.65 \\ GPT-4 & 32.41 & 85.35 & **81.50** & **84.58** & **94.47** & 46.86 & 87.26 & 82.52 & 83.55 & **88.48** \\ GPT-3.5-text-davinci-003 & 30.78 & 84.79 & 81.24 & 83.97 & 92.78 & 44.51 & 86.16 & 82.02 & 82.19 & 83.51 \\ Google Translate* & **33.25** & 84.78 & 81.36 & 83.74 & 93.71 & 49.40 & 86.95 & 82.60 & 81.99 & 86.74 \\ NLB-3.3B* & 29.46 & 83.43 & 80.98 & 82.04 & 91.26 & 49.05 & 85.92 & 81.72 & 80.27 & 82.94 \\ MADAD-10B & 32.77 & 84.80 & 81.13 & 83.33 & 93.53 & 51.17 & 87.18 & 82.29 & 82.37 & 86.16 \\ LLMA-1.13B & 52.66 & 82.42 & 75.77 & 77.98 & 58.99 & 56.05 & 81.57 & 77.75 & 70.80 & 73.71 \\ LLMA-2.13B & 31.06 & 83.01 & 79.47 & 79.27 & 91.10 & 40.02 & 83.27 & 79.29 & 74.21 & 78.50 \\ Bayling-13B* & 27.26 & 83.03 & 79.88 & 80.02 & 89.84 & 33.81 & 81.65 & 78.04 & 71.44 & 71.68 \\ BigTranslate & 25.16 & 81.54 & 78.24 & 77.73 & 86.79 & 34.81 & 82.02 & 77.91 & 72.69 & 71.38 \\ \hline ALMA-7B-LoRA & 29.56 & 83.95 & 80.63 & 82.58 & 92.35 & 43.49 & 85.93 & 81.32 & 81.42 & 81.34 \\ + SFT on preferred data & 30.51 & 84.39 & 80.86 & 82.72 & 93.19 & 44.44 & 86.17 & 81.91 & 81.95 & 84.58 \\ + DPO & 29.38 & 84.02 & 80.63 & 82.47 & 92.26 & 42.60 & 85.87 & 81.33 & 81.30 & 81.10 \\ + CPO (Ours, ALMA-7B-R) & 30.52 & **84.61** & 81.13 & 83.11 & **83.85** & 42.92 & 86.29 & 82.16 & 82.29 & 85.76 \\ \hline ALMA-13B-LoRA & 31.14 & 84.56 & 81.14 & 83.57 & 93.30 & 45.28 & 86.47 & 81.96 & 82.97 & 83.95 \\ + SFT on preferred data & 31.80 & 84.83 & 81.36 & 83.98 & 93.84 & 46.17 & 86.83 & 82.36 & 83.15 & 86.67 \\ + DPO & 30.99 & 84.51 & 81.13 & 83.52 & 93.25 & 44.95 & 86.36 & 81.82 & 82.69 & 83.84 \\ + CPO (Ours, ALMA-13B-R) & 30.89 & **84.95** & **81.50** & 83.97 & 94.20 & 44.39 & 86.85 & 82.63 & 83.75 & 88.03 \\ \hline \hline  & \multicolumn{6}{c}{\(\mathrm{i}\)} & \multicolumn{6}{c}{\(\mathrm{i}\)} & \multicolumn{6}{c}{\(\mathrm{i}\)} & \multicolumn{6}{c}{\(\mathrm{i}\)} & \multicolumn{6}{c}{\(\mathrm{i}\)} & \multicolumn{6}{c}{\(\mathrm{i}\)} & \multicolumn{6}{c}{\(\mathrm{i}\)} \\ \cline{2-10}  & BLEU & COMET-22 & KINW-22 & KINW-XXL & XCOMET & BLEU & COMET-22 & KINW-22 & KINW-XXL & XCOMET \\ \hline Gold Reference & - & - & 80.88 & 85.04 & 76.16 & - & - & 77.09 & 74.19 & 90.70 \\ WMT Winners & **41.60** & 86.98 & 81.39 & 85.60 & 78.14 & **33.49** & 81.02 & 77.66 & 73.28 & 87.20 \\ GPT-4 & 41.29 & 87.21 & 81.49 & **85.90** & **81.11** & 23.82 & **82.46** & **79.33** & **77.65** & **92.06** \\ GPT-3.5-text-davinci-003 & 31.88 & 82.13 & 78.72 & 77.53 & 66.44 & 24.98 & 81.62 & 78.91 & 76.64 & 90.92 \\ Google Translate* & - & - & - & - & - & 28.60 & 80.82 & 77.87 & 74.27 & 87.69 \\ NLB-3.3B* & - & - & - & - & - & 21.08 & 76.93 & 75.40 & 68.83 & 84.43 \\ MADAD-10B & 39.49 & 87.06 & 81.40 & 85.52 & 80.43 & 21.29 & 78.53 & 76.72 & 72.10 & 87.12 \\ LLMA-1.3B & 11.01 & 60.82 & 57.76 & 30.38 & 20.87 & 16.81 & 74.32 & 70.93 & 62.37 & 80.13 \\ LLMA-2.13B & 15.77 & 66.35 & 63.91 & 42.75 & 28.03 & 21.81 & 78.10 & 75.09 & 70.31 & 85.68 \\ Bayling-13B* & - & - & - & - & - & 20.10 & 77.72 & 75.08 & 68.32 & 86.51 \\ BigTranslate & 6.45 & 54.65 & 50.55 & 18.77 & 17.44 & 14.94 & 75.11 & 71.94 & 65.25 & 85.00 \\ \hline ALMA-7B-LoRA & 35.64 & 86.09 & 80.57 & 84.65 & 75.02 & 23.64 & 79.78 & 76.81 & 73.65 & 83.94 \\ + SFT on preferred data & 88.58 & 86.47 & 81.09 & 85.23 & 78.87 & 23.19 & 80.50 & 77.74 & 74.91 & 89.81 \\ + DPO & 35.25 & 85.96 & 80.53 & 84.44 & 75.19 & 23.20 & 79.91 & 76.83 & 73.51 & 89.22 \\ + CPO (Ours, ALMA-7B-R) & 86.44 & 86.66 & 81.24 & 85.13 & 79.14 & 22.45 & 80.95 & 78.47 & 87.21 & 89.74 \\ \hline ALMA-13B-LoRA & 95.56 & 86.42 & 80.90 & 85.49 & 76.68 & 25.46 & 80.21 & 77.32 & 74.41 & 89.88 \\ + SFT on preferred data & 99.60 & 86.88 & 81.32 & 85.61 & 80.20 & 24.54 & 81.08 & 78.32 & 76.03 &
+
+## 번역에 대 한 부록 B 프롬프트
+
+Hendy et al. (2023)이 GPT 모델에 사용한 번역 프롬프트 형식을 준수하여 연구에서 GPT-4에 대해 동일한 프롬프트를 사용한다. 유사하게, 우리는 ALMA 모델에 대해 Xu 등(2023)에 의해 사용된 동일한 프롬프트를 사용한다. 프롬프트는 그림 5에 나와 있다.
+
+## 부록 C 이론
+
+### 상위 경계 증명
+
+**정리 1**.: _\(\pi_{\text{ref}}\)를 원하는 데이터의 실제 데이터 분포와 정확하게 정렬하는 이상적인 정책인 \(\pi_{w}\로 정의하면 DPO 손실 \(\mathcal{L}(\pi_{\theta};\pi_{w})+C\)는 \(\mathcal{L}(\pi_{\theta};U)\로 상한이 되며, 여기서 \(C\)는 상수입니다._
+
+증명: \(\pi_{w}\)는 원하는 데이터의 실제 데이터 분포를 완벽하게 정렬하는 이상적인 정책을 나타냅니다. 따라서 선호도 데이터 세트 \(\mathcal{D}\)에서 주어진 데이터 점 \((x,y_{w},y_{l})\)에 대해 조건 \(\pi_{w}(y_{w}|x)=1\) 및 \(0\leq\pi_{w}(y_{l}|x)\leq 1\)는 true를 유지한다. 결과적으로 이 설정 하에서 선호 데이터에 대한 예측은 참조 모델에 의한 재가중치를 필요로 하지 않으며 DPO 손실 \(\mathcal{L}(\pi_{\theta};\pi_{w})\)은 다음과 같이 재구성될 수 있다:
+
+\[\mathcal{L}(\pi_{\theta};\pi_{w}) =-\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\sigma \Big{(}\beta\log\frac{\pi_{\theta}(y_{w}|x)}-\beta\log\frac{ \pi_{\theta}(y_{l}|x)}{\pi_{w}(y_{l}|x)}\Big{]}\] \[=-\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\sigma \Big{(}\beta\log\pi_{\theta}(y_{w}|x)+\beta\log\pi_{\theta}(y_{l}|x)\Big{)}\Big{]}.\]
+
+Sigmoid 함수를 확장한 후 손실은 다음과 같습니다.
+
+\[\mathcal{L}(\pi_{\theta};\pi_{w})\] \[=-\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\pi_{ \theta}(y_{w}|x)^{\beta}+\log\pi_{w}(y_{l}|x)^{\beta}-\log\Big{(}\pi_{\theta}(y _{w}|x)^{\beta}\cdot\pi_{w}(y_{l}|x)^{\beta}+\pi_{\theta}(y_{l}|x)^{\beta} \Big{)}\Big{]}.\]
+
+\(\pi_{w}\)는 고정된 모델이고 \(\log\pi_{w}(y_{l}|x)^{\beta}\)는 기울기 계산이나 매개변수 업데이트에 참여하지 않는다는 점을 감안할 때, 위의 손실 함수는 \(\log\pi_{w}(y_{l}|x)^{\beta}\)라는 용어를 생략하면 동등하다. 따라서, 최적화 \(\mathcal{L}(\pi_{\theta};\pi_{w})\)는 등가이다.
+
+그림 5: 번역을 수행하기 위해 GPT-4 및 ALMA 모델에 사용된 프롬프트이다.
+
+optimizing \(\mathcal{L}^{\prime}(\pi_{\theta};\pi_{w})\) as we define below:
+
+이론에서 \[=-\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{E}_{(x,y_{l})+\underbrace{\mathbb{E}_{(x,y_{l}|x)^{ \beta}\Big{]}}_{C\text{}}\] \[=-\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\pi_{ \theta}(y_{w}|x)^{\beta}-\log\Big{(}\pi_{\theta}(y_{w}|x)^{\beta}\cdot\pi_{w}( y_{l}|x)^{\beta}+\pi_{\theta}(y_{l}|x)^{\beta}\Big{}\Big{]}}.\
+
+\(0\leq\pi_{w}(y_{l}|x)\leq 1\)을 고려하면 손실은 다음과 같이 상한이 될 수 있다:
+
+\[\mathcal{L}^{\prime}(\pi_{\theta};\pi_{w})\leq-\mathcal{D}}\Big{[}\log\pi_{ \theta}(y_{w}|x)^{\beta}-\log\Big{(}\pi_{\theta}(y_{w}|x)^{\beta}\cdot 1+\pi_{ \theta}(y_{l}|x)^{\beta}\Big{]}\] \[=-\mathbb{E}_{(x,y_{w},y_{l})\sim\mathcal{D}}\Big{[}\log\sigma \Big{(}\beta\log\pi_{\theta}(y_{w}|x)-\beta\log\pi_{\theta}(y_{l}|x)\Big{]}\] \[=\mathcal{L}(\pi_{\theta};\pi_{\theta}(y_{l}|x)^{\beta}\Big{]}\] \[=\math
+
+따라서 \(\mathcal{L}(\pi_{\theta};\pi_{w})+C\)는 \(\mathcal{L}(\pi_{\theta};U)\)로 상한이 되며, 여기서 \(C=\mathbb{E}_{(x,y_{l})\sim\mathcal{D}}\Big{[}\log\pi_{w}(y_{l}|x)^{\beta} \Big{]}\).
+
+### BC Regularizer Simplification
+
+대비 선호 최적화는 원래 학습 가능한 정책의 선호 데이터 분포와 출력 간의 차이를 최소화하는 제약 하에서 \(\mathcal{L}(\pi_{\theta};U)\)를 최소화하는 것으로 정의된다:
+
+\[\min_{\theta}\mathcal{L}(\pi_{\theta},U)\text{ s.t. }\mathbb{E}_{(x,y_{w})\sim \mathcal{D}}\Big{[}\mathbb{KL}(\pi_{w}(y_{w}|x)||\pi_{\theta}(y_{w}|x))\Big{]} <\epsilon.\]
+
+이것은 라그랑지안 이중성을 통한 다음 목표와 동일하다:
+
+\[\min_{\theta}\mathcal{L}(\pi_{\theta},U)+\lambda\cdot\mathbb{E}_{(x,y_{w}) \sim\mathcal{D}}\Big{[}\mathbb{KL}(\pi_{w}(y_{w}|x)||\pi_{\theta}(y_{w}|x)) \Big{]},\
+
+여기서 \(\lambda\)는 하이퍼파라미터이고, 우리는 1로 설정한다. 최적화는 KL 발산을 확장함으로써 추가로 최적화될 수 있다:
+
+\pi_{w}(y_{w}|x)||\pi_{\theta}(y_{w}|x))\Big{(\mathcal{]}\] \[=\mathcal{L}(\pi_{\theta},U)+\mathbb{E}_{(x,y_{w})\sim\mathcal{D}}\Big{[}\pi_{w}(y_{w}|x)\cdot\log\Big{(}\pi_{\theta}(y_{w}|x)\Big{]}\] \[=\mathcal{L}(\pi_{\theta},U)+\mathbb{E}_{(x,y_{w})\sim\mathcal{D}}\Big{[}1\cdot0-1\cdot\log\Big{(}\pi_{\theta}(y_{w}|x)\Big{)}\Big{]}\[=\mathcal{L}(\pi_{\theta},U)+\mathbb{E}_{(y_{w}
+
+이는 CPO 손실 함수의 최종 공식화를 초래한다.
+
+## 부록 D 세부 정보 및 인간 레이블이 지정된 선호도 데이터의 영향
+
+_TL;DR: 우리의 분석은 인간 라벨 데이터가 상대적으로 최소한의 영향을 미친다는 것을 나타내며, 아마도 평가 과정에서 연결된 번역의 높은 비율과 잠재적인 인간 편향 때문일 것이다._
+
+### 데이터 구성 세부 정보
+
+우리가 사용한 인간 라벨 데이터 세트는 쌍별이며 주요 데이터 세트의 트리플렛 형식과 다르다. 두 가지 언어 방향인 en\(\rightarrow\)de와 en\(\rightarrow\)zh에만 초점을 맞추어 2K 문장을 추가한다. 위키피디아에서 선택된 영어 소스 문장은 타임 스탬프와 URL을 제거하기 위해 필터링 과정을 거친다. 각 문장은 Google Translate와 GPT-4를 사용하여 번역되며, 인간 평가자는 이 두 번역 사이에 선호도를 할당한다. 구글 또는 GPT-4의 번역이 선호되거나 묶인 경우를 나타내는 선호도의 분포는 표 9에 자세히 설명되어 있다.
+
+### 성능에 미치는 영향
+
+우리 모델이 다대다 번역 형식으로 작동하고 추가 데이터가 de 및 zh 방향에만 국한된다는 점을 감안할 때 이러한 언어로 번역할 때 성능의 변화가 예상되지만 다른 언어에서는 그렇지 않다. 인간 라벨 데이터의 영향을 평가하기 위해 삼중항 데이터에 대해서만 미세 조정된 모델과 삼중항 및 인간 라벨 데이터 모두에 대해 미세 조정된 모델 간의 비교를 수행했다. CPO를 통해 미세 조정된 ALMA-13B-LoRA 모델을 사용하여 훈련 접근법은 일관성을 유지했다. 동점 데이터는 명확한 선호도 부족으로 인해 본 분석에서 제외되었다는 점에 유의할 필요가 있다.
+
+**결과 및 분석** 표 10 및 11에서 각각 en\(\rightarrow\)xx 및 xx\(\rightarrow\)en에 대한 자세한 결과를 보여 줍니다. 인간 라벨 선호 데이터의 포함은 전체 번역 성능을 크게 향상시키지 않는다. en\(\rightarrow\)zh의 경우 변연 개선은 미미하지만 관찰된다. 반대로, en\(\rightarrow\)de의 경우, 성능의 약간의 감소가 주목된다. 요약하면, 인간 레이블 데이터의 추가는 en\(\rightarrow\)xx 방향에 큰 차이를 보이지 않으며 xx\(\rightarrow\)en에 대해서는 평균적으로 약간의 성능 저하를 보인다. 이러한 인간 라벨 데이터의 제한된 영향은 평가 과정에서 연결된 평가의 높은 비율과 잠재적인 인간 편향에서 비롯될 수 있다고 가정한다. 예를 들어, 저자는 GPT-4의 번역이 우수하다고 생각하는 반면, 인간 평가자는 구글 번역에서 생산된 것을 선호하는 경우가 있다.
+
+## 부록 E WMT Winner Systems
+
+### 시스템 For WMT'21 And WMT'22
+
+WMT'21 및 WMT'22에 보고된 바와 같은 각 방향에 대한 WMT 경쟁 우승자는 Hendy et al.(2023)에 의해 사용된 것에 해당한다. 자세한 내용은 독자를 이 논문으로 안내합니다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline \multirow{2}{*}{Dataset} & \multicolumn{3}{c}{de} & \multicolumn{3}{c}{cs} & \multicolumn{3}{c}{is} \\ \cline{2-10}  & KWI-22 & KWI-XXL & XCOMET & KWI-22 & KWI-XXL & XCOMET & KWI-22 & KWI-XXL & XCOMET \\ \hline Only Triplet Data & **83.43** & **84.63** & **97.56** & 84.97 & **87.24** & 93.50 & 82.05 & 85.37 & 91.83 \\ Triplet Data + Human-Labeled Data & 83.28 & 84.25 & 97.48 & **84.99** & 87.06 & **93.61** & **82.18** & **85.68** & **91.93** \\ \hline \multicolumn{10}{c}{zh} & \multicolumn{3}{c}{ru} & \multicolumn{3}{c}{Avg.} \\ \cline{2-10}  & KWI-22 & KWI-XXL & XCOMET & KWI-22 & KWI-XXL & XCOMET & KWI-22 & KWI-XXL & XCOMET \\ \hline Only Triplet Data & 82.15 & 84.08 & 91.59 & **84.05** & **87.43** & **95.26** & 83.33 & **85.75** & 93.95 \\ Triplet Data + Human-Labeled Data & **82.25** & **84.32** & **92.03** & 83.98 & 87.37 & 95.22 & **83.34** & 85.74 & **94.05** \\ \hline \hline \end{tabular}
+\end{table}
+표 10: en\(\rightarrow\)xx 방향으로 트리플렛 데이터 및 인간 라벨링된 데이터(우리의 원래 설정)의 조합 대 트리플렛 데이터만을 이용할 때의 번역 성능의 비교. **굵은** 숫자는 우수한 성능을 나타냅니다. 흥미롭게도 인간 라벨 데이터를 포함하면 평균 성능이 약간 감소한다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline  & Google Wins & GPT-4 Wins & Ties \\ \hline en\(\rightarrow\)de & 418 & 435 & 203 \\ en\(\rightarrow\)zh & 362 & 412 & 282 \\ \hline \hline \end{tabular}
+\end{table}
+표 9: 인간에 의해 평가된 각각의 시스템에 의해 얼마나 많은 번역이 승리 또는 동점인지에 대한 통계.
+
+### 시스템 For WMT'23
+
+De+en 및 zh+en 언어 쌍의 경우 소스 기반 직접 평가 및 스칼라 품질 메트릭(DA+SQM)을 기반으로 인간 순위가 가장 높은 번역 시스템을 선택했다. De+ru의 경우 Kocmi et al.(2023)에서 이러한 방향에 대한 인간 순위가 없는 경우 Kocmi et al.(2023)에서 보고된 COMET-22 점수가 가장 높은 모델을 선택했다. 이러한 모델에 대한 자세한 내용은 표 12에 나와 있다.
+
+## 부록 F 인간 계약에 대한 추정 정확도
+
+본 논문에서는 점수 \(x\)에 의해 메트릭의 정적 개선 임계값을 지정하는 표준 관행을 넘어 테이블 내의 개선을 강조하기 위한 새로운 접근법을 채택한다. 대신에, 우리의 임계값은 동적이고, 메트릭 \(y\)에서 최소 메트릭 차이 \(x\)로 보정되어, 인간에 의해 인식되는 바와 같이 두 시스템 사이의 인식가능한 구별을 산출한다(Kocmi et al., 2024). 예를 들어, 80% 일치율에서 인간 판단과 정렬하기 위해, 요구되는 개선 마진은 KWI-XXL 및 COMET-XXL 모두에 대해 \(\geq 1.24\), KWI-22에 대해 \(\geq 0.53\)이다. 이러한 임계값에 대한 포괄적인 묘사는 표 13에서 찾을 수 있다.
+
+## 부록 G WMT'23 전체 결과
+
+WMT'23의 포괄적인 결과는 표 14에 제시되어 있다. WMT'21 및 WMT'22에서의 성능과 유사하게, ALMA-13B-R은 SoTA 번역 모델들 중에서 평균적으로 가장 잘 수행한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline
+**추정 정확도** 및
+\begin{tabular}{c} **Coin toss** \\ **50\%** \\ \end{tabular} & **55\%** & **60\%** & **65\%** & **70\%** & **75\%** & **80\%** & **85\%** & **90\%** & **95\%** \\ \hline BLEU & 0.27 & 0.52 & 0.78 & 1.06 & 1.39 & 1.79 & 2.34 & 3.35 & - & - \\ Comet-22 & 0.03 & 0.10 & 0.18 & 0.26 & 0.35 & 0.45 & 0.56 & 0.71 & 0.94 & 1.53 \\ KWI-22 & 0.01 & 0.08 & 0.16 & 0.24 & 0.33 & 0.42 & 0.53 & 0.67 & 0.85 & 1.18 \\ XCOMET-XXL & 0.02 & 0.19 & 0.37 & 0.56 & 0.76 & 0.98 & 1.24 & 1.55 & 1.99 & 2.74 \\ KWI-XXL & 0.06 & 0.22 & 0.39 & 0.57 & 0.77 & 0.98 & 1.24 & 1.58 & 2.08 & 3.39 \\ \hline \hline \end{tabular}
+\end{table}
+표 13: 본 논문에서 사용된 각 메트릭에 대한 임계값 및 추정 정확도.
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline Systems & Language Pair \\ \hline ONLINE-B & en-de \\ ONLINE-A & de-en \\ Lan-BridgeMT (Wu \& Hu, 2023) & en-zh \\ Lan-BridgeMT (Wu \& Hu, 2023) & zh-en \\ ONLINE-G & en-ru \\ ONLINE-Y & ru-en \\ \hline \hline \end{tabular}
+\end{table}
+표 12: WMT의 23명의 수상자 목록은 각 언어 방향에 대해 제공되었습니다.
+
+## 부록 H 평가 ALMA-R with Non-Comet Metric
+
+COMET 메트릭의 유사한 훈련 절차에 대한 우려가 발생할 수 있으며, 이는 COMET 모델 간의 높은 상관성으로 이어져 섹션 5.1에서 분석의 유효성을 잠재적으로 손상시킬 수 있다. 이를 해결하기 위해, 우리는 또한 비 COMET 및 신경 기반(그러나 참조 기반 평가) 메트릭인 BLEURT-20(Sellam 등, 2020)을 고려한다. 표 15에 ALMA-13B-LoRA 및 ALMA-13B-R에 대한 BLEURT 점수를 제시한다. 특히, COMET 기반 평가를 사용하여 선호도 데이터를 구성하는 경우에도 비 COMET 점수의 상당한 개선이 관찰된다. 이것은 ALMA-R에 의해 생성된 번역이 실제로 우수하고 강력하다는 우리의 발견을 강화한다.
+
+## 부록 I : DPO를 위한 BC Regularizer의 효과
+
+DPO 손실 \(\mathcal{L}_{\text{DPO}}=\mathcal{L}(\pi_{\theta},\pi_{\text{ref}})\)도 추가 BC 레귤라이저를 추가하여 사용할 수 있습니다.
+
+\[\min_{\theta}\mathcal{L}(\pi_{\theta},\pi_{\text{ref}})-\mathbb{E}_{(x,y_{w} )\sim\mathcal{D}}\Big{[}\log\Big{(}\pi_{\theta}(y_{w}|x)\Big{)}\Big{]}.\]
+
+표 16에서, 우리는 \(\mathcal{L}_{\text{NLL}}\)를 DPO 목적에 통합하는 것이 영어로의 번역과 영어로부터의 번역 모두에 대한 주목할만한 향상을 가져온다는 것을 입증한다. 이 관측은 \(\mathcal{L}_{\text{DPO}}\)의 근사치로 \(\mathcal{L}_{\text{DPO}}\)가 효과적으로 수행되는 반면 원래의 DPO 손실은 그렇지 않은 이유를 암시한다. DPO 손실은 모델을 선호되는 데이터 분포로 안내하는 BC 레귤라이저가 없는 것으로 판단된다. BC 레귤러라이저와 DPO를 결합하면 CPO와 유사한 성능을 얻을 수 있지만 순방향 패스에서 메모리 비용과 토큰당 FLOP의 두 배가 발생한다. 원래 DPO 손실은 선호도 학습에서 모델 성능을 향상시키지 못할 가능성을 보여주므로 여기에서 BC 정규화를 통합하는 것의 중요성을 강조한다. 중요하게도, 표 16은 \(\mathcal{L}_{\text{prefer}}\)이 DPO 손실의 성공적인 근사치로서 메모리 및 속도의 절감을 제공하고, 심지어 원래의 BC-정규화된 DPO 손실 \(\mathcal{L}_{\text{DPO}}+\mathcal{L}_{\text{NLL}}}\)을 능가할 수 있음을 보여준다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c} \hline \hline  & \multicolumn{3}{c}{de\(\rightarrow\)en} & \multicolumn{3}{c}{zh\(\rightarrow\)en} & \multicolumn{3}{c}{ru\(\rightarrow\)en} \\ \cline{2-9}  & KIVI-22 & KIVI-XXL & XCOMET & KIVI-22 & KIVI-XXL & XCOMET & KIVI-22 & KIVI-XXL & XCOMET \\ \hline Gold Reference & 78.93 & 75.96 & 84.23 & 74.46 & 68.80 & 83.51 & 79.46 & 77.84 & 83.60 \\ WMT Winners & 79.37 & 76.18 & 84.35 & **80.17** & **79.53** & 92.25 & 80.88 & 79.21 & 86.22 \\ TowerInstruct & 79.67 & 77.60 & 86.28 & 79.84 & 78.13 & 91.75 & 80.85 & 80.03 & 87.76 \\ MADLAD-10B & 78.52 & 75.50 & 83.85 & 77.68 & 73.72 & 88.07 & 79.65 & 77.58 & 85.15 \\ ALMA-13B-LoRA & 79.36 & 76.79 & 85.07 & 78.83 & 76.71 & 90.73 & 80.79 & 80.14 & 86.94 \\ + CPO (Ours, ALMA-13B-R) & **79.87** & **77.69** & **86.62** & **80.01** & **88.42** & **92.36** & **81.11** & **80.95** & **88.75** \\ \hline  & \multicolumn{3}{c}{en\(\rightarrow\)2h} & \multicolumn{3}{c}{en\(\rightarrow\)ru} & \multicolumn{3}{c}{en\(\rightarrow\)ru} \\ \cline{2-9}  & KIVI-22 & KIVI-XXL & XCOMET & KIVI-22 & KIVI-XXL & XCOMET & KIVI-22 & KIVI-XXL & XCOMET \\ \hline Gold Reference & 80.12 & **77.93** & 88.91 & 79.60 & 73.47 & 86.15 & 79.87 & 79.36 & 91.41 \\ WMT Winners & **80.80** & 77.26 & 87.94 & 79.70 & 74.20 & 87.24 & **82.51** & 79.95 & 91.41 \\ TowerInstruct & 80.13 & 75.34 & 86.55 & 80.03 & 74.85 & 86.74 & 81.33 & 77.14 & 89.59 \\ MADLAD-10B & 77.48 & 70.87 & 86.18 & 74.63 & 62.07 & 79.12 & 79.24 & 72.40 & 86.64 \\ ALMA-13B-LoRA & 78.79 & 73.40 & 85.61 & 78.92 & 72.95 & 85.13 & 80.21 & 76.02 & 89.48 \\ + CPO (Ours, ALMA-13B-R) & 79.85 & 77.05 & 89.79 & 80.48 & 78.17 & 88.34 & 81.97 & 81.52 & 92.56 \\ \hline \hline \end{tabular}
+\end{table}
+표 14: WMT'23의 전체 결과. 모든 시스템 중 가장 높은 점수는 굵다. (다크블루 박스)는 원래 ALMA 모델에 대한 개선이 인간 판단(Kocmi 등, 2024)으로 최소 80% 추정 정확도를 달성하는 반면, 더 적은 개선이 얕은 파란색 상자에서 강조된다는 것을 나타낸다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c} \hline \hline BLEURT-20 & de & cs & is & zh & ru & Avg. \\ \hline \multicolumn{8}{c}{_Translating to English (xx\(\rightarrow\)en)_} \\ \multicolumn{8}{c}{ALMA-13B-LoRA} & 73.20 & 76.65 & 75.87 & 67.37 & 76.7 & 73.96 \\ ALMA-13B-R & **73.62** & **76.94** & **76.98** & **69.48** & **76.91** & **74.79** \\ \hline \multicolumn{8}{c}{_Translating from English (en\(\rightarrow\)xx)_} \\ \multicolumn{8}{c}{ALMA-13B-LoRA} & 75.51 & 80.93 & 73.19 & 70.54 & 74.94 & 75.02 \\ ALMA-13B-R & **77.20** & **81.87** & **73.43** & **71.51** & **76.19** & **76.04** \\ \hline \hline \end{tabular}
+\end{table}
+표 15: ALMA-13B-LoRA와 ALMA-13B-R 간의 BLEURT-20 점수 비교
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline Loss Objective & KIWI-22 & KIWI-XXL & XCOMET & Memory Cost & FLOPs/tok \\ \hline \multicolumn{5}{c}{_Translating to English_ (xx\(\rightarrow\)en)} \\ \(\mathcal{L}_{\text{DPO}}\) & 80.51 & 81.36 & 86.58 & 2\(\times\) & 2\(\times\) \\ \(\mathcal{L}_{\text{DPO}}+\mathcal{L}_{\text{NLL}}\) & 81.28 & 82.42 & 89.05 & 2\(\times\) & 2\(\times\) \\ \(\mathcal{L}_{\text{prefer}}+\mathcal{L}_{\text{NLL}}\) (CPO) & **81.33** & **82.43** & **89.11** & 1\(\times\) & 1\(\times\) \\ \hline \multicolumn{5}{c}{_Translating from English_ (en\(\rightarrow\)xx)} \\ \(\mathcal{L}_{\text{DPO}}\) & 82.27 & 82.07 & 92.25 & 2\(\times\) & 2\(\times\) \\ \(\mathcal{L}_{\text{DPO}}+\mathcal{L}_{\text{NLL}}\) & 83.13 & 84.74 & 93.53 & 2\(\times\) & 2\(\times\) \\ \(\mathcal{L}_{\text{prefer}}+\mathcal{L}_{\text{NLL}}\) (CPO) & **83.34** & **85.74** & **94.05** & 1\(\times\) & 1\(\times\) \\ \hline \hline \end{tabular}
+\end{table}
+표 16: \(\mathcal{L}_{\text{NLL}}\)을 원래의 DPO 손실에 적용하는 영향.
