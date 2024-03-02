@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Instruction-tuned 언어 모델은 더 나은 지식 학습자\n' +
+      '\n' +
+      ' Zhengbao Jiang\\({}^{2}\\) Zhiqing Sun\\({}^{2}\\) Weijia Shi\\({}^{1,3}\\) Pedro Rodriguez\\({}^{1}\\) Chunting Zhou\\({}^{1}\\)\n' +
+      '\n' +
+      '**Graham Neubig\\({}^{2}\\) Xi Victoria Lin\\({}^{1}\\) Wen-tau Yih\\({}^{1}\\) Srinivasan Iyer\\({}^{1}\\)**\n' +
+      '\n' +
+      'Meta \\({}^{2}\\)Carnegie Mellon University \\({}^{3}\\)University of Washington\n' +
+      '\n' +
+      '{zhengbaj,gneubig}@cs.cmu.edu {victorialin,scottyih,sviyer}@meta.com\n' +
+      '\n' +
+      '메타에서 인턴십을 하는 동안 많은 일을 했다.\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '대형 언어 모델(LLM) 기반 어시스턴트가 진화하는 정보 요구에 효과적으로 적응하기 위해서는 새로운 데이터에 대한 지속적인 훈련을 통해 사실적 지식을 업데이트할 수 있어야 한다. 이를 위한 표준 레시피는 새로운 문서에 대한 사전 교육을 계속한 후 질의응답(QA) 쌍에 대한 지시 조정을 포함한다. 그러나 이 레시피로 훈련된 LLM은 문서의 복잡성을 최소화하더라도 질문에 답하는 데 어려움을 겪고 있음을 알 수 있다. 우리는 QA 쌍이 일반적으로 간단하지만 문서가 더 복잡하여 복잡한 방식으로 많은 사실 진술을 함께 엮는다는 것을 발견했다. 따라서 복잡한 문서에서 지식을 인코딩하는 프로세스가 질문을 통해 이 지식에 액세스하는 방법을 고려하도록 문서에 대한 지속적인 사전 훈련 전에 LLM을 QA 쌍에 노출시키는 것이 유익하다고 가정한다. 이를 기반으로 문서에 대한 교육 전에 질문에 대한 명령을 조정하는 방법인 **사전 명령 조정(PIT)** 을 제안합니다. 이는 문서에 대한 학습 후 지식을 추출하는 방법을 학습하는 표준 명령어 조정과 대비된다. 광범위한 실험과 절제 연구는 PIT가 새로운 문서의 지식을 흡수하는 LLM의 능력을 크게 향상시켜 표준 명령어 조정을 17.8% 능가한다는 것을 보여준다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '대규모 언어 모델(LLM)은 대규모 사전 훈련을 통해 방대한 양의 사실적 지식을 매개 변수에 저장하며, 이 지식은 "세계에서 가장 큰 빙상이 어디에 위치하는가"와 같은 다양한 질문에 답하기 위해 사용될 수 있다(Brown et al., 2020; OpenAI, 2023; Chowdhery et al., 2022; Zhang et al., 2022; Touvron et al., 2023, 2023; Gemini Team, 2023). 그러나 이러한 사실적 지식은 정적이며, 이는 세계가 진화함에 따라 구식이 되거나 LLM이 전문적이거나 사적인 영역에서 사용될 때 불충분하다는 것을 증명할 수 있음을 의미한다.\n' +
+      '\n' +
+      'LLM들을 최신의 상태로 유지하기 위해, 파라미터들에 지식을 저장하기 위해 새로운 문서들에 대한 사전 트레이닝을 계속하는 것이 일반적이며, 이는 LLM들이 최신의 정보를 필요로 하는 질의들에 효과적으로 응답할 수 있게 한다(Jang et al., 2022). 널리 유지되는 견해는 파라미터들에 저장된 사실적 지식이 프롬프팅(Brown et al., 2020; Petroni et al., 2019; Roberts et al., 2020)을 통해 도출될 수 있고, 지시-튜닝(supervised fine-tuning or alignment라고도 함)이 이러한 도출을 더 효과적으로 만든다는 것이다(Sanh et al., 2022; Wei et al., 2022; Ouyang et al., 2022). 이 논문의 첫 부분(SS 4)에서는 다음 질문에 답하기 위해 Llama-2 (Touvron et al., 2023)를 사용하여 광범위한 실험을 수행했다. _다음 명령 조정 유무에 관계없이 새로운 문서에 대한 지속적인 사전 훈련으로 현대 LLMs에 저장된 지식을 어느 정도 늘릴 수 있습니까?_ 우리는 복잡도가 1로 최소화되는 범위에서 문서에 대해 LLM을 반복적으로 훈련함에 따라 LLM이 올바르게 대답하는 문서에 대한 질문의 비율이 27.6%로 일관되게 증가한다는 것을 발견했다. 후속 명령어 조정은 30.3%로 더 향상되어 LLMs.1에서 더 많은 지식을 이끌어내는 데 널리 사용되는 이 연습이 유용하다는 것을 확인시켜준다. 그러나, 도출된 지식의 양은 여전히 제한적이며, 문서의 복잡성을 최소화하더라도 우리는 "당황의 저주"라고 부르는 현상이다.2\n' +
+      '\n' +
+      '각주 1: 이 용량은 비교적 작은 LMs 또는 랜덤하게 초기화된 변압기를 사용하거나, 철저한 훈련 또는 명령-튜닝의 부족으로 인해 이전 작업들에 의해 과소평가될 수 있다(Wang et al., 2021; Hu et al., 2023; Zhu and Li, 2023).\n' +
+      '\n' +
+      '각주 2: Berglund et al.(2023)의 "역전적 저주"에서 영감을 받았습니다.\n' +
+      '\n' +
+      '논문의 두 번째 부분(SS 5)에서는 LLMs을 문서로부터 지식을 흡수하는 데 더 능숙하게 함으로써 복잡성 저주를 완화시키는 방법을 연구한다. Zhu와 Li(2023)는 전기와 관련 질문의 혼합에서 무작위로 초기화된 변압기를 처음부터 훈련시키는 것이 새로운 질문에 대한 강력한 일반화를 초래한다는 흥미로운 발견을 제시했다. 그러나 이러한 발견의 이유를 이해하고 새로운 문서로부터 지식을 흡수하기 위해 실제로 적용할 수 있는 방법을 탐구하는 것은 추가 조사가 필요하다. 우리는 질의응답(QA) 쌍이 일반적으로 간단하고 쉽게 소화되는 반면 문서는 더 복잡하고 어수선하며 종종 더 복잡한 방식으로 많은 사실 진술을 함께 엮는 경향이 있음을 발견했다. 따라서 _복잡한 문서의 지식을 인코딩하는 프로세스가 질문을 통해 이 지식에 액세스하는 방법을 고려하도록 문서에 대한 사전 교육을 계속하기 전에 QA 데이터에 LLM을 의도적으로 노출시키는 것이 유익하다고 가정한다_. 이를 **PIT(사전 명령 조정)** 라고 하고 이 방법의 다양한 변형을 벤치마킹하기 위해 포괄적인 실험을 수행합니다. 를 더 포함할 수 있다. 1, 가장 성능이 좋은 변형은 QA 쌍(예: "오펜하이머 편집을 처리한 사람")에 대한 교육만으로 시작하여 지식이 액세스되는 방법을 파악합니다. 이어서, 이들 QA 쌍 및 관련 문서(예를 들어, "오펜하이머의 편집을 처리한 사람" 및 "오펜하이머"에 관한 문서)의 조합에 대한 트레이닝이 뒤따른다. 이 단계에서 LLM은 정보 밀도가 높은 문서에서 지식을 흡수하는 능력을 향상시켜 이미 숙달한 QA 쌍을 기반으로 한다. 지속적인 지식 습득을 연구하기 위해, 우리는 2023년과 관련된 위키피디아의 문서 모음을 포함하는 Wiki2023이라는 데이터 세트를 구축한다. 위키2023에 대한 포괄적인 실험은 PIT 이후에 LLMs가 새로운 문서(예를 들어, "Barbie"에 관한 문서)로부터 지식을 흡수하는 향상된 능력을 나타낸다는 것을 보여준다. 자세한 절제 연구는 이 능력이 주로 문서로부터 지식을 인코딩하기 위한 학습보다 지식에 접근하는 방법을 우선시하는 학습에서 비롯된다는 것을 보여준다. 전반적으로 PIT는 표준 명령 조정 접근법(SS 5.1 및 SS 5.2)을 크게 능가하여 Llama-2 7B(30.3% \\(\\sim\\) 48.1%)에서 17.8%, Llama-2 70B(46.4% \\(\\sim\\) 62.7%)에서 16.3%의 QA 정확도를 향상시켰다. 또한 PIT는 _다른_ 도메인의 문서로부터 지식을 흡수하는 능력을 향상시켜 이 방법을 보다 강력한 일반화를 위한 더 다양한 문서 및 지침까지 확장할 수 있는 가능성을 보여준다(SS 5.4).\n' +
+      '\n' +
+      '## 2 지속적인 지식 획득을 연구하기 위한 데이터 세트 구축\n' +
+      '\n' +
+      'LLM이 새로운 문서로부터 지식을 학습하는 능력을 평가하기 위해서는 원래의 사전 훈련 말뭉치와 최소한의 중복을 갖는 문서 말뭉치를 사용하는 것이 필수적이다. 이는 LLM이 질문에 올바르게 답할 때 이 기능을 원래 사전 훈련 말뭉치에서 유사한 질문을 접하는 것이 아니라 새로운 문서로부터의 학습에 자신 있게 귀속시킬 수 있음을 보장한다. 이 절에서는 위키피디아에서 이러한 말뭉치를 구축하기 위한 방법론을 설명한다.\n' +
+      '\n' +
+      '### Wiki2023 Document Corpus\n' +
+      '\n' +
+      '다음 실험(SS 4 및 SS 5)에서 Llama-2(7B 및 70B) [11]은 가장 성능이 좋은 LLM 중 하나이기 때문에 사용한다. 우리는 영화, 예술, 경제, 정치, 사건 등과 같은 다양한 영역의 주제를 포함하는 "2023" 범주에 따라 분류된 위키피디아 기사를 사용한다. 3 이러한 사실 정보가 아닐 가능성은\n' +
+      '\n' +
+      '그림 1: 평가 문항에 대한 정확도와 함께 계속된 사전 훈련(첫 번째 행), 계속된 사전 훈련 후 지시 조정(두 번째 행), 계속된 사전 훈련 전 지시 조정(마지막 행)의 그림이다. 각각의 오른쪽 포인팅 광-청색 삼각형은 트레이닝 단계를 나타낸다.\n' +
+      '\n' +
+      '원래 훈련 말뭉치에 포함된 것은 Tab의 낮은 QA 성능에 의해 지원된다. 1(7B/70B의 경우 9.5%/17.2%).4 훈련 프로세스를 가속화하기 위해 철저한 요약을 제공하고 많은 사실적 진술을 포함하는 각 기사의 첫 번째 섹션만 사용한다. 수집된 문서의 수와 "오펜하이머"에 대한 예제 문서는 그림 1에서 찾을 수 있다. 도 2 및 도 3. 이를 Wiki2023 데이터셋이라 한다.\n' +
+      '\n' +
+      '각주 4: 위키2023과 라마-2의 사전 훈련 코퍼스 사이의 사실적 중복을 완전히 피하기 어렵다는 점에 주목하는 것이 중요하다. 예를 들어, 2023년에 개봉된 영화에는 2023년 이전에 정보를 얻을 수 있었을 것이다. 데이터 중복 탐지는 본 연구의 초점을 벗어난 적극적인 연구 방향이다.\n' +
+      '\n' +
+      '### Wiki2023 Question-answer Pairs\n' +
+      '\n' +
+      '명령어 조정 또는 성능 평가를 위한 QA 쌍을 수집하기 위해 공개적으로 사용 가능한 LLMs를 사용하여 프롬프트 1에 따라 기사를 컨텍스트로 하는 다양한 질문과 각 질문에 대한 답변을 생성한다. 평균 4.93개의 질문이 각 기사마다 생성된다. 도. 도 2 및 도 2를 참조하여 설명하면 다음과 같다. 도 3은 각각 "오펜하이머"에 대한 상세한 통계 및 예시적인 QA 쌍을 도시한다.\n' +
+      '\n' +
+      '### Splits\n' +
+      '\n' +
+      '모든 영역 중 평가를 위해 필름 영역을 선택하고 256개의 논문을 테스트 분할(Wiki2023-film-test)로 무작위로 선택한다. 우리는 테스트 분할 문서(Wiki2023-film-test-doc)에서 LLMs을 지속적으로 학습시키고, 해당 문항의 정확도에 따라 LLMs의 성능을 평가한다. 나머지 1720개의 기사 및 해당 QA 쌍(위키2023-필름-트레인)은 그림 2의 도메인 내 설정에 해당하는 다양한 훈련 전략을 연구하는 데 사용될 것이다. 또한 그림 2의 도메인 간 설정에 해당하는 도메인 간 다양한 방법의 효과를 연구하기 위해 필름 도메인에 대한 평가 전에 다른 도메인에서 훈련한다.\n' +
+      '\n' +
+      '도 3: "Oppenheimer" 및 Wiki2023로부터의 대응하는 QA 쌍들에 관한 예시적인 문서. 손실을 계산하기 위해 사용되는 토큰들은 녹색으로 강조된다.\n' +
+      '\n' +
+      '그림 2: 위키2023 데이터셋. **오른쪽 위**: 문서 및 QA 쌍의 수, **왼쪽 위**: 질문의 빈번한 키워드, **아래**: 문서, 질문 및 답변의 토큰 개수 분포입니다.\n' +
+      '\n' +
+      'Experimental Settings\n' +
+      '\n' +
+      '### Objectives\n' +
+      '\n' +
+      '문서에서 훈련할 때, 우리는 <bos> 토큰을 미리 작성하고 문서의 모든 토큰에 대해 평균하여 표준 다음 토큰 예측 손실을 계산합니다. \\(L_{\\mathbf{d}}=-\\sum_{t}\\log P(\\mathbf{d}_{t}|\\mathbf{d}_{<t})/|\\mathbf{d}|\\.5 QA 쌍에서 훈련할 때, 접두사로 질문이 주어진 답의 토큰에 대해서만 평균 음의 로그 우도 손실을 계산합니다. \\(L_{\\mathbf{a}}=-\\sum_{t}\\log P(\\mathbf{a}_{t}|\\mathbf{a}_{<t})/|\\mathbf{a}|\\. 도. 도 3은 손실들을 컴퓨팅하기 위해 사용되는 토큰들이 강조되는 QA 쌍들과 함께 예시적인 문서를 제시한다.\n' +
+      '\n' +
+      '각주 5: 전체 기사의 결론을 의미하지 않는 첫 번째 섹션만 사용하기 때문에 문서 끝에 <eos> 토큰을 추가하지 않는다.\n' +
+      '\n' +
+      '### Hyperparameters\n' +
+      '\n' +
+      'AdamW Loshchilov와 Hutter (2019)를 이용하여 \\(\\beta_{1}=0.9\\), \\(\\beta_{2}=0.95\\), 가중치 감쇄율 0.1을 얻었다. 웜업 없이 코사인 스케줄러를 이용하여 학습률을 초기값의 10%까지 감쇄시켰다. 문서에 대한 사전 학습 시 256개의 문서 배치 크기와 3e-5의 초기 학습률을 사용한다. QA 쌍에 대한 명령어 조정 시 256개의 QA 쌍과 동일한 배치 크기를 사용하지만 계산 손실을 계산하는 데 사용되는 단일 배치의 토큰 수가 더 적기 때문에 5e-6의 감소된 초기 학습률을 선택한다. 에포크 수는 설정에 따라 달라지며 해당 섹션에 자세히 설명되어 있다.\n' +
+      '\n' +
+      '### Evaluation Metrics\n' +
+      '\n' +
+      '추론 시간에는 그림 3의 형식을 따라 컨텍스트로 주어진 질문에 대한 답변을 생성하기 위해 탐욕스러운 디코딩을 사용한다. 원래 Llama-2를 평가하기 위해 5개의 QA 쌍을 컨텍스트 예제로 추가하여 QA 형식을 따르는지 확인한다. 대부분의 질문은 단순한 팩토이드 질문이고 대부분의 답변은 비교적 짧기 때문에 모델의 출력이 정규화 후에 정확하게 금 답변과 일치하는지 여부를 측정하는 주요 메트릭 Kwiatkowski 등(2019)으로 정확 일치(EM)를 사용한다(예: 기사 및 구두점 제거). 더 긴 응답을 평가하고 사소한 어휘 차이를 수용하기 위해 금 답이 모델의 출력에 나타나는지 평가하는 답변 회상과 모델의 출력과 금 답 사이의 가장 긴 공통 서브시퀀스를 측정하는 ROUGE-L도 보고한다.\n' +
+      '\n' +
+      '## 4 How Howuch Knowledge Can LLMs\n' +
+      '\n' +
+      '지속적인 사전 훈련을 통한 흡수\n' +
+      '\n' +
+      '그다음은 지시 조정인가요?\n' +
+      '\n' +
+      'LLM들의 파라미터들에 저장된 팩트 지식들은 추가적인 트레이닝 Brown 등(2020); Petroni 등(2019); Jiang 등(2020); Roberts 등(2020). 고품질 데이터 Sanh 등(2022)에 대한 추가 명령 조정(감독 미세 조정이라고도 함); Wei 등(2022)을 사용하면 LLMs에서 지식이 보다 효과적으로 도출되는 것으로 판단된다. 그러나 LLM이 질문에 올바르게 답할 때 사전 훈련 데이터의 다양성으로 인해 지식의 출처가 불분명하다. 예를 들어, LLM은 "세계에서 가장 큰 빙상이 어디에 있는가"라는 질문에 답할 때 남극 빙상에 대해 본 문서에서 정보를 회상하고 일반화하여 응답을 도출하거나, 학습 데이터에서 마주치는 유사한 질문에서 답변을 반복하는 것일까? 전자의 시나리오는 나중에 도출될 수 있는 방식으로 문서를 이해하고 매개 변수 내에 지식을 효과적으로 저장할 수 있는 능력을 의미하는 반면, 후자의 경우는 단순한 암기이기 때문에 이러한 차이는 매우 중요하다.\n' +
+      '\n' +
+      '여러 연구에서 이 문제를 연구했으며, 주요 발견은 LMs가 Wang 등(2021), Zhu 및 Li(2023)에 대해 훈련된 문서에 대한 질문에 답하기 위해 고군분투한다는 것이다. 그러나 이러한 실험은 주로 BART, T5 또는 GPT-2 Wang 등(2021); Jang 등(2022); Hu 등(2023), 무작위로 초기화된 변압기 Zhu 및 Li(2023)를 사용하거나 명령어 조정 Ovadia 등(2023)을 사용하지 않는 비교적 작은 LMs를 사용하여 수행되었다는 점에 유의하는 것이 중요하다. 이를 통해 우리는 _새로운 문서에서 지식을 흡수하고 표준 연속 사전 훈련 후 지시 조정 레시피를 사용하여 질문에 답하는 현대 LLM의 실제 한계가 무엇인지 궁금해진다_. 이 섹션에서는 한계를 테스트하기 위해 위키2023-필름에서 라마-2 7B 및 70B를 사용하여 광범위한 실험을 실행한다.\n' +
+      '\n' +
+      '### Vanilla Continued Pre-training and Instruction-tuning\n' +
+      '\n' +
+      '실험 설정 두 가지 표준 설정을 사용하여 실험하고 관련 질문에 답하여 성능을 평가합니다.\n' +
+      '\n' +
+      '* 지속적인 사전 훈련: 지시-튜닝이 없는 테스트 문서상의 훈련(도 4) .6* 표준 명령-조정: 열차 QA 쌍에 대한 명령-조정 전의 열차 및 테스트 문서 모두에 대한 열차.\n' +
+      '\n' +
+      '우리는 단일 에폭에 대해 명령어 튜닝을 수행하는데, 이는 더 많은 에폭들이 일반적으로 감소된 성능을 초래하기 때문이다. 문서 교육을 위해 효과적인 지식 습득이 가능하고 적당한 크기의 코퍼라에 대해 저렴한 비용으로 사용할 수 있는 여러 시기(7B/70B 모델의 경우 10/5)를 선택합니다.\n' +
+      '\n' +
+      '실험 결과는 Tab에 나타낸 바와 같다. 도 1에서, 원본 Llama-2 모델(7B/70B의 경우 9.5%/17.2%)의 상대적으로 낮은 성능은 테스트 문서 내의 대부분의 지식이 원본 사전 트레이닝 코퍼스에 포함되지 않음을 나타낸다. 문서에 대한 사전 교육을 계속한 후, 성능은 27.2%/41.7%로 증가하여 LLM이 어느 정도의 지식을 흡수할 수 있음을 나타낸다. 지침 조정은 성능을 30.3%/46.4%로 더욱 증가시켜 이 표준 레시피의 효과를 확인시켜준다. 이 관찰은 Zhu 및 Li(2023)와 다르며, 이는 사전 훈련 후 명령어 조정이 무작위로 초기화된 GPT-2 유사 변압기에서 효과가 없음을 보여준다. 그 차이는 아마도 Llama-2가 원시 문서와 QA 데이터로 구성된 다양한 말뭉치에 대한 사전 교육을 통해 질문을 통해 매개 변수에서 지식을 추출하는 데 어느 정도 숙련도를 발전시켰기 때문에 발생할 것이다. 또한 해당 문서가 컨텍스트(탭 1의 "오픈 북 w/닥")로 Llama-2에 직접 제공되는 성능을 보고한다. 닫힌 책과 열린 책 설정 사이의 상당한 차이는 LLM의 매개변수에서 지식을 검색하는 것이 여전히 어렵다는 것을 시사한다.\n' +
+      '\n' +
+      '### Training Dynamics 분석: 복잡성 및 일반화\n' +
+      '\n' +
+      '문서의 복잡성을 낮추면 관련 질문에 대한 답으로 일반화될 수 있는 방법은 무엇인가? 우리는 에폭의 수를 변화시킨다. 도 5(a)) 및 학습률(도. 5(b)) 문서들에 대한 지속적인 사전 트레이닝을 위한 그리고 세 가지 메트릭들을 모니터링하여 트레이닝 역학.7을 연구한다.\n' +
+      '\n' +
+      '각주 7: 우리는 항상 학습률을 초기값의 10%로 붕괴시키기 때문에, 더 많은 에포크들에 대한 트레이닝은 더 적은 에포크들 후에 획득된 체크포인트로부터 트레이닝을 계속하는 것과 같지 않다.\n' +
+      '\n' +
+      '* **지식 획득** 정확한 일치로 측정 된 테스트 질문에 대 한 QA 정확성입니다.\n' +
+      '* **문서의 복잡성** 문서 내의 모든 토큰에 대해 복잡성(PPL)을 계산합니다.\n' +
+      '* **지식 보존** NQ(자연 질문) 데이터 세트에 대한 QA 정확도를 평가하여 사전 훈련 중 축적된 지식의 보존에 근사합니다. NQ는 2019년에 발표되었으며 주로 당시 위키피디아 기사를 기반으로 한 질문을 포함한다.\n' +
+      '\n' +
+      '### Experiment results\n' +
+      '\n' +
+      '*에 나타낸 바와 같다. 도 5(a)에서 QA 정확도는 복잡도가 1에 가까워질수록 일관되게 향상되며, 이는 _사실적 지식 학습은 모든 토큰에 대한 철저한 손실 최소화를 필요로 함을 나타낸다_. 이것은 지나치게 최적화하면 과적합으로 이어지는 일반적인 기술을 배우는 것과 대조된다.\n' +
+      '\n' +
+      '그림 4: 이 논문에서 조사한 다른 실험 설정이다. 각 행은 고유한 이름과 숫자를 가진 서로 다른 실험 설정을 나타내며, 오른쪽을 가리키는 밝은 파란색 삼각형으로 강조 표시된 각 수직 섹션은 훈련 단계를 나타낸다. 모델은 모든 설정에서 테스트 QA에 대해 평가됩니다. 여러 데이터 세트가 점선 사각형 내에 동봉될 때마다, 이들은 훈련 프로세스 동안 함께 혼합된다.\n' +
+      '\n' +
+      '*에 나타낸 바와 같다. 도 5의 (a) 및 도 5의 (a)를 참조하여 설명한다. 도 5(b)에 도시된 바와 같이, LLM들이 문서에 대한 복잡성을 최소화한 모든 경우들 중에서, 더 많은 에폭 또는 더 큰 학습 속도로 트레이닝된 경우들은 전형적으로 우수한 QA 성능을 나타낸다. 우리는 _보다 공격적인 훈련이 문서의 기만적인 패턴에 덜 과적합하고 질문에 응답할 때 더 나은 일반화로 이어진다는 가설을 세운다_.\n' +
+      '\n' +
+      '요약하면, 더 낮은 당혹도는 질문에 응답할 때 더 강한 일반화로 이어지지만 이전에 습득한 지식을 잊어버리는 희생을 치르게 된다.\n' +
+      '\n' +
+      '## 5 문서의 지식 흡수에서 LLM의 개선\n' +
+      '\n' +
+      '표준 교수-조정을 통해 도출되는 지식의 양은 여전히 제한적이며, 문서의 당혹성을 최소화하더라도 우리가 "당혹성의 저주"라고 부르는 현상이다. 우리의 다음 질문은 어떻게 LLM이 문서로부터 지식을 흡수하여 복잡성 저주를 완화할 수 있는 능력을 향상시킬 수 있는가이다. 주요 과제는 지식이 원시문서에서 제시되는 방식과 질의응답을 통해 접근하는 방식의 괴리이다. 우리는 QA 쌍이 일반적으로 간단하지만 문서가 더 복잡하고 어수선하여 더 복잡한 방식으로 많은 사실 진술을 함께 엮는 경향이 있음을 발견했다. 를 사용하는 것을 특징으로 하는 반도체 소자의 제조 방법. 도 3을 예로 들면, "오펜하이머의 편집을 누가 처리했는가"라는 질문에 대한 답은 "편집은 제니퍼 레임에 의해 처리되었다..."라는 글의 중간에 있는 문장에 포함되어 있는데, 이 문장은 "오펜하이머"를 명시적으로 언급하지 않는다. 훈련 동안 LLM은 문맥을 이해하고 "편집"이 매개변수에서 이 지식을 효과적으로 인코딩하기 위해 "오펜하이머의 편집"을 지칭한다는 것을 추론해야 한다.\n' +
+      '\n' +
+      'Zhu와 Li(2023)는 합성 전기에서 무작위로 초기화된 GPT-2 유사 변압기를 처음부터 훈련하여 이 문제를 연구하고 개인에 대한 질문에 답하는 능력을 평가했다. 그들은 그들 중 절반과 관련된 전기와 질문의 혼합에 대한 교육을 발견했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c|c c c} \\hline \\hline  & \\multicolumn{3}{c|}{**Llama-2 7B**} & \\multicolumn{3}{c}{**Llama-2 70B**} \\\\\n' +
+      '**Settings** & **EM Rec. R-L** & **EM Rec. R-L** & **EM Rec. R-L** \\\\ \\hline \\multicolumn{6}{l}{_closed- and open-book performance before training_} \\\\ closed-book & 9.5 & 10.0 & 21.2 & 17.2 & 18.1 & 31.4 \\\\ open-book w/ doc & 72.2 & 75.4 & 91.5 & 78.2 & 80.6 & 94.9 \\\\ \\hline \\multicolumn{6}{l}{_closed-book performance w/ standard methods_} \\\\ cont. pre-training \\(\\Uparrow\\) & 27.6 & 31.6 & 43.8 & 41.7 & 45.8 & 60.2 \\\\ +instruction-tuning \\(\\Uparrow\\) & 30.3 & 34.7 & 47.4 & 46.4 & 50.9 & 64.1 \\\\ mix all data \\(\\Uparrow\\) & 39.4 & 44.6 & 56.7 & 57.1 & 63.4 & 72.4 \\\\ \\hline \\multicolumn{6}{l}{_closed-book performance w/ pre-instruction-tuning (PIT)_} \\\\ PIT (QA only) \\(\\Uparrow\\) & 28.6 & 32.7 & 45.2 & 49.7 & 53.7 & 67.9 \\\\ PIT (QA \\(\\rightarrow\\) docs) \\(\\Uparrow\\) & 32.5 & 37.2 & 49.0 & 54.6 & 60.0 & 73.8 \\\\ PIT \\(\\Uparrow\\) & **45.4** & **51.2** & **63.2** & **62.7** & **68.6** & **78.8** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 표준 명령어 조정과 사전 명령어 조정 간의 QA 성능(%) 비교. 가장 좋은 결과는 굵은 글씨입니다. 레크 R-L은 ROUGE-L을 의미한다.\n' +
+      '\n' +
+      '도 5: 에폭의 수를 변화시킨다(도 5). 도 5(a)) 및 학습률(도. 도 5(b))는 라마-2 7B의 트레이닝 다이내믹스를 연구하기 위한 계속되는 사전 트레이닝 동안. 왼쪽 축은 테스트 문제에 대한 QA 정확도로 정확한 일치로 측정된다. 오른쪽 축에는 문서에 있는 모든 토큰의 복잡성과 자연 질문 데이터 세트에 대한 QA 정확도로 측정한 지식 보유 정확도의 뚜렷한 색상으로 표시된 두 가지 메트릭이 표시된다. 우리는 모든 문서 토큰의 복잡성이 1로 최소화되는 상황을 강조한다.\n' +
+      '\n' +
+      '생물학은 그림 4의 설정 1과 유사한 나머지 절반의 생물학에 대한 질문에 답할 때 강력한 일반화를 이끌었다. 대조적으로, 생물학과 QA 쌍에 대한 교육은 순차적으로 실패했다. 그러나 데이터가 함께 혼합되었기 때문에 성공의 핵심 기여자는 여전히 불확실하며 새로운 문서의 지식을 흡수하기 위해 실제로 이를 적용하는 방법이 불분명하다. QA 쌍과 문서 간의 다양한 난이도에 대한 관찰과 Zhu와 Li(2023)의 발견에서 영감을 받아 _복잡한 문서의 지식을 인코딩하는 프로세스가 이 지식에 액세스하는 방법을 고려하도록 지속적인 사전 훈련 전에 LLM을 의도적으로 명령 조정 데이터에 노출시키는 것이 유익하다고 가정한다_ 이를 **사전 명령 조정(PIT)** 이라고 하고 지속적인 학습 전에 PIT의 다양한 구현(SS 5.1)을 연구한 다음 성능에 기여하는 키(SS 5.2 및 SS 5.3)를 식별하는 자세한 삭제를 수행하고 마지막으로 PIT가 도메인에서 얼마나 잘 수행되는지 평가합니다(SS 5.4). SS 3.2에 설명된 하이퍼파라미터를 준수하고 달리 명시되지 않는 한 3개의 에폭 동안 PIT를 수행한다.\n' +
+      '\n' +
+      '### 사전 명령 조정 변수\n' +
+      '\n' +
+      '사전 지시-조정 w/QA만 문서에 대한 사전 교육을 계속하기 전에 지시-조정 데이터를 노출하는 것으로 시작한다. 이는 계속되는 사전 훈련 설정(도 4 5)과 직접적으로 비교될 수 있다. 직관은 질문이 LLMs가 주요 유형의 정보를 인식하는 데 도움이 되어 질문이 문서와 직접 연결되지 않더라도 후속 문서에 대한 사전 훈련 중에 LLMs가 중요한 정보에 집중할 수 있도록 한다는 것이다. 예를 들어, "누가 오펜하이머의 편집을 처리했는가"와 같은 질문에 대한 교육은 LLM이 "바비"와 같은 새로운 문서에 대한 교육을 할 때 시나리오 작성자에게 주의를 기울이는 데 도움이 될 수 있다. 탭에 표시된 대로입니다. 특히 7B/70B의 경우 더 큰 LLMs(27.6%/41.7% \\(\\rightarrow\\) 28.6%/49.7%)에서 이 방법은 지속적인 사전 훈련보다 우수했다. 문서 교육 후 QA 데이터에 대해 교육하는 절제(탭 2의 명령-조정 w/o train doc") 문서를 인코딩하기 전에 준비운동으로 문항에 대한 교육의 중요성을 확인하는 것은 비효율적이다.\n' +
+      '\n' +
+      'QA 및 문서에 대한 사전 지시-순차적으로 우리의 두 번째 구현은 QA 및 관련 문서에 대해 순차적으로 훈련한다(도 4 5). LLM이 관련된 더 간단한 QA 쌍을 파악한 후 복잡한 문서에 대해 훈련되면 문서로부터 지식을 흡수하는 능력이 강화될 수 있다는 직관을 가지고 있다. 예를 들어, LLM이 이미 "제니퍼 레임"이 "오펜하이머 편집을 담당한 사람"에 대한 답이라는 것을 알게 된 경우, 문서 작업에 대한 훈련\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l c c c} \\hline \\hline\n' +
+      '**Setting names** & **Setting configurations** & **EM** & **Rec.** & **R-L** \\\\ \\hline \\multicolumn{5}{c}{_baselines_} \\\\ continued pre-training 1 & test doc & 27.6 & 31.6 & 43.8 \\\\ +instruction-tuning 2 & train doc + test doc \\(\\rightarrow\\) train QA & 30.3 & 34.7 & 47.4 \\\\ +instruction-tuning (w/o forget) 3 & train doc + test doc \\(\\rightarrow\\) train QA + test doc & 30.2 & 34.1 & 46.4 \\\\ +instruction-tuning (w/o train doc) & test doc \\(\\rightarrow\\) train QA & 27.1 & 30.7 & 42.3 \\\\ weighted continued pre-training & test doc (weighted) & 27.7 & 32.7 & 43.3 \\\\ adapted continued pre-training & train doc \\(\\rightarrow\\) test doc & 26.9 & 32.7 & 44.2 \\\\ mix all data 3 & train QA + train doc + test doc & 39.4 & 44.6 & 56.7 \\\\ \\hline \\multicolumn{5}{c}{_various pre-instruction-tuning (PIT) methods and ablation studies_} \\\\ train QA + train doc (3 epochs) \\(\\rightarrow\\) test doc & 45.4 & 51.2 & 63.2 \\\\ \\hline \\multicolumn{5}{c}{_ablation studies of the number of epochs_} \\\\ \\multicolumn{5}{c}{1 epoch} \\\\ \\multicolumn{5}{c}{5 epochs} \\\\ \\multicolumn{5}{c}{10 epochs} \\\\ PIT 2 & 10 epochs & 45.8 & 52.1 & 63.6 \\\\ \\multicolumn{5}{c}{_ablation studies of different learning mechanisms_} \\\\ QA before doc (grouped) & 38.2 & 43.2 & 56.3 \\\\ QA after doc (grouped) & 27.2 & 31.1 & 42.1 \\\\ QA before doc (interleaved) & 45.9 & 51.3 & 64.5 \\\\ QA after doc (interleaved) & 43.2 & 49.1 & 61.6 \\\\ \\multicolumn{5}{c}{1} \\\\ PIT\\(-\\) & train QA + train doc \\(\\rightarrow\\) train QA \\(\\rightarrow\\) test doc & 44.4 & 51.3 & 63.4 \\\\ PIT++ 3 & train QA \\(\\rightarrow\\) train QA + train doc \\(\\rightarrow\\) test doc & **48.1** & **54.4** & **66.4** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: Llama-2 7B를 사용하여 향상된 성능에 대한 주요 기여자를 식별하기 위한 다양한 사전 지시 조정 방법 및 절제 연구의 비교(%)이다. 상이한 배경 컬러들은 상이한 사전 명령-튜닝 방법들을 나타낸다. 가장 좋은 결과는 굵은 글씨입니다.\n' +
+      '\n' +
+      '편집은 제니퍼 레임에 의해 처리되었다"는 편집은 매개변수에 대한 지식 저장을 보다 효율적으로 정제할 수 있다. 탭에 표시된 대로입니다. 도 1을 참조하면, QA 쌍 및 문서에 대한 PIT는 QA 전용 변형(도 4)을 순차적으로 능가한다. 및 표준 명령어-튜닝(도. 4)(7B/70B의 경우 30.3%/46.4% \\(\\rightarrow\\) 32.5%/54.6%로 그 효과가 입증되었다.\n' +
+      '\n' +
+      '사전 명령-튜닝 PIT의 효과는 연관된 QA 쌍들이 각각의 문서들을 인코딩하기 전에 이미 학습되도록 하는 것에 의존한다. 그러나, 우리는 문서들에 대한 트레이닝(도 4의 트레이닝 doc) 후에 관찰하였었다. , 해당 문항에 대한 정확도(도 4의 QA 훈련) 거의 완벽에서 30%로 떨어졌으며 심각한 망각을 나타냅니다. 이를 해결하기 위해 관련 QA 쌍과 문서를 함께 학습한다(도 4). 탭에 표시된 대로입니다. 도 1을 참조하면, 이는 모든 데이터를 함께 혼합하는 것을 포함하여 다른 모든 접근법들을 능가하는 성능을 상당히 향상시킨다(도. 7B/70B의 경우 39.4%/57.1% \\(\\rightarrow\\) 45.5%/62.7%의 큰 마진을 보였다. QA 쌍과 문서 모두에 대한 훈련은 망각을 방지하지만 학습 프로세스가 작동하는 방식도 모호합니다. LLM이 문서로부터 지식을 인코딩하기 전에 QA 쌍을 파악하는지, 아니면 반대로 작동하는지는 불분명하다. 다음 섹션에서는 이를 조사하기 위해 훈련 중 QA 쌍과 문서의 순서를 의도적으로 배열하여 PIT의 개선된 버전을 제안한다.\n' +
+      '\n' +
+      '### Pre-instruction-tuning++\n' +
+      '\n' +
+      '우리는 먼저 에폭의 수에 따라 성능이 어떻게 달라지는지 연구한다. 탭에 표시된 대로입니다. 도 2에서는 1에포크에 대한 훈련이 미흡하고 3, 5, 10에포크의 수행이 유사하다. 에포크 수를 3으로 고정하고 그림 6과 같이 QA 쌍과 해당 문서의 순서를 배열한다. 인터리브 배열은 모든 데이터를 3번 반복하여 각 에포크에서 질문이 관련 문서에 선행하거나 후속하도록 한다. 다른 한편으로, 그룹화된 배열은 각각의 예의 3개의 출현을 함께 클러스터링하여, 반복된 질문들이 각자의 반복된 문서들의 앞 또는 뒤에 위치된다는 것을 보장한다. 탭에 표시된 대로입니다. 도 2를 참조하면, 대응하는 문서들 이전에 QA 쌍들을 위치시키는 것은 그룹화된 배열들 및 인터리빙된 배열들 모두에서 더 나은 성능을 달성하는데, 이는 PIT 동안, 학습 메커니즘이 더 복잡하고 정보 밀도가 높은 문서들로부터 정보를 흡수하기 위해 학습 전에 지식에 액세스하는 방법을 이해하는 것을 우선시한다는 것을 나타낸다.\n' +
+      '\n' +
+      '이를 기반으로 지식 접근의 패턴을 이해하기 위해 QA 쌍에만 독점적으로 학습한 다음 문서로부터의 질문 및 지식 인코딩을 통해 지식 접근을 정렬하기 위해 QA와 문서 데이터의 조합에 대한 학습으로 진행하는 사전 지시-조정++라는 개선된 변형을 제안한다(도 4). 탭에 표시된 대로입니다. 도 2를 참조하면, PIT++는 PIT를 상당히 능가한다(도 4). (PIT- in Tab. 2). 추가적인 이익을 얻지 못한다. 이것은 지식이 접근하는 방법을 이해하는 것이 문서로부터 지식을 흡수하는 데 도움이 되므로 우선시되어야 한다는 우리의 가설을 강화한다.\n' +
+      '\n' +
+      '### Ablation Studies\n' +
+      '\n' +
+      '표준 지시-조정은 망각으로 인한 것이 아니라 열등하다. 표준 지시-조정의 단점은 QA 쌍("정렬세"라고도 하는 현상)에 대한 훈련 후에 테스트 문서 내의 지식이 잊혀질 수 있다는 것이다(Ouyang et al., 2022). 표준 명령어-튜닝의 낮은 성능이 망각에 의한 것이 아님을 보여주기 위해, 우리는 망각을 방지하기 위해 명령어-튜닝 동안 테스트 문서와 트레인 QA를 혼합하는 설정을 추가한다(도 4). 탭에 표시된 대로입니다. 2, 이것은 우리의 가설을 확인하는 데 도움이 되지 않는다.\n' +
+      '\n' +
+      '사전 지시-조정(pre-instruction-tuning)은 단순히 문서의 두드러진 토큰에 가중치를 부여하는 것이 아니다. Hu et al.(2023)에서 영감을 받은 삭제는 두드러진 정보에 초점을 맞추기 위해 문서에 사전 훈련할 때 토큰을 가중화하는 것이다. 답변들에 포함된 문서들(예를 들어, "편집은 제니퍼 라임에 의해 처리되었다" 문장에서 "제니퍼 라임")의 토큰들에 1.0의 가중치를 할당하고, 다른 토큰들에 0.5의 더 낮은 가중치를 할당한다. 탭에 표시된 대로입니다. 도 2에 도시된 바와 같이, 이 가중 지속된 프리\n' +
+      '\n' +
+      '도 6: QA 쌍들과 대응하는 문서들 사이의 상이한 배열들. 타원은 다른 예를 나타낸다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:9]\n' +
+      '\n' +
+      '### LMs의 Training Dynamics 분석\n' +
+      '\n' +
+      '많은 연구에서 LM의 훈련 역학을 다양한 관점에서 연구한다. Carlini 등(2022)은 모델 크기와 데이터 복제 빈도에 따른 암기를 정량화한다. Tirumala 등(2022)은 더 큰 LMs가 더 적은 오버피팅으로 트레이닝 데이터를 더 빨리 암기한다는 것을 발견한다. Xia et al. (2023)은 복잡도가 다른 요인들보다 모델 거동을 더 잘 예측한다는 것을 보여준다. Dery et al.(2022)은 분류 작업과 RoBERTa 모델을 사용하여 최종 작업 인식 사전 훈련을 연구한다. 우리의 작업은 질문에 답하기 위해 본 문서에서 정보를 리콜하고 일반화하는 능력에 특별히 초점을 맞춘다는 점에서 다르다.\n' +
+      '\n' +
+      '### Retrieval-augmented Generation\n' +
+      '\n' +
+      '검색-증강 생성(retrieval-augmented generation, RAG)은 외부 소스들로부터 검색된 정보로 고정된 LLMs를 증강시킴으로써 새로운 지식을 LLMs에 통합하기 위해 널리 사용되는 접근법이다(Chen et al., 2017; Guu et al., 2020; Lewis et al., 2020; Borgeaud et al., 2022; Wang et al., 2023; Alon et al., 2022; He et al., 2021; Sachan et al., 2021; Izacard et al., 2023; Lee et al., 2022; Jiang et al., 2022; Shi et al., 2023; Jiang et al., 2023; Asai et al., 2023; Nakano et al., 2021; Qin et al., 2023; Lin et al., 2023). RAG는 매개변수에 저장된 지식에만 의존할 때 일반적으로 경험하는 환각을 줄이는 데 효과적이지만 검색 및 생성 프로세스는 추가 지연과 복잡성을 추가한다. 대조적으로, 매개 변수에 지식을 저장하는 지속적인 사전 훈련과 닫힌 책 방식으로 질문에 답하기 위해 저장된 지식을 활용하는 것은 추론 시간에 더 간단하고 빠르다. 이 능력을 향상시키는 것은 또한 LLM을 정보에 액세스하기 위한 신뢰할 수 있는 보조자로 사용하는 기본 단계를 나타내기 때문에 과학적으로 중요하다. 따라서 본 논문에서는 파라메트릭 접근 방법을 탐색하는 데 중점을 둔다.\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      '우리는 나중에 사실적 지식을 이끌어내는 것을 목표로 새로운 문서에 대한 지속적인 훈련의 가장 좋은 방법을 연구한다. 우리는 문서로부터 지식을 인코딩하기 전에 QA 쌍을 통해 지식이 액세스되는 방법을 학습하는 사전 명령 튜닝을 제안한다. 광범위한 실험은 사전 명령-튜닝 대 표준 명령-튜닝의 우수성을 입증한다. 향후 방향에는 이 방법을 보다 강력한 일반화를 위한 광범위한 범위의 문서 및 지침으로 확장하는 것이 포함된다.\n' +
+      '\n' +
+      '## Limitations\n' +
+      '\n' +
+      '위키2023 데이터 세트는 지속적인 지식 획득을 연구하기 위한 비교적 깨끗한 테스트 베드를 제공한다. 그러나 그 범위는 커먼 크롤의 웹 페이지나 arXiv의 과학 문서와 같은 다른 소스에 대한 훈련된 모델의 적응성을 제한하는 위키피디아로 제한된다. 본 논문에서는 QA 데이터에 대한 교수-조정을 통해 사실적 지식을 도출하는 데 중점을 둔다. 추론이나 이해력과 같은 다른 기술을 향상시키기 위한 다양한 유형의 데이터로 사전 수업 조정의 효과는 향후 연구에서 탐구될 필요가 있다.\n' +
+      '\n' +
+      '## Acknowledgements\n' +
+      '\n' +
+      '우리는 실험과 건설적인 피드백에 도움을 준 제위안 알렌주, 제우안 중, 슈얀 저우, 프랭크 F. 쉬, 첸 류, 루오홍 장에게 감사드린다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Alon 등 (2022) Uri Alon, Frank F. Xu, Junxian He, Sudipta Sengupta, Dan Roth, and Graham Neubig. 2022. Neuro-symbolic language modeling with automaton-augmented retrieval. "머신 러닝에 관한 국제 회의"에서.\n' +
+      '* Asai 등(2023) Akari Asai, Zeqiu Wu, Yizhong Wang, Avirup Sil, and Hannaneh Hajishirzi. 2023. Self-rag: 자기 성찰을 통해 검색, 생성, 비평하는 학습. _ CoRR_, abs/2310.11511.\n' +
+      '* Berglund 등(2023) Lukas Berglund, Meg Tong, Max Kaufmann, Mikita Balseni, Asa Cooper Stickland, Tomasz Korbak, and Owain Evans. 2023. 반전 저주: "a is b"로 훈련된 LLM은 "b is a"를 학습하지 못합니다. _ CoRR_, abs/2309.12288.\n' +
+      '* Borgeaud 등 (2022) Sebastian Borgeaud, Arthur Mensch, Jordan Hoffmann, Trevor Cai, Eliza Rutherford, Katie Millican, George van den Driessche, Jean-Baptiste Lespiau, Bogdan Damoc, Aidan Clark, Diego de Las Casas, Aurelia Guy, Jacob Menick, Roman Ring, Tom Hennigan, Saffron Huang, Loren Maggiore, Chris Jones, Albin Cassirer, Andy Brock, Michela Paganini, Geoffrey Irving, Oriol Vinyals, Simon Osindero, Karen Simonyan, Jack W. 래, 에리히 엘젠, 로랑 시프르 2022. 수조 개의 토큰에서 검색하여 언어 모델을 개선합니다. International Conference on Machine Learning, ICML 2022, 17-23 July 2022, Baltimore, Maryland, USA_, Volume 162 of _Proceedings of Machine Learning Research_, pages 2206-2240. PMLR.\n' +
+      '* Brown 등(2020) Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, AmandaAskell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henigman, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Illya Sutskever, Dario Amodei. 2020. 언어 모델은 샷이 적은 학습자입니다. *신경 정보 처리 시스템의 발전 33: 신경 정보 처리 시스템에 대한 연례 회의 2020, NeurIPS 2020, 12월 6-12, 2020, 가상_.\n' +
+      '* Carlini et al. (2022) Nicholas Carlini, Daphne Ippolito, Matthew Jagielski, Katherine Lee, Florian Tramer, and Chiyuan Zhang. 2022. 신경 언어 모델에 걸친 암기 정량화. _ CoRR_, abs/2202.07646.\n' +
+      '* August 4, Volume 1: Long Papers_, pages 1870-1879. Association for Computational Linguistics.\n' +
+      '*Cheng et al.(2023) Daixuan Cheng, Shaohan Huang, and Furu Wei. 2023. 읽기 이해 기능을 통해 대용량 언어 모델을 적용합니다. _ CoRR_, abs/2309.09530.\n' +
+      '* 치앙 등(2023) Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Liamin Zheng, Siyuan Zhang, Yonghao Zhang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. 2023. Vicuna: 90%* 채팅 품질을 가진 gpt-4를 인상적인 오픈 소스 챗봇.\n' +
+      '* Chowdhery 등(2022) Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunipa Dev, Henryk Michalewski, Xavier Garcia, Vedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Lim, Barret Zoph, Alex 다이, 타누날라얀 산카라나라야나 필랄리, 마리 펠라트, 에이토르 르코위츠, 에리카 모이라라, 레원 차일드, 올렉산드르 폴로조프, 캐서린 리, 종웨이 저우, 쉬에지 왕, 브레넌 새타, 마크 디아즈, 오르한 피라트, 미셸 카타스타, 제이슨 웨이, 캐시 마이어-헬스턴, 더글러스 엑, 제프 딘, 슬라브 페트로프, 노아 피델. 2022. Palm: Scaling language modeling with pathways. _ CoRR_, abs/2204.02311.\n' +
+      '* Dery et al.(2022) Lucio M. 데리, 폴 미셸, 아밋 탈워커 그리고 그레이엄 노우빅 2022년입니다. 사전 교육을 해야 할까요? 대안으로서 최종 작업 인식 훈련에 대한 주장 <제10차 국제학술대회>의 ICLR 2022, Virtual Event, 4월 25일~29일, 2022. OpenReview.net.\n' +
+      '* 팀(2023) 제미니 팀. 2023년 제미니: 매우 유능한 멀티모달 모델 가족입니다.\n' +
+      '* Guu et al.(2020) Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Ming-Wei Chang. 2020. REALM: 검색 강화 언어 모델 사전 훈련. _ CoRR_, abs/2002.08909.\n' +
+      '* 의료 대화형 AI 모델 및 훈련 데이터의 오픈 소스 컬렉션입니다. _ CoRR_, abs/2304.08247.\n' +
+      '* He et al.(2021) Junxian He, Graham Neubig, and Taylor Berg-Kirkpatrick. 2021. 효율적인 최근접 언어 모델. "자연어 처리의 경험적 방법에 대한 회의"에서.\n' +
+      '* Hu et al. (2023) Nathan Hu, Eric Mitchell, Christopher D. Manning, and Chelsea Finn. 2023. 언어 모델의 메타 학습 온라인 적응. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pages 4418-4432. Association for Computational Linguistics.\n' +
+      '* Ivison 등(2023) Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. 2023. 변화하는 기후의 낙타: Tulu 2. _CoRR_, abs/2311.10702로 LM 적응을 향상시킵니다.\n' +
+      '* Iyer 등 (2022) Srinivasan Iyer, Xi Victoria Lin, Ramakanth Pasunuru, Todor Mihaylov, Daniel Simig, Ping Yu, Kurt Shuster, Tianlu Wang, Qing Liu, Punit Singh Koura, Xian Li, Brian O\'Horo, Gabriel Pereyre, Jeff Wang, Christopher Dewan, Asil Celikyilmaz, Luke Zettlemoyer, and Ves Stoyanov. 2022. OPT-IML: scaling language model instruction meta learning through the lens of generalization. _ CoRR_, abs/2212.12017.\n' +
+      '* Izacard 등 (2023) Gautier Izacard, Patrick S. H. Lewis, Maria Lomeli, Lucas Hosseini, Fabio Petroni, Timo Schick, Jane Dwivedi-Yu, Armand Joulin, Sebastian Riedel, and Edouard Grave. 2023. Atlas: 검색 증강 언어 모델을 사용한 소수의 샷 학습입니다. _ J 마흐 배워요 Res._ , 24:251:1-251:43.\n' +
+      '* 장 외(2022) 조엘 장, 성현 예, 양소희, 신중보, 한장훈, 김경훈, 최스탠리정규, 서민준. 2022. 언어 모델의 지속적인 지식 학습을 위해. <제10차 국제학술대회>의 ICLR 2022, Virtual Event, 4월 25일~29일, 2022. OpenReview.net.\n' +
+      '* Jiang et al.(2022) Zhengbao Jiang, Luyu Gao, Zhiruo Wang, Jun Araki, Haibo Ding, Jamie Callan, and Graham Neubig. 2022. Retrieval as attention: End-to-end learning of retrieval and reading within a single transformer. InProceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, EMNLP 2022, Abu Dhabi, United Arab Emirates, December 7-11, 2022_, pages 2336-2349. Association for Computational Linguistics.\n' +
+      '* Jiang et al.(2020) Zhengbao Jiang, Frank F. Xu, Jun Araki, and Graham Neubig. 2020. 언어 모델이 무엇을 알고 있는지 어떻게 알 수 있습니까? _ 트랜스젠더 Assoc. 컴퓨팅. Linguistics_, 8:423-438.\n' +
+      '*장 외 (2023) 정바오 장, 프랭크 F. 쉬, 루위 가오, 즈칭 선, 치안 류, 제인 드위베디-유, 이밍 양, 제이미 캘란, 및 그레이엄 노이비히. 2023. Active retrieval augmented generation. "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pages 7969-7992. Association for Computational Linguistics.\n' +
+      '* 대규모 언어 모델 정렬을 민주화합니다. _ ArXiv_, abs/2304.07327.\n' +
+      '* Kwiatkowski 등(2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur P. Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina Toutanova, Llion Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. 다이, 야콥 우즈코리트, 콕 르, 슬라브 페트로프 2019. 자연 질문: 질의 응답 연구를 위한 벤치마크입니다. _ 트랜스젠더 Assoc. 컴퓨팅. Linguistics_, 7:452-466.\n' +
+      '* Lee et al.(2022) Haejun Lee, Akhil Kedia, Jongwon Lee, Ashwin Parangjape, Christopher D. Manning, and Kyung-gu Woo. 2022. 오픈 도메인 질문 답변에는 하나의 모델만 있으면 됩니다. "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, EMNLP 2022, Abu Dhabi, United Arab Emirates, December 7-11, 2022_, pages 3047-3060. Computational Linguistics.\n' +
+      '* Lewis et al.(2020a) Mike Lewis, Yinhan Liu, Naman Goyal, Marjan Ghazvininejad, Abdelrahman Mohamed, Omer Levy, Veselin Stoyanov, and Luke Zettlemoyer. 2020a. BART: 자연어 생성, 번역 및 이해를 위한 시퀀스 대 시퀀스 사전 훈련을 제거합니다. "Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, ACL 2020, Online, July 5-10, 2020_, pages 7871-7880. The Association for Computational Linguistics.\n' +
+      '* Lewis et al.(2020b) Patrick S. H. Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Kuttler, Mike Lewis, Wen-tau Yih, Tim Rocktaschel, Sebastian Riedel, and Douwe Kiela. 2020b. 지식 집약적인 NLP 작업을 위한 검색 강화 생성 *신경 정보 처리 시스템의 발전 33: 신경 정보 처리 시스템에 대한 연례 회의 2020, NeurIPS 2020, 12월 6-12, 2020, 가상_.\n' +
+      '* Lin et al.(2023) Xi Victoria Lin, Xilun Chen, Mingda Chen, Weijia Shi, Maria Lomeli, Rich James, Pedro Rodriguez, Jacob Kahn, Gergely Szilvasy, Mike Lewis, Luke Zettlemoyer, and Scott Yih. 2023. RA-DIT: 검색 증강 이중 명령어 튜닝. _ CoRR_, abs/2310.01352.\n' +
+      '* Loshchilov and Hutter (2019) Ilya Loshchilov and Frank Hutter. 2019. Decoupled weight decay regularization. 제7회 International Conference on Learning Representations, ICLR 2019, New Orleans, LA, May 6-9, 2019_에서. OpenReview.net.\n' +
+      '* Mishra et al.(2022) Swaroop Mishra, Daniel Khashabi, Chitta Baral, and Hannaneh Hajishirzi. 2022. 자연어 크라우드소싱 지침을 통한 교차 작업 일반화. [제60회 컴퓨터 언어학 협회 연례 회의(제1권: Long Papers), ACL 2022, 아일랜드 더블린, 2022년 5월 22-27일_, 3470-3487페이지에서. 컴퓨터 언어학 협회.\n' +
+      '* Nakano 등 (2021) Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, Xu Jiang, Karl Cobbe, Tyna Eloundou, Gretchen Krueger, Kevin Button, Matthew Knight, Benjamin Chess, and John Schulman. 2021. Webgt: 인간 피드백을 사용한 브라우저 지원 질문 답변입니다. _ CoRR_, abs/2112.09332.\n' +
+      '* Nguyen et al. (2023) Tuan Dung Nguyen, Yuan-Sen Ting, Ioana Ciuca, Charlie O\'Neill, Ze-Chang Sun, Maja Jablonska, Sandor Kruk, Ernest Perkowski, Jack W. 밀러, 제이슨 리, 조쉬 픽, 카르테크 이이어, 토마스 로잔스키, 프라나브 케타르팔, 샤라프 자만, 데이비드 브로드릭, 세르히오 J. 로드리게스 멘데스, 탕 부이, 알리사 굿맨, 알베르토 아코마치, 질 P. 나이만, 제시 크레니, 케빈 샤윈스키 및 유니버스TBD. 2023년 아스트롤라마: 천문학 분야의 특화된 기초 모델을 향해. _ CoRR_, abs/2309.06126.\n' +
+      '* OpenAI (2023) OpenAI. 2023. GPT-4 기술 보고서. _ CoRR_, abs/2303.08774.\n' +
+      '* Ouyang et al.(2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike, and Ryan Lowe. 2022. 인간 피드백으로 지침을 따르도록 언어 모델을 훈련합니다. _ CoRR_, abs/2203.02155.\n' +
+      '* Ovadia et al. (2023) Oded Ovadia, Menachem Brief, Moshik Mishaeli, and Oren Elisha. 2023년, 미세 조정? 회수? 지식 주입을 llms로 비교하는 중입니다. _ CoRR_, abs/2312.05934.\n' +
+      '* Petroni et al. (2019) Fabio Petroni, Tim Rocktaschel, Sebastian Riedel, Patrick S. H. Lewis, Anton Bakhtin, Yuxiang Wu, and Alexander H. Miller. 2019. 지식 베이스로서의 언어 모델들? "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing, EMNLP-IJCNLP 2019, Hong Kong, China, November 3-7, 2019_, pages 2463-2473. Association for Computational Linguistics.\n' +
+      '* Qin et al. (2023) Yujia Qin, Zihan Cai, Dian Jin, Lan Yan, Shihao Liang, Kunlun Zhu, Yankai Lin, Xu Han, Ning Ding, Huadong Wang, Ruobing Xie, Fanchao Qi, Zhiyuan Liu, Maosong Sun, and Jie Zhou. 2023. Webcpm: Interactive web search for chinese long-form question answering. _ CoRR_, abs/2305.06849.\n' +
+      '* Radford et al. (2019) Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. 2019. 언어 모델은 감독되지 않은 다중 작업 학습자입니다. _ OpenAI Blog_, 1(8).\n' +
+      '* Rafailov et al. (2023) Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, and Chelsea Finn. 2023. 직접 선호도 최적화: 언어 모델은 비밀리에 보상 모델입니다. _ CoRR_, abs/2305.18290.\n' +
+      '* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. 2020. 통합 텍스트 대 텍스트 변환기를 사용 하 여 전이 학습의 한계를 탐색 합니다. _ J 마흐 배워요 Res._ , 21:140:1-140:67.\n' +
+      '* Roberts et al.(2020) Adam Roberts, Colin Raffel, and Noam Shazeer. 2020. 언어 모델의 매개 변수에 얼마나 많은 지식을 담을 수 있습니까? "Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing, EMNLP 2020, Online, November 16-20, 2020_, pages 5418-5426. Association for Computational Linguistics.\n' +
+      '* Sachan et al.(2021) Devendra Singh Sachan, Siva Reddy, William L. 해밀턴, 크리스 다이어 대니 요가타마 2021. End-to-end training of multi-document reader and retriever for open-domain question answering. *신경 정보 처리 시스템의 발전 34: 신경 정보 처리 시스템에 대한 연례 회의 2021, NeurIPS 2021, 12월 6-14, 2021, virtual_, 페이지 25968-25981.\n' +
+      '* Sanh et al. (2023) Victor Sanh, Albert Webson, Colin Raffel, Stephen H. Bach, Lintang Sutawika, Zaid Allyafeai, Antoine Chaffin, Arnaud Stiegler, Arun Raja, Mannan Dey, M Saiful Bari, Canwen Xu, Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechla, Taewoon Kim, Gunjan Chhablani, Nihal V. 나약, 데바요티 다타, 조나단 창, 마이크 톈젠 장, 한 왕, 마테오 마니카, 션 션, 정신용, 하싯 판데이, 레이첼 보든, 토마스 왕, 트리샬라 니라지, 조스 로젠, 아비샤르마, 안드레아 산틸리, 티볼트 페브리, 제이슨 앨런 프라이, 라이언 티한, 티한 르 스카오, 스텔라 비더만, 레오 가오, 토마스 울프, 알렉산더 M. 러쉬 2022. Multi-task prompted training enables zero-shot task generalization. _ 제10회 국제학술대회에서, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net.\n' +
+      '* Shi et al.(2023) Weijia Shi, Sewon Min, Michihiro Yasunaga, Min준 Seo, Rich James, Mike Lewis, Luke Zettlemoyer, and Wen-tau Yih. 2023. REPLUG: retrieval-augmented black-box language models. _ CoRR_, abs/2301.12652.\n' +
+      '* Sun et al.(2023a) Zhiqing Sun, Yikang Shen, Hongxin Zhang, Qinhong Zhou, Zhenfang Chen, David D. Cox, Yiming Yang, and Chang Gan. 2023a. SALMON: 원칙 따르기 보상 모델과의 자체 정렬. _ CoRR_, abs/2310.05910.\n' +
+      '* Sun et al.(2023b) Zhiqing Sun, Yikang Shen, Qinhong Zhou, Hongxin Zhang, Zhenfang Chen, David D. Cox, Yiming Yang, and Chuang Gan. 2023b. 인간 감독을 최소화하면서 처음부터 언어 모델의 원칙 기반 자기 정렬. _ CoRR_, abs/2305.03047.\n' +
+      '* Taori 등(2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 2023. Stanford alpaca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca] (https://github.com/tatsu-lab/stanford_alpaca).\n' +
+      '* Tian et al. (2023) Katherine Tian, Eric Mitchell, Huaxiu Yao, Christopher D. Manning, and Chelsea Finn. 2023. 사실성에 대한 언어 모델을 미세 조정합니다. _ CoRR_, abs/2311.08401.\n' +
+      '* 12월 9일, 2022_.\n' +
+      '* Touvron 등(2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 2023a. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ CoRR_, abs/2302.13971.\n' +
+      '* 투브론 외 (2023) 휴고 투브론, 루이 마틴, 케빈 스톤, 피터 알버트, 암자드 알마하리, 야스민 바베이, 니콜라 바슐리코프, 크리스티안 바톤 페러, 모야 첸, 기옌 쿠쿠룰, 다비드 에시부우, 주드 페르난데스, 제레미 푸, 웨닌 푸, 브라이언 풀러, 신시아 가오, 베단키 고쇼, 사가하르 호세이니, 루이 호우, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 하트쇼, 사그하르 호세이니, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 하바사, 이사벨 클루만, 아르템 고레네프, 신시아 가오, 사그하르 호세이니, 제냐 리, 다이애나 리스코비치, 잉하이 루, 윤잉 마오, 사보트 라흐로프, 제냐 마티네프, 푸시카 미슈라, 앤드류 폴턴, 제레미 라이젠슈타인, 라시 2023b. 라마 2: 오픈 파운데이션과 미세 조정된 채팅 모델입니다. _ CoRR_, abs/2307.09288.\n' +
+      '* Wang et al.(2023a) Boxin Wang, Wei Ping, Peng Xu, Lawrence McAfee, Zihan Liu, Mohammad Shoeybi, Yi Dong, Oleksii Kuchaiev, Bo Li, Chaowei Xiao, Anima Anandkumar, and Bryan Catanzaro. 2023a. 검색과 함께 자기회귀 언어 모델을 사전 훈련할까요? 포괄적인 연구 "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pages 7763-7786. Association for Computational Linguistics.\n' +
+      '* Wang et al.(2021) Cunxiang Wang, Pai Liu, and Yue Zhang. 2021. 생성 사전 훈련 언어 모델이 닫힌 책 q에 대한 지식 베이스 역할을 할 수 있는가? 제59차 전산언어학회 연차총회 및 제11차 자연어처리 국제공동회의, ACL/IJCNLP 2021, (제1권: Long Papers), Virtual Event, August 1-6, 2021_, 3241-3251페이지에서. 전산언어학회.\n' +
+      '* Wang et al.(2023b) Yizhong Wang, Hamish Ivison, Pradeep Dasigi, Jack Hessel, Tushar Khot, Khyathi Raghavi Chandu, David Wadden, Kelsey MacMillan, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. 2023b. 낙타는 어디까지 갈 수 있나요? 오픈 리소스에서 명령어 튜닝 상태를 탐색합니다. _ CoRR_, abs/2306.04751.\n' +
+      '* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Y. Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. Dai, Quoc V. 레 2022. 파인튜닝 언어 모델은 제로샷 학습자입니다. <제10차 국제학술대회>의 ICLR 2022, Virtual Event, 4월 25일~29일, 2022. OpenReview.net.\n' +
+      '* Wu et al.(2023) Chaoyi Wu, Weixiong Lin, Xiaoman Zhang, Ya Zhang, Yanfeng Wang, and Weidi Xie. 2023. Pmc-llama: 의학을 위한 오픈 소스 언어 모델을 구축하기 위해.\n' +
+      '* Xia et al.(2023) Mengzhou Xia, Mikel Artetxe, Chunting Zhou, Xi Victoria Lin, Ramakanth Pasunuru, Danqi Chen, Luke Zettlemoyer, and Veselin Stoyanov. 2023. 저울에 걸친 언어 모델의 훈련 궤적. [제61회 컴퓨터 언어학 협회 연례 회의(제1권: Long Papers), ACL 2023, 캐나다 토론토, 7월 9-14일, 2023_, 페이지 13711-13738. 컴퓨터 언어학 협회].\n' +
+      '* Zhang 등(2023) Ruohong Zhang, Luyu Gao, Chen Zheng, Zhen Fan, Guokun Lai, Zheng Zhang, Fangzhou Ai, Yiming Yang, and Hongxia Yang. 2023. 지식 마이닝 및 다이제스트를 통한 도메인별 챗봇 교육을 위한 자체 향상 방식입니다. _ CoRR_, abs/2311.10614.\n' +
+      '* Zhang 등 (2022) Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shouhui Chen, Christopher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, Todor Mihalyolov, Myle Ott, Sam Shleifer, Kurt Shuster, Daniel Simig, Punit Singh Koura, Anjali Sridhar, Tianlu Wang, and Luke Zettlemoyer. 2022. Opt: 미리 훈련된 변압기 언어 모델을 엽니다. _ ArXiv_, abs/2205.01068.\n' +
+      '* Zhao et al. (2023) Wayne Xin Zhao, Kun Zhou, Junyi Li, Tianyi Tang, Xiaolei Wang, Yupeng Hou, Yingqian Min, Beichen Zhang, Junjie Zhang, Zican Dong, Yifan Du, Chen Yang, Yushuo Chen, Zhipeng Chen, Jinhao Jiang, Ruiyang Ren, Yifan Li, Xinyu Tang, Zikang Liu, Peiyu Liu, Jian-Yun Nie, and Ji-Rong Wen. 2023. A survey of large language models. _ CoRR_, abs/2303.18223.\n' +
+      '* Zhou 등(2023) Chunting Zhou, Pengfei Liu, Puxin Xu, Srini Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, Susan Zhang, Gargi Ghosh, Mike Lewis, Luke Zettlemoyer, and Omer Levy. 2023. LIMA: 정렬을 위해 적은 것이 더 많습니다. _ CoRR_, abs/2305.11206.\n' +
+      '* Zhu and Li(2023a) Zeyuan Allen Zhu and Yuanzhi Li. 2023a. 언어 모델의 물리: Part 3.1, 지식 저장 및 추출입니다. _ CoRR_, abs/2309.14316.\n' +
+      '* Zhu and Li(2023b) Zeyuan Allen Zhu and Yuanzhi Li. 2023b. 언어 모델의 물리학: Part 3.2, 지식 조작. _ CoRR_, abs/2309.14402.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

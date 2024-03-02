@@ -15,6 +15,7 @@
 | 2402.18563v1 | Approaching Human-Level Forecasting with Language Models | [arXiv](https://arxiv.org/abs/2402.18563v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.18563v1) |
 | 2402.17764v1 | The Era of 1-bit LLMs All Large Language Models are in 158 Bits | [arXiv](https://arxiv.org/abs/2402.17764v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.17764v1) |
 | 2402.14714v1 | Efficient and Effective Vocabulary Expansion Towards Multilingual Large Language Models | [arXiv](https://arxiv.org/abs/2402.14714v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.14714v1) |
+| 2402.12847v1 | Instruction-tuned Language Models are Better Knowledge Learners | [arXiv](https://arxiv.org/abs/2402.12847v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.12847v1) |
 | 2402.08939v1 | Premise Order Matters in Reasoning with Large Language Models | [arXiv](https://arxiv.org/abs/2402.08939v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.08939v1) |
 | 2402.07043v1 | A Tale of Tails Model Collapse as a Change of Scaling Laws | [arXiv](https://arxiv.org/abs/2402.07043v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.07043v1) |
 | 2402.06196v2 | Large Language Models A Survey | [arXiv](https://arxiv.org/abs/2402.06196v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.06196v2) |
