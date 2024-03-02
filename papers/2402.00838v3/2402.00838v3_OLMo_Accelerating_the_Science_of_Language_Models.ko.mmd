@@ -1,0 +1,504 @@
+# 언어 모델의 과학 가속화
+
+Dirk Groeneveld\({}^{\alpha}\) Iz Beltagy\({}^{\alpha}\)
+
+Pete Walsh\({}^{\alpha}\)  Akshita Bhagia\({}^{\alpha}\)  Rodney Kinney\({}^{\alpha}\)  Oyvind Tafjord\({}^{\alpha}\)
+
+Ananya Harsh Jha\({}^{\alpha}\)  Hamish Ivison\({}^{\alpha\beta}\)  Ian Magnusson\({}^{\alpha}\)  Yizhong Wang\({}^{\alpha\beta}\)
+
+Shane Arora\({}^{\alpha}\)  David Atkinson\({}^{\alpha}\)  Russell Authur\({}^{\alpha}\)  Khyathi Raghavi Chandu\({}^{\alpha}\)
+
+Arman Cohan\({}^{\alpha\alpha}\)  Jennifer Dumas\({}^{\alpha\)  Yanai Elazar\({}^{\alpha\beta}\)  Yuling Gu\({}^{\alpha}\)
+
+Jack Hessel\({}^{\alpha}\)  Tushar Khot\({}^{\alpha}\)  William Merrill\({}^{\alpha}\)  Jacob Morrison\({}^{\alpha}\)
+
+Niklas Muennighoff  Aakanksha Naik\({}^{\alpha}\)  Crystal Nam\({}^{\alpha}\)  Matthew E. Peters\({}^{\alpha}\)
+
+발렌티나 Pyatkin\({}^{\alpha\beta}\)  Abhilasha Ravichander\({}^{\alpha}\)  더스틴 Schwenk\({}^{\alpha}\)  사우라브 샤\({}^{\alpha}\)
+
+Will Smith\({}^{\alpha\beta}\)  Emma Strubhell\({}^{\alpha\mu}\)  Nishant Subramani\({}^{\alpha}\)  Mitchell Wortsman\({}^{\beta}\)
+
+Pradeep Dasigi\({}^{\alpha}\)  Nathan Lambert\({}^{\alpha}\)  Kyle Richardson\({}^{\alpha}\)
+
+Luke Zettlemoyer\({}^{\alpha}\) Jesse Dodge\({}^{\alpha}\)  Kyle Lo\({}^{\alpha}\) Luca Soldaiani\({}^{\alpha}\)
+
+Noah A. Smith\({}^{\alpha\beta}\)  Hannaneh Hajishirzi\({}^{\alpha\beta}\)
+
+인공지능 알렌연구소
+
+워싱턴대학교 예일대학
+
+뉴욕대학 \({}^{\mu}\)Carnegie Mellon University
+
+olmo@allenai.org
+
+###### Abstract
+
+언어 모델(LMs)은 NLP 연구와 상업용 제품 제공 모두에서 유비쿼터스화되었다. 상업적 중요성이 급증함에 따라 가장 강력한 모델은 독점 인터페이스 뒤에서 폐쇄되고, 훈련 데이터, 아키텍처 및 개발의 중요한 세부 정보가 공개되지 않았다. 편향과 잠재적 위험을 포함하여 이러한 모델을 과학적으로 연구하는 데 이러한 세부 사항이 중요하다는 점을 감안할 때 연구 커뮤니티가 강력하고 진정으로 열린 LMs에 접근하는 것이 필수적이라고 믿는다. 이를 위해 이 기술 보고서에서는 언어 모델링 과학을 빌드하고 연구하기 위해 최신 기술인 OLMo 및 그 프레임워크의 첫 번째 릴리스에 대해 자세히 설명합니다. 기존의 모델 가중치 및 추론 코드만을 발표하던 기존 연구들과는 달리 OLMo와 학습 데이터, 학습 및 평가 코드를 포함한 전체 프레임워크를 발표한다. 이번 발표가 열린 연구 커뮤니티에 힘을 실어주고 강화하며 새로운 혁신 물결을 불러일으키기를 바랍니다.
+
+**Weights** [https://huggingface.co/allenai/OLMo-7B](https://huggingface.co/allenai/OLMo-7B)
+
+**Code** [https://github.com/allenai/OLMo](https://github.com/allenai/OLMo)
+
+**Data** [https://huggingface.co/datasets/allenai/dolma](https://huggingface.co/datasets/allenai/dolma)
+
+**Evaluation** [https://github.com/allenai/OLMo-Eval](https://github.com/allenai/OLMo-Eval)
+
+**Adaptation** [https://github.com/allenai/open-instruct](https://github.com/allenai/open-instruct)
+
+**W&B 로그** [https://wandb.ai/ai2-llm/OLMo-7B/reports/OLMo-7B--Vmlldzo2NzQyMzk5](https://wandb.ai/ai2-llm/OLMo-7B/reports/OLMo-7B--Vmlldzo2NzQyMzk5) 소개
+
+언어 모델은 수년 동안 NLP 기술의 중심에 있었다(Rosenfeld, 2000; Bengio et al., 2003; Mikolov et al., 2013; Peters et al., 2018; Brown et al., 2020). 최근에는 정렬을 위한 대규모 사전 훈련 및 인간 주석으로 인해 상업적으로 가치가 있게 되었다(OpenAI, 2023). 그러나 상업적 가치가 증가함에 따라 가장 큰 모델은 독점 인터페이스 뒤에 문이 닫혔으며 중요한 세부 사항은 공개되지 않았다.
+
+우리는 연구 커뮤니티를 위한 개방형 언어 모델에 대한 완전한 액세스가 이러한 모델의 강점과 약점, 편향과 위험에 대한 과학적 연구에 중요하다고 믿는다. 따라서 우리는 훈련 데이터, 훈련 및 평가 코드, 중간 모델 체크포인트 및 훈련 로그와 함께 LM을 구축, 연구 및 발전시키기 위한 최첨단 개방형 언어 모델 및 프레임워크인 **OLMo** 를 소개합니다.
+
+최근 LM 릴리즈는 개방도가 다양합니다. 예를 들어, Mistral 8x7B는 모델 가중치 및 간략한 보고서(Jiang et al., 2024)를 제공한 반면, LLaMA는 심층 적응 훈련 명령(Touvron et al., 2023)을 제공했으며, Mosaic Pretrained Transformer는 데이터 자체는 아니지만 데이터 세트 분포를 포함한 많은 세부 사항을 제공했습니다(MosaicML NLP Team, 2023). 팔콘의 사전 훈련 데이터는 부분적으로 공개되었으며(Almazrouei et al., 2023), 가장 개방된 모델인 피티아 스위트(Biderman et al., 2023) 및 BLOOM(BigScience et al., 2022)은 훈련 코드, 모델 체크포인트, 훈련 데이터 등을 공개했다.
+
+OLMo를 사용하여 우리는 허용 라이선스를 사용하여 여러 하드웨어 유형, 훈련 로그 및 사용된 정확한 데이터 세트에 걸쳐 여러 훈련 체크포인트인 데이터에서 훈련으로 평가 도구로 전체 프레임워크를 릴리스합니다. 우리는 이것을 한 유일한 팀이 아니다; LLM360의 최근 작업은 유사한 목표를 목표로 한다(Liu et al., 2023). OLMo는 그들의 모델에서 LLaMA2와 같은 모델의 최첨단 능력으로 격차를 좁힌다. 이 프로젝트는 다양한 개방성으로 인해 이전의 모든 노력에서 얻은 교훈을 통해 이익을 얻었으며, 우리는 크고 다양한 개방 모델 집단이 언어 모델을 이해하는 과학적 진전과 유용성을 향상시키는 공학적 진전에 가장 좋은 희망이라고 믿는다.
+
+OLMo 프레임워크는 언어 모델을 구축하고 연구하는 데 필요한 도구와 자원을 포괄한다. 훈련 및 모델링을 위해 전체 모델 가중치, 훈련 코드, 훈련 로그, 삭마, Weights & Biases 로그 형태의 훈련 메트릭, 추론 코드를 포함한다. 이 첫 번째 릴리스에는 서로 다른 아키텍처, 최적화기 및 훈련 하드웨어에 해당하는 7B 규모의 언어 모델 4개와 1B 규모의 모델 1개가 포함되어 있으며 모두 최소 2T 토큰으로 훈련되었다. 휴지페이스에서 수정할 수 있는 수백 개의 중간 검문소도 출시합니다. 데이터세트 구축 및 분석을 위해, AI2의 돌마(Soldaini et al., 2024)로부터 트레이닝 데이터를 생성하는 코드를 포함하는 이들 모델에 사용되는 전체 트레이닝 데이터를 포함하고, 사전 트레이닝 데이터를 분석하기 위한 WIMBD(Elazar et al., 2023) 평가를 위해, 다운스트림 평가를 위한 AI2의 Catwalk(Groeneveld et al., 2023) 및 복잡도 기반 평가를 위한 Paloma(Magnusson et al., 2023)를 포함한다. 인스트럭션 튜닝을 위해 Open Instruct(Ivison et al., 2023; Wang et al., 2023)를 출시하였으며, 현재 OLMo의 각색(instruction-tuned and RLHFed) 버전을 제작하기 위해 사용하고 있으며, 곧 출시할 예정이다. 마지막으로 모든 코드 및 가중치는 Apache 2.0 라이선스.1에서 릴리스됩니다.
+
+각주 1: [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)
+
+이것은 더 큰 모델, 명령어 조정 모델, 그리고 더 많은 양식 및 변형으로 이어지는 긴 일련의 계획된 릴리즈의 첫 번째 단계이다. 따라서 우리는 사전 훈련 데이터와 모델 능력 간의 관계, 설계 및 하이퍼파라미터 선택의 영향, 다양한 최적화 방법 및 모델 훈련에 미치는 영향과 같은 이러한 모델의 아직 잘 이해되지 않은 측면에 대한 연구를 촉매하기를 희망한다. 또한 이 척도에서 언어 모델을 성공적으로 훈련하는 데 필요한 교훈과 중요한 세부 사항에 대해 보고한다.
+
+## 2 OLMo Framework
+
+이 섹션에서는 OLMo 모델(섹션 2.1), 사전 훈련 데이터 세트, 돌마(섹션 2.2) 및 평가 프레임워크(섹션 2.4)로 구성된 OLMo 프레임워크를 설명한다.
+
+### OLMo 모델 및 아키텍처
+
+우리는 Vaswani 등(2017)을 기반으로 하는 디코더 전용 변압기 아키텍처를 채택하고 표 1에 설명된 대로 1B 및 7B 변형을 제공하며 곧 65B 버전이 출시된다. 우리의 특정 아키텍처는 PaLM(Chowdhery et al., 2022), LLaMA 패밀리(Touvron et al., 2023a,b), OpenLM(Gururangan et al., 2023), 및 Falcon(Almazrouei et al., 2023)과 같은 다른 최근의 대형 언어 모델에 후속하여 Vaswani et al.(2017)의 바닐라 변압기에 대한 몇 가지 개선을 포함한다. 표 2는 7B 아키텍처를 이러한 다른 패밀리의 유사한 크기의 모델과 종합적으로 비교한다.
+
+일반적으로 손실 스파이크 및 느린 발산의 위험을 최소화하면서 하드웨어에서 처리량을 훈련하기 위해 최적화하여 하이퍼파라미터를 선택한다. 우리는 사용 가능한 계산 소스가 주어진 루프 내 평가 설정을 통해 선택을 제거한다(섹션 2.4). 표 2는 우리의 디자인 선택을 최신 개방형 언어 모델과 비교한다. 바닐라 변압기 아키텍처의 주요 변경 사항은 다음과 같이 요약할 수 있습니다.
+
+1. **편향 없음.** LLaMA, PaLM 및 기타에 이어 교육 안정성을 향상시키기 위해 아키텍처에서 모든 편향 용어를 제외합니다.
+2. **비모수 계층 규범.** 규범 내에서 어파인 변환이 없는, 즉 "적응적 이득"(또는 바이어스)이 없는 계층 규범의 비모수 공식(Ba 등, 2016)을 사용합니다. 우리는 이것이 가장 안전한 옵션이었고 또한 우리가 고려했던 다른 변형들, 즉 모수 층 규범 및 RMSNorm(Zhang 및 Sennrich, 2019)에 비해 가장 빨랐다고 믿는다.
+3. **SwiGLU 활성화 함수** LLaMA, PaLM 등과 같이 ReLU 대신 SwiGLU 활성화 함수(Shazeer, 2020)를 사용하고 LLaMA에 따라 활성화 숨겨진 크기는 대략 \(\frac{8}{3}d\)이지만 처리량을 개선하기 위해 128의 가장 가까운 배수(예: 7B 모델의 경우 11,008)로 증가합니다.2 각주 2: SwiGLU는 "게이트된" 활성화 함수이므로 출력은 입력의 절반 크기입니다. 따라서 기술적으로 SwiGLU에 대한 입력은 7B 모델에 대해 2 \(\times\) 11,008 = 22,016의 차원을 갖는다.
+4. **회전 위치 임베딩(RoPE).** LLaMA, PaLM 및 기타와 마찬가지로 절대 위치 임베딩을 회전 위치 임베딩으로 대체합니다(RoPE; Su 등, 2021).
+5. **어휘.** 개인 식별 정보(PII)를 마스킹하기 위한 추가 토큰과 함께 GPT-NeoX-20B(Black 등, 2022)의 수정된 버전의 BPE 기반 토큰화기를 사용합니다. 최종 어휘의 크기는 50,280이다. 그러나 훈련 처리량을 최대화하기 위해 모델의 해당 임베딩 행렬의 크기를 50,304로 증가시켜 128의 배수가 되도록 한다.
+
+### Pretraining Data: Dolma
+
+모델 매개변수에 대한 액세스가 진행되었음에도 불구하고 사전 훈련 데이터 세트는 여전히 열려 있지 않습니다. 사전 훈련 데이터는 종종 열린 모델(닫힌 모델은 고사하고)과 함께 공개되지 않으며 이러한 데이터에 대한 문서는 작업을 재현하거나 완전히 이해하는 데 필요한 세부 정보가 부족한 경우가 많다. 이것은 훈련 데이터가 모델 역량과 한계에 어떻게 영향을 미치는지 이해하는 것과 같은 언어 모델 연구의 특정 스레드를 지원하는 것을 어렵게 만들었다. 언어 모델 사전 훈련에 대한 공개 연구를 용이하게 하기 위해 우리는 7개의 서로 다른 데이터에서 얻은 5B 문서에 걸쳐 3T 토큰의 다양한 다중 소스 코퍼스인 사전 훈련 데이터 세트 돌마를 구축하고 출시했다.
+
+\begin{table}
+\begin{tabular}{c|c c c c} \hline \hline
+**Size** & **Layers** & **Hidden Size** & **Attention Heads** & **Tokens Trained** \\ \hline
+1B & 16 & 2048 & 16 & 2T \
+7B & 32 & 4086 & 32 & 2.46T \\
+65B* & 80 & 8192 & 64 & \\ \hline \hline \end{tabular}
+\end{table}
+표 1: OLMo 모델 크기 및 훈련된 토큰의 최대 수.
+
+* _65B 모델을 작성할 때 여전히 교육 중입니다._ (1) 대규모 언어 모델 사전 훈련에서 흔히 볼 수 있는 소스 및 (2) 일반 대중이 액세스할 수 있는 소스(Soldaini et al., 2024). 표 3은 각 소스의 데이터 양에 대한 높은 수준의 개요를 제공한다.
+
+돌마는 (1) 언어 필터링, (2) 품질 필터링, (3) 콘텐츠 필터링, (4) 중복 제거, (5) 다중 소스 혼합 및 (6) 토큰화의 파이프라인을 사용하여 구축된다. 우리는 독자에게 돌마 보고서(솔다이니 등, 2024)를 참조하여 그것의 설계 원리, 그것의 구성에 대한 세부 사항, 그리고 그것의 내용에 대한 보다 상세한 요약을 제공한다. 이 보고서는 콘텐츠 또는 품질 필터의 역할, 중복 제거 및 여러 소스의 데이터 혼합을 포함하여 중요한 데이터 큐레이션 관행에 대해 배운 내용을 공유하기 위해 돌마의 중간 상태에 대한 학습 언어 모델의 추가 분석 및 실험 결과를 제공한다. 큐레이션과 최종 릴리스 모두에서 각 소스의 문서를 별도로 보관합니다. 고성능 데이터 큐레이션 도구를 오픈소싱하였으며, 이 툴킷은 돌마에 대한 추가 실험, 작업 재현, 사전 훈련 말뭉치의 빠르고 쉬운 큐레이션을 가능하게 하는 데 사용될 수 있다. 마지막으로 데이터 세트 분석을 돕기 위해 WIMBD 도구(Elazar et al., 2023)를 오픈소싱했다.
+
+\begin{table}
+\begin{tabular}{l|l l l l l} \hline  & **OLMo-7B** & **LLLaMA2-7B** & **OpenLM-7B** & **Falcon-7B** & **PaLM-8B** \\ \hline Dimension & 4096 & 4096 & 4096 & 4544 & 4096 \\ Num heads & 32 & 32 & 32 & 71 & 16 \\ Num layers & 32 & 32 & 32 & 32 & 32 \\ MLP ratio & \(\sim\)8/3 & \(\sim\)8/3 & \(\sim\)8/3 & 4 & 4 \\ Layer norm type & non-parametric & RMSNorm & parametric & parametric & parametric \\ Positional embeddings & RoPE & RoPE & RoPE & RoPE & RoPE \\ Attention variant & full & GQA & full & MQA & MQA \\ Biases & none & none & in LN only & in LN only & none \\ Block type & sequential & sequential & sequential & parallel & parallel \\ Activation & SwiGLU & SwiGLU & SwiGLU & GeLU & SwiGLU \\ Sequence length & 2048 & 4096 & 2048 & 2048 & 2048 \\ Batch size (instances) & 2160 & 1024 & 2048 & 2304 & 512 \\ Batch size (tokens) & \(\sim\)4M & \(\sim\)4M & \(\sim\)4M & \(\sim\)4M & \(\sim\)1M \\ Weight tying & no & no & no & no & yes \\ \hline \end{tabular}
+\end{table}
+표 2: 7-8B 규모에서 LM 아키텍처 비교. "계층 규범 유형" 행에서, "모수적" 및 "비모수적"은 각각 적응 이득 및 바이어스가 있거나 없는 통상적인 계층 규범 구현을 지칭한다.
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline \multirow{2}{*}{**Source**} & \multirow{2}{*}{**Doc Type**} & **UTF-8** & **Documents** & **GPT-NeoX** \\  & & **bytes** & _(millions)_ & _tokens_ \\  & & _(GB)_ & _(billions)_ & _(billions)_ \\ \hline Common Crawl & web pages & 9,022 & 3,370 & 2,006 \\ The Stack & code & 1,043 & 210 & 342 \\ C4 & web pages & 790 & 364 & 174 \\ Reddit & social media & 339 & 377 & 80 \\ peS2o & STEM papers & 268 & 38.8 & 57 \\ Project Gutenberg & books & 20.4 & 0.056 & 5.2 \\ Wikipedia, Wikibooks & encyclopedic & 16.2 & 6.2 & 3.7 \\ \hline
+**Total** & & **11,519** & **4,367** & **2,668** \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 돌마의 조성.
+
+### Adaptation
+
+사전 학습된 모델은 항상 그대로 사용되는 것이 아니라 성능, 안전성 및 사용성을 개선하기 위해 더욱 미세 조정된다. 종종 모델들은 먼저 명령들을 따르도록 트레이닝되고(Mishra et al., 2022; Wei et al., 2022; Sanh et al., 2022), 그 다음, 그들의 세대의 품질을 향상시키기 위해 인간 선호도들에 대해 추가로 트레이닝된다(Ouyang et al., 2022). 우리는 OLMo를 우리의 오픈 인스트럭션(Tulu) 데이터 및 트레이닝 셋업(Ivison et al., 2023)에 따라 일반 채팅 어시스턴트가 되도록 트레이닝함으로써 추가 미세 조정을 위한 베이스 모델로서 사용하는 효능을 제시한다. 우리의 접근법은 먼저 증류된 명령 데이터와 인간이 작성한 명령 데이터의 혼합물로 명령 미세 조정을 수행한 다음 직접 선호도 최적화(DPO)를 사용하여 증류된 선호도 데이터와 모델을 추가로 정렬하는 것을 포함한다(Rafailov et al., 2023). 우리는 DeepSeek-AI 등(2024)과 같은 최근 모델에서 수행된 바와 같이 사전 훈련이 끝날 때 툴루 명령어 데이터를 혼합하는 것을 실험했지만 결정적인 결과를 얻지 못했다.
+
+### Evaluation
+
+기본 모델 평가는 모델 설계를 위한 의사 결정을 내리는 _온라인_ 평가와 모델 체크포인트를 평가하는 _오프라인_ 평가의 두 단계로 수행된다. 오프라인 단계에서는 광범위한 데이터 세트와 작업 형식에 액세스할 수 있는 공개적으로 사용 가능한 평가 도구인 Catwalk 프레임워크(Groeneveld et al., 2023)를 사용한다. Catwalk를 사용하여, 우리는 새로운 perplexity 벤치마크인 Paloma에 대한 고유 언어 모델링 평가뿐만 아니라 다운스트림 평가를 수행한다(Magnusson et al., 2023).
+
+다운스트림 및 복잡성 평가 모두에 대해 고정 평가 파이프라인을 사용하여 공개적으로 사용 가능한 모델과 결과를 비교한다. 또한 적응된 모델에 대한 별도의 평가를 보고한다.
+
+In-Loop Training Ablations는 모델 학습 전반에 걸쳐 다운스트림 평가를 수행하여 모델 아키텍처, 초기화, 최적화기, 학습률 일정 및 데이터 혼합을 중심으로 결정을 내린다. 우리는 이것을 1000개의 훈련 단계(또는 ~4B 훈련 토큰)마다 인루프(in-loop)를 실행하고 훈련 중인 모델의 품질에 대한 초기 및 지속적인 신호를 제공하기 때문에 온라인 평가라고 합니다. 이러한 평가는 섹션 4.1에 자세히 설명된 _오프라인_ 평가에 사용되는 많은 핵심 작업 및 실험 설정에 의존하며, 이는 또한 EleutherAI 평가 하니스의 작업 및 평가 구조를 반영한다(Gao 등, 2023).
+
+다운스트림 평가 이전의 많은 작업(Brown et al., 2020; Black et al., 2022; Touvron et al., 2023, _inter alia_)에 따라, 우리는 일련의 다운스트림 작업에 대한 제로 샷 성능을 보고한다. 우리의 평가 스위트는 Touvron et al.(2023) 및 Touvron et al.(2023)에 의해 보고된 상식 추론 작업 세트에 밀접하게 대응하는 8개의 핵심 작업으로 구성된다(작업 목록은 표 6 참조). 평가되는 모델들의 스케일을 감안할 때, 그러한 태스크들은 그들의 자연스러움(예를 들어, 모두가 텍스트 완성 스코어링 태스크들로서 공식화될 수 있음) 및 트레이닝 전반에 걸쳐 의미 있는 신호들을 제공하는 능력으로 인해 모델 개발의 시작 시에 선택되었다(도 1 참조).
+
+고유 언어 모델링 평가 OLMo-7B가 보류된 훈련 데이터를 넘어 언어의 분포에 어떻게 적합한지를 측정하기 위해, 우리는 585개의 상이한 텍스트 도메인을 포함하는 새로운 복잡성 벤치마크인 Paloma(Magnusson et al., 2023)를 사용한다. 도메인은 Reddit의 nytimes.com에서 r/depression까지 다양하며 계층화된 샘플에서 C4(Raffel 등, 2020)와 같은 18개의 개별 데이터 소스에서 추출된다. 이를 통해 원본 말뭉치에 과소 대표되는 텍스트 도메인을 보다 동등하게 포함할 수 있다.
+
+우리는 최상의 성능을 위해 OLMo-7B를 다른 모델과 비교할 뿐만 아니라 더 풍부하고 통제된 과학적 평가를 가능하게 하는 방법을 입증하는 것을 목표로 한다. OLMo-7B는 복잡성 평가를 위한 명시적 오염 제거가 있는 가장 큰 LM이다. 팔로마에서 설명한 접근법에 따라 팔로마 평가 데이터에서 단락이 유출된 사전 훈련 문서를 제거한다. 오염 제거 없이 다른 모델은 복잡성을 과소평가할 위험이 있다(즉, 모델의 표본 외 적합도를 과대평가). 우리는 또한 중간 체크포인트를 방출하여, 체크포인트를 방출하는 두 개의 다른 모델, 즉 피티아-6.9B(Biderman et al., 2023) 및 RPJ-INCITE-7B(Together Computer, 2023)와 보다 풍부한 비교를 허용한다(도 2 참조).
+
+Adaptation Evaluation 또한 Open Instruct 평가 suite Wang et al. (2023)을 따른다; Ivison et al. (2023)을 사용하여 수업 미세 조정 및 DPO 훈련 후 OLMo를 평가하기 위해 모델 채팅 기능 및 안전성에 대한 평가에 중점을 두어 OLMo를 추가 미세 조정을 위한 베이스로 사용하는 효과를 보여준다.
+
+## 3 Training OLMo
+
+이 섹션에서는 분산 훈련 프레임워크(섹션 3.1), 최적화기 설정(섹션 3.2), 데이터 준비(섹션 3.3) 및 하드웨어(섹션 3.4)를 포함하여 사전 훈련 설정을 설명합니다.
+
+### 분산 훈련 프레임워크
+
+PyTorch의 FSDP 프레임워크(Zhao 등, 2023)를 통해 _ZeRO_ 최적화기 전략(Rajbhandari 등, 2019)을 사용하여 모델을 훈련하며, 이는 GPU 전체에 모델 가중치와 해당 최적화기 상태를 공유하여 메모리 소비를 줄입니다. 7B 규모에서 이는 하드웨어에서 GPU당 4096 토큰의 마이크로 배치 크기로 훈련을 가능하게 한다(섹션 3.4 참조). OLMo-1B 및 -7B 모델의 경우, 우리는 대략 4M 토큰의 일정한 글로벌 배치 크기(각각 2048 토큰의 시퀀스 길이를 갖는 2048 인스턴스)를 사용한다. OLMo-65B 모델(현재 트레이닝)의 경우, 대략 2M 토큰(1024 인스턴스)에서 시작하여 대략 16M 토큰(8192 인스턴스)에 도달할 때까지 100B 토큰마다 두 배로 증가하는 배치 크기 워밍업을 사용한다.
+
+처리량 향상을 위해 FSDP의 기본 설정과 PyTorch의 앰프 모듈을 통한 혼합 정밀도 훈련(Micikevicius et al., 2017)을 사용한다. 후자는 소프트맥스와 같은 특정 작업이 항상 완전한 정밀도로 실행되어 안정성을 향상시키는 반면, 다른 모든 작업은 bfloat16 형식으로 절반 정밀도로 실행되도록 한다. 특정 설정에서 각 GPU에 로컬인 음영 처리된 모델 가중치 및 최적화기 상태는 완전한 정밀도로 유지됩니다. 각각의 변압기 블록 내의 가중치는 순방향 및 역방향 패스 동안 풀-사이즈 파라미터들이 각각의 GPU 상에서 구체화될 때 bfloat16에만 주조된다. GpU 전체에서 기울기가 완전히 감소합니다.
+
+### Optimizer
+
+표 4에 표시된 하이퍼파라미터와 함께 AdamW 최적화기(Loshchilov and Hutter, 2019)를 사용한다. 모든 모델 크기에 대해 5000단계(\(\sim\) 21B 토큰) 이상의 학습 속도를 예열한 다음 나머지 훈련 동안 최대 학습 속도의 10분의 1까지 선형으로 감쇠한다. 준비 기간이 끝나면 매개변수 기울기 3의 총 \(l^{2}\)-norm이 \(1.0\)을 초과하지 않도록 기울기를 클립한다. 표 5는 7B 규모에서 최적화기 설정을 AdamW를 사용한 다른 최근 LM의 설정과 비교한 것이다.
+
+각주 3: 기울기 자르기 동안 모든 모델의 매개변수는 단일 큰 벡터로 처리되며(모든 매개변수가 함께 평평하고 연결된 것처럼), 해당 단일 기울기 벡터에 대해 \(\ell_{2}\)-노름을 취한다. 이것이 PyTorch의 기울기를 자르는 표준 방법입니다.
+
+### Data
+
+우리는 2.2절에서 설명하는 오픈 데이터세트인 Dolma(Soldaini et al., 2024)의 2T-토큰 샘플로부터 훈련 데이터세트를 구축했다. 모든 문서의 토큰은 각 문서의 끝에 특별한 EOS 토큰을 추가한 후 함께 연결되며, 다음 2048 토큰의 연속 청크를 그룹화하여 훈련 인스턴스를 형성한다. 트레이닝 인스턴스들은 각각의 트레이닝 실행에 대해 정확히 동일한 방식으로 셔플링된다. 각 훈련 배치의 데이터 순서와 정확한 구성은 우리가 방출하는 아티팩트로부터 재구성될 수 있다.
+
+공개된 모든 모델은 최소 2T 토큰(훈련 데이터에 대한 단일 에포크)으로 훈련되었으며 일부는 다른 셔플링 순서로 데이터에 대한 두 번째 에포크를 시작하여 그 이상으로 훈련되었다. 이러한 적은 양의 데이터를 반복하는 것의 영향은 이전 작업에 따라 무시할 수 있어야 한다(Muennighoff et al., 2023).
+
+### Hardware
+
+코드베이스가 성능 손실 없이 NVIDIA 및 AMD GPU 모두에서 사용될 수 있는지 확인하기 위해 두 개의 다른 클러스터에서 모델을 훈련했습니다.* **LUMI:** LUMI 슈퍼 컴퓨터에서 제공 하는 경우이 클러스터에서 최대 256 노드를 사용 했습니다. 여기서 각 노드는 128GB의 메모리5 및 800Gbps의 상호 연결이 있는 4x AMD MI250X GPU로 구성 됩니다. 각주 4: [https://www.lumi-supercomputer.eu](https://www.lumi-supercomputer.eu)
+* **MosaicML:** MosaicML.6(촉매)에서 제공하는 이 클러스터에서 27개의 노드를 사용했으며 각 노드는 40GB의 메모리와 800Gbps 상호 연결이 있는 8x NVIDIA A100 GPU로 구성됩니다. 각주 5: MI250X는 듀얼 칩 모듈로서, 실제로는 각각의 물리적 장치가 두 개의 논리적 장치로 구성되므로, 각각의 노드는 각각 64GB의 메모리를 갖는 8개의 논리적 GPU 장치를 갖는다.
+
+훈련 처리량을 최적화하기 위한 배치 크기의 사소한 차이에도 불구하고 두 실행 모두 2T 토큰에 의한 평가 제품군에서 거의 동일한 성능을 보였다.
+
+## 4 Results
+
+OLMo-7B를 평가하기 위해 사용된 체크포인트는 섹션 3.2에서 언급된 선형 학습 속도 감쇠 스케줄을 갖는 돌마(Soldaini et al., 2024) 데이터세트 상에서 2.46T 토큰이 될 때까지 트레이닝된다. 우리의 실험에서, 우리는 학습 속도가 0으로 선형 감쇠된 1000 단계 동안 돌마 데이터세트 상에서 이 체크포인트를 추가로 튜닝하는 것이 섹션 2.4에서 설명된 복잡성 및 최종 태스크 평가 스위트 상에서 모델 성능을 향상시킨다는 것을 발견한다. OLMo를 LLaMA-7B(Touvron et al., 2023a), LLaMA-7B(Touvron et al., 2023b), MPT-7B(MosaicML NLP Team, 2023), Pythia-6.9B(Biderman et al., 2023), Falcon-7B(Almazrouei et al., 2023) 및 RPJ-INCITE-7B(Together Computer, 2023)를 포함하는 다른 공개적으로 이용 가능한 모델들과 비교한다.
+
+### Downstream evaluation
+
+SetupOur core downstream evaluation suite (표 6 참조) consists: arc(both arc_easy and arc_challenge)(Clark et al., 2018), boolq(Clark et al., 2019), openbookqa(Mihaylov et al.,
+
+\begin{table}
+\begin{tabular}{c|c c c c c} \hline \hline
+**Size** & **Peak LR** & **Betas** & **Epsilon** & **Weight Decay** & **Batch Size (tokens)** \\ \hline
+1B & 4.0E-4 & (0.9, 0.95) & 1.0E-5 & 0.1 & \(\sim\)4M \\
+7B & 3.0E-4 & (0.9, 0.95) & 1.0E-5 & 0.1 & \(\sim\)4M \\
+65B* & 1.5E-4 & (0.9, 0.95) & 1.0E-5 & 0.1 & \(\sim\)2M \(\rightarrow\)\(\sim\)4M \(\rightarrow\)\(\sim\)8M \(\rightarrow\)\(\sim\)16M \\ \hline \hline \end{tabular}
+\end{table}
+표 4: OLMo 모델에 대한 AdamW 사전 훈련 하이퍼파라미터.
+
+* _65B 모델을 작성할 때 여전히 교육 중입니다._
+
+\begin{table}
+\begin{tabular}{l|l l l l} \hline \hline  & **OLMo-7B** & **LLaMA2-7B** & **OpenLM-7B** & **Falcon-7B** \\ \hline warmup steps & 5000 & 2000 & 2000 & 1000 \\ peak LR & 3.0E-04 & 3.0E-04 & 3.0E-04 & 6.0E-04 \\ minimum LR & 3.0E-05 & 3.0E-05 & 3.0E-05 & 1.2E-05 \\ weight decay & 0.1 & 0.1 & 0.1 & 0.1 \\ beta1 & 0.9 & 0.9 & 0.9 & 0.99 \\ beta2 & 0.95 & 0.95 & 0.95 & 0.999 \\ epsilon & 1.0E-05 & 1.0E-05 & 1.0E-05 & 1.0E-05 \\ LR schedule & linear & cosine & cosine & cosine \\ gradient clipping & global 1.0 & global 1.0 & global 1.0 & global 1.0 \\ gradient reduce dtype & FP32 & FP32 & FP32 & BF16 \\ optimizer state dtype & FP32 & most likely FP32 & FP32 \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 7B 스케일에서 사전 훈련 최적화기 설정의 비교. 이 표의 각 모델은 AdamW를 최적화기로 사용했다.
+
+2018), sciq(Welbl et al., 2017), hellaswag(Zellers et al., 2019), piqa(Bisk et al., 2020), and winogrande(Sakaguchi et al., 2021). 부록 A에서, 우리는 또한 우리가 덜 안정적인 성능 경향을 가지고 있다는 것을 발견한 우리의 핵심 평가 세트 밖의 추가적인 보조 작업 세트에 대한 결과를 보고한다(그림 4 참조).
+
+모든 경우에, 우리는 Brown et al.(2020)에 의해 대중화된 순위 분류 접근법을 사용하여 제로 샷 평가를 수행한다. 이 접근법 하에서, 후보 텍스트 완성들(예를 들어, 상이한 객관식 옵션들)은 우도(일반적으로 일부 정규화 인자에 의해 정규화됨)에 의해 순위가 매겨지고, 예측 정확도가 보고된다. Catwalk는 토큰 수(토큰별 정규화)에 의한 정규화(Brown et al., 2020; Liang et al., 2022), 문자 수(문자별 정규화)에 의한 정규화(Gao et al., 2023) 및 답변의 무조건적 우도(Brown et al., 2020)를 포함하는 몇 가지 공통 우도 정규화 전략을 구현하지만, 우리는 각 데이터 세트에 대한 정규화 전략을 별도로 선택했다. 구체적으로 arc와 openbookqa에 대한 무조건 정규화, hellaswag, piqa, winogrande에 대한 토큰당 정규화, boolq에 대한 정규화 없음, sciq(즉, 단일 토큰 예측 작업으로 공식화된 작업)를 사용했다.
+
+결과표 6은 OLMo-7B의 제로샷 평가 결과를 요약하고 비슷한 크기의 다른 6개의 공개적으로 사용 가능한 모델과 비교한다. 우리는 섹션 2.4에 설명된 평가 제품군에서 8개의 핵심 작업에 대한 결과를 보고한다. 종합적으로 OLMo-7B는 비교 표에서 공개적으로 사용 가능한 6개의 모델 체크포인트 모두에 대해 경쟁력이 있다.
+
+그림 1에서 우리는 8개의 핵심 엔드 태스크의 정확도 점수 진행을 플로팅한다. OBQA를 제외한 모든 태스크는 OLMo-7B가 더 많은 토큰에 대해 훈련됨에 따라 정확도 수치에서 상승 추세를 보인다. 마지막 단계와 두 번째 단계에서 마지막 단계 사이의 많은 작업의 정확도에서 날카로운 상향 진드기는 최종 1000개의 훈련 단계에 걸쳐 LR을 선형으로 0으로 줄이는 이점을 보여준다. 추가적인 평가 결과 및 논의는 부록 A의 표 9를 참조한다.
+
+### 내부 언어 모델링 평가
+
+내재적 평가를 위해 팔로마는 각 도메인의 성능 검사부터 도메인 조합에 대한 보다 요약된 결과에 이르기까지 다양한 분석을 제안한다. 우리는 Magnusson et al. (2023)에서와 같이 팔로마에서 18개의 소스 중 11개에 대한 집계 성능과 이러한 소스 각각에 대한 더 세밀한 결과의 두 가지 수준의 입도에서 결과를 보고한다. 팔로마의 11개 소스의 이 특정 하위 집합은 공개적으로 사용할 수 없거나 프린지 또는 독성 텍스트를 포함하거나 팔로마의 오염 제거 접근법에서 지원되지 않는 코드 데이터로 구성된 소스를 제외한다. 이는 C4 (Raffel et al., 2020), mC4-en (Chung et al., 2023), Wikitext 103 (Merity et al., 2016), Penn Treebank (Marcus et al., 1999; Nunes, 2020), RedPajama (Together Computer, 2023), Falcon-RefinedWeb (Penedo et al., 2023), Dolma (Soldaini et al., 2024), M2D2 S2ORC (Reid et al., 2022), M2D2 Wikipedia (Reid et al., 2022), C4 100 domains (Chronopoulou et al., 2022), 및 Dolma 100 Subreddits (Soldaini et al., 2024)를 포함한다. 다른 어휘를 가진 모델들 간의 공정한 비교를 위해, 우리는 Gao et al.(2020)에 의해 정의된 바이트당 비트들을 이들 소스들의 테스트 세트들에 걸쳐 보고한다.
+
+그림 2의 _소스 조합_ 하위 도표에서 팔로마에서 11개의 데이터 소스 조합에 대한 6개의 비교적 큰 언어 모델에 대한 OLMo-7B의 성능을 보여준다.
+
+\begin{table}
+\begin{tabular}{l|c c c c c c c c|c} \hline \multirow{2}{*}{**7B Models**} & arc & arc & \multirow{2}{*}{boolq} & hellaswag(Zellers et al., 2019), & \multirow{2}{*}{piqa(Bisk et al., 2020)} & \multirow{2}{*}{avg.} \\  & challenge & easy & & & & & & & \\ \hline
+**Falcon** & 47.5 & 70.4 & 74.6 & 75.9 & 53.0 & 78.5 & 93.9 & 68.9 & 70.3 \\
+**LLaMA** & 44.5 & 67.9 & 75.4 & 76.2 & 51.2 & 77.2 & 93.9 & 70.5 & 69.6 \\
+**Llama 2** & 48.5 & 69.5 & 80.2 & 76.8 & 48.4 & 76.7 & 94.5 & 69.4 & 70.5 \\
+**MPT** & 46.5 & 70.5 & 74.2 & 77.6 & 48.6 & 77.3 & 93.7 & 69.9 & 69.8 \\
+**Pythia** & 44.1 & 61.9 & 61.1 & 63.8 & 45.0 & 75.1 & 91.1 & 62.0 & 63.0 \\
+**RPJ-INCITE** & 42.8 & 68.4 & 68.6 & 70.3 & 49.4 & 76.0 & 92.9 & 64.7 & 66.6 \\
+**OLMo-7B** & 48.5 & **65.4** & **73.4** & **76.4** & **50.4** & **78.4** & **95.8** & 67.9 & 69.3 \\ \hline \end{tabular}
+\end{table}
+표 6: OLMo-7B 및 섹션 2.4에 설명된 다운스트림 평가 제품군에서 8개의 핵심 작업에 대한 6개의 공개적으로 이용 가능한 비교 가능한 모델 체크포인트의 제로 샷 평가. OLMo-7B의 경우, 2.46T 토큰 체크포인트에 대한 결과를 보고한다.
+
+전반적으로 우리는 OLMo가 특히 훈련 데이터가 팔로마에 대해 명시적으로 오염 제거되었다는 점을 감안할 때 경쟁적 적합성을 가지고 있음을 발견했다. 최종 모델(모양 참조)과 중간 체크포인트(점선 참조)의 비교를 통해 볼 수 있듯이 OLMo 결과는 다른 모델의 유사한 스케일링 경향을 따른다. 중간 체크포인트의 성능은 그 체크포인트가 학습률 스케줄에서 발생하는 위치에 의해 영향을 받음에 유의한다. 따라서 더 적은 단계에 대해 훈련된 모델은 훈련 기간이 모든 모델에 걸쳐 고정된다면 더 샘플 효율적일 필요 없이 더 가파른 훈련 곡선을 갖는 경향이 있다. 그럼에도 불구하고 MPT-7B는 이 서브플롯의 다른 모델보다 앞서 개선되는 것으로 눈에 띈다. 이는 팔로마(예를 들어, MPT는 LLAMA의 경우 18%, RedPajama의 경우 12.2%, OLMo의 경우 11.2%가 아닌 27%의 non-Common Crawl 데이터에 대해 학습)의 사전 훈련 데이터 구성 및 도메인과의 매칭뿐만 아니라 다양한 데이터 전처리 결정(예를 들어, Abbas et al., 2023, on C4에 의한 MPT의 의미적 중복제거 사용)에 기인할 수 있다.
+
+그림 2의 나머지 서브플롯은 집계된 팔로마 메트릭에서 결합된 11개의 데이터 소스 각각에 대해 바이트당 비트를 별도로 보고함으로써 보다 세밀한 분석을 제공한다. 이로부터 우리는 주로 훈련 및 평가 분포의 유사성에 의해 주도되는 표본 효율성의 더 큰 변동을 볼 수 있다. 특히, OLMo-7B는 C4와 같은 Common Crawl이 우세한 평가에서 우수하지만, Common Crawl을 후처리하는 다양한 방법은 Falcon RefinedWeb의 Falcon-7B와 같은 특정 데이터로 훈련된 모델에 가장 적합하다. 한편, OLMo-7B는 WikiText-103, M2D2 S2ORC 및 M2D2 위키피디아와 같이 스크래핑된 웹 텍스트와 덜 관련된 소스에서 다른 모델에 비해 샘플 효율이 낮다. 레드파자마 평가는 아마도 7개 도메인 중 2개만이 커먼 크롤에서 왔으며 팔로마 가중치 도메인이 각 소스 내에서 동등하기 때문에 유사한 패턴을 보여준다. 위키피디아 및 ArXiv 논문과 같은 선별된 소스의 이질적인 데이터는 스크래핑된 웹 텍스트보다 훨씬 덜 풍부하기 때문에 사전 훈련 말뭉치가 스케일링됨에 따라 이러한 언어 분포에 적합하기 위한 샘플 효율성을 유지하는 것은 어려울 것이다.
+
+### Adaptation Evaluation
+
+SetupWe evaluate OLMo before adaptation, and both the supervision fine-tuning and DPO training stage, focusing to the safety and chat evaluation of Wang et al. (2023). 또한 표 6에서 공식적으로 발표된 모델들의 명령어 조정 변형과 비교한다. 마지막으로 툴루 2 모델과 비교하여 동일한 훈련 후 데이터 믹스 및 절차를 사용하여 훈련된 모델들과 비교한다.
+
+그림 1: 섹션 2.4에 설명된 Catwalk 평가 제품군에서 8개의 코어 엔드 태스크 점수에 대한 OLMo-7B의 정확도 점수 진행. 대부분의 태스크에 대한 훈련의 최종 1000 단계에서 LR을 0으로 낮추는 이점을 볼 수 있다.
+
+실험 결과, 명령어 튜닝은 OLMo의 성능과 안전성을 크게 향상시켰으며, MMLU의 성능을 크게 향상시켰으며, 특히 DPO 훈련 후 ToxiGen과 TruthfulQA 점수를 향상시켰다. 또한, 초기 명령어 튜닝(OLMo +SFT) 및 추가 선호도 정렬(OLMo +SFT +DPO) 후 OLMo가 대부분의 다른 채팅 변형보다 우수하다는 것을 발견하여 기본 모델로서의 OLMo의 강도와 적응 훈련을 수행하는 데 사용되는 툴루 믹스의 강도를 모두 강조한다. 그러나 우리는 여전히 툴루 2와 격차가 있음을 발견했는데, 이는 툴루 믹스를 라마 2에 적용하여 훈련된 것이다. 이 차이는 테스트 세트 콘탐 때문일 수 있다.
+
+\begin{table}
+\begin{tabular}{l|c c c c} \hline \hline
+**Model** & **MMLU** & **AlpacaEval** & **ToxiGen** & **TruthfulQA** \\  & **0-shot \(\uparrow\)** & **\%win \(\uparrow\)** & **\% Toxic \(\downarrow\)** & **\%Info+True \(\uparrow\)** \\ \hline
+**OLMo (base)** & 28.3 & - & 81.4 & 31.6 \\ \hline
+**MPT Chat** & 33.8 & 46.8 & 0.1 & 42.7 \\
+**Falcon Instruct** & 25.2 & 14.0 & 70.7 & 27.2 \\
+**RPJ-INCITE Chat** & 27.0 & 38.0 & 46.4 & 53.0 \\
+**Llama-2-Chat** & 46.8 & 87.3 & 0.0 & 26.3 \\ \hline
+**Tülu 2** & 50.4 & 73.9 & 7.0 & 51.7 \\
+**Tülu 2+DPO** & 50.7 & 85.1 & 0.5 & - * \\
+**OLMo +SFT** & **47.3** & **57.0** & 14.4 & 41.2 \\
+**OLMo +SFT+DPO** & **46.2** & **69.3** & 1.7 & 52.0 \\ \hline \hline \end{tabular}
+\end{table}
+표 7: OLMo-7B를 포함한 다양한 명령어 조정 7B 모델 및 적응 훈련 전후에 대한 평가. 낮은 것은 ToxiGen에 더 좋고 높은 것은 다른 지표에 더 좋다. 부록의 모델 및 메트릭에 대한 자세한 설명을 제공합니다. C. * Ivison 등(2023)에 따라 테스트 세트 오염으로 인해 Tülu 2 TruthfulQA 점수를 보고하지 않습니다.
+
+그림 2: Paloma 및 이들의 조합(Magnusson et al., 2023), OLMo의 사전 훈련 데이터로부터 오염을 제거한 11개의 평가 데이터 소스에 대한 바이트당 비트. 모형은 일반적인 데이터 크기 조정 추세를 따르지만 표본 효율은 분포 내 데이터에서 가장 유리합니다. 예를 들어, OLMo-7B는 아마도 88.8% 커먼 크롤 사전 훈련 데이터를 갖는 것으로부터 C4의 다른 모든 모델을 추월한다.
+
+라마 27과 툴루 믹스는 주로 라마 모델을 위해 설계되었기 때문에 우리는 향후 작업에서 이러한 격차의 원인을 조사할 것이다. 전반적으로, 우리는 OLMo가 추가 튜닝으로부터 크게 이익을 얻고 다운스트림 애플리케이션에 대한 강력한 기본 모델 역할을 한다는 것을 안다.
+
+각주 7: Touvron et al.(2023b)은 Llama 2가 MMLU 테스트 데이터로 오염된 데이터에 대해 사전 훈련되었다고 보고한다.
+
+### 전력 소비 및 탄소 발자국
+
+이전 문헌(Strubell et al., 2019; Patterson et al., 2021; Wu et al., 2022; Dodge et al., 2022)에 따라 훈련에 필요한 총 전력 사용량을 계산한 다음 모델이 훈련된 전력망의 탄소 배출 강도에 곱하여 모델을 사전 훈련하면서 방출되는 총 에너지 소비량과 탄소를 추정한다. 이러한 운영 배출량을 보고하는 것은 표준 관행이지만 하드웨어 및 데이터 센터 인프라의 제조, 운송 및 폐기로 인한 체화된 배출, 사용으로 인한 평생 운영 배출, 반등 효과 또는 물 소비 또는 채굴과 같은 기타 환경 영향과 같은 다른 배출원을 설명하지 않는다. 따라서 우리의 추정치는 하한으로 간주되어야 한다.
+
+우리는 25ms마다 단일 노드의 소비 전력을 측정하고 전체 훈련 실행에서 평균을 계산하고 총 노드 수를 곱하여 모델에 대한 총 소비 전력을 계산한다. 그런 다음 이전 총계에 전력 사용 효율(PUE) 계수를 곱하여 데이터 센터의 에너지 효율성을 설명하며, 이는 에너지 효율적인 데이터 센터의 전형적인 보수적인 10% 에너지 소비 오버헤드를 나타내는 1.1로 설정되었습니다.89 7B 모델을 사전 훈련하면 **239MWh** 에너지가 소비된 것으로 추정됩니다.
+
+각주 8: [https://www.nrel.gov/computational-science/measuring-efficiency-pue.html](https://www.nrel.gov/computational-science/measuring-efficiency-pue.html)
+
+각주 9: [https://www.google.com/about/datacenters/efficiency/)](https://www.google.com/about/datacenters/efficiency/)
+
+탄소 배출량을 계산하기 위해 각 모델이 훈련된 데이터 센터의 물리적 위치를 기반으로 KWh당 배출되는 kg CO\({}_{2}\)로 측정된 총 전력 소비에 탄소 강도 계수를 곱한다. A100-40GB GPU에서 훈련된 모델은 호주에서 훈련되었으므로 2022년 호주의 국가 평균인 0.610의 탄소 강도 계수를 가정합니다. MI250X GPU에서 훈련된 모델은 100% 재생 가능한 탄소 중립 에너지로 작동하는 LUMI 슈퍼컴퓨터에서 훈련되었으므로 탄소 강도 계수는 0이라고 가정합니다. LUMI는 전적으로 수력에 의해 구동되며 일부 소스(Ubierna et al., 2022)는 수력의 탄소 강도 계수를 0.024로 측정하므로 총 탄소 배출량이 3.54 tCO\({}_{2}\)eq.11을 의미하지만 공식 LUMI 데이터에 의존하므로 **69.78 tCO\({}_{2}\)eq.12**의 총 사전 훈련 배출량을 추정합니다.
+
+각주 10: [https://www.cleanenergyregulator.gov.au/Infohub/Markets/Pages/qcnr/december-quarter-2022/Emissions-Reduction.aspx](https://www.cleanenergyregulator.gov.au/Infohub/Markets/Pages/qcnr/december-quarter-2022/Emissions-Reduction.aspx)
+
+각주 11: [https://www.lumi-supercomputer.eu](https://www.lumi-supercomputer.eu)
+
+각주 12: 이러한 메트릭은 부분적으로 카르보나라의 AI 에이전트와 모니터링 플랫폼을 사용하여 수집되었다. [https://trycarbonara.com](https://trycarbonara.com)에서 자세히 알아보세요.
+
+우리는 우리의 모델을 공개적으로 출시하면 다른 사람들이 모델을 처음부터 사전 훈련할 필요가 없도록 함으로써 미래의 배출량을 줄이고 최첨단 모델을 개발하는 데 드는 진정한 비용에 대한 통찰력을 제공할 수 있기를 바란다. 또한 디버깅, 하이퍼파라미터 튜닝 및 다운타임과 같은 다른 중요한 개발 부분을 포함하지 않기 때문에 추정치가 하한임을 강조합니다.
+
+## 5 아티팩트 릴리스
+
+모든 파이프라인 단계의 아티팩트를 공유함으로써 개방형 연구를 장려하고 학계와 실무자가 중복되고 종종 비용이 많이 드는 노력을 줄이는 것을 목표로 한다. 다음 내용을 공개합니다.
+
+1. 훈련 및 모델링 코드.132. 7B 모델,14 7B-twin-2T,15 및 1B 모델에 대한 훈련된 모델 가중치.16 모든 모델에 대해 최종 모델 가중치뿐만 아니라 1000단계 간격으로 500+ 중간 체크포인트를 방출한다. 각주 14: [https://huggingface.co/allenai/OLMo-7B](https://huggingface.co/allenai/OLMo-7B)
+3. Adapted OLMo-7B with instruction-tuning, 7B-SFT17, and RLHF, 7B-Instruct18 including its training and evaluation code and data using our Open Instruct19 library (Wang et al., 2023; Ivison et al., 2023). 각주 15: [https://huggingface.co/allenai/OLMo-7B-Twin-2T](https://huggingface.co/allenai/OLMo-7B-Twin-2T)
+4. 훈련 데이터 Dolma (Soldaini et al., 2024).20 각주 16: [https://huggingface.co/allenai/OLMo-1B](https://huggingface.co/allenai/OLMo-1B)
+5. 데이터셋 분석을 위한 새로운 데이터셋을 구성하기 위한 Dolma의 toolkit, 21 및 WIMBD(Elazar et al., 2023).22 각주 17: [https://huggingface.co/allenai/OLMo-7B-Instruct](https://huggingface.co/allenai/OLMo-7B-Instruct)
+6. 평가 코드23은 다운스트림 평가를 위해 Catwalk24를 사용하고(Groeneveld et al., 2023), Perplexity-based 평가를 위해 Paloma25를 사용한다(Magnusson et al., 2023). 각주 23: [https://github.com/allenai/OLMo-Eval](https://github.com/allenai/OLMo-Eval)
+7. Training.26 동안 Weights & Biases 로깅된 메트릭의 전체 집합
+
+각주 24: [https://github.com/allenai/catwalk](https://github.com/allenai/catwalk)
+
+각주 25: [https://paloma.allenai](https://paloma.allenai)
+
+각주 26: [https://wandb.ai/ai2-lln/OLMo-7B/reports/OLMo-7B--Vmlldzo2NzQyMzk5](https://wandb.ai/ai2-lln/OLMo-7B/reports/OLMo-7B--Vmlldzo2NzQyMzk5)
+
+추가 교육 로그, 절제 및 결과를 사용하여 이 릴리스에 대한 후속 조치를 취할 계획입니다.
+
+\begin{table}
+\begin{tabular}{l|c c c c c} \hline \hline  & \multicolumn{2}{c}{GPU Power} & \multicolumn{1}{c}{Power} & \multicolumn{1}{c}{Carbon} & \multicolumn{1}{c}{Carbon} \\  & GPU Type & Consumption & Usage & Intensity & Emissions \\  & \multicolumn{2}{c}{(MWh)} & Effectiveness & (kg CO\({}_{2}\)e/KWh) & (tCO\({}_{2}\)eq) \\ \hline
+**Gopher-280B** & TPU v3 & 1,066 & 1.08 & 0.330 & 380 \\
+**BLOOM-176B** & A100-80GB & 433 & 1.2 & 0.057 & 30 \\
+**OPT-175B** & A100-80GB & 324 & 1.1 & 0.231 & 82 \\
+**T5-11B** & TPU v3 & 77 & 1.12 & 0.545 & 47 \\
+**LLaMA-7B** & A100-80GB & 33 & 1.1 & 0.385 & 14 \\
+**LLaMA-7B** & A100-80GB & 74 & 1.1 & 0.385 & 31 \\ \hline
+**OLMo-7B** & **71250X** & 185 & 1.1 & 0.000* & 0* \\
+**OLMo-7B** & **A100-40GB** & **104** & **1.1** & 0.610 & 70 \\ \hline \hline \end{tabular}
+\end{table}
+표 8: 사전 훈련 동안 CO\({}_{2}\) 배출. 우리는 PUE에 대한 공개적으로 이용 가능한 데이터, 지역 전력망의 탄소 강도 및 보고된 전력 소비를 사용하여 다양한 모델에 대한 총 탄소 배출량을 추정한다. Gopher-280B (Rae et al., 2022), BLOOM-176B (Luccioni et al., 2022), OPT-175B (Zhang et al., 2022), T5-11B (Patterson et al., 2021), LLaMA (Touvron et al., 2023a), 및 LLaMA2 (Touvron et al., 2023b)에 대한 숫자는 각각의 논문으로부터 취해진다. tCO2eq가 어떻게 계산되었는지에 대한 자세한 내용은 섹션 4.4를 참조하십시오.
+
+## 6 License
+
+우리의 목표는 과학 개발을 촉진하고 과학 커뮤니티에 권한을 부여하는 것이므로 사용자에게 자원과 인공물을 사용할 수 있는 유연성을 제공하는 허용 라이선스를 선호합니다. 따라서 모든 코드 및 가중치는 Apache 2.0 라이선스에 따라 릴리스됩니다.27 최근 모델 릴리스에 대해 다른 조직에서 사용하는 일부 라이선스는 모델의 출력을 사용하여 인공 지능 또는 기계 학습 시스템을 훈련하는 것을 금지하는 반면 사용자는 명시적으로 그렇게 할 수 있습니다. 또한 상업적 사용을 제한하지 않습니다. 저희 모델이 다른 모델을 더 좋게 만들 수 있기를 바랍니다. 우리는 우리 모델이 널리 채택된 제품이 아닌 주로 과학적 인공물로 설계되었기 때문에 오용 위험이 상대적으로 낮다는 것을 인식한다(우리 모델은 챗봇으로 채택되지 않았다). 또한 지난 1년 동안 매우 허용 가능한 라이선스로 출시된 비교 가능한 모델이 많았기 때문에 보다 엄격한 라이선스를 사용하여 해당 분야의 전반적인 위험을 제거하지 못할 것입니다. 우리는 더 개방적인 측면에서 이 트레이드오프가 최선의 선택이라고 믿습니다.
+
+발음 27: [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)
+
+## 7 결론 및 미래 작업
+
+이 기술 보고서는 언어 모델링의 과학을 구축하고 연구하기 위한 최첨단 진정한 개방형 언어 모델인 OLMo의 첫 번째 출시를 제시한다. 기존의 모델 가중치 및 추론 코드만을 발표하던 기존 연구들과는 달리 OLMo와 학습 데이터, 학습 및 평가 코드를 포함한 전체 프레임워크를 발표한다. 곧, 우리는 또한 훈련 로그, 절제, 발견 및 가중치 및 편향 로그를 공개할 것이다. 또한 RLHF의 명령어 조정 및 다양한 맛을 사용하여 OLMo의 적응을 탐색하고 있다. 우리는 모든 모델 적응 코드와 데이터뿐만 아니라 적응된 모델을 출시할 것입니다.
+
+우리는 OLMo와 그 프레임워크를 지속적으로 지원하고 확장하며 개방형 연구 커뮤니티에 힘을 실어주기 위해 개방형 LM의 경계를 계속 밀어붙일 계획이다. 이를 위해 OLMo 계열에 다양한 모델 크기, 양식, 데이터 세트, 안전 조치 및 평가를 가져오기를 기대한다. 우리는 이 발표와 향후 발표가 열린 연구 커뮤니티에 힘을 실어주고 강화하며 새로운 혁신의 물결을 불러일으키기를 바랍니다.
+
+## Author Contributions
+
+올모는 많은 팀원들과 협력자들의 도움이 없었다면 불가능했을 것이다. 아래에 저자 기여도(알파벳 순서로)를 나열합니다.
+
+**데이터 세트 구성 및 도구 사용 사전 훈련** (돌마)의 기여자에는 러셀 오투르, 이즈 벨트기, 악시타 바기아, 키야티 찬두, 제시 도지, 야나이 엘라자르, 더크 그로네벨트, 로드니 키니, 카일 로, 아칸크샤 나이크, 아빌라샤 라비찬더, 더스틴 슈웬크, 루카 솔다이니, 니샨트 수브라마니가 포함됩니다.
+
+**모델 훈련 및 아키텍처** 기여자에는 셰인 아로라, 이지 벨트기, 악시타 바기아, 매튜 E. 피터스, 더크 그로네벨트, 아나냐 하르시 자하, 윌리엄 메릴, 제이콥 모리슨, 니클라스 뮌니고프, 더스틴 슈웬크, 사우라브 샤, 피트 월시, 미첼 워츠먼이 포함됩니다.
+
+**평가 제품군 및 도구** 기여자로는 Akshita Bhagia, Arman Cohan, Pradeep Dasigi, Jesse Dodge, Dirk Groeneveld, Yuling Gu, Tushar Khot, Ian Magnusson, Kyle Richardson, Oyvind Tajford 및 Pete Walsh가 있습니다.
+
+**모델 적응** 에 대한 기여자는 이즈 벨트기, 프라딥 다시기, 잭 헤셀, 해미시 아이비슨, 네이선 램버트, 발렌티나 피아트킨, 피트 월시 및 이중 왕을 포함합니다.
+
+**라이센스 생성 및 위험 평가** 기여자에는 데이비드 앳킨슨, 제시 닷지, 제니퍼 듀머스, 크리스탈 남 및 윌 스미스가 포함됩니다.
+
+OLMo 프로젝트는 한나네 하지시르지와 노아 A. 스미스가 주도했다.
+
+## Acknowledgements
+
+OLMo는 많은 개인과 기관의 지원이 없었다면 불가능했을 것이다. 이 작업의 실험 구성 요소는 AMD 및 CSC와의 파트너십을 통해 가능했으며, LUMI 슈퍼컴퓨터와 하버드 대학의 켐퍼 연구소의 사용이 가능했다. 우리는 조나단 프랭클과 모자이크ML의 팀(현재 Databricks)이 그들의 경험을 FSDP와 공유하고 OLMo가 기반으로 하는 코드 기반을 구축해준 것에 감사드린다. 우리는 팀 동료인 타이라 앤더슨, 미셸 베네딕트, 존 보르차르트, 이비 쳉, 아르나비 체다, 요한 담, 맷 라츠케, 켈시 맥밀란, 아론 사르나트, 카리사 쇤익, 샘 스콘스버그, 마이클 슈미츠, 마이클 윌슨, 케이틀린 위틀리, 그리고 전체 IT 팀에게 웹사이트, 디자인, 내부 및 외부 커뮤니케이션, 예산 책정 및 이 프로젝트의 원활한 진행을 지원하는 기타 활동에 대한 도움을 감사드립니다. 마지막으로, 우리는 또한 프리트비라지(라지) 암마나브로루, 피터 클라크, 니콜 데카리오, 더그 다우니, 알리 파하디, 이안 페레이라, 바이노 하탄파, 샴 M을 포함한 AI2의 팀원들과 가까운 협력자들의 도움이 되는 토론과 피드백에 감사를 표합니다. Kakade, Julien Launay, Sydney Levine, Pekka Manninen, Franzi Roessner, Maarten Sap, Ludwig Schmidt, Yulia Tsvetkov, Daniel S. 웰드
+
+## References
+
+* Abbas 등(2023) Amro Abbas, Kushal Tirumala, Daniel Simig, Surya Ganguli, and Ari S Morcos. Semdedup: 의미적 중복 제거를 통해 웹 규모에서 데이터 효율적인 학습입니다. _ arXiv preprint arXiv:2303.09540_, 2023. URL [https://arxiv.org/abs/2303.09540](https://arxiv.org/abs/2303.09540).
+* Almazrouei et al. (2023) Ebtesam Almazrouei, Hamza Alobeidli, Abdulaziz Alshamsi, Alessandro Cappelli, Ruxandra-Aimee Cojocaru, Daniel Hesslow, Julien Launay, Quentin Malartic, Daniele Mazzotta, Badreddine Noune, Baptiste Pannier 및 Guilherme Penedo. 팔콘 시리즈의 개방형 언어 모델입니다. _ ArXiv_, abs/2311.16867, 2023. URL [https://api.semanticscholar.org/CorpusID:265466629](https://api.semanticscholar.org/CorpusID:265466629).
+* Anand et al. (2023) Yuvanesh Anand, Zach Nussbaum, Brandon Duderstadt, Benjamin Schmidt, and Andriy Mulyar. Gpt4all: gpt-3.5-turbo에서 대규모 데이터 증류로 어시스턴트 스타일 챗봇을 교육합니다. [https://github.com/nomic-ai/gpt4all] (https://github.com/nomic-ai/gpt4all), 2023.
+* Ba 등(2016) Jimmy Ba, Jamie Ryan Kiros, and Geoffrey E. Hinton. 레이어 정규화. _ ArXiv_, abs/1607.06450, 2016. URL [https://api.semanticscholar.org/CorpusID:8236317](https://api.semanticscholar.org/CorpusID:8236317).
+* Bai 등(2022) Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, Nicholas Joseph, Saurav Kadavath, Jackson Kernion, Tom Conerly, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Danny Hernandez, Tristan Hume, Scott Johnston, Shauna Kravec, Liane Lovitt, Neel Nanda, Catherine Olsson, Dario Amodei, Tom Brown, Jack Clark, Sam McCandlish, Chris Olah, Ben Mann, and Jared Kaplan. 2022년 인간 피드백에서 강화 학습으로 유용하고 무해한 조수를 훈련합니다.
+*Bengio et al.(2003) Yoshua Bengio, Rejean Ducharme, Pascal Vincent, and Christian Janvin. 신경 확률 언어 모델입니다. _ J 마흐 배워요 Res._ , 2003. URL [https://api.semanticscholar.org/CorpusID:221275765](https://api.semanticscholar.org/CorpusID:221275765).
+* Biderman 등(2022) Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O'Brien, Eric Hallahan, Mohammad Aflah Khan, Shivanshu Purohit, Usvsn Sai Prashanth, Edward Raff, Aviya Skowron, Lintang Sutawika, and Oskar Van Der Wal. 피티아: 훈련과 스케일링 전반에 걸쳐 대규모 언어 모델을 분석하기 위한 제품군입니다. Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, _Proceedings of the 40th International Conference on Machine Learning_, Volume 202 of _Proceedings of Machine Learning Research_, pages 2397-2430. PMLR, 23-29 Jul 2023. URL [https://proceedings.mlr.press/v202/biderman23a.html](https://proceedings.mlr.press/v202/biderman23a.html)
+* Be et al.(2022) BigScience, Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, et al. Bloom: A 176b-parameter open-access multilingual language model. _ arXiv preprint arXiv:2211.05100_, 2022.
+* Be et al. (2016)Yonatan Bisk, Rowan Zellers, Jianfeng Gao, Yejin Choi, et al. Piqa: Reasoning about physical commonsense in natural language. 인공 지능에 대한 AAAI 회의 진행_에서 볼륨 34, 페이지 7432-7439, 2020. URL [https://ojs.aaai.org/index.php/AAAI/article/view/6239](https://ojs.aaai.org/index.php/AAAI/article/view/6239).
+* Black et al.(2022) Sid Black, Stella Biderman, Eric Hallahan, Quentin Anthony, Leo Gao, Laurence Golding, Horace He, Connor Leahy, Kyle McDonell, Jason Phang, Michael Pieler, USVSNi Prashanth, Shivanshu Purohit, Laria Reynolds, Jonathan Tow, Ben Wang, and Samuel Weinbach. GPT-NeoX-20B: 오픈 소스 자동 회귀 언어 모델. *Proceedings of the ACL Workshop on Challenges & Perspectives in Creating Large Language Models_, 2022. URL [https://arxiv.org/abs/2204.06745](https://arxiv.org/abs/2204.06745).
+* Blodgett 등(2016) Su Lin Blodgett, Lisa Green, and Brendan O'Connor. 소셜 미디어의 인구통계학적 변증: 아프리카계 미국인 영어의 사례 연구 "Proceedings of the 2016 Conference on Empirical Methods in Natural Language Processing"에서, 페이지 1119-1130, Austin, Texas, November 2016. Association for Computational Linguistics. doi: 10.18653/v1/D16-1120. URL [https://aclanthology.org/D16-1120](https://aclanthology.org/D16-1120).
+* Brown et al.(2020) Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, T. J. Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeff Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Illya Sutskever, Dario Amodei. 언어 모델은 거의 볼 수 없는 학습자입니다. _ ArXiv_, abs/2005.14165, 2020. URL [https://api.semanticscholar.org/CorpusID:218971783](https://api.semanticscholar.org/CorpusID:218971783).
+* 치앙 등(2023) Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhang, Yonghao Zhang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. Vicuna: 2023년 3월, 90%* 채팅gpt 품질의 gpt-4를 나타내는 오픈 소스 챗봇. URL [https://lmsys.org/blog/2023-03-30-vicuna/](https://lmsys.org/blog/2023-03-30-vicuna/)입니다.
+* Chowdhery 등(2022) Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunipa Dev, Henryk Michalewski, Xavier Garcia, Vedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Lim, Barret Zoph, Alex 다이, 타누말라얀 산카라나라야나 필라이, 마리 펠라트, 에이토르 르코위츠, 에리카 모이라라, 레원 차일드, 올렉산드르 폴로조프, 캐서린 리, 종웨이 저우, 쉬에지 왕, 브레넌 새타, 마크 디아즈, 오르한 피라트, 미셸 카타스타, 제이슨 웨이, 캐시 마이어-헬스턴, 더글라스 엑, 제프 딘, 슬라브 페트로프, 노아 피델. Palm: 경로를 사용 하 여 언어 모델링 크기 조정, 2022. URL [https://arxiv.org/abs/2204.02311](https://arxiv.org/abs/2204.02311).
+* Chronopoulou et al.(2022) Alexandra Chronopoulou, Matthew Peters, and Jesse Dodge. 사전 훈련된 언어 모델에 대한 효율적인 계층적 도메인 적응. “Proceedings of the 2022 Conference of the North American Chapter of the Computational Linguistics: Human Language Technologies_, pages 1336-1351, Seattle, United States, July 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.naacl-main.96. URL [https://aclanthology.org/2022.naacl-main.96](https://aclanthology.org/2022.naacl-main.96).
+* Chung et al.(2023) Hyung Won Chung, Noah Constant, Xavier Garcia, Adam Roberts, Yi Tay, Sharan Narang, and Orhan Firat. 유니맥스: 대규모 다국어 사전 교육을 위한 공정하고 효과적인 언어 샘플링입니다. _ ArXiv_, abs/2304.09151, 2023. URL [https://api.semanticscholar.org/CorpusID:258187051](https://api.semanticscholar.org/CorpusID:258187051).
+* Clark et al. (2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 불크: 자연스러운 예/아니오 질문의 놀라운 어려움을 탐구합니다. _ arXiv preprint arXiv:1905.10044_, 2019.
+* Clark et al. (2019)Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문을 풀었다고 생각해? try arc, ai2 reasoning challenge. _ arXiv preprint arXiv:1803.05457_, 2018. URL [https://arxiv.org/abs/1803.05457](https://arxiv.org/abs/1803.05457).
+* Conover 등(2023) Mike Conover, Matt Hayes, Ankit Mathur, Jianwei Xie, Jun Wan, Sam Shah, Ali Ghodsi, Patrick Wendell, Matei Zaharia, and Reynold Xin. 무료 돌리: 세계 최초의 진정한 개방형 명령 조정 llvm, 2023을 소개합니다. URL [https://www.databricks.com/blog/2023/04/12/dolly-first-open-commercially-viable-instruction-tuned-llvm](https://www.databricks.com/blog/2023/04/12/dolly-first-open-commercially-viable-instruction-tuned-llvm)
+* Cui et al. (2023) Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Wei Zhu, Yuan Ni, Guotong Xie, Zhiyuan Liu, and Maosong Sun. 울트라피드백: 고품질 피드백으로 언어 모델을 부스팅, 2023.
+* 딥시크-AI(2020) 딥시크-AI; 샤오비, 델리 첸, 관팅 첸, 산황 첸, 다마이 다이, 청치 덩, 홍후이딩, 카이동, 치쓰두, 쯔푸, 화즈오 가오, 카이쯔가오, 원준 가오, 류기게, 강관, 다야궈, 지안중궈, 광보하오, 후엔하오, 잉허, 원제후, 판판황, 에르앙 리, 하오에루, 상하오루, 위위안 류, 시롱마, 샤오타오 니에, 톈페이, 이시피파오, 준지추, 후이취, 통정런, 제후이런, 총롄, 장리사, 지홍샤오, 준샤오송, 스청쑤, 징샹순, 야오펑순, 밍후탕, 빙수안왕, 페이이왕, 시위왕, 야오후왕, 용지왕, 통우, Y. 우, 신시에, 젠다시에, 즈웨이시에, 이일량시옹, 한웨이쉐, R.X.쉬, 옌홍쉐, 데젠양, 유샹유, 슈핑유, 싱카이유, B.장, 하오웨이장, 레콩장, 류웨장, 밍촨장, 밍촨장, 밍화장, 원타오장, 이챠오장, 첸강장, 야오장, 샹옌저우, 순펑저우, 치아호주, 위청주. 딥섹 llvm: 장기주의를 가진 오픈 소스 언어 모델의 크기 조정, 2024.
+* Dodge 등(2022) Jesse Dodge, Taylor Prewitt, Remi Tachet Des Combes, Erika Odmark, Roy Schwartz, Emma Strubell, Alexandra Sasha Luccioni, Noah A. Smith, Nicole DeCario, and Will Buchanan. 클라우드 인스턴스에서 ai의 탄소 강도 측정, 2022. URL [https://dl.acm.org/doi/10.1145/3531146.3533234](https://dl.acm.org/doi/10.1145/3531146.3533234)입니다.
+* Dolan and Brockett (2005) William B. Dolan and Chris Brockett. 센센셜 패러프레이즈 코퍼스를 자동으로 구성합니다. 2005년 _국제 자연어 처리 공동 회의_ 에서 URL [https://www.microsoft.com/en-us/research/publication/automatically-constructing-a-corpus-of-sentential-paraphrases/](https://www.microsoft.com/en-us/research/publication/automatically-constructing-a-corpus-of-sentential-paraphrases/).
+* Elazar et al. (2023) Yanai Elazar, Akshita Bhagia, Ian H. Magnusson, Abhilasha Ravichander, Dustin Schwenk, Alane Suhr, Pete Walsh, Dirk Groeneveld, Luca Soldaini, Sameer Singh, Hanna Hajishirzi, Noah A. Smith, and Jesse Dodge. 내 빅 데이터에 뭐가 있지? _ ArXiv_, abs/2310.20707, 2023. URL [https://api.semanticscholar.org/CorpusID:264803575](https://api.semanticscholar.org/CorpusID:264803575).
+* Gao 등(2020) Leo Gao, Stella Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, et al. The pile: An 800gb dataset of various text for language modeling _ arXiv preprint arXiv:2101.00027_, 2020. URL [https://arxiv.org/abs/2101.00027](https://arxiv.org/abs/2101.00027).
+* Gao 등(2023) Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac'h, Haonan Li, Kyle McDonell, Niklas Muennighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. 소샷 언어 모델 평가를 위한 프레임워크, 12 2023. URL [https://zenodo.org/records/10256836](https://zenodo.org/records/10256836).
+* Greenbaum and Nelson (1996) Sidney Greenbaum and Gerald Nelson. 국제 영어 코퍼스(ICE) 프로젝트입니다. _ World Englishes_, 15(1):3-15, mar 1996. doi: 10.1111/j.1467-971x.1996.tb00088.x. URL [https://doi.org/10.1111/2Fj.1467-971x.1996.tb00088.x](https://doi.org/10.1111/2Fj.1467-971x.1996.tb00088.x).
+* Groeneveld et al. (2023) Dirk Groeneveld, Anas Awadalla, Iz Beltagy, Akshita Bhagia, Ian Magnusson, Hao Peng, Oyvind Tafjord, Pete Walsh, Kyle Richardson, and Jesse Dodge. Catwalk: 많은 데이터 세트에 대한 통합 언어 모델 평가 프레임워크입니다. _ arXiv preprint arXiv:2312.10253_, 2023. URL [https://arxiv.org/abs/2312.10253](https://arxiv.org/abs/2312.10253).
+* Groeneveld et al. (2020)Biyang Guo, Xin Zhang, Ziyuan Wang, Minqi Jiang, Jinran Nie, Yuxuan Ding, Jianwei Yue, and Yupeng Wu. 인간 전문가들과 대화하는 것은 얼마나 가까운가? 비교 코퍼스, 평가 및 탐지 _ arXiv preprint arxiv:2301.07597_, 2023.
+* Gururangan et al. (2023) Suchin Gururangan, Mitchell Wortsman, Samir Yitzhak Gadre, Achal Dave, Maciej Kilian, Weijia Shi, Jean Mercat, Georgios Smyrins, Gabriel Ilharco, Matt Jordan, Reinhard Heckel, Alex Dimakis, Ali Farhadi, Vaiishaal Shankar, and Ludwig Schmidt. OpenLM: 최소이지만 수행 가능한 언어 모델링(lm) 리포지토리, 2023. URL [https://github.com/mlfoundations/open_lm/](https://github.com/mlfoundations/open_lm/)입니다. GitHub 리포지토리입니다.
+* Hartvigsen et al. (2022) Thomas Hartvigsen, Saadia Gabriel, Hamid Palangi, Maarten Sap, Dipankar Ray, and Ece Kamar. TOXIGEN: 암묵적 및 적대적 독성을 생성하기 위한 언어 모델 제어 *ACL_, 2022. URL [https://arxiv.org/abs/2203.09509](https://arxiv.org/abs/2203.09509)입니다.
+* Hendrycks 등(2021) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 대규모 멀티태스킹 언어 이해를 측정하는 중입니다. _ International Conference on Learning Representations (ICLR)_, 2021.
+* Ivison 등(2023) Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. 변화하는 기후의 낙타: tulu 2, 2023을 사용하여 lm 적응 향상 URL [https://arxiv.org/abs/2311.10702](https://arxiv.org/abs/2311.10702).
+* Jiang 등(2024) Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. Mixtral of experts. _ arXiv preprint arXiv:2401.04088_, 2024. URL [https://arxiv.org/abs/2401.04088](https://arxiv.org/abs/2401.04088).
+* 대규모 언어 모델 정렬을 제거합니다. `https://openreview.net/forum?id=VSJotgbPHF` URL [https://openreview.net/forum?id=VSJotgbPHF]입니다.
+* Li 등(2023) Xuechen Li, Tianyi Zhang, Yann Dubois, Rohan Taori, Ishaan Gulrajani, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Alpaceavel: 명령어 추종 모델의 자동 평가자. Github 리포지토리, 2023. URL [https://github.com/tatsu-lab/alpaca_eval](https://github.com/tatsu-lab/alpaca_eval)
+* Liang et al.(2022) Percy Liang, Rishi Bommasani, Tony Lee, Dimitris Tsipras, Dilara Soylu, Michihiro Yasunaga, Yian Zhang, Deepak Narayanan, Yuhuai Wu, Ananya Kumar, et al. Holistic evaluation of language models. _ arXiv preprint arXiv:2211.09110_, 2022. URL [https://arxiv.org/abs/2211.09110](https://arxiv.org/abs/2211.09110).
+* Lin et al.(2022) Stephanie Lin, Jacob Hilton, and Owain Evans. 진실성: 모델들이 인간의 거짓을 어떻게 모방하는지 측정하는 것. 《제60회 컴퓨터 언어학 협회 연례 회의(제1권: 장문)》에서 2022년 3214-3252쪽이다.
+* Liu et al.(2020) Jian Liu, Leyang Cui, Hanmeng Liu, 단단황, Yile Wang, and Yue Zhang. Logiqa: 논리적 추론으로 기계 읽기 이해를 위한 챌린지 데이터 세트입니다. _ CoRR_, abs/2007.08124, 2020. URL [https://arxiv.org/abs/2007.08124](https://arxiv.org/abs/2007.08124)
+* Liu et al.(2023) Zhengzhong Liu, Aurick Qiao, Willie Neiswanger, Hongyi Wang, Bowen Tan, Tianhua Tao, Junbo Li, Yuqi Wang, Suqi Sun, Omkar Pangarkar, et al. Llm360: Towards fully transparent open-source llms. _ arXiv preprint arXiv:2312.06550_, 2023. URL [https://arxiv.org/abs/2312.06550](https://arxiv.org/abs/2312.06550).
+* Loshchilov and Hutter (2019) Ilya Loshchilov and Frank Hutter. 분리된 중량 감쇠 규칙화. 2019년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=Bkg6RiCqY7](https://openreview.net/forum?id=Bkg6RiCqY7)을 참조 하세요.
+* Luccioni et al. (2022) Alexandra Sasha Luccioni, Sylvain Viguier, and Anne-Laure Ligozat. 2022년 176b 매개 변수 언어 모델인 bloom의 탄소 발자국 추정 URL [https://arxiv.org/abs/2211.02001](https://arxiv.org/abs/2211.02001).
+* Liu et al.(2020)Ian Magnusson, Akshita Bhagia, Valentin Hofmann, Luca Soldaini, Ananya Harsh Jha, Oyvind Tafjord, Dustin Schwenk, Evan Pete Walsh, Yanai Elazar, Kyle Lo, et al. Paloma: A benchmark for evaluating language model fit. _ arXiv preprint arXiv:2312.10523_, 2023.
+* Marcus et al.(1999) Mitchell P. Marcus, Beatrice Santorini, Mary Ann Marcinkiewicz, and Ann Taylor. Treebank-3, 1999. URL [https://catalog.ldc.upenn.edu/LDC99T42](https://catalog.ldc.upenn.edu/LDC99T42).
+* Merity 등(2016) Stephen Merity, Caiming Xiong, James Bradbury, and Richard Socher. 포인터 센티넬 혼합물 모델입니다. _ ArXiv_, abs/1609.07843, 2016. URL [https://api.semanticscholar.org/CorpusID:16299141](https://api.semanticscholar.org/CorpusID:16299141).
+* Micikevicius 등(2017) Paulius Micikevicius, Sharan Narang, Jonah Alben, Gregory Frederick Diamos, Erich Elsen, David Garcia, Boris Ginsburg, Michael Houston, Oleksii Kuchaiev, Ganesh Venkatesh, and Hao Wu. 혼합 정밀 훈련. _ ArXiv_, abs/1710.03740, 2017. URL [https://api.semanticscholar.org/CorpusID:3297437](https://api.semanticscholar.org/CorpusID:3297437).
+* Mihaylov et al. (2018) Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. 갑옷이 전기를 통할 수 있나요? 오픈 북 질문 응답을 위한 새 데이터 세트입니다. _ arXiv preprint arXiv:1809.02789_, 2018. URL [https://arxiv.org/abs/1809.02789](https://arxiv.org/abs/1809.02789).
+* Mikolov et al. (2013) Tomas Mikolov, Ilya Sutskever, Kai Chen, Gregory S. 코라도, 제프리 딘 단어와 구절의 분산 표현과 그 구성성. 2013년 _신경 정보 처리 시스템_ 에서 URL [https://api.semanticscholar.org/CorpusID:16447573](https://api.semanticscholar.org/CorpusID:16447573).
+* Mishra et al.(2022) Swaroop Mishra, Daniel Khashabi, Chitta Baral, and Hannaneh Hajishirzi. 자연어 크라우드소싱 지침을 통한 교차 작업 일반화 스마란다 무레산, 프레슬라프 나코프, 아린 빌라비센시오에서 편집자들은 _계산 언어학 협회 제60차 연례 회의 회보(제1권: 장문)_, 2022년 5월 아일랜드 더블린 3470-3487쪽, 계산 언어학 협회. doi: 10.18653/v1/2022.acl-long.244. URL [https://aclanthology.org/2022.acl-long.244](https://aclanthology.org/2022.acl-long.244).
+* NLP 팀 (2023) MosaicML NLP 팀. mpt-7b 도입: 오픈 소스에 대한 새로운 표준, 상업적으로 이용 가능한 llms, 2023. URL www.mosaicml.com/blog/mpt-7b. Accessed: 2023-05-05.
+* Muennighoff 등(2023) Niklas Muennighoff, Alexander M Rush, Boaz Barak, Teven Le Scao, Aleksandra Piktus, Nouamane Tazi, Sampo Pyysalo, Thomas Wolf, and Colin Raffel. 데이터 제한 언어 모델의 크기 조정 _ arXiv preprint arXiv:2305.16264_, 2023.
+* Nunes (2020) Davide Nunes. 사전 처리된 펜 트리 뱅크, 2020. URL [https://zenodo.org/record/3910021](https://zenodo.org/record/3910021).
+* OpenAI (2023) OpenAI. Gpt-4 기술 보고서입니다. _ ArXiv_, abs/2303.08774, 2023. URL [https://api.semanticscholar.org/CorpusID:257532815](https://api.semanticscholar.org/CorpusID:257532815).
+* Ouyang et al.(2022) Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F Christiano, Jan Leike, and Ryan Lowe. 언어 모델을 훈련시켜 인간의 피드백으로 지침을 따르도록 합니다. In S. 고예조 Mohamed, A. Agarwal, D. Belgrave, K. Cho 및 A. Oh, editors, _Advances in Neural Information Processing Systems_, volume 35, pages 27730-27744. Curran Associates, Inc., 2022. URL [https://proceedings.neurips.cc/paper_files/paper/2022/file/bieffe53be364a73914f5805a001731-Paper-Conference.pdf](https://proceedings.neurips.cc/paper_files/paper/2022/file/bieffe53be364a73914f5805a001731-Paper-Conference.pdf)
+* Papasavva 등(2020) Antonis Papasavva, Savvas Zannettou, Emiliano De Cristofaro, Gianluca Stringhini, and Jeremy Blackburn. 잃어버린 케크의 레이더: 정치적으로 잘못된 게시판에서 3.5년 동안 증강된 4chan 게시물입니다. _ Proceedings of the International AAAI Conference on Web and Social Media_, 14:885-894, May 2020. doi: 10.1609/icwsm.v14i1.7354. URL [https://doi.org/10.1609%2Ficwsm.v14i1.7354](https://doi.org/10.1609%2Ficwsm.v14i1.7354)
+* Patterson 등(2021) David Patterson, Joseph Gonzalez, Quoc Le, Chen Liang, Lluis-Miquel Munguia, Daniel Rothchild, David So, Maud Texier, and Jeff Dean. 탄소 배출 및 대규모 신경망 훈련, 2021. URL [https://arxiv.org/abs/2104.10350](https://arxiv.org/abs/2104.10350).
+* P. P.
+
+Guilherme Penedo, Quentin Malartic, Daniel Hesslow, Ruxandra-Aimee Cojocaru, Alessandro Cappelli, Hamza Alobeidli, Baptiste Pannier, Ebtesam Almazrouei 및 Julien Launay. 매 llm에 대한 정제된 웹 데이터 세트: 웹 데이터 및 웹 데이터만으로 선별된 말뭉치를 능가합니다. _ ArXiv_, abs/2306.01116, 2023. URL [https://api.semanticscholar.org/CorpusID:259063761](https://api.semanticscholar.org/CorpusID:259063761).
+* Peters 등(2018) Matthew E. Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and Luke Zettlemoyer. 깊은 맥락화된 단어 표현입니다. _ ArXiv_, abs/1802.05365, 2018. URL [https://api.semanticscholar.org/CorpusID:3626819](https://api.semanticscholar.org/CorpusID:3626819).
+* Pilehvar and Camacho-Collados (2018) Mohammad Taher Pilehvar and Jose Camacho-Collados. Wic: 상황에 민감한 표현을 평가하기 위한 10,000개의 예제 쌍입니다. _ CoRR_, abs/1808.09121, 2018. URL [http://arxiv.org/abs/1808.09121](http://arxiv.org/abs/1808.09121).
+* Press and Wolf (2017) Ofir Press and Lior Wolf. 언어 모델을 개선하기 위해 출력 임베딩을 사용합니다. 미렐라 라파타, 필 블룬섬, 알렉산더 콜러에서 편집자들은 _프로시빙스(Proceedings of the 15th Conference of the European Chapter of the Association for Computational Linguistics: Volume 2, Short Papers_, 157-163, Valencia, Spain, April 2017). Computational Linguistics. URL [https://aclanthology.org/E17-2025](https://aclanthology.org/E17-2025).
+* Rae et al.(2017) Jack W. 라에, 세바스티안 보르게우, 트레보르 카이, 케이티 밀리칸, 조던 호프만, 프란시스 송, 존 아슬란데스, 사라 헨더슨, 로만 링, 수잔나 영, 엘라이자 러더포드, 톰 헤니건, 야콥 메닉, 알빈 카시어, 리차드 파웰, 나트 맥알레, 에이미 우, 에리히 엘젠, 시드한 자야쿠마르, 엘레나 부카야, 다비드 버드덴, 에이미 서더랜드, 카렌 시모니안, 미켈라 파가니우, 장-밥티스트 레스파우, 마리아 심포우, 니콜라 바부스키킨, 아단 클라크, 디에고 데 라스 카사스, 오렐리아 가이, 크리스 존스, 제임스 브래드베리, 매튜 존슨, 로라 바이딩거, 이손 가브리엘, 윌리엄 아이작, 에드 록하트, 사이먼 오신데로, 로라 리멜, 크리스 다이아, 오리올 빈얄, 카림 아유브, 제프 스탠웨이, 로라린 베넷, 데미스 하사비스, 크기 조정 언어 모델: 교육 고퍼의 방법, 분석 및 통찰력, 2022. URL [https://arxiv.org/abs/2112.11446](https://arxiv.org/abs/2112.11446)입니다.
+* Rafailov et al. (2023) Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. 직접 선호도 최적화: 언어 모델은 비밀리에 보상 모델입니다. _신경 정보 처리 시스템에 대한 37회 회의_, 2023. URL [https://openreview.net/forum?id=HPuSIXaa9](https://openreview.net/forum?id=HPuSIXaa9)입니다.
+* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. 통합 텍스트 대 텍스트 변환기를 사용하여 전이 학습의 한계를 탐색합니다. _ J 마흐 배워요 Res._ , 21(1), jan 2020. ISSN 1532-4435.
+* Rajbhandari et al. (2019) Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, and Yuxiong He. 제로: 조 개의 매개 변수 모델을 학습하기 위한 메모리 최적화입니다. _ SC20: 고성능 컴퓨팅, 네트워킹, 스토리지 및 분석을 위한 국제 회의_, 페이지 1-16, 2019. URL [https://api.semanticscholar.org/CorpusID:203736482](https://api.semanticscholar.org/CorpusID:203736482).
+* Reid et al.(2022) Mached Reid, Victor Zhong, Suchin Gururangan, and Luke Zettlemoyer. M2D2: 대규모 다중 도메인 언어 모델링 데이터 세트. "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing"에서, 964-975 페이지, 아랍에미리트 아부다비, 2022년 12월. 계산 언어학 협회. URL [https://aclanthology.org/2022.emnlp-main.63](https://aclanthology.org/2022.emnlp-main.63).
+* Ribeiro 등(2021) Manoel Horta Ribeiro, Jeremy Blackburn, Barry Bradlyn, Emiliano De Cristofaro, Gianluca Stringhini, Summer Long, Stephanie Greenberg, and Savvas Zannettou. 웹을 통한 마노스피어의 진화입니다. _ Proceedings of the International AAAI Conference on Web and Social Media_, 15:196-207, may 2021. doi: 10.1609/icwsm.v15i1.18053. URL [https://doi.org/10.1609%2Ficwsm.v15i1.18053](https://doi.org/10.1609%2Ficwsm.v15i1.18053)
+* Ribeiro et al.(2021)Ronald Rosenfeld. 20년간의 통계 언어 모델링: 여기서 우리는 어디로 갈까요? _ Proceedings of the IEEE_, 88(8):1270-1278, 2000.
+* Sakaguchi et al.(2021) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 위노그란데: 규모의 적대적인 위노그라드 스키마 도전입니다. _ ACM_, 64(9):99-106, 2021의 통신. URL [https://dl.acm.org/doi/abs/10.1145/3474381](https://dl.acm.org/doi/abs/10.1145/3474381).
+* 산 등 (2022) 빅터 산, 알버트 웹슨, 콜린 라펠, 스티븐 바흐, 린탕 수타위카, 자이드 알랴페이, 앙투안 차핀, 아르나우 슈티글러, 아룬 라자, 만난 데이, 엠 사이풀 바리, 캔웬 쉬, 우르미시 타케르, 샨야 샤르마 샤르마, 일라이자 샤르마, 태운 김, 군잔 샤블라니, 니할 나약, 데바요티 다타, 조나단 창, 마이크 톈-젠 장, 한 왕, 마테오 마니카, 션 션, 정신용, 하르시트 판데, 레이첼 보덴, 토마스 왕, 트리샤 니라지, 호세 로젠, 아비스트 샤르마, 안드레아 산틸리, 티볼트 페브리, 제이슨 앨런 프라이, 라이언 티한, 테벤 르 스카오, 스텔라 비드만, 레오 가오, 토마스 울프, 알렉산더 엠 러시. 멀티태스킹 프롬프트 트레이닝은 제로 샷 태스크 일반화를 가능하게 한다. 2022년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=9Vrb9DOWI4](https://openreview.net/forum?id=9Vrb9DOWI4).
+* Shazeer (2020) Noam M. 셰이저 Glu 변형은 변압기를 개선합니다. _ ArXiv_, abs/2002.05202, 2020. URL [https://api.semanticscholar.org/CorpusID:211096588](https://api.semanticscholar.org/CorpusID:211096588).
+* Soldaini 등(2024) Luca Soldaini, Rodney Kinney, Akshita Bhagia, Dustin Schwenk, David Atkinson, Russell Authur, Ben Bogin, Khyathi Chandu, Jennifer Dumas, Yanai Elazar, Valentin Hofmann, Ananya Harsh Jha, Sachin Kumar, Li Lucy, Xinxi Lyu, Nathan Lambert, Ian Magnusson, Jacob Morrison, Niklas Muennighoff, Aakanksha Naik, Crystal Nam, Matthew E. Peters, Abhilsa Ravichander, Kyle Richardson, Zejiang Shen, Emma Strubell, Nishant Subramani, Oyvind Tafjord, Pete Walsh, Luke Zettlemoyer, Noah A. Smith, Hannaneh Hajishirzi, Iz Beltagy, Dirk Groeneveld, Jesse Dodge, and Kyle Lo. 돌마: 언어 모델 사전 훈련 연구를 위한 3조 토큰의 공개 코퍼스입니다. _ arXiv preprint_, 2024.
+* Strubell et al.(2019) Emma Strubell, Ananya Ganesh, and Andrew McCallum. NLP에서 딥 러닝을 위한 에너지 및 정책 고려 사항. Anna Korhonen, David Traum, Lluis Marquez에서 편집자들은 _Proceedings of the 57th Annual Meeting of the Association of the Computational Linguistics_, pages 3645-3650, Florence, Italy, July 2019. Association for Computational Linguistics. doi: 10.18653/v1/P19-1355. URL [https://aclanthology.org/P19-1355](https://aclanthology.org/P19-1355).
+* Su et al.(2021) Jianlin Su, Yu Lu, Shengfeng Pan, Bo Wen, and Yunfeng Liu. 로포르머: 회전식 위치 임베딩을 가진 향상된 변압기. _ ArXiv_, abs/2104.09864, 2021. URL [https://api.semanticscholar.org/CorpusID:233307138](https://api.semanticscholar.org/CorpusID:233307138).
+* Taori 등(2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: 명령어 후속 llama 모델. [https://github.com/tatsu-lab/stanford_alpaca] (https://github.com/tatsu-lab/stanford_alpaca), 2023.
+* Qteacher (2023) Teknium1. Gpteacher. [https://github.com/teknium1/GPTeacher] (https://github.com/teknium1/GPTeacher), 2023.
+* Computer (2023) Together Computer. RedPajama: 2023년 4월 LLaMA 학습 데이터 세트를 재현하는 오픈 소스 레시피. URL [https://github.com/togethercomputer/RedPajama-Data](https://github.com/togethercomputer/RedPajama-Data)
+* Touvron 등(2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ ArXiv_, abs/2302.13971, 2023a. URL [https://api.semanticscholar.org/CorpusID:257219404](https://api.semanticscholar.org/CorpusID:257219404).
+* 투브론 외 (2023) 휴고 투브론, 루이 마틴, 케빈 스톤, 피터 알버트, 암자드 알마하리, 야스민 바바이, 니콜라이 바슐리코프, 소우마 바트라, 프라즈왈 바살라, 슈루티 보살레, 단 비켈, 루카스 블레처, 크리스티안 칸톤 페러, 모야 첸, 기옌 쿠쿠룰, 다비드 에시오부, 주드 페르난데스, 제르티아 가오, 제레미 푸, 원린 푸, 브라이언 풀러, 신시아 가오, 제레미 푸, 베다누후, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 고예프, 이사벨 클루만, 아템 코레네프, 사그하르 호세이니, 사그하르 호세이니, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디앙 니에, 앤드류 폴턴, 제레미 라이젠슈타인, 라시룽타, 칼리안 살라디, 알란 셸텐, 루안 실바 라마 2: 오픈 파운데이션 및 미세 조정된 채팅 모델, 2023b. URL [https://arxiv.org/abs/2307.09288](https://arxiv.org/abs/2307.09288).
+* Ubierna et al.(2022) Maria Ubierna, Cristina Diez Santos, and Sara Mercier-Blais. _ Water Security and Climate Change: Hydropower Reservoir Greenhouse Gas Emissions_, pages 69-94. Springer Singapore, Singapore, 2022. ISBN 978-981-16-5493-0. doi: 10.1007/978-981-16-5493-0_5. URL [https://doi.org/10.1007/978-981-16-5493-0_5](https://doi.org/10.1007/978-981-16-5493-0_5)
+* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 주목만 하시면 됩니다. 인규언 본 룩스버그, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, R. Garnett, editors, _Advances in Neural Information Processing Systems_, volume 30. Curran Associates, Inc., 2017. URL [https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf](https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf)
+* Vilares and Gomez-Rodriguez (2019) David Vilares and Carlos Gomez-Rodriguez. HEAD-QA: 복잡한 추론을 위한 의료 데이터 세트. Anna Korhonen, David Traum, Lluis Marquez에서 편집자들은 _Proceedings of the 57th Annual Meeting of the Association of the Computational Linguistics_, pages 960-966, Florence, Italy, July 2019. Association for Computational Linguistics. doi: 10.18653/v1/P19-1092. URL [https://aclanthology.org/P19-1092](https://aclanthology.org/P19-1092).
+* Wang et al.(2018) Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. 보우먼 접착제: 자연어 이해를 위한 다중 작업 벤치마크 및 분석 플랫폼입니다. _ ArXiv_, abs/1804.07461, 2018. URL [https://arxiv.org/abs/1804.07461](https://arxiv.org/abs/1804.07461).
+* Wang et al.(2023) Yizhong Wang, Hamish Ivison, Pradeep Dasigi, Jack Hessel, Tushar Khot, Khyathi Raghavi Chandu, David Wadden, Kelsey MacMillan, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. 낙타는 어디까지 갈 수 있나요? 오픈 리소스의 명령 튜닝 상태 설명 2023. URL [https://arxiv.org/abs/2306.04751](https://arxiv.org/abs/2306.04751)입니다.
+* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. 다이, 퀵 브이 레 파인튜닝 언어 모델은 제로샷 학습자입니다. 2022년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=gEZrGCozdqR](https://openreview.net/forum?id=gEZrGCozdqR).
+* Welbl et al.(2017) Johannes Welbl, Nelson F Liu, and Matt Gardner. 선다형 과학 문제를 크라우드소싱합니다. _ arXiv preprint arXiv:1707.06209_, 2017. URL [https://arxiv.org/abs/1707.06209](https://arxiv.org/abs/1707.06209).
+* Wu et al. (2022) Carole-Jean Wu, Ramya Raghavendra, Udit Gupta, Bilge Acun, Newsha Ardalani, Kiwan Maeng, Gloria Chang, Fiona Aga Behram, James Huang, Charles Bai, Michael Gschwind, Anurag Gupta, Myle Ott, Anastasia Melnikov, Salvatore Candido, David Brooks, Geeta Chauhan, Benjamin Lee, Hsien-Hsin S. 리, 부그라 아킬디즈, 막시밀리안 발란다트, 조 스피삭, 라비 자인, 마이크 래바트, 킴 헤이즐우드. 지속 가능한 ai: 환경 영향, 도전 및 기회, 2022. URL [https://arxiv.org/abs/2111.00364](https://arxiv.org/abs/2111.00364).
+* Xu et al.(2024) Can Xu, Qingfeng Sun, Kai Zheng, Xiubo Geng, Pu Zhao, Jiazhan Feng, Chongyang Tao, Qingwei Lin, and Daxin Jiang. WizardLM: 미리 훈련된 대규모 언어 모델이 복잡한 지침을 따르도록 권한을 부여합니다. _The Twelfth International Conference on Learning Representations_, 2024. URL [https://openreview.net/forum?id=CfXh93NDgH](https://openreview.net/forum?id=CfXh93NDgH).
+* Xu 등(2023) Canwen Xu, Daya Guo, Nan Duan, and Julian McAuley. Baize: 자체 채팅 데이터를 매개 변수 효율적으로 조정하는 오픈 소스 채팅 모델입니다. _ arXiv preprint arXiv:2304.01196_, 2023.
+* Zannettou et al.(2018) Savvas Zannettou, Barry Bradlyn, Emiliano De Cristofaro, Haewoon Kwak, Michael Sirivianos, Gianluca Stringini, and Jeremy Blackburn. 개그란 무엇인가: 언론의 자유의 보루 또는 철저한 메아리 방. "The Web Conference 2018"에서, WWW '18, page 1007-1014, Republic and Canton of Geneva, CHE, 2018. International World Wide Web Conferences operating Committee. ISBN 9781450356404. doi: 10.1145/3184558.3191531. URL [https://doi.org/10.1145/3184558.3191531](https://doi.org/10.1145/3184558.3191531).
+
+로완 젤러스, 아리 홀츠만 요나탄 비스크 알리 파하디, 예진 최 헬라스왁: 기계가 정말로 당신의 문장을 끝낼 수 있을까요? arXiv preprint arXiv:1905.07830_, 2019. URL [https://arxiv.org/abs/1905.07830](https://arxiv.org/abs/1905.07830).
+* Zhang and Sennrich (2019) Biao Zhang and Rico Sennrich. 루트 평균 제곱 계층 정규화입니다. _ ArXiv_, abs/1910.07467, 2019. URL [https://api.semanticscholar.org/CorpusID:113405151](https://api.semanticscholar.org/CorpusID:113405151).
+* Zhang 등 (2022) Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, Todor Mihaylov, Myle Ott, Sam Shleifer, Kurt Shuster, Daniel Simig, Punit Singh Koura, Anjali Sridhar, Tianlu Wang, and Luke Zettlemoyer. Opt: 사전 훈련된 변압기 언어 모델, 2022를 엽니다. URL [https://arxiv.org/abs/2205.01068](https://arxiv.org/abs/2205.01068).
+* Zhao et al. (2023) Yanli Zhao, Andrew Gu, Rohan Varma, Liangchen Luo, Chien chin Huang, Min Xu, Less Wright, Hamid Shojanazeri, Myle Ott, Sam Shleifer, Alban Desmaison, Can Balioglu, Bernard Nguyen, Geeta Chauhan, Yuchen Hao, and Shen Li. Pytorch fsdp: 완전히 샤딩된 데이터를 병렬로 스케일링하는 경험입니다. _ Proc. VLDB Endow._ , 16:3848-3860, 2023. URL [https://api.semanticscholar.org/CorpusID:258297871](https://api.semanticscholar.org/CorpusID:258297871).
+
+추가적인 복잡성 결과
+
+그림 3에서 우리는 그림 2의 결합된 메트릭에서 제외된 팔로마(Magnusson et al., 2023)의 7개의 데이터 소스 각각에 대한 결과를 제공한다. Pile(Gao et al., 2020) 및 ICE(Greenbaum and Nelson, 1996)와 같은 이러한 소스 중 일부는 현재 공개적으로 이용 가능하지 않다. 돌마 100 프로그래밍 언어(Soldaini et al., 2024)는 팔로마에서 사용되는 오염 제거 접근법에 의해 지원되지 않는 코드 데이터로 구성된다. 트위터AAE(Blodgett et al., 2016)는 ICE와 함께 서로 다른 방언 간의 성능 차이에 대한 표적 분석을 위한 데이터 세트이므로 별도로 평가해야 한다. 마지막으로, Manosphere, Gab 및 4chan 코퍼라(Ribeiro et al., 2021; Zannettou et al., 2018; Papasavva et al., 2020)는 널리 퍼진 혐오 발언 및 독성에 대해 연구된 프린지 온라인 커뮤니티의 언어에 적합한 모델을 조사하고자 한다. 따라서 이러한 프린지 코퍼스에 대한 복잡성을 최소화하는 것이 항상 바람직한 것은 아니다.
+
+여기서 주목할 만한 결과 중 하나는 OLMo-7B가 돌마 100 프로그래밍 언어(100 PL)의 다른 모델보다 훨씬 앞서 있다는 것이다. 오염 제거 코드 데이터가 팔로마에서 방법의 범위를 벗어나기 때문에 이 효과는 부분적으로 오염으로 인한 과소평가 때문일 수 있다. 동시에 오염이 있을 가능성이 있는 RPJ-INCITE-7B와 같은 GitHub의 코드 데이터에 대해 훈련된 다른 모델은 훨씬 더 나쁘다. 또 다른 요인은 OLMo-7B가 100개의 PL에서와 동일한 후처리로 코드 데이터를 훈련하는 반면 다른 모델의 코드 데이터는 다르게 처리된다는 것이다. 유사하게, 파일 평가는 피티아-6.9B가 OLMo-7B보다 거의 100배 적은 토큰에 대해 훈련되었음에도 불구하고 최고의 성능을 달성함에 따라 이러한 분포 내 및 잠재적인 오염 효과를 보여준다.
+
+팔로마는 종종 이러한 출처에 대한 당혹감이 실제로 이러한 연설 커뮤니티의 구성체에 두드러질 것 보다는 낮은 평균 문서 길이와 같은 피상적인 특징에 의해 지배된다는 것을 발견하기 때문에 나머지 5개의 표적 출처에 대한 결과는 신중하게 해석되어야 한다. 트위터AAE와 Gab은 이 그림에서 바이트당 비정상적으로 높은 비트에 기여하는 팔로마에서 가장 짧은 문서 중 하나이다. 이 두 가지 외에 모델은 ICE, 마노스피어 및 4chan의 데이터 스케일링 추세에서 특히 매우 밀접하게 그룹화된다.
+
+다음으로, 표 9에서 핵심 평가 제품군의 8개 외에 6개의 추가 엔드 태스크에 대한 OLMo-7B의 제로 샷 평가 결과를 제공한다. 이러한 작업은 headqa_en(Vilares and Gomez-Rodriguez, 2019), logiqa(Liu et al., 2020), mrpc(Dolan and Brockett, 2005), qnli(Wang et al., 2018), wic(Pilehvar and Camacho-Collados, 2018), wnli(Wang et al., 2018)이다.
+
+그림 3: 그림 2에서 집계되지 않은 나머지 팔로마 데이터 소스 7개 각각에 대한 바이트당 비트.
+
+그러나 섹션 4.1에 설명된 핵심 평가 세트와 달리 이러한 추가 엔드 태스크가 모델 개발 동안 덜 안정적인 성능을 가지며 제한된 신호를 제공한다는 점에 주목한다. 이것은 그림 4에 설명되어 있으며, 여기서 우리는 훈련 전반에 걸친 과제 수행의 진전이 더 무작위적이라고 본다(그림 1의 더 안정적인 상승 추세와 비교). mrpc 및 wic과 같은 태스크가 더 안정적으로 보이지만, 그들은 데이터세트 클래스 불균형(예: mrpc)으로 인해 성능을 부풀리거나 수축시키는 가짜 예측(예: 항상 단일 레이블을 예측)을 하는 모델의 경향 또는 무작위 우연(예: wic)에 묶여 있는 성능과 관련된 추가적인 어려움을 제공했다. 따라서 우리는 훈련 및 모델 비교 전반에 걸쳐 모델 성능을 측정할 때 이러한 작업에 너무 많이 의존하지 않도록 주의한다.
+
+## 부록 B 적응 훈련 세부 정보
+
+우리는 명령어 튜닝 OLMo에서 다음과 같은 하이퍼파라미터를 사용한다. 이들은 작은 파일럿 실험을 통해 선택되었다.
+
+* 학습률:
+
+그림 4: 6개의 추가 엔드 태스크에 대한 OLMo-7B의 정확도 점수 진행. 이러한 추가 엔드 태스크의 성능은 불안정하고 모델 개발 동안 제한된 신호를 제공했다.
+
+\begin{table}
+\begin{tabular}{c|c c c c c c|c} \hline  & headqa\_en & logiqa & mrpc & qnli & wic & wnli & avg. \\ \hline
+**Falcon-7B** & 38.6 & 23.7 & 62.8 & 49.8 & 49.8 & 49.5 & 47.9 & 45.4 \\
+**LLaMA-7B** & 38.7 & 19.5 & 68.6 & 50.1 & 49.1 & 52.1 & 46.4 \\
+**LLaMA2-7B** & 39.5 & 26.1 & 69.1 & 49.4 & 49.8 & 45.1 & 46.5 \\
+**MPT-7B** & 37.4 & 22.9 & 67.7 & 52.1 & 48.1 & 47.9 & 46.0 \\
+**Pythia-6.9B** & 40.1 & 21.5 & 65.4 & 53.8 & 55.0 & 38.0 & 45.6 \\
+**RPJ-INCITE-7B** & 36.9 & 27.8 & 58.8 & 53.8 & 48.9 & 57.8 & 47.3 \\ \hline
+**OLMo-7B** & 37.3 & 23.4 & 68.4 & 49.1 & 50.2 & 56.3 & 47.5 \\ \hline \end{tabular}
+\end{table}
+표 9: 핵심 평가 제품군에 있는 8개의 현재를 제외하고 6개의 추가 엔드 태스크에 대한 OLMo-7B의 제로 샷 평가. 다시 한 번 OLMo-7B를 공개적으로 사용할 수 있는 6개의 다른 모델 체크포인트와 비교한다. 우리는 OLMo-7B가 이 표에서 6개 이상의 추가 최종 작업을 수행한 집합에서 다른 모델보다 우수하지만 이러한 작업도 훈련 중에 제한된 신호를 제공하는 것으로 확인되었다(그림 4 참조).
+
+* Epochs: 3
+* 워밍업: 전체 훈련 시간의 처음 3% 동안 선형 워밍업을 수행한 다음 나머지 단계에 걸쳐 학습률 0으로 선형 쿨다운합니다.
+* Weight Decay: 0
+* Gradient clipping: 0
+* 최대 시퀀스 길이: 2048
+
+Instruction finetuning 후, 우리는 Ivison et al. (2023)에 이어 DPO 트레이닝을 위해 다음과 같은 하이퍼파라미터를 사용한다:
+
+* 학습률: \(5\times 10^{-7}\)
+* \(\beta\): 0.1
+* Epochs: 3
+* 워밍업: 전체 훈련 시간의 처음 10% 동안 선형 워밍업을 수행한 다음 나머지 단계에 걸쳐 학습률 0으로 선형 쿨다운합니다.
+* Weight Decay: 0
+* Gradient clipping: 0
+* 최대 시퀀스 길이: 2048
+
+## 부록 C 적응 평가 및 모델 세부 정보
+
+표 6에서 비교한 기본 모델의 '정규' 최상의 버전(즉, 동일한 기관에서 출시한 최상의 명령어 조정 또는 다른 방식으로 조정된 모델)을 선택하여 표 7의 모델을 선택한다. 또한 툴루 2와 비교하여 OLMo를 미세 조정하는 데 사용되는 툴루 믹스를 사용하여 훈련된 현재 최상의 모델을 보여준다. MLU, AlpacaEval, ToxiGen 및 Truthfulness에 대한 평가를 표시하여 명령어 튜닝이 일반적으로 기능(MMLU), 모델이 개방형 채팅 설정(AlpacaEval)에서 수행하는 방법 및 명령어 튜닝이 모델 안전성과 진실성(AlpacaEval, ToxiGen)에 도움이 되는 방법을 표시하는 데 중점을 둡니다. 우리는 또한 표 10의 툴루 평가 제품군 전체에 대한 OLMo의 성능을 보고한다.
+
+아래 표 7에서 평가된 각 모델에 대한 간략한 설명을 제공한다. 모든 모델에 대해 사용 가능한 경우 제공된 채팅 템플릿을 사용하여 프롬프트 형식을 지정합니다.
+
+* MPT Chat: A version of MPT 7B finetuned on the ShareGPT-Vicuna (Chiang et al., 2023), HC3 (Guo et al., 2023), Alpaca (Taori et al., 2023), HH-RLHF (Bai et al., 2022), and Evol-Instruct (Xu et al., 2024) datasets. [https://huggingface.co/mosaicml/mpt-7b-chat](https://huggingface.co/mosaicml/mpt-7b-chat)에서 검색되었습니다.
+* Falcon Instruct: A version of Falcon 7B finetuned on the Baize(Xu et al., 2023), GPT4All(Anand et al., 2023), GPTeacher(Teknium1, 2023), and Refined-Web English(Penedo et al., 2023) datasets. [https://huggingface.co/tiiuae/falcon-7b-instruct](https://huggingface.co/tiiuae/falcon-7b-instruct)에서 검색되었습니다.
+* RPJ-INCITE Chat: A version of RPJ-INCITE 7B finetuned on the OASST1 (Kopf et al., 2023) and Dolly V2 (Conover et al., 2023) datasets. [https://huggingface.co/togethercomputer/RedPajama-INCITE-7B-Chat](https://huggingface.co/togethercomputer/RedPajama-INCITE-7B-Chat)에서 검색되었습니다.
+* Llama-2 Chat: Llama 2 7B의 버전은 명령어 데이터 세트의 혼합물에서 미세 조정되고 RLHF로 추가로 훈련된다. 자세한 내용은 Touvron et al.(2023b)에 독자를 참조한다.
+* 툴루 2: 명령어 데이터 세트의 혼합물(툴루 2 혼합물)에서 파인튜닝된 Llama 2 7B의 버전. 자세한 내용은 Ivison et al.(2023)에 독자를 참조한다.
+
+\begin{table}
+\begin{tabular}{l|c c c c c c c c} \hline \hline
+**Model** & **MMLU** & **GSM8k** & **BBH** & **TylQA** & **Codex-Eval** & **AlpacaEval** & **ToxiGen** & **TruthfulQA** \\  & **0-shot** & **8-shot** & **5-shot CoT** & **3-shot CoT** & **1-shot** & **Pass@10** & **\%win** & **\% Toxic** & **\%Info + True** \\ \hline
+**OLMo-7B** & 23.3 & 8.5 & 31.7 & 32.3 & 21.4 & 81.4 & 31.6 \\
+**+SFT** & 47.3 & 15.5 & 36.9 & 35.2 & 28.6 & 57.0 & 14.4 & 41.2 \\
+**+SFT+DPO** & 46.1 & 11.0 & 35.8 & 21.7 & 27.8 & 69.3 & 1.7 & 52.0 \\ \hline \hline \end{tabular}
+\end{table}
+표 10: 전체 툴루 평가 제품군에 대한 수업 미세 조정 및 DPO 교육 전후 OLMo-7B 모델의 평가. 낮은 것은 ToxiGen에 더 좋고 높은 것은 다른 지표에 더 좋다.
+
+* **Tulu 2+DPO:****Tulu 2는 UltraFeedback 데이터 세트에서 DPO로 추가 학습** **(**Cui 등**,** 2023**)** 합니다. 자세한 내용은 판독기 **Ivison 등** **(**2023**)** 를 참조 하세요. **
+* **OLMo +SFT: **툴루 2** 와 동일한 데이터에서 핀트닝된 OLMo 7B 버전입니다.**
+* **OLMo +SFT +DPO:****OLMo +SFT는 UltraFeedback 데이터 세트에서 DPO로 추가 훈련되었습니다.** **(**Cui 등**,** 2023**)****.**
+
+**표에서 각 평가 설정에 대한 간략한 설명을 추가로 제공** 합니다.** 7**:
+
+* **MMLU: 공식 MMLU** **(**Hendrycks 등**,** 2021**)** **평가 스크립트 및 프롬프트를 [https://github.com/hendrycks/test](https://github.com/hendrycks/test)에서 사용할 수 있으며 일괄 처리를 허용하도록 수정합니다. 우리는 MMLU의 원래 설정에 따라 0개의 소샷 예제를 사용하여 평가한다. 테스트 예제에 대한 평균 정확도를 보고합니다.**
+* **ToxiGen:** **Touvron 등** **(**2023b**)** 의 설정을 따르지만 특정 그룹에 대한 독성 생성을 유도하도록 설계된 **Hartvigsen 등** **(**2022**)** 의 원래 프롬프트 세트를 사용합니다. 독성 언어를 생성하도록 설계된 프롬프트('혐오스러운' 프롬프트)만 취하고 평가 비용을 줄이기 위해 그룹당 500개의 프롬프트를 사용한다. 기본 언어 모델의 경우 변경되지 않은 원래 톡시젠 프롬프트를 전달하고 첫 번째 새 라인(또는 최대 512 토큰)까지 탐욕스럽게 디코딩합니다. 명령어 조정 모델의 경우 해당 템플릿에 프롬프트를 배치하고 모델이 중지 토큰(또는 최대 512 토큰)을 생성할 때까지 모델에 프롬프트를 완료하도록 요청합니다. 생성된 텍스트를 **Hartvigsen 등** **(**2022**)****28의 일부로 미세 조정된 독성 콘텐츠를 탐지하도록 훈련된 리보타 대형 모델에 전달합니다. 그런 다음 분류기에 의해 독성이 있다고 간주되는 세대의 백분율을 보고합니다.** 각주 28: [https://huggingface.co/tomh/toxic_roberta](https://huggingface.co/tomh/toxic_roberta)**
+* **TruthfulQA: 다음** **Touvron 등** **(**2023b**)** 에서 주로 TruthfulQA의 생성 설정을 사용합니다. **(**Lin 등**,** 2022**)**. TruthfulQA 데이터 세트에는 818개의 질문이 포함되어 있으며, 이는 테스트된 모델을 프롬프트하여 답변을 생성하는 데 사용됩니다. 우리는 6개의 문맥 내 QA 예제와 함께 기본 QA 프롬프트 형식을 사용한다. 우리는 공식에서 공식 스크립트를 따릅니다. **implementation29** **탐욕스러운 디코딩을 수행하고 사후 처리에 응답합니다. 우리는 원래 TruthfulQA 평가를 정확하게 복제할 수 없는 GPT-3의 비활성화로 인해 모델 반응의 진실성과 정보성을 판단하기 위해 두 개의 LLaMA 2 기반 분류기를 훈련한다. 우리는 LLaMA 2 판사가 일반적으로 **Lin 등** **(**2022**)** 에서 사용하는 원래 GPT-3 기반 판사의 성능과 일치할 수 있음을 발견했습니다. **Touvron 등** **(**2023b**)** 에 이어 진실되고 유익한 응답 비율(% 정보 및 진실)을 보고합니다. % 정보 및 진실만 기본 메트릭으로 보고합니다.* * 각주 29: [https://github.com/sylinrl/TruthfulQA/](https://github.com/sylinrl/TruthfulQA/)
+* **AlpacaEval: 805 프롬프트에 대한 응답을 생성하고 GPT-4를 사용하여 응답을 Davinci-003과 비교하는 기본 설정에 따라 **Li 등** **(**2023**)** 에서 제공하는 패키지를 사용합니다. "alpaca_eval_gpt4" 주석기를 사용합니다. 우리는 평가된 모델이 특별한 정지 시퀀스를 지정하지 않고 최대 2048개의 토큰을 생성할 수 있도록 한다. 보고된 승률은 GPT-4가 다빈치-003의 세대보다 선호되는 것으로 보고하는 모델 세대의 비율입니다.**
