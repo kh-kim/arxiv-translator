@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Large Language Models Lantly perform Multi-Hop Reasoning?\n' +
+      '\n' +
+      '소희 양1,2 엘레나 그리보브스카야1 노라 카스너1 모 게바3,4* 세바스티안 리델1,2*\n' +
+      '\n' +
+      '구글 딥마인드1 UCL2 구글 리서치3 텔아비브 대학4\n' +
+      '\n' +
+      '{soheeyang,egribovskaya,norakassner,pipek,sriedel}@google.com\n' +
+      '\n' +
+      'Corresponding authors.\n' +
+      '\n' +
+      '각주 1: 코드와 데이터 세트를 공개적으로 공개할 계획입니다.\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '본 논문에서는 LLM(Large Language Models)이 "Superstition"의 가수의 어머니"와 같은 복잡한 프롬프트를 가지고 멀티홉 추론을 수행하는지를 연구한다. LLM은 (1) "Superstition"의 가수를 스티비 원더, _브릿지 실체_로 지각하고, (2) 스티비 원더의 어머니에 대한 지식을 이용하여 프롬프트를 완성하는 잠재 추론 경로의 증거를 찾는다. 우리는 이 두 홉을 개별적으로 분석하고 이들의 동시 발생을 잠재된 다중 홉 추론을 나타내는 것으로 간주한다. 첫 번째 홉의 경우 프롬프트를 변경하여 다른 엔터티 대신 브리지 엔터티를 간접적으로 언급하는 것이 브리지 엔터티의 LLM 내부 리콜을 증가시키는지 테스트합니다. 두 번째 홉의 경우 이 리콜을 증가시키면 LLM이 브리지 엔티티에 대해 알고 있는 것을 더 잘 활용하는지 테스트한다. 우리는 특정 관계 유형의 프롬프트에 대한 잠재 다중 홉 추론의 강력한 증거를 찾으며, 프롬프트의 80% 이상에서 추론 경로가 사용된다. 그러나 활용률은 상황에 따라 다르며 다양한 유형의 프롬프트에 따라 다릅니다. 또한 평균적으로 두 번째 홉과 전체 다중 홉 횡단에 대한 증거는 다소 온건하고 첫 번째 홉에 대해서만 상당하다. 또한, 추론의 첫 번째 홉에 대해서는 모델 크기가 증가하지만 두 번째 홉에 대해서는 모델 크기가 증가하지 않는 명확한 스케일링 경향을 발견하였다. 우리의 실험 결과는 LMs.1의 향후 개발 및 적용을 위한 잠재적인 도전과 기회를 제안한다.\n' +
+      '\n' +
+      '각주 1: 코드와 데이터 세트를 공개적으로 공개할 계획입니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '최근 연구에 따르면 Transformer-based (Vaswani et al., 2017) Large Language Models (LLMs)는 _"The mother of Stevie Wonder is "_(Petroni et al., 2019; Meng et al., 2022; Geva et al., 2021, 2022, 2023; Zhu and Li, 2023)와 같은 간단한 프롬프트를 완료하기 위해 그들의 파라미터에 사실 정보를 저장하고 검색한다. 또한, LLM은 필요한 정보가 입력의 일부로서 명시적으로 주어질 때 현저한 _in-context_ 추론 능력을 입증했다(Wei et al., 2022). 예를 들어, 모델들은 _"스티비 원더의 어머니는 룰라이다. \'슈퍼스티션\'의 가수는 스티비 원더이다. \'슈퍼스티션\'의 가수의 어머니는 _"의 가능한 완성으로 " 룰라"를 추론할 수 있다. 이러한 결과는 다음과 같은 문제를 제기합니다. LLM은 매개 변수에 저장된 사실 정보를 검색하고 추론할 정보가 입력의 일부로 주어지지 않은 경우 _잠재 다중 홉 추론_을 수행합니까? 예를 들어 LLM이 2홉 프롬프트를 처리할 때 _"Superstition\'의 가수의 어머니가 "_"인 경우, 그들은 (1) "Superstition\'의 가수가 스티비 원더를 지칭한다는 것을 파악하고 (2) 스티비 원더의 어머니가 누구인지에 대한 지식을 사용하여 프롬프트를 완료합니까?\n' +
+      '\n' +
+      '이 질문에 답하는 것은 중요하다. 이러한 잠재 멀티 홉 추론에 대한 증거는 LLM이 저장된 암시적 지식을 통해 _연결 및 트래버스할 수 있음을 시사한다.\n' +
+      '\n' +
+      '그림 1: LLMs의 잠재 다중 홉 추론을 조사한다. 첫 번째 홉의 경우 입력 프롬프트를 변경하여 브리지 엔터티(스티비 원더)를 참조하고 브리지 엔터티의 모델 내부 리콜을 얼마나 자주 증가시키는지 확인합니다. 두 번째 홉에 대해 우리는 이 리콜이 증가하면 모델 출력이 브리지 엔터티의 속성(스티비 원더의 어머니)에 대해 알고 있는 것과 관련하여 더 일치하는지 확인한다.\n' +
+      '\n' +
+      '정보만 매개 변수에 중복으로 저장하는 것보다요. 향후 작업은 이러한 횡단 경로를 강화하여 궁극적으로 더 매개변수 효율적이고 제어 가능한 모델로 이어질 수 있다. 반대로, 증거의 부족은 트랜스포머 아키텍처 또는 훈련의 보다 근본적인 한계를 나타낼 것이다. 또한 모델 편집에 중요한 의미를 가질 것이다: 추론 대신 복잡한 사실이 리콜되면 변경 사항이 전파될 수 없기 때문에 기본 사실만 편집하는 것으로는 충분하지 않을 것이다(Onoe et al., 2023; Zhong et al., 2023; Cohen et al., 2023).\n' +
+      '\n' +
+      '본 연구에서는 두 가지 사실의 조합을 표현하는 프롬프트에 국한하여, (1) _브릿지 엔터티(예: Stevie Wonder)를 추론하고 (2) 해당 엔터티의 속성(예: Stevie Wonder의 어머니)을 추론함으로써 인간이 두 홉으로 완료할 수 있는 ""와 같은 두 가지 사실의 조합을 표현하는 프롬프트에 국한한다. 우리는 두 번째 홉 활용의 표시로 엔터티 리콜 점수를 높이기 위한 개입이 일관성을 얼마나 자주 증가시키는지 확인한다. 마지막으로 두 단계가 얼마나 자주 일치하는지 조사한다.\n' +
+      '\n' +
+      '다양한 유형의 사실 구성을 가진 잠재된 2홉 추론을 연구하기 위해, 우리는 위키다타(Vrandecic and Krotzsch, 2014)를 기반으로 하는 TwoHopFact 데이터셋을 소개하고 52개의 사실 구성 유형 중 45,595개의 2홉 프롬프트로 구성된다. 우리는 LLaMA-2 (Touvron et al., 2023) 7B, 13B, 및 70B를 사용하여 실험한다. 우리의 연구 결과는 다음과 같이 요약될 수 있다. 2-홉 프롬프트에 대한 광범위한 사실 구성 유형에서 우리는 다중 홉 추론의 첫 번째 홉에 대한 실질적인 증거를 찾는다. 우리가 브리지 엔티티를 간접적으로 언급하기 위해 프롬프트를 변경하는 시간의 약 70%에서, 변압기의 후기 층들은 증가된 브리지 엔티티 리콜을 보여준다. 두 번째 홉과 전체 횡단에서는 증거가 약하게 나타납니다. 엔터티 리콜 점수를 높이는 경우 60%에서 일관성이 높아집니다. 마찬가지로, 시간의 약 40%에서, 두 홉은 함께 작동한다(임의의 25% 기준선과 비교됨); 서술적 언급을 변경하는 것은 엔티티 리콜 점수를 증가시키고, 이 리콜 점수를 증가시키는 것은 일관성을 증가시킨다.\n' +
+      '\n' +
+      '위의 집계 통계는 잠재 다중 홉 추론 경로의 매우 일반적인 사용을 시사하지는 않지만 구성 유형의 최대 23%가 잠재 다중 홉 추론의 강력한 증거를 보여주며 사례의 80% 이상에서 발생한다는 점을 지적할 가치가 있다. 이것은 경로가 _존재하지만 매우 맥락적임을 시사한다. 또한 경로에 대한 매우 좁은 해석에 중점을 둡니다. 실제로 우리는 경로가 계층과 토큰에 걸쳐 더 많이 분산될 것으로 예상합니다. 따라서 우리가 보는 효과는 잠재된 2홉 추론을 수행하는 모델의 능력에 대한 하한일 수 있다. 또한, 첫 번째 홉은 매개변수 수에 따라 상당히 개선되지만 두 번째 홉(왕복 성능)은 비교적 일정하게 유지된다. 이것은 오늘날의 건축이나 사전 훈련에서 근본적인 한계를 나타낼 수 있다.\n' +
+      '\n' +
+      '우리의 기여는 다음과 같이 요약할 수 있다:\n' +
+      '\n' +
+      '* LLM에서 _잠재적 다중 홉 추론_ 의 문제를 해결 하 고 조사를 위한 **프레임워크** 를 설정 하 고 **기존 증거** 를 표시 합니다.\n' +
+      '* 다양한 유형의 엔터티 및 관계 및 다양한 템플릿(SS4)을 사용하여 생성된 52개의 사실 구성 유형의 45,595개의 2/1-홉 프롬프트로 구성된 TwoHopFact **데이터 세트** 를 구성합니다.\n' +
+      '* 설명적 언급에 대한 LLM의 엔터티 리콜 정도(SS5.1)와 브리지 엔터티의 특성(SS6)에 대한 LLM의 지식 활용 정도(SS6)의 프록시로 두 가지 새로운 **메트릭**, _내부 엔터티 리콜 점수_ 및 _일관성 점수_를 각각 제안합니다.\n' +
+      '* 예상 원인 효과의 상대적 빈도(SS6.2)를 측정하여 예측을 결정하는 가장 두드러진 경로가 아닌 경우에도 잠재 추론 경로를 조사하는 **메커니즘** 을 제안합니다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      '최근 연구에 따르면 LLMs은 모델 크기에 따라 확장되는 프롬프트를 통해 놀라운 상황 내 추론 능력을 보여준다(Brown et al., 2020; Wei et al., 2022, 2022). 반대로, 입력으로부터 추론하기 위한 정보가 입력의 일부로서 명시적으로 주어지지 않을 때, LLMsoften은 싱글-홉 서브-스텝에 대한 답을 알고 있는 경우에도 멀티-홉 추론을 올바르게 수행하지 못한다(Ofir Press et al., 2023; Dziri et al., 2023). 맥락 내 추론이 어떻게 작동하는지에 대한 광범위한 조사가 있었지만(Chan et al., 2022; Akyurek et al., 2023; Dai et al., 2023; Von Oswald et al., 2023; Prystawski and Goodman, 2023; Feng and Steinhardt, 2024), 그러한 조사는 잠재된 멀티-홉 추론이 어떻게 작동하는지를 이해하기 위해 적극적으로 수행되지 않았다.\n' +
+      '\n' +
+      'LLM의 잠재추론을 조사하기 위한 연구가 있었지만, 탐색은 주로 간단한 단일-홉 추론 작업(Meng et al., 2022; Geva et al., 2023; Chanin et al., 2023; Hernandez et al., 2024) 및/또는 제어 경량 트레이닝/핀튜닝(Zhu and Li, 2023; Allen-Zhu and Li, 2023; Saparov et al., 2023; Berglund et al., 2024)으로 수행되었다. 또한, 잠재 추론 경로 또는 회로를 식별하는 것을 목표로 하는 많은 작업들은 단순한 합성 작업 및/또는 장난감 모델에 대한 가장 두드러진 추론 경로를 찾는 것에 초점을 맞추었다(Nanda et al., 2022; Olsson et al., 2022; Wang et al., 2023; Conmy et al., 2023; Hou et al., 2023; Lieberum et al., 2023; McGrath et al., 2023). 반면에, 우리는 다양한 유형의 자연스러운 2-홉 프롬프트를 사용하여 추가 훈련 없이 사전 훈련된 LLM에서 가장 두드러지지 않을 수 있는 잠재 다중-홉 추론 경로의 존재를 연구한다.\n' +
+      '\n' +
+      '모델 편집은 LMs에서 사실적 지식을 수정하는 방법을 검토한다(De Cao et al., 2021; Mitchell et al., 2022; Meng et al., 2022; Zhang et al., 2024). 그러나, 최근의 연구들은 주로 단일 팩트 편집에 초점을 맞춘 기존의 편집 접근법들이 편집된 팩트에 의존하는 팩트들에 편집들을 전파하지 못한다는 것을 보여주었다(Onoe et al., 2023; Zhong et al., 2023; Cohen et al., 2023). 우리의 연구는 그러한 전파가 작동할 수 있는 가능성을 탐구한다. 또한, 우리의 연구는 추론에서 일관성에 영향을 미치는 경로를 조사하는 반면, 일관성의 이전 작업은 불일치를 정량화하고 사후 일관성을 개선하는 데 중점을 두었다(Ribeiro et al., 2019; Li et al., 2019; Asai and Hajishirzi, 2020; Elazar et al., 2021; Kassner et al., 2021, 2023; Jang et al., 2023). Sakarvadia et al. (2023)은 오류가 잠재 홉을 회상하지 못하는 데서 비롯된다는 가설로 다중 홉 추론 정확도를 향상시키는 것을 목표로 하며, 모델이 실제로 이러한 잠재 다중 홉 추론을 수행하는지 여부에 대한 이 가설의 기초를 조사한다.\n' +
+      '\n' +
+      '## 3 문제 형식\n' +
+      '\n' +
+      '### Preliminaries\n' +
+      '\n' +
+      '우리는 _"Stevie Wonder의 어미는 Lula"_와 같은 사실들을 주제 개체 \\(e\\)(예: Superstition), 관계 \\(r\\)(예: mother) 및 객체 개체 \\(e^{\\prime}\\)(예: Lula)의 삼중항 \\((e,r,e^{\\prime})\\로 간주한다. 구체적으로, 본 연구에서는 \\(e^{\\prime}\\)가 \\(e\\)에 대한 관계(예: Stevie Wonder의 유일한 어머니인 Lula)에 대해 유일하게 또는 가장 잘 알려진 객체 개체인 삼중항(triplets)에 초점을 맞추고, \\(r\\)을 함수 \\(e^{\\prime}=r(e)\\)로 간주하며, 여기서 \\(r(e)\\)은 함수 표현이고 \\(e^{\\prime}\\)는 표현의 값이다. 우리는 LLMs이 두 사실을 연결하는 교량 실체 \\(e_{2}\\)와 \\((e_{1},r_{1},e_{2}),(e_{2},r_{2},e_{3}))\\를 가지고 어떻게 두 사실의 구성을 처리하는지 분석한다. 그 중 구성은 \\(r_{2}(r_{1}(e_{1}))\\로 표현된다. 예를 표 1에 나타낸다.\n' +
+      '\n' +
+      'LLM을 쿼리하기 위해 템플릿 \\(\\tau(\\cdot)\\)을 사용하여 식 \\(r_{2}(e_{2})\\) 또는 \\(r_{2}(r_{1}(e_{1}))\\)을 주어진 식 값으로 올바르게 완료할 수 있는 프롬프트로 변환합니다. 예를 들어 단일 홉 식 \\(\\texttt{mother}(\\texttt{Stevie Wonder})\\)은 \\(\\tau(\\texttt{mother}(\\texttt{Stevie Wonder}))\\)에 의해 "Lula"로 올바르게 완료할 수 있는 프롬프트 _"Stevie Wonder의 어머니"_로 변환될 수 있습니다. 유사하게, 두 홉 표현식 \\(\\texttt{mother}(\\texttt{singer}(\\texttt{Superstition}))\\)은 _"슈퍼스티션의 가수의 어머니"와 같은 \\(\\tau(\\texttt{mother}(\\texttt{singer}(\\texttt{Superstition}))\\)로 표현될 수 있습니다. \\(\\tau(r_{2}(e_{2}))\\)와 \\(\\tau(r_{2}(r_{1}(e_{1})))\\)는 동일한 답("Lula"),\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l} \\hline \\hline Notation & Example & Description \\\\ \\hline \\((e_{1},r_{1},e_{2})\\) & (Superstition, singer, Stevie Wonder) & fact triplets of named entities where \\(e_{i}\\) are named entities and \\(r_{i}\\) is a \\\\ \\((e_{2},r_{2},e_{3})\\) & (Stevie Wonder, mother, Lula) & relation function that maps \\(e_{i}\\) uniquely to \\(e_{i+1}\\), such that \\(r_{i}(e_{i})=e_{i+1}\\) \\\\ \\(e_{2}\\) & Stevie Wonder & bridge entity that connects the two fact triplets \\\\ \\(\\tau_{\\texttt{IH}}\\) & “The mother of Stevie Wonder is named” & one-hop prompt (requires one-hop reasoning) \\\\ \\(\\tau_{\\texttt{IH}}\\) & “The mother of the singer of ‘Superstition’ is named” & two-hop prompt (requires two-hop reasoning) \\\\ \\(\\mu(r_{i}(e_{1}))\\) & “the singer of ‘Superstition’ & descriptive mention of the bridge entity \\(e_{2}\\) created with \\(e_{1}\\) and \\(r_{1}\\) \\\\ \\(\\ast\\) & “mother of song’s singer” & fact composition type \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 데이터 세트의 해당 예제와 함께 표시. 갈색으로 표시된 텍스트는 브리지 개체 \\(e_{2}\\), 스티비 원더(또는 대따옴표로 부분 문자열로 표시될 때 브리지 개체 이름)이고, 보라색으로 표시된 텍스트는 브리지 개체 \\(\\mu(r_{1}(e_{1}))\\)), “미신”의 가수입니다.\n' +
+      '\n' +
+      '최근에는 한 가지 사실이 아닌 두 가지 사실을 회상해야 한다. 따라서 우리는 \\(\\tau(r_{2}(e_{2}))\\) a _one-hop prompt_ 와 \\(\\tau(r_{2}(r_{1}(e_{1)))\\) a _two-hop prompt_ 를 각각 \\(\\tau_{\\text{1H}}\\) 와 \\(\\tau_{\\text{2H}}\\)로 표기한다.\n' +
+      '\n' +
+      '우리는 \\(r_{2}(r_{1}(e_{1}))\\)에 대해 \\(\\tau(\\cdot)\\)에 의해 산출되는 2홉 프롬프트가 항상 \\(e_{1}\\)와 \\(r_{1}\\)를 사용하는 브리지 엔터티 \\(e_{2}\\)에 대한 명사구 설명을 포함한다고 가정한다. 우리는 이 설명을 \\(\\mu(r_{1}(e_{1})))\\)로 표시하고 이를 브리지 엔터티의 _descriptive mention_ \\(e_{2}\\)라고 한다.\n' +
+      '\n' +
+      '마지막으로 두 홉 프롬프트의 사실 구성 _type_은 "\\(\\operatorname{type}(r_{2})\\) of \\(\\operatorname{type}(e_{1})\\)\'s \\(\\operatorname{type}(r_{1})\\)"로 표현되며, 여기서 "\\(\\operatorname{type}(e_{1})\\)\'s \\(\\operatorname{type}(r_{1})\\)"는 프롬프트에서 브리지 엔티티의 설명적 언급 유형을 나타낸다. 예를 들어, \\(\\tau(\\texttt{{mother}}(\\texttt{{singer}}(\\texttt{{Suspresition}})))\\)의 사실 구성 유형은 "노래 가수의 어머니"일 것이다.\n' +
+      '\n' +
+      '### LLMs에서 잠재 다중 홉 추론\n' +
+      '\n' +
+      '인간은 \\(r_{1}(e_{1})=e_{2}\\라는 전제와 \\(r_{2}(e_{2})=e_{3}\\라는 다른 전제가 주어진 전제에서 \\(r_{2}(e_{1}))=e_{3}\\를 추론하는 것과 같이 주어진 전제로부터 결론을 추론하는 연역적 추론 능력을 가지고 있다. 이러한 멀티홉 추론[20, 21]은 브리지 엔티티(예를 들어, "Superstition"의 가수가 스티비 원더라는 것)를 식별하고 이를 최종 답변(예를 들어, 스티비 원더의 어머니가 룰라라는 것)을 위해 해결하는 것을 포함한다.\n' +
+      '\n' +
+      '본 연구는 사전 훈련된 트랜스포머 기반 대용량 언어 모델(LLM)이 2홉 프롬프트를 완료할 때 유사한 멀티홉 추론을 수행할 수 있는 정도를 탐구한다. 고차원 및 분산 표현을 통해 기능하는 LLM의 복잡한 특성을 감안할 때 단일 결정론적 알고리즘이 고도로 통제되고 제한된 설정 아래를 제외하고 예측을 지배할 가능성은 거의 없다[23, 24]. 대신 LLM은 예측을 하기 위해 얕은 \\(n\\)-그램 동시 발생 기반 매칭에서 더 깊은 규칙 기반 추론 또는 심지어 다중 홉 추론에 이르는 다중 추론 경로 [11]로부터의 집계를 사용할 수 있다.\n' +
+      '\n' +
+      '따라서 잠재 다중 홉 추론을 나타내는 경로를 식별하기 위해 출력에 가장 크게 기여하는 경로보다 2-홉 프롬프트를 처리하는 LLM의 내부 역학에 중점을 둔다. 이는 LLM이 추론에서 첫 번째 홉과 두 번째 홉으로 각각 간주하는 2-홉 프롬프트를 처리하는 동안 어떤 변화에 따라 지식 \\(r_{1}(e_{1})\\)과 \\(r_{2}(e_{2})\\)에 대한 LLM 회상 및 활용도가 어떻게 변화하는지를 분석하는 것이다.\n' +
+      '\n' +
+      '구체적으로 다음과 같은 두 가지 핵심 연구문제(RQs)를 조사한다.\n' +
+      '\n' +
+      '**RQ1. LLM이 2-홉 프롬프트를 처리하는 동안 첫 번째 홉 추론을 얼마나 자주 수행합니까?* * 첫 번째 홉 추론을 설명적 언급에 대한 브리지 엔터티의 LLM 리콜로 봅니다. 따라서 프롬프트 내에서 교량 주체에 대한 설명적 언급을 접하게 되면 교량 주체에 대한 LLM 내부 리콜이 증가하는 빈도를 살펴본다. 예를 들어, "Thriller\'_ 가수의 어머니"에서 "Superstition\'_ 가수의 어머니"로 프롬프트를 변경하는 것이 스티비 원더의 LLM 내부 회상을 증가시키는지 여부를 조사한다.\n' +
+      '\n' +
+      '**RQ2. 2-홉 프롬프트를 처리하는 동안 LLM이 두 번째 홉 추론을 얼마나 자주 수행합니까?* * 두 번째 홉 추론을 두 번째 홉에 대한 첫 번째 홉 추론의 LLM 활용으로 봅니다. 따라서 우리는 브리지 엔티티의 설명적 언급에 대한 LLM 리콜을 향상시키는 빈도가 2홉 프롬프트에 응답하기 위해 브리지 엔티티에 대한 지식의 사용을 향상시키는 빈도를 조사한다. 예를 들어, "Superstition"의 가수 _"에 대해 스티비 원더의 내부 리콜을 증가시키면 LLM이 스티비 원더의 어머니에 대한 지식을 더 잘 활용하여 프롬프트를 완료하는지 조사한다.\n' +
+      '\n' +
+      '이러한 질문을 해결함으로써, 우리는 다중 홉 추론을 위한 잠재 경로를 활용하는 LLM의 증거를 식별하는 것을 목표로 한다.\n' +
+      '\n' +
+      '## 4 TwoHopFactataset\n' +
+      '\n' +
+      '다양한 사실 구성 유형의 프롬프트로 질문에 답하기 위해 위키다타[25]에서 잘 알려진 명명된 개체를 사용하여 TwoHopFact를 구성하고 수동으로 선택한 관계(부록 A)를 사용한다. TwoHopFact는 표 1과 같이 동일한 수의 사실 트리플렛 쌍 \\(((e_{1},r_{1},e_{2}),(e_{2},r_{2},e_{3}))\\)로부터 구성된 52개의 사실 구성 유형의 원-홉 및 투-홉 프롬프트의 45,595개의 고유한 쌍으로 구성된다. 부록 표 3은 각 사실 구성 유형에 대한 예시적인 투-홉 프롬프트를 나타내고, 부록 B는 상세한 데이터 통계를 제공한다.\n' +
+      '\n' +
+      '## 5 우선 홉 다중 홉 추론\n' +
+      '\n' +
+      '이 섹션에서는 LLM이 2-홉 프롬프트를 제공하는 동안 추론의 첫 번째 홉을 수행하는 빈도 _의 RQ1에 답합니다. 먼저 프롬프트(SS5.1)에서 설명적 언급에 따라 브리지 엔터티의 LLM 내부 리콜을 근사화하기 위한 메트릭으로 EntRec를 도입한다. 다음으로, 브리지 엔티티를 간접적으로 언급하기 위해 입력 프롬프트를 변경할 때 이러한 리콜이 얼마나 자주 증가하는지를 측정할 것을 제안한다(SS5.2). 그런 다음 TwoHopFact를 사용하여 이것을 평가하고 RQ1(SS5.3)에 답한다.\n' +
+      '\n' +
+      '### 내부 엔터티 리콜 점수\n' +
+      '\n' +
+      '우리는 EntRec를 2홉 프롬프트(\\tau_{\\text{2H}}\\) 내에서 브리지 엔터티(e_{2}\\)의 LLM 리콜을 측정하기 위한 메트릭으로 정의한다. 이것은 2-홉 프롬프트에서 브리지 엔티티의 서술적 언급의 마지막 위치에서, 특정 계층 \\(l\\)에서의 숨겨진 표현과 관련하여 정의된다. 이 숨겨진 표현은 엔티티 이름의 첫 번째 토큰(예를 들어, "스티비 원더"의 첫 번째 토큰)의 로그 확률을 계산하기 위해 어휘 공간에 투영된다. 형식적으로, \\(e_{2}^{(0)}\\)를 \\(e_{2}\\)의 첫 번째 토큰으로 하자.\n' +
+      '\n' +
+      '\\[\\text{EntRec}^{l}(e_{2},\\tau_{\\text{2H}}) \\tag{1}\\] \\[=\\log\\text{softmax}(\\text{LayerNorm}(\\mathbf{x}^{l})W_{U})_{ \\text{index}(e_{2}^{(0)})},\\]\n' +
+      '\n' +
+      '여기서 \\(\\mathbf{x}^{l}\\in\\mathbb{R}^{h}\\)는 두 홉 프롬프트에서 브리지 엔터티의 설명적 언급의 마지막 토큰에서 \\(l\\)번째 트랜스포머 레이어의 출력 \\(\\tau_{\\text{2H}}\\)이고, \\(\\text{index}(e_{2}^{(0)})\\in[0,V-1]\\)은 임베딩되지 않은 매트릭스 \\(W_{U}\\in\\mathbb{R}^{h\\times V}\\)에서 토큰의 인덱스 \\(e_{2}^{(0)}\\)이다. LayerNorm은 마지막 레이어 출력 \\(\\mathbf{x}^{L-1}\\)을 언임베딩 행렬에 투영하여 출력 다음 토큰 확률 분포를 얻기 전에 사용하는 레이어 정규화이다. 이 정규화를 적용하면 EntRec\\({}^{L-1}(e_{2},\\tau_{\\text{2H}})\\)는 서술적 언급에서 끝나는 \\(\\tau_{\\text{2H}}\\)의 접두사의 다음 토큰인 \\(e_{2}^{(0)}\\)의 출력 확률과 호환된다. 2 더 높은 EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)는 \\(l\\) 번째 층에서 브리지 개체 \\(e_{2}\\)의 더 강한 내부 회상이라고 해석한다.\n' +
+      '\n' +
+      '각주 2: 종종 토큰의 빈도(Kobayashi et al., 2023)를 모델링하기 때문에 바이어스 항을 생략하며, 이는 기업의 내부 리콜을 측정하기 위해 고려하고 싶지 않다.\n' +
+      '\n' +
+      'EntRec의 정의는 피험자의 마지막 토큰 위치에 구성된 표현이 종종 피험자에 대한 정보를 인코딩하는 데 중요한 역할을 한다고 보고한 이전 작업(Meng et al., 2022; Geva et al., 2023), 어휘 공간에 초기 계층 출력을 투영하는 노스텔 대수학자의 작업(2020), 원홉 프롬프트의 마지막 피험자 토큰 위치에서 이러한 투영이 피험자와 의미적으로 관련된 해석 가능한 최상위 순위 속성을 제공한다는 것을 보여주는 Geva et al. (2022)에서 영감을 받았다. EntRec는 엔터티의 이름의 첫 번째 토큰에 대해서만 엔터티의 리콜을 평가하지만 자동 회귀 LLM이 입력 텍스트를 처리하고 다음 토큰을 생성하는 방법과 직접 관련이 있다. 부록 C의 통제 실험은 EntRec를 내부 개체 리콜을 측정하기 위한 합리적인 프록시로 검증한다.\n' +
+      '\n' +
+      '### Experiment\n' +
+      '\n' +
+      'EntRec가 주어졌을 때, 우리는 2-홉 프롬프트를 \\(\\tau_{\\text{2H}}^{\\prime}\\)에서 \\(\\tau_{\\text{2H}}\\)로 수정할 때 \\(e_{2}\\)의 내부 회상이 층 \\(l\\)에서 얼마나 자주 개선되는지를 측정하여 RQ1에 응답한다. 여기서 \\(\\tau_{\\text{2H}}^{\\prime}\\)은 \\(e_{2}\\)에 대한 설명적 언급을 포함하지 않는 반면 \\(\\tau_{\\text{2H}}\\)는 포함한다. 구체적으로 EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})>\\)EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}}^{\\prime})\\)에서 \\(\\tau_{\\text{2H}}\\)의 상대적 빈도수를 측정한다.\n' +
+      '\n' +
+      '\\(\\tau_{\\text{2H}}^{\\prime}\\)를 구성하기 위해, 우리는 두 가지 방법으로 \\(\\tau_{\\text{2H}}\\)에서 브리지 엔티티의 설명적 언급을 변경한다: \\(\\mu(r_{1}(e_{1}^{\\prime}))\\)가 \\(e_{2}\\)를 가리키지 않도록 \\(\\mu(r_{1}(e_{1}))\\)를 \\(r_{1}^{\\prime}\\)로 대체함으로써 \\(\\mu(r_{1}^{\\prime}(e_{1}))\\)가 \\(e_{2}\\)를 가리키지 않도록 \\(\\tau_{\\text{2H}}\\)에서 브리지 엔티티의 설명적 언급을 변경한다. 예를 들면, \\(\\tau_{\\text{2H}}\\)에서 "Superstition의 가수"를 "_Thriller_\'의 가수" 또는 "Superstition의 표절자_"로 대체하는 것을 들 수 있다. 이러한 조정을 각각 _엔터티 대체_ 및 _관계 대체_라고 합니다.\n' +
+      '\n' +
+      'TwoHopFact의 각 두 홉 프롬프트 \\(\\tau_{\\text{2H}}\\)에 대해 동일한 사실 구성 유형에서 하나의 \\(e_{1}^{\\prime}\\)와 미리 정의된 후보 관계 세트(부록 표 5에 제공됨)에서 하나의 \\(r_{1}^{\\prime}\\)를 무작위로 선택하여 \\(\\tau_{\\text{2H}}^{\\prime}\\)를 생성한다. 그런 다음 개체 또는 관계 대체를 통해 \\(\\tau_{\\text{2H}}^{\\prime}\\)를 \\(\\tau_{\\text{2H}}\\)로 대체하면 \\(e_{2}\\)의 회상이 증가하는 경우의 상대 빈도를 측정한다. 0.5 이상의 상대 빈도는 LLM이 첫 번째 홉 추론을 수행할 가능성이 이러한 프롬프트에 대한 무작위 가능성을 초과함을 시사한다.\n' +
+      '\n' +
+      '### Results\n' +
+      '\n' +
+      '모델 크기가 증가함에 따라 더 강해지는 추론의 첫 번째 홉에 대한 실질적인 증거가 있다. 그림 2는 각 계층에서 개체 회상이 개체 및 관계 대체에 따라 증가하는 경우의 상대적 빈도를 보여준다. LLaMA-2 7B 엔티티 대체 결과(도 1(a))는 레이어 깊이가 증가함에 따라 첫-홉 추론의 증거가 더 명확해지고, 레이어 31에서 0.71로 정점에 도달함을 보여준다. 관계 치환은 레이어 20에서 0.63으로 피크를 갖는 약간 더 시끄러운 패턴을 나타낸다(도 1(e)).\n' +
+      '\n' +
+      '모델 크기가 7B에서 13B 및 70B로 증가함에 따라 엔터티 대체 및 관계 대체 모두에 대해 첫 번째 홉 추론이 더 자주 발생한다. 전자의 경우, 최대 상대 주파수는 0.71(7B)에서 0.72(13B) 및 0.78(70B)로 상승한다(도 2(a)). 후자의 경우, 0.63(7B)에서 0.64(13B) 및 0.76(70B)로 증가한다(도 2(b)).\n' +
+      '\n' +
+      '상대적으로 강력한 증거는 사실 구성 유형의 최대 73%에서 첫 번째 홉 추론을 뒷받침한다. LLaMA-2 7B-13B-70B를 사용하면 사실 구성 유형 52개 중 18/25/34 및 21/27/38이 개체 및 관계 치환에 대해 각각 0.8을 초과하는 최대 상대 빈도를 나타낸다. 또한 52개 유형 중 11개는 모든 모델 크기와 대체 유형에 걸쳐 강력한 첫 번째 홉 추론 증거를 강력하게 보여준다. 예를 들어, "애국가 대통령"의 최대 빈도("애국가 \'Azat u anakkh Artsakh\'가 대통령이 이끄는 국가")는 각 모형과 치환으로 각각 0.97/0.92/1.0(그림 1(d))과 0.87/0.87/0.89(그림 1(h))의 최대 빈도를 보인다. 개별 사실 구성 유형은 계층에 걸쳐 다양한 패턴의 상대 빈도를 나타낸다.\n' +
+      '\n' +
+      '## 6 Second Hop - Multi-Hop 추론\n' +
+      '\n' +
+      '이 섹션에서는 LLM이 2-홉 프롬프트를 처리하는 동안 두 번째 홉 추론을 수행하는 빈도 _의 RQ2에 답합니다. 두 번째 홉 추론(second hop of reasoning)은 LLM이 브리지 엔티티의 속성(Stevie Wonder\'s mother)에 대해 알고 있는 것을 활용하여 설명적 언급(Superstition\'s mother)에 의해 언급되는 엔티티의 동일한 속성에 대한 두 홉 프롬프트에 응답하는 것으로 본다. 따라서, LLM이 두 번째 홉을 수행할 때, 브리지 엔티티에 대한 리콜(즉, 첫 번째 홉을 해결하는 것)과 브리지 엔티티의 속성에 대한 두 홉 프롬프트와 대응하는 한 홉 프롬프트의 유사성 사이의 연결, 예를 들어, 두 홉 프롬프트 _"Superstition\'s"_ 가수의 어머니 _"와 한 홉 프롬프트 _"Stevie Wonder의 어머니는"_이다. 즉, 모델이 2-홉 프롬프트를 프로세싱하는 동안 브리지 엔티티(예를 들어, 스티비 원더)를 더 강하게 리콜할수록, 이 프롬프트의 완료는 1-홉 프롬프트의 완료와 더 유사해야 한다. 다음에서는 엔터티 리콜과 프롬프트 완성에서 _유사성_ 사이에 이러한 인과 관계가 얼마나 자주 존재하는지 테스트하기 위한 접근법을 설명하며, 이를 _일관성_이라고 한다.\n' +
+      '\n' +
+      '### Consistency Score\n' +
+      '\n' +
+      '우리는 LLM이 2-홉 및 1-홉 프롬프트에 얼마나 일관되게 반응하는지를 측정하기 위해 CnstScore를 정의한다. \\(\\mathbf{p}_{\\tau_{\\text{2H}}}},\\mathbf{p}_{\\tau_{\\text{HH}}}\\in\\mathbb{R}^{V}}\\)는 각각 두 홉 프롬프트 \\(\\tau_{\\text{2H}}}\\)와 해당 한 홉 프롬프트 \\(\\tau_{\\text{1H}}}\\에 대한 출력 확률 분포이다. Denoting \\(\\mathrm{H}(Q,P)=-\\sum_{i=0}^{V-1}P_{i}\\log Q_{i}\\) as\n' +
+      '\n' +
+      '그림 3: LLaMA-2의 규모를 증가시킨 실험 결과. 우리 작업의 모든 실험에 대한 기술적 세부 사항은 부록 E에서 찾을 수 있다.\n' +
+      '\n' +
+      '그림 2: LLaMA-2의 브리지 엔티티의 내부 리콜이 엔티티 대체(상단 행) 및 관계 대체(하단 행)에 따라 증가하는 경우의 상대적 빈도. 막대는 상대 주파수가 0.5 이상이면 청색으로, 그렇지 않으면 적색으로 착색된다.\n' +
+      '\n' +
+      '확률 분포 \\(P\\)와 \\(Q\\) 사이의 교차 엔트로피를 정의합니다.\n' +
+      '\n' +
+      '\\[\\text{CnstScore}(\\tau_{\\text{2H}},\\tau_{\\text{1H}}) \\tag{2}\\] \\[=-0.5\\mathrm{H}(\\mathbf{p}_{\\tau_{\\text{2H}}},\\mathbf{p}_{\\tau_{ \\text{1H}}})-0.5\\mathrm{H}(\\mathbf{p}_{\\tau_{\\text{1H}}},\\mathbf{p}_{\\tau_{ \\text{2H}}}}).\\]\n' +
+      '\n' +
+      '이 점수는 평가에서 대칭성을 보장하면서 교차 엔트로피를 계산하고 평균함으로써 두 확률 분포 사이의 유사성을 평가한다. 평균에서 대칭은 개별 분포의 엔트로피 수준에 대한 민감도를 완화하여 양방향으로의 발산을 동등하게 처리하는 것을 목표로 한다.\n' +
+      '\n' +
+      '후자의 메트릭은 대응하는 1홉 프롬프트 완성이 부정확한 경우에 대한 2홉 추론을 포착하기에 불충분하기 때문에, 우리는 2홉 프롬프트 완성의 정확성 또는 그라운드 트루스 답변의 확률 대신에 일관성을 사용한다는 점에 유의한다. 또한, 이러한 메트릭들은 그라운드 트루스 답변 또는 답변 후보들의 세트의 선택으로부터 잡음을 상속받는다. 반면, 출력 분포들의 유사도 비교는 ground truth의 선택에 영향을 받지 않으며, ground truth 답변이 one-hop 프롬프트의 top-1 세대가 아닌 경우에도 second-hop 추론을 포착할 수 있는 방법을 제공한다.\n' +
+      '\n' +
+      '또한, 이러한 메트릭들은 확률 분포에서 미묘한 일관성 차이를 포착할 수 없기 때문에, 우리는 원/투-홉 프롬프트의 완성 문자열들 또는 그들의 이진 정확도를 비교하도록 선택하지 않는다. 우리는 컬백-라이블러 또는 젠슨-섀넌 발산보다 교차 엔트로피를 선택하는데, 이는 후자의 메트릭이 일관성과는 무관하지만 교차 엔트로피 신호를 희석하여 점수를 지배할 수 있는 엔트로피 용어를 포함하기 때문이다. 일관성 점수가 높을수록 출력 분포 간의 유사성이 더 크다는 것을 나타낸다. 부록 D에서는 교량 기업의 속성에 대한 모형의 지식의 활용에 대한 합리적인 근사치로 일관성 점수에 대한 실증적 증거를 제시한다.\n' +
+      '\n' +
+      '### Experiment\n' +
+      '\n' +
+      'EntRec와 CnstScore가 주어졌을 때, 우리는 \\(l\\)- 번째 계층에서 브리지 엔터티 \\(e_{2}\\)의 리콜이 얼마나 자주 증가하는지를 측정하여 RQ2에 응답한다. \\(l\\)- 번째 계층에서 브리지 엔터티 \\(e_{2}\\)가 1-홉 프롬프트에 대한 2-홉 프롬프트에 대한 응답에서 LLM의 일관성을 증가시킨다. 즉, EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)가 증가하면 CnstScore\\((\\tau_{\\text{2H}},\\tau_{\\text{1H}})\\)가 증가하는지를 살펴본다.\n' +
+      '\n' +
+      '우리는 CnstScore\\((\\tau_{\\text{2H}},\\tau_{\\text{1H}})\\)가 EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)에 직접적으로 의존한다면 변화의 방향을 계산하여 미분을 사용하여 답을 구할 수 있었을 것이다. 그러나 두 값 사이에는 직접적인 기능적 의존성이 존재하지 않는다. 대신에, 우리는 계산을 위해 \\(\\mathbf{x}^{l}\\)에 대한 두 메트릭의 공유 의존도를 활용한다. 여기서 \\(l\\in[0,L-1)\\),3은 \\(\\mathbf{x}^{l}\\)에 대해 EntRec\\((\\mathbf{x}^{l})\\) 및 CnstScore\\((\\mathbf{x}^{l})\\)로 재정의한다. 이 재매개변수화를 통해 우리는 질문을 다음과 같이 변경할 수 있습니다. \\(\\mathbf{x}^{l}\\)를 변경함으로써 EntRec\\((\\mathbf{x}^{l})\\)가 증가하면 CnstScore\\((\\mathbf{x}^{l})\\)도 증가합니까?\n' +
+      '\n' +
+      '각주 3: CnstScore\\((\\tau_{\\text{2H}},\\tau_{\\text{1H}})\\)는 \\(\\mathbf{p}_{\\tau_{\\text{2H}}}}\\)를 활용하며, 계산에는 \\(\\mathbf{x}^{l}}\\)를 활용한다. 그러나 \\(\\mathbf{x}^{l}\\)에 대해서만 \\(l=0,\\cdots,L-2\\)를 사용하여 레이어에서 주의력 출력을 각각 \\(l=1,\\cdots,L-1\\)로 계산하여 \\(\\mathbf{p}_{\\tau_{\\text{1H}}}}}}}}}}}\\를 얻는다.\n' +
+      '\n' +
+      '이를 탐색하기 위해 EntRec\\((\\mathbf{x}^{l})\\)를 가장 가파른 증가 방향으로 조정하고, 변화 크기 \\(\\alpha\\)에 따라 \\(\\mathbf{x}^{l}\\)를 수정하여 CnstScore\\((\\mathbf{x}^{l})\\)에 미치는 영향을 관찰한다:\n' +
+      '\n' +
+      '\\[\\mathbf{\\hat{x}}^{l}(\\alpha)=\\mathbf{x}^{l}+\\alpha\\nabla_{\\mathbf{x}^{l}} \\text{EntRec}(\\mathbf{x}^{l}).\\]\n' +
+      '\n' +
+      '다음으로 \\(\\mathbf{\\hat{x}}^{l}(\\alpha)\\),4를 이용하여 CnstScore\\((\\mathbf{x}^{l})\\)를 계산한다. 그런 다음, 전류값에서의 변화 방향을 이해하기 위해 그 미분인 \\(\\frac{d}{d\\alpha}\\text{CnstScore}(\\alpha)\\big{|}_{\\alpha=0}\\)를 살펴본다. 양의 도함수는 EntRec\\((\\mathbf{x}^{l})\\)의 증가가 CnstScore\\((\\tau_{\\text{2H}},\\tau_{\\text{1H})\\)의 증가를 초래하는 반면 음의 도함수는 반대의 결과를 나타낸다. TwoHopFact에서 2홉 프롬프트 간의 _긍정적 기울기의 상대적 빈도_를 평가함으로써 LLM이 추론의 두 번째 홉을 수행하는 빈도를 정량화하며, 0.5 이상의 빈도는 LLM이 두 번째 홉 추론을 수행할 가능성이 이러한 프롬프트에 대한 무작위 가능성을 초과함을 시사한다.\n' +
+      '\n' +
+      '각주 4: 활성화 패치(Wang et al., 2023)를 사용하여 \\(\\mathbf{x}^{l}\\)를 \\(\\mathbf{\\hat{x}}^{l}(\\alpha)\\)로 대체하는 것을 구현한다.\n' +
+      '\n' +
+      '### Results\n' +
+      '\n' +
+      '두 번째 홉 추론에 대한 중간 정도의 증거가 있으며, 이는 모델 크기가 증가함에 따라 강하지 않다.그림 4는 브리지 개체 회상을 증가시키면 일관성이 증가하는 사례의 상대적 빈도를 보여준다. LLaMA-2 7B에서, 중간 층과 후기 층은 통계적 유의성을 갖는 0.5보다 높은 상대 빈도(무작위 확률)를 나타내며, 층 30에서 0.64로 정점을 이룬다. 랜덤하게 초기화된 모델을 사용한 테스트 결과는 0.5를 랜덤성 기준선으로서 검증한다(도 3(d)).\n' +
+      '\n' +
+      '그러나 첫 번째 홉 추론(SS5)과 달리 두 번째 홉 추론은 모델 크기가 증가함에 따라 강화되지 않으며 7B에서 13Band 70B로 스케일링할 때 최대 상대 주파수는 그림 2(c)와 같이 0.64(7B), 0.65(13B), 0.61(70B)에서 비교적 안정적으로 유지된다. 이 결과는 모델 크기가 증가함에 따라 단일 홉 질의 응답 성능이 다중 홉 성능보다 빠르게 향상되어 모델 크기가 증가함에 따라 _구성률 갭_ (모델이 모든 하위 문제에 올바르게 답할 수 있지만 전체 솔루션을 생성하지 않는 빈도 비율)이 감소하지 않는다는 Ofir Press et al. (2023)의 관찰과 일치한다는 점에 주목할 필요가 있다.\n' +
+      '\n' +
+      '상대적으로 강력한 증거는 사실 구성 유형의 최대 19%에서 두 번째 홉 추론을 뒷받침한다. LLaMA-2 7B-13B-70B를 사용하면 사실 구성 유형의 52개 중 107/7/5가 각각 0.8을 초과하는 최대 상대 빈도를 나타낸다. 이 중 "사람 대학 설립자"와 "국가 총장"은 모든 모델 크기에 걸쳐 이러한 강력한 두 번째 홉 추론 증거를 보여주며, 최대 빈도는 각각 0.86/0.81/0.82(그림 3(g)) 및 0.84/0.89/0.82(그림 3(h))이다.\n' +
+      '\n' +
+      '## 7 Latent Multi-Hop 추론\n' +
+      '\n' +
+      '이 절에서는 RQ1과 RQ2에 대한 답을 결합하여 LLM이 2-홉 프롬프트를 처리하는 동안 잠재 다중 홉 추론을 수행하는 빈도를 측정한다. 각 2-홉 프롬프트에 대해 각각 첫 번째 및 두 번째 추론 홉의 증거로 RQ1(엔터티/관계 치환을 사용한 엔터티 리콜 증가) 및 RQ2(엔터티 리콜 증가를 사용한 일관성 증가)에 대한 성공적인 결과를 고려한다. 4가지 가능한 결과가 발생한다: (SS) 우리가 다중 홉 추론으로 보는 RQ1과 RQ2 모두에서 성공; (FS) RQ1에서 실패하지만 RQ2에서 성공; (SF) RQ1에서 성공하지만 RQ2에서 실패; (FF) RQ1과 RQ2 모두에서 실패.\n' +
+      '\n' +
+      '잠재적 다중 홉 추론의 중간 정도의 증거가 있으며, 때로는 모델 크기가 증가함에 따라 더 강해진다. 그림 5는 녹색, 파란색, 노란색 및 빨간색이 각각 SS, FS, SF 및 FF의 경우를 나타내는 네 가지 경우의 상대적 빈도를 보여준다. LLaMA-2 7B는 랜덤 확률(0.25)보다 높은 성공적인 멀티홉 추론(녹색)에 대한 상대 빈도를 나타내며, 0.46(개체 대체) 및 0.38(관계 대체)에서 정점을 이룬다. 부분 다중 홉 추론(녹색 + 파란색 + 노란색)의 가능성은 나중 계층에서 0.8을 초과한다.\n' +
+      '\n' +
+      '개체 대체 결과는 모델 크기에 따라 다중 홉 추론이 증가하지 않는 반면(그림 2(d)), 관계 대체는 스케일링 경향을 보인다. 7B에서 70B까지 최대 상대 빈도는 0.38에서 0.43으로 증가하여 더 큰 모델이 관계적 변화를 갖는 다중 홉 추론을 용이하게 할 수 있음을 시사한다(도 2(e)).\n' +
+      '\n' +
+      '상대적으로 강력한 증거는 사실 구성 유형의 최대 23%에서 잠재 다중 홉 추론을 뒷받침한다. \\(0.8^{2}=0.64\\)을 임계값으로 고려할 때, LLaMA-2 7B-13B-70B와 관련하여 7/3/12 유형이 개체 치환으로 임계값을 초과하고 3/3/9 유형이 관계 치환으로 임계값을 초과한다. "수도국의 두루미"(Lazarus Chakrera 대통령이 이끄는 국가의 국가를 명명함)의 최대 빈도는 모든 모델 및 대체에서 각각 0.68/0.82/0.66(그림 4(d)) 및 0.74/0.82/0.68(그림 4(h))로 이 임계값을 초과한다. 개별 유형은 전체 데이터 세트와는 다른 다양한 패턴을 보여준다.\n' +
+      '\n' +
+      '## 8 토론 및 결론\n' +
+      '\n' +
+      '본 연구는 LLM의 잠재된 다중 홉 추론 능력을 연구한다. 우리는 특정 사실 구성에 대한 잠재 다중 홉 추론의 강력한 증거를 발견한다.\n' +
+      '\n' +
+      '그림 4: \\(l\\)- 번째 계층에서 브리지 엔티티의 리콜이 더 강한 상대 빈도는 LLM의 일관성을 증가시킨다. 막대는 상대 주파수가 0.5 이상이면 청색으로, 그렇지 않으면 적색으로 착색된다. 개입이 해당 계층의 일관성에 영향을 미치지 않기 때문에 마지막 계층에서 0.5의 값을 수동으로 설정합니다.\n' +
+      '\n' +
+      '추론 경로가 있는 유형은 사례의 80% 이상에서 활용되었다. 그러나 활용은 매우 맥락적이며, 추론에 대한 증거가 약하거나 거의 없다고 보는 사실 구성 유형도 있다. 전체 프롬프트 집합에서 두 번째 및 다중 홉 추론의 증거는 다소 온건하고 첫 번째 홉에서만 상당한다.\n' +
+      '\n' +
+      '또한, 모델 크기가 증가하는 잠재 다중 홉 추론 경로의 첫 번째 홉에서 명확한 스케일링 경향을 보지만, 두 번째 홉 추론 경로에 대한 그러한 스케일링 증거는 보이지 않는다. 이는 Ofir Press et al.(2023)이 모델 크기가 증가함에 따라 구성 갭(모델이 모든 하위 문제에 올바르게 답할 수 있지만 전체 솔루션을 생성하지 못하는 빈도 비율)이 감소하지 않는다는 것을 관찰한 이유일 수 있다.\n' +
+      '\n' +
+      '우리의 분석은 최대 70B 매개변수의 모델 LLaMA-2 계열을 기반으로 하지만, 우리의 연구 결과는 잠재 다중 홉 추론을 촉진하기 위한 현재 스케일링 패러다임의 잠재적인 한계를 시사한다. 따라서 사전 훈련 데이터, 지식 검색 및 활용을 촉진하는 손실 함수 또는 LLM의 더 강력한 잠재 추론 능력을 위해 내부 지식 표현에 대한 더 강한 귀납적 편향을 가진 모델 아키텍처의 선택에 대한 연구가 필요할 수 있다. 그러나 프리트레이닝 역학 및 데이터와 관련하여 멀티 홉 추론의 강력한 증거로 프롬프트의 하위 집합을 분석하는 것은 현재의 프리트레이닝 및 스케일링 패러다임의 맥락에서도 그러한 능력의 출현에 대한 통찰력을 제공할 수 있다.\n' +
+      '\n' +
+      '전반적으로, 우리의 연구 결과는 LLM 역량에 대한 이해를 향상시키고 매개변수 효율성, 일반화 및 제어 가능성과 관련된 잠재 다중 홉 추론을 촉진하고 강화하는 것을 목표로 하는 향후 연구를 안내할 수 있다.\n' +
+      '\n' +
+      '## 9 Limitations\n' +
+      '\n' +
+      '잠재적 다중 홉 추론 경로(Latent Multi-Hop Reasoning Pathway)는 잠재적 다중 홉 추론을 위한 하나의 경로(예를 들어, 개체 회상을 통해 두 번째 홉의 사용을 테스트함), LLMs(McGrath 등, 2023)에서 추론 경로의 잠재적 중복성을 고려할 때, 다른 경로가 존재할 수 있으며, 동일한 정보가 다른 방식으로 검색될 수 있다. 또한, 다중 홉 추론의 종단 간 측정을 하지 않고 단일 계층에 대해 첫 번째와 두 번째 홉에서 발생하는 변화만을 추적하며, 추론 첫 번째 홉의 영향은 다른 계층으로 전파될 수 있다. 따라서 우리가 보는 효과는 잠재된 2홉 추론을 수행하는 모델의 능력에 대한 하한일 수 있다.\n' +
+      '\n' +
+      '데이터셋은 \\(e^{\\prime}=r(e)\\)이 \\(e\\)에 대한 관계식 \\(r\\)의 유일한 또는 가장 유명한 대상이 되도록 사실 삼중항 \\((e,r,e^{\\prime})\\)을 수집하는 것을 목표로 한다. 참조 링크 수가 가장 많은 개체를 사용하고 이를 위해 수집된 사실 삼중항 중 적어도 \\(e^{\\prime}\\)가 유일한 개체임을 확인하지만 위키다타에서 발생하는 노이즈가 있다. 게다가, 현실에서는 방대한 실세계로 인해 "오직"이라는 조건을 엄격하게 만족시키기가 어렵다.\n' +
+      '\n' +
+      '그림 5: LLaMA-2 모델에서 RQ1과 RQ2의 네 가지 결과의 상대적 빈도, RQ1에 대한 엔터티 대체(맨 위 행)와 관계 대체(맨 아래 행)가 있다. 첫 번째 홉 추론에 대한 입력 대체에 대한 엔터티 리콜의 증가는 RQ1의 _성공_ 경우이고, 두 번째 홉 추론에 대한 엔터티 리콜의 증가에 대한 일관성 점수의 증가는 RQ2의 _성공_ 경우이다. 녹색, 파란색, 노란색 및 빨간색 막대는 RQ1과 RQ2에 대한 SS(성공-성공), FS, SF 및 FF의 경우를 각각 보여준다. 개입이 해당 계층의 일관성에 영향을 미치지 않기 때문에 마지막 계층의 값을 RQ1에 대한 상대 빈도를 곱한 0.5로 수동으로 설정한다.\n' +
+      '\n' +
+      '빠르고 역동적으로 변화하는 지식.\n' +
+      '\n' +
+      '메트릭스 내부 엔터티 리콜의 측정은 LLM이 입력 텍스트를 처리하고 다음 토큰을 생성하는 방법과 직접적인 관련이 있지만 엔터티의 첫 번째 토큰만 사용하기 때문에 근사치이다. 더욱이, 내부 개체 회상 점수는 표상 드리프트, 편향, 취성 등의 단점을 갖는 로짓 렌즈(nostalgebraist, 2020)를 기반으로 한다(Belrose et al., 2023; Timkey and van Schijndel, 2021). 그러나 이러한 한계는 초기 출구(Din et al., 2023)와 같은 적응 계산 방법에 대해 연구된 바와 같이 초기 계층에서 예측을 정확하게 하는 것이 아니라 LLM의 내부 동학을 그대로 연구하는 데 초점을 맞추고 있기 때문에 분석에 최소한의 영향을 미친다.\n' +
+      '\n' +
+      '## Acknowledgements\n' +
+      '\n' +
+      '소중한 피드백과 토론에 대해 이상우, 자스민 배스팅스, 윌리엄 코언에게 감사드린다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Akyurek 등(2023) Ekin Akyurek, Dale Schuurmans, Jacob Andreas, Tengyu Ma, and Denny Zhou. 2023. In-context learning이란 어떤 학습 알고리즘인가? 선형 모델을 사용한 조사. ICLR에서.\n' +
+      '* Allen-Zhu and Li (2023) Zeyuan Allen-Zhu and Yuanzhi Li. 2023. 언어 모델의 물리학: Part 3.2, 지식 조작. _ arXiv_.\n' +
+      '* Asai and Hajishirzi (2020) Akari Asai and Hananeh Hajishirzi. 2020. 일관성 있는 질의 응답을 위한 논리 유도 데이터 증강 및 정규화. *ACL* 에서.\n' +
+      '* Belrose et al.(2023) Nora Belrose, Zach Furman, Logan Smith, Danny Halawi, Igor Ostrovsky, Lev McKinney, Stella Biderman, and Jacob Steinhardt. 2023. 튜닝된 렌즈가 있는 변압기에서 잠재 예측을 유도합니다. _ arXiv_.\n' +
+      '* Berglund 등(2024) Lukas Berglund, Meg Tong, Max Kaufmann, Mikita Balesni, Asa Cooper Stickland, Tomasz Korbak, Owain Evans, A I Taskforce, and Apollo Research. 2024. 반전 저주: "a is b"에 트레이닝된 LLM들은 "b is a"를 학습하는데 실패한다. ICLR에서.\n' +
+      '* Brown 등(2023) Tom B Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. 2020. 언어 모델은 샷이 적은 학습자입니다. NeurIPS에서.\n' +
+      '* Chan et al.(2022) Stephanie Chan, Adam Santoro, Andrew Lampinen, Jane Wang, Aaditya Singh, Pierre Richemond, James McClelland, and Felix Hill. 2022. 데이터 분배 속성은 트랜스포머에서 새로운 상황 내 학습을 유도한다. NeurIPS에서.\n' +
+      '*Chanin et al.(2023) David Chanin, Anthony Hunter, and Oana-Maria Camburu. 2023. 대형 언어 모델에서 선형 관계 개념을 식별합니다. _ arXiv_.\n' +
+      '*Cohen et al.(2023) Roi Cohen, Eden Biran, Ori Yoran, Amir Globerson, and Mor Geva. 2023. 언어 모델에서의 지식 편집의 파급 효과 평가 _ arXiv_.\n' +
+      '* Conmy et al.(2023) Arthur Conmy, Augustine N Mavor-Parker, Aengus Lynch, Stefan Heimersheim, and Adria Garriga-Alonso. 2023. 자동 회로 발견을 위한 기계론적 해석 가능성. NeurIPS에서.\n' +
+      '* Dai 등 (2023) Damai Dai, Yutao Sun, Li Dong, Yaru Hao, Zhifang Sui, and Furu Wei. 2023. GPT는 왜 맥락 안에서 배울 수 있을까? 언어 모델들은 메타-최적화자로서 비밀리에 경사 하강을 수행한다. Acl의 발견에서.\n' +
+      '* De Cao et al.(2021) Nicola De Cao, Wilker Aziz, and Ivan Titov. 2021. 언어 모델에서 사실적 지식을 편집합니다. EMNLP에서.\n' +
+      '* Din et al. (2023) Alexander Yom Din, Taelin Karidi, Leshem Choshen, and Mor Geva. 2023. 결론으로 넘어갑니다: 선형 변환이 있는 바로 가기 변압기 _ arXiv_.\n' +
+      '* Dziri 등(2023) Nouha Dziri, Ximing Lu, Melanie Sclar, Xiang Lorraine Li, Liwei Jiang, Bill Yuchen Lin, Sean Welleck, Peter West, Chandra Bhagavatula, Ronan Le Bras, Jena D Hwang, Soumya Sanyal, Xiang Ren, Allyson Ettinger, Zaid Harchaoui, and Yejin Choi. 2023. 믿음과 운명: 구성성에 대한 변압기의 한계. NeurIPS에서.\n' +
+      '* Elazar 등(2021) Yanai Elazar, Nora Kassner, Shauli Ravfogel, Abhilasha Ravichander, Eduard Hovy, Hinrich Schutze, and Yoav Goldberg. 2021. 사전 훈련된 언어 모델의 일관성을 측정하고 개선합니다. _ TACL_.\n' +
+      '* Feng and Steinhardt (2024) Jiahai Feng and Jacob Steinhardt. 2024. 언어 모델들은 컨텍스트에서 엔티티들을 어떻게 바인딩하는가? ICLR에서.\n' +
+      '* Geva et al. (2023) Mor Geva, Jasmijn Bastings, Katja Filippova, and Amir Globerson. 2023. 자동 회귀 언어 모델에서 사실적 연관성에 대한 리콜을 해부합니다. EMNLP에서.\n' +
+      '*Geva et al.(2022) Mor Geva, Avi Caciularu, Kevin Ro Wang, and Yoav Goldberg. 2022. 트랜스포머 피드포워드 레이어는 어휘 공간에서 개념을 촉진하여 예측을 구축한다. EMNLP에서.\n' +
+      '* Geva et al.(2021) Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. 2021. 트랜스포머 피드포워드 레이어는 키-값 메모리이다. EMNLP에서.\n' +
+      '* Geva et al.(2021)Evan Hernandez, Arnab Sen Sharma, Tal Haklay, Kevin Meng, Martin Wattenberg, Jacob Andreas, Yonatan Belinkov, and David Bau. 2024. 트랜스포머 언어 모델에서의 관계 디코딩의 선형성. ICLR에서.\n' +
+      '* Hou et al.(2023) Yifan Hou, Jiaoda Li, Yu Fei, Alessandro Stolfo, Wangchunshu Zhou, Guangtao Zeng, Antoine Bosselut, and Minmaya Sachan. 2023. 언어 모델의 다단계 추론 능력의 기계론적 해석을 향하여. *ACL* 에서.\n' +
+      '* Jang et al. (2023) Jang, Bhisattwa Prasad Majumder, Julian McAuley, Thomas Lukasiewicz, and Oana-Maria Camburu. 2023. 어떻게 마음을 정하는지 알아! 자연어 설명의 불일치를 적대적으로 탐지하고 완화합니다. *ACL* 에서.\n' +
+      '* Kassner 등(2023) Nora Kassner, Oyvind Tafjord, Ashish Sabharwal, Kyle Richardson, Hinrich Schuetze, and Peter Clark. 2023. 합리성을 갖춘 언어 모델. EMNLP에서.\n' +
+      '* Kassner et al.(2021) Nora Kassner, Oyvind Tafjord, Hinrich Schutze, and Peter Clark. 2021. BeliefBank: 체계적 신념 개념을 위해 사전 훈련된 언어 모델에 기억을 추가한다. EMNLP에서.\n' +
+      '* Kobayashi et al.(2023) Goro Kobayashi, Tatsuki Kuribayashi, Sho Yokoi, and Kentaro Inui. 2023. Transformer language model handle word frequency in prediction head. *ACL* 에서.\n' +
+      '* Li et al.(2019) Tao Li, Vivek Gupta, Maitrey Mehta, and Vivek Srikumar. 2019. A logic-driven framework for consistency of neural models. EMNLP에서.\n' +
+      '* Lieberum 등(2023) Tom Lieberum, Matthew Rahtz, Janos Kramar, Neel Nanda, Geoffrey Irving, Rohin Shah, and Vladimir Mikulik. 2023. 회로 해석 가능성의 척도인가? 친칠라의 객관식 능력에서 나온 증거입니다. _ arXiv_.\n' +
+      '* McGrath et al. (2023) Thomas McGrath, Matthew Rahtz, Janos Kramar, Vladimir Mikulik, and Shane Legg. 2023. hydra effect: Emergent self-repair in language model computation. _ arXiv_.\n' +
+      '* Meng et al.(2022) Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022. GPT에서 사실 연관성을 찾고 편집합니다. NeurIPS에서.\n' +
+      '* Mitchell 등(2022) Eric Mitchell, Charles Lin, Antoine Bosselut, Chelsea Finn, and Christopher D Manning. 2022. 대규모로 빠른 모델 편집. ICLR에서.\n' +
+      '* Nanda and Bloom (2022) Neel Nanda and Joseph Bloom. 2022. Transformerlens. [https://github.com/neelnanda-io/TransformerLens] (https://github.com/neelnanda-io/TransformerLens).\n' +
+      '* Nanda et al.(2022) Neel Nanda, Lawrence Chan, Tom Lieberum, Jess Smith, and Jacob Steinhardt. 2022. 기계론적 해석 가능성을 통한 그로킹에 대한 진전 조치. ICLR에서.\n' +
+      '* 향수학자(2020) 향수학자. 2020. 해석 gpt: 로짓 렌즈.\n' +
+      '* Press 등(2023) Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt, Noah Smith, and Mike Lewis. 2023. 언어 모델의 구성 차이를 측정하고 좁힙니다. [EMNLP의 발견]에서.\n' +
+      '* Olsson et al. (2022) Catherine Olsson, Nelson Elhage, Neel Nanda, Nicholas Joseph, Nova DasSarma, Tom Henighan, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conterly, Dawn Drain, Deep Ganguli, Zac Hatfield-Dodds, Danny Hernandez, Scott Johnston, Andy Jones, Jackson Kernion, Liane Lovitt, Kamal Ndousse, Dario Amodei, Tom Brown, Jack Clark, Jared Kaplan, Sam McCandlish, and Chris Olah. 2022. In-context learning and induction heads. _ arXiv_.\n' +
+      '* Onoe et al. (2023) Yasumasa Onoe, Michael J Q Zhang, Shankar Padmanabhan, Greg Durrett, and Eunsol Choi. 2023. LMs는 설명으로부터 새로운 실체를 배울 수 있는가? 주입된 지식을 전파하는 데 문제가 있습니다. *ACL* 에서.\n' +
+      '* OpenAI 등(2023) OpenAI, ;, Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, Red Avila, Igor Babuschkin, Haiming Bao, Mo Bavarian, Jeff Belgum, Irvan Bello, Jake Berdine, Gabriel Bernatet-Shapiro, Christopher Berner, Shyamal Anadkat, Janko Altenschmidt, Sam Altman, Shyamal Babuschkin, Oleg Baltescu, Haiming Bao, Mo Bavarian, Jeff Baltescu, Marleg Babuschkin, Anna-Luisa Brakman, Greg Brockman, Tim Brooks, Miles Brundage, Kevin Button, Trevor Cai, Rosie Campbell, Andrew Cann, Brittany Cary, Chelsea Carlson, Rory 2023. Gpt-4 기술 보고서. _ arXiv_.\n' +
+      '* Petroni 등(2019) Fabio Petroni, Tim Rocktaschel, Patrick Lewis, Anton Bakhtin, Yuxiang Wu, Alexander H Miller, and Sebastian Riedel. 2019. 지식 베이스로서의 언어 모델들? EMNLP에서.\n' +
+      '* 프리스토스키 및 굿맨(2023) 벤 프리스토스키 및 노아 D 굿맨. 2023년, 왜 단계별로 생각해? 추론은 경험의 지역성에서 나온다. NeurIPS에서.\n' +
+      '* Ribeiro 등(2019) Marco Tulio Ribeiro, Carlos Guestrin, and Sameer Singh. 2019년. 빨간 장미는 빨간색인가요? 질문-응답 모델의 일관성을 평가하는 중입니다. *ACL* 에서.\n' +
+      '* Sakarvadia et al.(2023) Mansi Sakarvadia, Aswathy Ajith, Arham Khan, Daniel Grzenda, Nathaniel Hudson, Andre Bauer, Kyle Chard, and Ian Foster. 2023. Memory injections: Correcting multi-hop reasoning failures during inference in transformer-based language models. _ arXiv_.\n' +
+      '* Saparov et al. (2023) Abulhair Saparov, Richard Yuanzhe Pang, Vishakh Padmakumar, Nitish Joshi, Seyed Mehran Kazemi, Najoung Kim, and He He. 2023. OOD 예제를 사용하여 대형 언어 모델의 일반적인 연역적 추론 능력을 테스트한다. NeurIPS에서.\n' +
+      '* Timkey and van Schijndel (2021) William Timkey and Marten van Schijndel. 2021. 모든 바드 및 무 바이트: 변압기 언어 모델의 로그 치수는 표현 품질을 모호하게 한다. EMNLP에서.\n' +
+      '* 투브론 등(2017) 휴고 투브론, 루이 마틴, 케빈 스톤, 피터 알버트, 암자드 알마하리, 야스민 바바이, 니콜라이 바슐리코프, 수미 바트라, 슈루티 보살레, 단 비켈, 루카스 블레처, 크리스티안 칸톤 페러, 모야 첸, 기옌 쿠쿠룰, 다비드 에시오부, 주드 페르난데스, 제레미 푸, 원린 푸, 브라이언 풀러, 신시아 가오, 제레미 푸, 신시아 가오, 사그하르 호세이니, 루이 호우, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 고예프, 이사벨 클라우만, 아르템 고레네프, 신시아 가오, 사그하르 호세이니, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 카르네프, 이자벨 루, 윤잉 마오, 사보트 라흐로프, 제냐 리, 다이아나 리스코비치, 잉하이 루, 유닝 마오, 2023년 라마 2: 토대를 열고 채팅 모델을 미세 조정합니다. _ arXiv_.\n' +
+      '* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017년입니다 주목만 하면 됩니다 NeurIPS에서.\n' +
+      '* Oswald 등 (2023) Johannes Von Oswald, Eyvind Niklasson, Ettore Randazzo, Joao Sacramento, Alexander Mordvintsev, Andrey Zhmoginov, and Max Vladymyrov. 2023. 트랜스포머는 경사 하강에 의해 인-컨텍스트로 학습한다. ICML에서.\n' +
+      '* Vrandecic and Krotzsch (2014) Denny Vrandecic and Markus Krotzsch. 2014. Wikidata: 무료 협업 지식베이스. _ ACM_의 통신들.\n' +
+      '* Wang et al. (2023) Kevin Ro Wang, Alexandre Variengien, Arthur Conmy, Buck Shlegeris, and Jacob Steinhardt. 2023. 야생에서의 해석 가능성: GPT-2 소형에서 간접 물체 식별을 위한 회로. ICLR에서.\n' +
+      '* Wei et al.(2022a) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. 2022a. 대형 언어 모델의 최신 능력입니다. _ TMLR_.\n' +
+      '* Wei et al.(2022b) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Ed Chi, Quoc Le, and Denny Zhou. 2022b. 사고 촉진의 사슬은 대규모 언어 모델에서 추론을 이끌어낸다. NeurIPS에서.\n' +
+      '* Welbl et al.(2018) Johannes Welbl, Pontus Stenetorp, and Sebastian Riedel. 2018. 문서 간에 다중 홉 읽기 이해에 대 한 데이터 집합을 구성 합니다. _ TACL_.\n' +
+      '* Wolf et al. (2023) Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Remi Louf, Morgan Funtowicz, Joe Davison, Sam Shleifer, Patrick von Platen, Clara Ma, Yacine Jernite, Julien Plu, Canwen Xu, Teven Le Scao, Sylvain Gugger, Mariama Drame, Quentin Lhoest, and Alexander M. 러쉬 2020. Huggingface\'s 변압기: 최첨단 자연어 처리. _ arXiv_.\n' +
+      '* Yang et al.(2018) Zilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhutdinov, and Christopher D Manning. 2018. HotpotQA: 다양하고 설명 가능한 멀티홉 질의응답을 위한 데이터셋. EMNLP에서.\n' +
+      '*장 등(2024) 닝위장, 윤즈야오, 보중톈, 펑왕, 슈민덩, 멘그루왕, 제쿤시, 선규마오, 진톈장, 위안성니, 시위안청, 즈웬쉬, 신쉬, 자천구, 용장, 펑준시에, 페이황, 레이량, 지창장, 샤오웨이주, 준저우, 화준첸. 2024. 대용량 언어 모델에 대한 지식 편집에 대한 포괄적인 연구 _ arXiv_.\n' +
+      '* Zhong et al.(2023) Zexuan Zhong, Zhengxuan Wu, Christopher D Manning, Christopher Potts, and Danqi Chen. 2023. MQAKE: 멀티홉 질문을 통해 언어 모델에서 지식 편집을 평가하는 단계. EMNLP에서.\n' +
+      '* Zhou et al. (2022) Denny Zhou, Nathanael Scharli, Le Hou, Jason Wei, Nathan Scales, Xuezhi Wang, Dale Schuurmans, Claire Cui, Olivier Bousquet, Quoc V Le, and Ed H Chi. 2022. 최소 대 최대 프롬프트는 대규모 언어 모델에서 복잡한 추론을 가능하게 한다. ICLR에서.\n' +
+      '* Zhu and Li (2023) Zeyuan Allen Zhu and Yuanzhi Li. 2023. 언어 모델의 물리학: Part 3.1, 지식 저장 및 추출. _ arXiv_.\n' +
+      '\n' +
+      'Dataset construction\n' +
+      '\n' +
+      '다음 데이터 구축 파이프라인으로 위키다타(Vrandecic and Krotzsch, 2014)를 사용하여 TwoHopFact를 구축한다.\n' +
+      '\n' +
+      '### Data Selection\n' +
+      '\n' +
+      '우리는 잘 알려진 관계 및 개체를 선택하고 관계당 충분한 수의 샘플을 생성한다. 관계는 수동으로 선택됩니다. 위키다타를 조회할 때, 우리는 자연 언어 위키피디아 제목을 가진 단일 엔티티로 엔티티를 제한하고 최대 참조 링크 수를 가진 엔티티를 선택한다. 또한 입력에서 직접 복사하여 \\(e_{1}=e_{2}\\)의 사소한 회상을 허용할 수 있는 \\(e_{1}=e_{2}\\)의 경우를 제외한다. 또한, 동일한 팩트 구성 유형의 팩트 중에서 브리지 엔티티 \\(e_{2}\\)가 유일하도록 하여 브리지 엔티티의 불균형을 완화한다. 마지막으로 팩트 구성 유형의 불균형을 완화하기 위해 다운 샘플링을 적용한다.\n' +
+      '\n' +
+      '관계 선택 먼저, 관계 \\(r_{1}) \\(r_{1})=e_{2}\\)를 수집할 개체 유형 \\(e_{1}\\)과 관계 \\(r_{1}\\)을 선택하여 브리지 개체의 설명적 언급 유형을 결정한다. 우리가 선택한 교량 주체는 "송의 가수"(특정 노래의 가수), "국가의 국가"(특정 국가가 있는 국가), "창립자 조직"(특정인이 설립한 조직), "조직의 CEO"(특정 조직의 CEO)와 같은 유형이 있다. 예를 들어, 일부 소설은 저자가 많을 수 있지만, 한 명의 저자가 있는 소설만 사용할 수 있기 때문에 "저자의 소설"은 교량 실체에 대한 서술적 언급 유형으로 선택된다. 이 과정을 통해 19가지 유형의 교량 엔티티의 설명적 언급을 결정한다.\n' +
+      '\n' +
+      '이제 "\\(\\mathrm{type}(e_{1})\\)\'s \\(\\mathrm{type}(r_{1})\\)"이 결정되었으므로, 사실 구성 유형을 결정하기 위해 관계 유형 \\(r_{2}\\)을 결정한다. 이전 단계에서 결정된 "\\(\\mathrm{type}(e_{1})\\)"의 \\(\\mathrm{type}(r_{1})\\)"은 국가, 조직, 학부 대학, 게임 개발자, 실제 인물(저자, 총장, CEO, 배우자, 가수), 허구 캐릭터(주인공), 영화, 소설 또는 도시(본사 도시)의 범주에 속한다는 점에 유의하라. "\\(\\mathrm{type}(e_{1})\\)"의 \\(\\mathrm{type}(r_{1})\\)"은 설명적 언급이 언급하는 가교 실체 자체이기도 하다. 따라서 우리는 \\(r_{2}\\)에 대해 충분한 수의 \\((e_{2},r_{2},e_{3})\\)을 제공할 가능성이 있는 \\(r_{2}\\)를 선택한다. 여기서 \\(e_{3}\\)는 \\(e_{2}\\)의 범주에 대한 관계 \\(r_{2}\\)를 만족하는 유일한 객체 개체이다. 이전 단계에서와 같이 공통 관계를 \\(r_{2}\\)로 선택한다. 선정된 \\(r_{2}\\) 유형을 이용하여 ‘노래가수의 어머니’(특정한 소설이 탄생한 도시), ‘본사 도시 비디오게임 개발사’(특정한 비디오게임 개발사의 본사가 있는 도시), ‘주인공 영화감독’(특정한 캐릭터를 주인공으로 하는 영화감독) 등 52개의 사실 구성 유형을 만들었다.\n' +
+      '\n' +
+      '위키다타 쿼리 52개의 사실 구성 유형 각각에 대해 하나의 수작업 쿼리를 사용하여 위키다타 쿼리 서비스5를 통해 선택된 사실 구성 유형의 사실 트리플렛을 수집한다. 시간 제한이 발생하기 전에 API 호출이 가져올 결과가 너무 많을 때 참조 링크의 수로 결과를 필터링하거나 쿼리에 다른 조건을 추가하여 결과의 수를 줄입니다. 기업의 CEO와 같이 본질적으로 변경될 수 있는 관계에 대해 2022년 1월 1일 시점에 정보를 검색합니다.\n' +
+      '\n' +
+      '각주 5: [https://query.wikidata.org](https://query.wikidata.org)\n' +
+      '\n' +
+      '각주 6: 연구에 사용하는 LLaMA-2 (Towron et al., 2023) 모델의 훈련 시간을 고려하여 이 타임스탬프를 선택한다.\n' +
+      '\n' +
+      '### 자연어 템플릿\n' +
+      '\n' +
+      '자연어 템플릿을 수동으로 만듭니다. 이를 위해 먼저 교량 주체에 대한 설명적 언급을 작성한다. 기술적 멘션을 생성하기 위해 \\(r_{1}\\)-특정 _멘션 구성 템플릿_\\(m_{r_{1}}(\\cdot)\\)을 수동으로 작성한다. 예를 들어, \\(m_{\\text{singer}}(\\cdot)=\\) "\\(\\cdots\\)"의 가수는 \\(\\mu(r_{1}(e_{1})))=\\) "Superstition"의 가수를 생성한다.\n' +
+      '\n' +
+      '다음으로 1/2홉 프롬프트 템플릿을 만듭니다. 브릿지 개체 \\(e_{2}\\)에 대한 언급을 취하고 \\(e_{2}\\)의 관계 속성 \\(r_{2}\\)에 대한 프롬프트 질의를 형성하는 \\(r_{2}\\)-특정 _prompt-constructing templates_\\(t_{r_{2}}(\\cdot)\\)를 수동으로 작성하여 \\(e_{3}\\)에 대한 언급으로 프롬프트에 정확하게 응답할 수 있도록 한다. 예를 들어, \\(t_{\\text{mother}}(\\cdot)=\\) "\\(\\cdots\\)의 mother"를 사용하여 원홉 프롬프트 "Stevie Wonder의 mother"와 2홉 프롬프트 "Superstition\'의 가수의 mother"를 생성한다.\n' +
+      '\n' +
+      '우리는 두 홉 프롬프트가 자연스러운 방식으로 각 \\(m_{r_{1}}\\) 및 \\(t_{r_{2}}\\)에 대해 하나의 대표 템플릿을 작성한다. 템플릿이 프롬프트를 구성하는 방법에 대한 몇 가지 예는 표 2에 나와 있다. 그 후, 수집된 팩트 트리플렛을 수동으로 작성된 템플릿을 사용하여 2-홉 프롬프트와 1-홉 프롬프트 쌍으로 변환한다. 다시 말해\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:15]\n' +
+      '\n' +
+      '## 부록 C 내부 개체 리콜 점수의 정당화: 긍정적 생성 실험\n' +
+      '\n' +
+      '실험은 EntRec가 간접 증거를 가진 교량 개체의 내부 리콜에 대한 합리적인 근사치임을 보여준다. EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)는 \\(\\tau_{\\text{2H}}}\\)의 마지막 토큰이 아니라 브리지 엔티티의 설명적 언급의 마지막 토큰에서 계산되는데, 여기서 쉼표 다음에 \\(e_{2}\\)의 이름이 붙는 것은 문법적으로 자연스럽다(예: "The mother of the singer of \'Superstition\', _Stevie Wonder_). 결과 문자열에서 문법적으로 \\(\\mu(r_{1}(e_{1}))\\))는 _antecedent_가 되고, \\(e_{2}\\)는 _appositive_가 된다. 긍정은 이와 반대로 다른 명사구를 따라가는 명사구로 이를 더 식별하거나 정의하는 정보를 제공하며, 선행은 긍정이 설명하는 명사구이다. 그런 다음 EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)가 브리지 개체의 내부 회수에 합리적으로 근사하면 적어도 일부 층 \\(l\\)이 있을 것으로 예상되며, 여기서 EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)를 증가시키면 LLM이 상대 빈도를 증가시켜 랜덤 확률보다 높은 상대 빈도를 갖는 \\(e_{2}^{(0)}\\)을 생성할 수 있다. 즉, 계층에서 기업 회상 점수를 높이면 모형이 \\(e_{2}^{(0)}\\)을 출력할 확률이 증가하는 경우의 상대적 빈도를 확인한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline Abbreviation & Full Term \\\\ \\hline hq & headquarters \\\\ ug & undergrad \\\\ orig & origin \\\\ univ & university \\\\ stockexch & stock exchange \\\\ orgz & organization \\\\ mainchar & main character \\\\ vdgame & videogame \\\\ cntry & country \\\\ dev & developer \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 팩트 구성 타입에 사용되는 약어.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l} \\hline \\hline  & & & & & & \\\\ \\hline \\hline \\multirow{2}{*}{_Note_:_} & \\multirow{2}{*}{_Note_:_} & \\multirow{2}{*}{_Note_:_} & \\multirow{2}{*}{_Note_:_} & \\multirow{2}{*}{_Note_:_} & \\multirow{2}{*}{_Note_:_} \\\\  & & & & & & \\\\  & & & & & & \\\\  & & & & & & \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: 예들이 있는 각 팩트 구성 유형에 대한 2-홉 프롬프트의 카운트. 보라색 텍스트는 브리지 엔티티의 설명적 언급 \\(\\mu(r_{1}(e_{1})))\\)을 나타낸다. 원홉 프롬프트 \\(\\tau_{\\text{1H}}}\\)는 설명 멘션을 브리지 엔터티의 이름으로 대체하여 구성됩니다. 팩트 구성 유형에 사용된 약어의 확장된 형태는 표 4에 나열되어 있다.\n' +
+      '\n' +
+      '서술적 언급에서 끝나는 \\(\\tau_{\\text{2H}}}\\)의 접두사에 이어지는 쉼표의 다음 토큰(_"Supersition\'의 가수의 어머니,"_). 섹션 6.2에 설명된 대로 이 상대 빈도를 계산하지만 CnstScore 대신 확률을 사용한다.\n' +
+      '\n' +
+      '결과 그림 8은 대부분의 중후반 계층에서 LLM이 \\(\\mu(r_{1}(e_{1})))\\)을 처리할 때 브리지 개체의 잠재 리콜을 증가시키는 것은 또한 출력 \\(e_{2}^{(0)}\\)에 대한 LLM의 상대적 빈도를 증가시켜 \\(\\mu(r_{1}(e_{1})))\\)의 양수 \\(\\mu(r_{1}(e_{1})))\\)를 생성한 다음 쉼표를 생성한다는 것을 보여준다. 결과는 \\(n\\) 번째 토큰의 EntRec가 \\(n+2\\) 번째 토큰으로 생성될 토큰의 제어성을 가져 긍정의 첫 번째 토큰일 가능성이 더 높다는 것을 나타내며, EntRec\\({}^{l}(e_{2},\\tau_{\\text{2H}})\\)가 브리지 개체의 내부 리콜의 합리적인 프록시라는 간접적인 증거로 작용한다.\n' +
+      '\n' +
+      '각주 7: 이 분석을 위해 설명적 언급이 다음 중 하나로 끝나는 경우를 제외한다.\n' +
+      '\n' +
+      '그림 8: 레이어에서 엔터티 리콜 점수를 증가시키면 모델이 LLaMA-2 7B에 대해 설명적 언급으로 끝나는 \\(\\tau_{\\text{2H}}}\\)의 접두사 다음에 쉼표의 다음 토큰으로 \\(e_{2}^{(0)}\\)를 출력할 확률이 증가한다.\n' +
+      '\n' +
+      '그림 7: TwoHopFact의 각 팩트 구성 유형에 대한 가장 빈번한 엔터티의 백분율입니다. 팩트 구성 유형에 사용된 약어의 확장된 형태는 표 4에 나열되어 있다.\n' +
+      '\n' +
+      '## 부록 D 일관성 점수 정당화: 연쇄 사상 사례와의 비교 실험\n' +
+      '\n' +
+      '실험에서 제안된 \\(\\textsc{CnstScore}(\\tau_{\\text{2H}},\\tau_{\\text{1H}})\\)의 정의는 LLM이 브리지 엔티티의 속성 - \\(\\tau_{\\text{1H}}\\)에 대한 답변의 잠재 회상 - 을 간접 증거와 함께 활용하는 합리적인 대리임을 입증한다. 추론할 정보가 입력의 일부로서 주어진 경우, 예를 들어, 주어진 프롬프트가 _"Supersition\'의 싱어는 스티비 원더이다. 스티비 원더의 모체는 룰라로 명명된다. \'Supersition\'의 싱어의 모체는 "_이다. LLM은 원-홉 프롬프트에 대한 출력이 _"Stevie 원더의 모체는"_인 것을 참조하기 위해 멀티-홉 추론을 내부적으로 수행할 필요가 없을 것이지만, 입력으로부터 답변을 복사하기만 하면 된다. 따라서 이러한 경우의 \\(\\textsc{CnstScore}\\)는 기술적 언급이 누구를 지칭하는지에 대한 힌트를 주어 LLM이 원홉 프롬프트에 대한 답을 내부적으로 파악해야 하는 경우, 예를 들어 _"Superstition\'의 가수는 스티비 원더이고, \'Superstition\'의 가수의 어머니는 "_"일 것이다. 따라서 본 논문에서는 CoT(Chain-of-Think) 스타일 프롬프트의 \\(\\tau^{\\prime}\\), 즉 \\(\\textsc{CnstScore}(\\tau^{\\prime},\\tau_{\\text{1H}})\\로 계산된 \\(\\textsc{CnstScore}\\)를 비교 분석한다.\n' +
+      '\n' +
+      '결과 그림 9는 y축으로 작성된 프롬프트의 다른 스타일 \\(\\tau^{\\prime}\\)로 계산된 \\(\\textsc{CnstScore}\\)의 분포를 보여준다. 빨간색 사례는 우리가 주로 연구에서 연구하는 2-홉 프롬프트의 일관성 점수이며, 이는 완전한 다중 홉 추론이 필요하다. 입력에서 추론할 수 있는 정보가 제공되지 않기 때문에 \\(\\textsc{CnstScore}\\)는 다른 CoT 스타일 프롬프트의 경우보다 현저히 낮습니다. 파란색 사례는 설명적 언급이 언급하는 것을 입력으로 제공하지만 LLM이 교량 개체의 속성에 대해 알고 있는 것을 내부적으로 회상하여 참조할 필요가 있는 경우이다. 녹색 케이스들은 브리지 엔티티의 속성, 즉 프롬프트에 대한 답변이 입력에서 명시적으로 주어지고, 따라서 LLM은 원-홉 프롬프트에 대한 그의 답변을 참조할 필요가 없는 경우이다. 결과는 \\(\\textsc{CnstScore}\\)의 평균이 모델이 답변을 참조할 필요가 없는 녹색 사례보다 원홉 프롬프트에 대한 답변을 참조하도록 강제된 파란색 사례에서 더 높다는 것을 보여준다. 빨간색과 파란색 사례의 차이는 입력 프롬프트에 설명적 언급의 정체성의 정보가 존재하기 때문에 LLM이 교량 실체에 대해 알고 있는 것을 참조하기 위해 연결을 사용하는 데 도움이 되었을 것이다.\n' +
+      '\n' +
+      '## 부록 E 기술 세부 정보\n' +
+      '\n' +
+      '실험은 난다와 블룸(2022)의 코드베이스를 수정하여 수행하였다. 실험에는 1-8개의 40GB A100 GPU를 사용한다. 모든 실험은 24시간 이내에 실행됩니다. 우리는 HuggingFace Transformers (Wolf et al., 2020)의 모델 가중치를 사용하고 LLaMA-2 7B 및 13B에 대해 완전 정밀도를 사용하고 70B에 대해 절반 정밀도를 사용한다. 위키다타 질의에 대한 SPARQL 질의는 GPT-4의 도움을 받아 작성된다(OpenAI 등, 2023).\n' +
+      '\n' +
+      '그림 9: LLaMA-2 7B에 대한 프롬프트의 다양한 스타일에 대해 계산된 \\(\\textsc{CnstScore}\\)의 분포 \\(\\tau^{\\prime}\\)이다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:19]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
