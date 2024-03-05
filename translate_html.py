@@ -34,18 +34,51 @@ def translate_html(html, arxiv_id):
     # find r"src=\".*\.png\"" and replace with "src=\"https://arxiv.org/html/2402.06196v2/\1\""
     html = re.sub(r"src=\"(.*\.png)\"", "src=\"https://arxiv.org/html/" + arxiv_id + r"/\1" + "\"", html)
 
+    # find "<nav class=\"ltx_TOC active\"" and replace with "<nav class=\"ltx_TOC mobile collapse\"".
+    html = html.replace("<nav class=\"ltx_TOC active\"", "<nav class=\"ltx_TOC mobile collapse\"")
+
     translated_lines = []
     buffer = []
+    tag_cnt_map = {}
     for line_idx, line in tqdm.tqdm(enumerate(html.split("\n"))):
-        # if line starts with "<p class="ltx_p", add line to buffer
-        if line.startswith("<p class=\"ltx_p\""):
+        if line.startswith("<p class=\"ltx_p\"") or line.startswith("<figcaption"):
+            # find html tag using re and count for each
+            re_result = re.findall(r"<[^>]+>", line)
+            for tag in re_result:
+                if tag[1] == "/":
+                    tag_type = tag[2:-1].split(" ")[0]
+                    tag_cnt_map[tag_type] = tag_cnt_map.get(tag_type, 0) - 1
+
+                    # assert tag_cnt_map[tag_type] >= 0, \
+                    #     f"Error at line {line_idx}: {tag_type} tag count is negative in {arxiv_id}"
+                else:
+                    tag_type = tag[1:-1].split(" ")[0]
+                    tag_cnt_map[tag_type] = tag_cnt_map.get(tag_type, 0) + 1
+
             buffer.append(line)
-        # if buffer is not empty and line not starts with "<", add line to buffer
-        elif buffer and not line.startswith("<"):
+        elif buffer:
+            re_result = re.findall(r"<[^>]+>", line)
+            for tag in re_result:
+                if tag[1] == "/":
+                    tag_type = tag[2:-1].split(" ")[0]
+                    tag_cnt_map[tag_type] = tag_cnt_map.get(tag_type, 0) - 1
+
+                    # assert tag_cnt_map[tag_type] >= 0, \
+                    #     f"Error at line {line_idx}: {tag} tag count is negative in {arxiv_id}"
+                else:
+                    tag_type = tag[1:-1].split(" ")[0]
+                    tag_cnt_map[tag_type] = tag_cnt_map.get(tag_type, 0) + 1
+
             buffer.append(line)
         else:
+            translated_lines.append(line)
+
+        if tag_cnt_map.get("p", 0) == 0 and buffer:
             original_p = None
+            original_figcaption = None
+
             a_list = []
+            cite_list = []
             footnote_list = []
             math_list = []
 
@@ -53,11 +86,29 @@ def translate_html(html, arxiv_id):
             if buffer:
                 src = " ".join(buffer)
 
-                # extract the content inside of <p class=\"ltx_p>...</p>, including all html tags
                 soup = bs(src, "html.parser")
-                for p in soup.find_all("p", class_="ltx_p"):
-                    src = "".join(list(map(str, p.contents)))
-                    original_p = str(p).split(str(p.contents[0]))[0]
+                if soup.text.strip() == "":
+                    translated_lines.append(src)
+                    buffer = []
+                    continue
+
+                try:
+                    # extract the content inside of <p class=\"ltx_p>...</p>, including all html tags
+                    soup = bs(src, "html.parser")
+                    for p in soup.find_all("p", class_="ltx_p"):
+                        src = "".join(list(map(str, p.contents)))
+                        original_p = str(p).split(str(p.contents[0]))[0]
+                except:
+                    print(f"Error at line {line_idx}: cannot parse <p> in {arxiv_id}")
+
+                try:
+                    # extract the content inside of <figcaption>...</figcaption>, including all html tags
+                    soup = bs(src, "html.parser")
+                    for figcaption in soup.find_all("figcaption"):
+                        src = "".join(list(map(str, figcaption.contents)))
+                        original_figcaption = str(figcaption).split(str(figcaption.contents[0]))[0]
+                except:
+                    print(f"Error at line {line_idx}: cannot parse <figcaption> in {arxiv_id}")
 
                 # if src contains <math>???</math>, replace with "<math></math>"
                 # Note that <math> contains many other tags, so we need to consider it.
@@ -77,6 +128,13 @@ def translate_html(html, arxiv_id):
                 for idx, footnote in enumerate(footnote_list):
                     src = src.replace(str(footnote), f"<span idx={idx}></span>")
 
+                # <cite>...</cite>
+                soup = bs(src, "html.parser")
+                for cite in soup.find_all("cite"):
+                    cite_list.append(cite)
+                for idx, cite in enumerate(cite_list):
+                    src = src.replace(str(cite), f"<cite idx={idx}></cite>")
+
                 # if src contains <a href>???</a>, replace with "<a></a>"
                 # Note that <a> contains many other tags, so we need to consider it.
                 # Note that before replacing, save the replace target to a list for restoring.                
@@ -86,15 +144,34 @@ def translate_html(html, arxiv_id):
                 for idx, a in enumerate(a_list):
                     src = src.replace(str(a), f"<a idx={idx}></a>")
 
+                # add heuristics logic to skip dirty lines
+                if len(bs(" ".join(buffer), "html.parser").text) / len(" ".join(buffer)) < 0.08:
+                    translated_lines.append(" ".join(buffer))
+
+                    print()
+                    print(original_p)
+                    print(" ".join(buffer))
+                    print(src)
+                    print(len(" ".join(buffer)), len(bs(" ".join(buffer), "html.parser").text), len(bs(" ".join(buffer), "html.parser").text) / len(" ".join(buffer)))
+
+                    buffer = []
+                    continue
+
                 # translate src
                 tgt = translate_lines("enko_20230719", src, batch_size=32)
+                # print(tgt)
 
-                # restore <a>, <span>, <math>
+                # restore <a>, <cite>, <span>, <math>
                 for idx, a in enumerate(a_list):
                     try:
                         tgt = tgt.replace(f"<a idx={idx}></a>", str(a))
                     except:
                         print(f"Error at line {line_idx}: cannot restore <a> at idx={idx} in {arxiv_id}")
+                for idx, cite in enumerate(cite_list):
+                    try:
+                        tgt = tgt.replace(f"<cite idx={idx}></cite>", str(cite))
+                    except:
+                        print(f"Error at line {line_idx}: cannot restore <cite> at idx={idx} in {arxiv_id}")
                 for idx, footnote in enumerate(footnote_list):
                     try:
                         tgt = tgt.replace(f"<span idx={idx}></span>", str(footnote))
@@ -106,13 +183,15 @@ def translate_html(html, arxiv_id):
                     except:
                         print(f"Error at line {line_idx}: cannot restore <math> at idx={idx} in {arxiv_id}")
 
-                tgt = str(original_p) + tgt + "</p>"
+                if original_p:
+                    tgt = str(original_p) + tgt + "</p>"
+                if original_figcaption:
+                    tgt = str(original_figcaption) + tgt + "</figcaption>"
 
                 translated_lines.append(tgt)
 
             buffer = []
-
-            translated_lines.append(line)
+            tag_cnt_map = {}
 
     html = "\n".join(translated_lines)
     return html
