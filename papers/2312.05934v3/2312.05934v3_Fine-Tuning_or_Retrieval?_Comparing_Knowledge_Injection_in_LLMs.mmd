@@ -1,0 +1,403 @@
+# Fine-Tuning or Retrieval?
+
+Comparing Knowledge Injection in LLMs
+
+Oded Ovadia, Menachem Brief, Moshik Mishaeli, and Oren Elisha
+
+{odedovadia,t-mbrief,mmishaeli,oren.elisha}@microsoft.com
+
+Microsoft, Israel
+
+Corresponding author.Equal contribution.
+
+###### Abstract
+
+Large language models (LLMs) encapsulate a vast amount of factual information within their pre-trained weights, as evidenced by their ability to answer diverse questions across different domains. However, this knowledge is inherently limited, relying heavily on the characteristics of the training data. Consequently, using external datasets to incorporate new information or refine the capabilities of LLMs on previously seen information poses a significant challenge. In this study, we compare two common approaches: unsupervised fine-tuning and retrieval-augmented generation (RAG). We evaluate both approaches on a variety of knowledge-intensive tasks across different topics. Our findings reveal that while unsupervised fine-tuning offers some improvement, RAG consistently outperforms it, both for existing knowledge encountered during training and entirely new knowledge. Moreover, we find that LLMs struggle to learn new factual information through unsupervised fine-tuning, and that exposing them to numerous variations of the same fact during training could alleviate this problem.
+
+**Keywords:** LLMs, NLP, Fine-Tuning vs. RAG, Knowledge and Factuality.
+
+## 1 Introduction
+
+Large language models (LLMs) are able to capture vast amounts of factual information (Petroni et al., 2019; Cohen et al., 2023; Hu et al., 2023). LLMs exhibit a remarkable level of knowledge in various domains due to their massive pre-training datasets. However, there are two significant limitations to this knowledge. First, it is static and does not update with time. Second, it is non-specific and thus may lack nuanced expertise in particular domains. While these are two different problems, they are deeply related since their solution is the same: enhancing the model's knowledge.
+
+Recently, the idea of adapting LLMs to particular domains and updating their knowledge has become increasingly common (Yu et al., 2022). Various models have been suggested to improve factual knowledge and capabilities in diverse fields such as healthcare (Singhal et al., 2023; Wu et al., 2023; Wu et al., 2023), finance (Wu et al., 2023; Yang et al., 2023), and law (Huang et al., 2023; Nguyen, 2023).
+
+In this work, we focus on the evaluation of a model's knowledge and its ability to memorize, understand, and retrieve factual data. We aim to understand the concept of _knowledge injection_(Wang et al., 2020; Chen et al., 2022; Liu et al., 2020; Lauscher et al., 2020). Given some knowledge base in the form of a text corpus, what is the best way to teach a pre-trained model this knowledge?
+
+One way to add knowledge to a pre-trained model is through fine-tuning. With fine-tuning, we continue the model's training process and adapt it using task-specific data. By exposing the model to a specific knowledge base, we expect the model weights to adapt accordingly. This process is meant to optimize the model for targeted applications, enhancing its performance and contextual relevance in specialized domains.
+
+Another method to enhance a model's knowledge base is through the use of in-context learning (ICL) (Chen et al., 2021; Radford et al., 2019; Min et al., 2021; Lampinen et al., 2022). The main idea behind ICL is to improve the performance of pre-trained LLMs on new tasks by modifying the input query to the model without directly changing the weights of the model. One form of ICL is retrieval augmented generation (RAG) (Lewis et al., 2020; Neelakantan et al., 2022). RAG uses information retrieval techniques to enable LLMs to obtain relevant information from a knowledge source and incorporate it into generated text.
+
+This study aims to evaluate the knowledge injection capabilities of LLMs through a comparison of fine-tuning and RAG. To illustrate the rationale, let us use an analogy. Consider three college students taking a test on a specific topic. All had access to class materials but didn't know the topic beforehand. The first student had the textbook only during the test, the second had pre-test access and studied, and the third lost access upon the test announcement. Who would probably perform better?
+
+## 2 Background
+
+To assess _knowledge injection_, we must first understand what _knowledge_ means for LLMs.
+
+Knowledge and Language ModelsDefining knowledge is a complex philosophical task far beyond the scope of this research. However, we can examine what factual knowledge means in the context of language models. If a model knows a fact, it can accurately and consistently answer questions about it. Furthermore, it can reliably distinguish between true and false statements related to this fact. We can then extend this definition to a whole knowledge base, not just a single fact.
+
+Mathematically, let \(\mathcal{Q}=\{q_{n}\}_{n=1}^{N}\) be a set of \(N\) multiple choice factual questions, where each question has \(L\) possible answers and exactly one correct answer. Let \(\mathcal{A}=\{(a_{n}^{1},\ldots,a_{n}^{L})\}_{n=1}^{N}\) be the corresponding set of possible answers, and \(\mathcal{C}=\{c_{n}\}_{n=1}^{N}\) be the correct answers.
+
+Let \(\mathcal{M}\) be a language model. We denote by \(\mathcal{M}(q_{n})\in\{a_{n}^{1},\ldots,a_{n}^{L}\}\) the predicted answer of the model to the \(n\)-th question.
+
+We define the _knowledge score_\(\mathcal{L}\) of \(\mathcal{M}\) in relation to \(\mathcal{Q}\) to be the standard accuracy score:
+
+\[\mathcal{L}_{\mathcal{M},\mathcal{Q}}:=\frac{\#\{q_{n}|\;\mathcal{M}(q_{n})=c _{n}\}}{N}. \tag{1}\]
+
+We say that the model \(\mathcal{M}\) possesses _any_ knowledge regarding the set of questions \(\mathcal{Q}\) if the following holds:
+
+\[\mathcal{L}_{\mathcal{M},\mathcal{Q}}>\frac{1}{L}. \tag{2}\]
+
+In simpler terms, the model can consistently give correct answers, outperforming a simple random guessing baseline. Naturally, if the knowledge score \(\mathcal{L}_{\mathcal{M},\mathcal{Q}}\) is higher for one model compared to another, then we assert that the former is more knowledgeable with regards to \(\mathcal{Q}\) compared to the latter.
+
+Previously Seen KnowledgeOne important distinction to make is between knowledge that the model has been exposed to before during pre-training as opposed to entirely new facts. Considering the size of modern LLM training sets, they cover a vast amount of information available through web-sourced text. As a result, even in niche domains, the goal of knowledge injection is not necessarily to teach the model entirely new facts but rather to "refresh" its memory by inducing a bias toward a particular domain.
+
+Knowledge and ReasoningWe emphasize that this knowledge evaluation framework for LLMs is imperfect. Importantly, it doesn't address other quality metrics influencing a model's response. Creating a purely knowledge-intensive dataset without involving some level of reasoning is challenging. Consequently, a model with robust reasoning abilities might excel on unfamiliar knowledge-intensive tasks by making "educated guesses" in a multiple-choice exam. Therefore, any evaluation of knowledge in LLMs should consider this, with results seen as part of a broader range of benchmarks for reasoning (Sakaguchi et al., 2021), reading comprehension (Dua et al., 2019), and general language abilities (Srivastava et al., 2022). However, this evaluation framework still strongly emphasizes factual information above all else.
+
+Causes for Factual ErrorsThere are many possible reasons for the failure of models to answer factual questions accurately. In (Wang et al., 2023), Wang _et al._ introduce a taxonomy of five main model-level causes:
+
+* **Domain knowledge deficit**: A language model may lack comprehensive expertise in a specific domain to which it has not been exposed. For example, a model trained exclusively on texts written by William Shakespeare would perform poorly when asked about the works of Mark Twain.
+* **Outdated Information**: LLMs invariably have a cutoff date determined by their training dataset. Consequently, any events, discoveries, or changes occurring after the last training update will not be within the model's knowledge without access to external sources.
+* **Immemorization**: Sometimes, a model is exposed to knowledge during its training process but does not retain it. This is especially true for rare facts that appear in the training dataset only scarcely (Kandpal et al., 2023).
+* **Forgetting**: Language models often undergo additional training after the pre-training phase (fine-tuning). In some cases, this might lead to a phenomenon called _catastrophic forgetting_(Kirkpatrick et al., 2017; Goodfellow et al., 2013; Chen et al., 2020; Luo et al., 2023), where models lose some of the knowledge they had prior to the fine-tuning process.
+* **Reasoning Failure**: In certain instances, a language model might possess relevant knowledge about a fact but fail to utilize it properly. This is particularly evident in complex multi-step reasoning tasks (Tan et al., 2023) or when posed with different questions about the same fact, resulting in disparate outcomes (Berglund et al., 2023).
+
+We observe that most of these issues arise during the pre-training phase, with catastrophic forgetting being the notable exception. Hence, many LLMs will suffer from factual errors of this kind regardless of any post-training process.
+
+## 3 Injecting Knowledge to Language Models
+
+Following the background given in Section 2, it is clear that general pre-training is insufficient for many knowledge-intensive tasks. To solve this, an additional post-processing step is essential to augment the knowledge of a pre-trained model. This step is often referred to as _knowledge injection_(Wang et al., 2020; Chen et al., 2022; Liu et al., 2020; Lauscher et al., 2020).
+
+In this section, we examine two widely used frameworks for knowledge injection: fine-tuning (FT) and retrieval augmented generation (RAG). We begin by formulating the knowledge injection problem, aiming to explain both methods using consistent terminology.
+
+### Problem formulation
+
+In Equations (1) and (2), we presented a formulation for knowledge in language models through the lens of question-answering (Q&A). We now extend this formulation to the problem of knowledge injection using the same terminology.
+
+Given a set of factual questions, there exists some text corpus containing information that is relevant to these questions. The central assumption of knowledge injection is that given full access to this corpus, it could serve as an auxiliary knowledge base and improve the model's performance on this set of questions.
+
+Mathematically, let \(\mathcal{M}\) be a pre-trained model, and let \(\mathcal{Q}\) be a set of factual questions, as before. Now, assume we have a relevant auxiliary knowledge base \(\mathcal{B}_{\mathcal{Q}}\). Our objective is to discover a transformation, denoted as \(\mathcal{F}\), that, when applied, would enhance the knowledge about \(\mathcal{Q}\):
+
+\[\mathcal{M}^{\prime}:=\mathcal{F}(\mathcal{M},\mathcal{B}_{\mathcal{Q}})\quad s.t.\quad\mathcal{L}_{\mathcal{M}^{\prime},\mathcal{Q}}>\mathcal{L}_{\mathcal{ M},\mathcal{Q}}. \tag{3}\]
+
+In this work, we aim to compare two choices for \(\mathcal{F}\): fine-tuning and RAG to see which option performs better in this problem.
+
+### Fine-Tuning
+
+Fine-tuning is the process of adjusting a pre-trained model on a specific, often narrower, dataset or task to enhance its performance in that particular domain. Here, it is vital to distinguish between different types of fine-tuning. FT techniques are commonly classified into supervised, unsu
+
+Figure 1: A visualization of the knowledge injection framework.
+
+pervised, and reinforcement learning (RL) based methods. We proceed by briefly reviewing these methods and their relation to the problem of knowledge injection.
+
+Supervised Fine-Tuning Supervised fine-tuning (SFT) requires sets of labeled input-output pairs. One of the most common SFT methods is instruction tuning (Wang et al., 2022; Mishra et al., 2021; Ouyang et al., 2022; Taori et al., 2023), which has emerged as one of the most powerful methods to improve model performance. With instruction tuning, the input is a natural language task description, and the output is an example of the desired behavior. Many current state-of-the-art LLMs have gone through instruction tuning after their pre-training phase.
+
+Instruction tuning has been shown to be very effective at improving the overall quality of the model, with a particular emphasis on its zero-shot and reasoning capabilities. However, despite these advantages, instruction tuning does not necessarily teach the model new knowledge (Ouyang et al., 2022; Chung et al., 2022; Mitra et al., 2023; Chia et al., 2023; Zhou et al., 2023). As such, instruction tuning alone is not a viable solution to the knowledge injection problem.
+
+Reinforcemnt Learning Another form of FT relies on RL or RL-inspired optimization strategies to better align the model after its pre-training phase. A few prominent examples are reinforcement learning from human feedback (RLHF) (OpenAI, 2023; Touvron et al., 2023), direct preference optimization (DPO) (Rafailov et al., 2023), and proximal policy optimization (PPO) (Schulman et al., 2017; Tunstall et al., 2023).
+
+These techniques have been shown to be very useful, especially when used in conjunction with instruction tuning. However, similarly to instruction tuning, these methods focus on the overall quality of the response and its expected behavior and not necessarily on its breadth of knowledge.
+
+Unsupervised Fine-Tuning The final FT strategy we discuss is unsupervised, meaning there are no available labels for the model to learn from. One common unsupervised FT technique is often referred to as _continual pre-training_ or _unstructured_ FT.
+
+In this method, the FT process is viewed as a direct continuation of the pre-training phase. We start with a saved checkpoint of the original LLM and train it in a causal auto-regressive manner, i.e., predicting the next token. One major difference in comparison to actual pre-training is the learning rate. Usually, one would need a much lower learning rate when continuing the pre-training of the model to avoid catastrophic forgetting (Kirkpatrick et al., 2017).
+
+It is well known that LLMs store vast amounts of knowledge during their pre-training phase (Zhou et al., 2023). So, it makes sense to continue this process in order to inject knowledge into the model. Hence, we use the unsupervised FT approach throughout this work and evaluate its efficacy in enhancing the model's capacity for learning new information.
+
+### Retrieval Augmented Generation
+
+Retrieval augmented generation (RAG) (Lewis et al., 2020) is a technique that expands LLMs' capabilities, especially in knowledge-intensive tasks, by using external knowledge sources. While the original formulation involved additional training per task, it has since been demonstrated (Neelakantan et al., 2022) that a pre-trained _embedding_ model can achieve improved performance with no additional training involved.
+
+The idea is that given an auxiliary knowledge base and an input query, we use the RAG architecture to find documents within the knowledge base that resemble the input query. These documents are then added to the input query, thus giving the model further context about the subject of the query.
+
+In practice, implementing the suggested architecture is quite straightforward: Given an auxiliary knowledge base \(\mathcal{B}_{\mathcal{Q}}\) and a pre-trained embedding model \(\mathcal{M}_{e}\), we create a dense vector representation (embedding) per document \(b\in\mathcal{B}_{\mathcal{Q}}\) and store these in a vector store. Upon receiving a new query \(q\), we use its embedding, \(\mathcal{M}_{e}(q)\), to retrieve \(q\)'s top-\(K\) closest neighbors, \(\mathbf{b}_{q}=\{b_{k}\}_{1}^{K}\), according to dot-product ranking. We then update \(q\) to be \(\tilde{q}=\mathbf{b}_{q}\|q\), where \(\|\) denotes string concatenation. Finally, we return \(\mathcal{M}(\tilde{q})\) as the model's output.
+
+## 4 Knowledge Base Creation
+
+### Task Selection and Rationale
+
+MMLU BenchmarkTo properly evaluate the capabilities of LLMs on knowledge-intensive tasks, we selected four distinct tasks from the Massively Multilingual Language Understanding Evaluation (MMLU) benchmark (Hendrycks et al., 2021) in the topics of anatomy, astronomy, college biology, college chemistry and prehistory. The chosen tasks were selected based on their emphasis on factual knowledge and the minimal reliance on reasoning. As a heuristic, we opted for tasks where the questions are short and involve no context. In practice we selected four STEM subjects as well as one humanities subject, to ensure the evaluation is not limited to certain fields. Note that prehistory involves questions spanning all non-modern history. This approach aims to enable us to test LLM proficiency in comprehending and manipulating information in isolation from its reasoning processes.
+
+Current Events Task To further isolate LLMs' abilities to learn new knowledge, we created a task comprising multiple-choice questions about current events. This task includes multiple-choice questions about events that occurred after the cutoff of the various models' training data. Specifically, we focused on "current events" from the USA, in the time span of August-November 2023, that are included in the relevant Wikipedia indexes1. This method enables us to mostly guarantee that the models have not been exposed to these facts, thus allowing us to directly test knowledge injection capabilities.
+
+Footnote 1: [https://en.wikipedia.org/wiki/Category:2023_events_in_the_United_States_by_month](https://en.wikipedia.org/wiki/Category:2023_events_in_the_United_States_by_month)
+
+\begin{table}
+\begin{tabular}{l l l l l l} \hline \hline Task & Model & Base model & Base model + RAG & Fine-tuned & Fine-tuned + RAG \\ \hline \multirow{3}{*}{Anatomy (0-shot)} & Mistral 7B & 0.556 & **0.681** & 0.570 & 0.659 \\  & Llama2 7B & 0.393 & **0.489** & 0.430 & **0.489** \\  & Orca2 7B & 0.607 & **0.637** & 0.600 & **0.637** \\  & Mistral 7B & 0.600 & **0.681** & 0.622 & 0.674 \\  & Llama2 7B & 0.467 & **0.563** & 0.496 & 0.548 \\  & Orca2 7B & 0.570 & 0.659 & 0.593 & **0.674** \\ \hline \multirow{3}{*}{Astronomy (0-shot)} & Mistral 7B & 0.625 & 0.678 & 0.651 & **0.697** \\  & Llama2 7B & 0.401 & 0.467 & 0.487 & **0.520** \\  & Orca2 7B & 0.645 & **0.750** & 0.651 & **0.750** \\  & Mistral 7B & 0.658 & **0.724** & 0.651 & 0.697 \\  & Llama2 7B & 0.401 & 0.474 & 0.447 & **0.520** \\  & Orca2 7B & 0.664 & **0.763** & 0.664 & 0.743 \\ \hline \multirow{3}{*}{College biology (0-shot)} & Mistral 7B & 0.681 & 0.757 & 0.701 & **0.764** \\  & Llama2 7B & 0.438 & **0.493** & 0.458 & 0.465 \\  & Orca2 7B & 0.583 & **0.639** & 0.604 & 0.632 \\ \cline{1-1}  & Mistral 7B & 0.722 & **0.778** & 0.736 & 0.771 \\ \cline{1-1}  & Llama2 7B & 0.451 & **0.521** & 0.424 & 0.479 \\ \cline{1-1}  & Orca2 7B & 0.604 & **0.660** & 0.625 & 0.653 \\ \hline \multirow{3}{*}{College chemistry (0-shot)} & Mistral 7B & 0.470 & **0.500** & 0.490 & **0.500** \\  & Llama2 7B & 0.310 & 0.380 & 0.390 & **0.390** \\  & Orca2 7B & 0.370 & **0.440** & 0.370 & 0.390 \\ \cline{1-1}  & Mistral 7B & 0.470 & **0.540** & 0.500 & 0.500 \\ \cline{1-1}  & Llama2 7B & 0.370 & 0.380 & 0.360 & **0.390** \\ \cline{1-1}  & Orca2 7B & 0.430 & **0.470** & 0.370 & 0.380 \\ \hline \multirow{3}{*}{Prehistory (0-shot)} & Mistral 7B & 0.713 & **0.750** & 0.719 & 0.731 \\  & Llama2 7B & 0.448 & **0.481** & 0.457 & 0.478 \\ \cline{1-1}  & Orca2 7B & 0.642 & **0.679** & 0.673 & 0.673 \\ \cline{1-1}  & Mistral 7B & 0.722 & **0.762** & 0.725 & **0.762** \\ \cline{1-1}  & Llama2 7B & 0.515 & 0.531 & 0.503 & **0.537** \\ \cline{1-1}  & Orca2 7B & 0.664 & **0.698** & 0.667 & 0.694 \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: Results for the MMLU datasets described in Section 4.1 in terms of log-likelihood accuracy (Equation (4)).
+
+\begin{table}
+\begin{tabular}{l l l l l l} \hline \hline  & Base model & Base model + RAG & FT-reg & FT-par & FT-reg + RAG & FT-par + RAG \\ \hline Mistral 7B & 0.481 & **0.875** & 0.504 & 0.588 & 0.810 & 0.830 \\ Llama2 7B & 0.353 & **0.585** & 0.219 & 0.392 & 0.326 & 0.520 \\ Orca2 7B & 0.456 & **0.876** & 0.511 & 0.566 & 0.820 & 0.826 \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: Current events results. Models that were fine-tuned on the original dataset are labeled as _FT-reg_, while those trained on the dataset with multiple paraphrases are labeled as _FT-par_.
+
+### Data Collection and Preprocessing
+
+To effectively evaluate the LLMs' performance on these knowledge-intensive tasks, a comprehensive auxiliary dataset was collected by scraping relevant articles per topic from Wikipedia. The rationale behind selecting Wikipedia as the primary source of knowledge is its broad coverage of relevant topics and its reliability as a repository of crowd-verified knowledge. All articles pertinent to the tasks were retrieved via the official Wikipedia API2 by identifying the relevant central page per topic.
+
+Footnote 2: [https://www.mediawiki.org/wiki/API:Main_page](https://www.mediawiki.org/wiki/API:Main_page)
+
+Subsequently, a rigorous cleaning process was utilized to transform the data from raw subsections to clean chunks. This step was done with the "wikiextractor" tool (Attardi, 2015). The division into small, clean (e.g., remove HTML, URLs, etc.) chunks was aimed at enhancing the evaluation of the LLMs' understanding across various knowledge domains and aiding the LLMs in the fine-tuning process.
+
+### Current Events Task Creation
+
+After collecting the relevant chunks from Wikipedia, we created a new multiple-choice dataset with the help of GPT-4 (OpenAI, 2023). First, we removed any small chunks. For each remaining chunk in the corpus, GPT-4 was instructed to create four highly specific, high-quality multiple-choice questions with only one correct answer. By specific, we mean that the question can be answered without knowledge of which context the question refers to and with minimal ambiguity. Next, GPT-4 was asked to select the two most specific of the four. This was followed by a manual evaluation and verification step. In total, this resulted in 910 new questions.
+
+### Paraphrases Generation
+
+After creating the dataset, we utilized GPT-4 to generate augmentations of the dataset. We instructed GPT-4 to provide paraphrased versions of the input data that fully retain the information while being reworded. Each paraphrasing iteration was done with a different seed to ensure variety.
+
+We selected 240 chunks at random for each task and created two paraphrases per chunk. These were set aside to be used as validation sets for hyperparameter tuning. For the current events dataset, we created ten paraphrases for each chunk used in the fine-tuning process described in Section 6.
+
+## 5 Experiments and Results
+
+Experimental Framework We used the popular LM-Evaluation-Harness (Gao et al., 2021) repository to evaluate the performance of LLMs on the selected knowledge-intensive tasks. LM-Evaluation-Harness is a robust benchmarking tool that currently serves as the industry standard for model evaluation and is the basis of the HuggingFace leaderboard3. Leveraging this platform ensured a standardized evaluation framework and allowed consistent comparison across models, methods, and datasets. More importantly, by using the industry standard for evaluation, we could avoid any differences stemming from prompt engineering and formatting issues and replicate the reported baseline results for each model.
+
+Footnote 3: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard)
+
+Model Selection We chose three models for inference evaluation: Llama2-7B (Touvron et al., 2023), Mistral-7B (Jiang et al., 2023), and Orca2-7B (Mitra et al., 2023). The choice of these models was meant to represent the most popular open-source base models and an instruction-tuned model across various baseline capabilities. Additionally, we selected _bge-large-en_(Xiao et al., 2023) as the embedding model for the RAG component and used FAISS (Johnson et al., 2019) as its vector-store. This embedding model is currently the SOTA of open-source embedding models, according to the HuggingFace MTEB leaderboard4.
+
+Footnote 4: [https://huggingface.co/spaces/mteb/leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
+
+Configuration VariationsOur evaluation included multiple configurations, with a grid-search over them, to allow for more comprehensive benchmarking.
+
+Firstly, we compared the baseline and fine-tuned models and their performance with the RAG component. Secondly, we explored the optimal number of text chunks to add to the context in RAG. Specifically, different values of \(K\in\{0,\dots,5\}\) were employed to analyze the impact on model performance. Finally, we explored 5-shot performance vs. 0-shot.
+
+Figure 2: The relative accuracy gain (as explained in Equation (5)) for each knowledge-injection method, averaged (columnwise) across all experiments in Table 1.
+
+Training SetupWe trained all of the models using the unsupervised training procedure described in Section 3.2. For each dataset, we divided the auxiliary knowledge base into equal chunks of size \(256\) by concatenating or splitting the original chunks based on their length. We also added two special tokens, \(<\)BOS\(>\) and \(<\)EOS\(>\), to demarcate the original chunks' beginnings and ends to preserve the documents' structure.
+
+The models were trained using learning rates between \(1\times 10^{-6}\) and \(5\times 10^{-5}\), which were found through a hyperparameter search. All models were trained on 4 NVIDIA A-100 GPUs for a maximum of 5 epochs and a batch size of 64.
+
+Evaluation methodAll evaluations were done by appending each of the multiple-choice options to the question, followed by passing the concatenation through the model to get a log probability score per option. The highest score was interpreted as the model's choice and used for accuracy calculation. More formally, this means that in Equation (1) we say that \(\mathcal{M}(q_{n})=c_{n}\) if:
+
+\[c_{n}=\operatorname*{arg\,max}_{l}\{\mathcal{M}(q_{n}\|a_{n}^{1}),\dots, \mathcal{M}(q_{n}\|a_{n}^{L})\}, \tag{4}\]
+
+where \(\mathcal{M}(q_{n}\|a_{n}^{l})=\log P_{\mathcal{M}}(q_{n}\|a_{n}^{l})\).
+
+MMLU ResultsFor each task and model, we compared four approaches: using just the base model, RAG, FT, and finally combining FT and RAG by using the fine-tuned model as the generator. Furthermore, we tested the MMLU tasks using both 0-shot and 5-shot scenarios. The full results are shown in Table 1. An aggregation of the relative accuracy gain, i.e.,
+
+\[(\mathcal{L}_{\mathcal{M}^{\prime},\mathcal{Q}}-\mathcal{L}_{\mathcal{M}, \mathcal{Q}})/\mathcal{L}_{\mathcal{M},\mathcal{Q}}, \tag{5}\]
+
+where \(\mathcal{M}\) is the base model and \(\mathcal{M}^{\prime}\) is the knowledge-injected model, is shown in Figure 2.
+
+In all cases, RAG performed significantly better compared to the base models. Furthermore, using RAG with the base model as the generator was consistently better than only fine-tuning. In some cases, using the fine-tuned model instead of the base model as the generator in the RAG pipeline improved results even further. However, this is not consistent and thus demonstrates the inherent instability of fine-tuning. Additionally, we found that the 5-shot approach boosts the results by a small margin in most cases, with a similar trend being observed in all of the different approaches.
+
+Current Events ResultsThe evaluation on the current events task is shown in Table 2. RAG proves particularly effective due to the one-to-one correspondence between the questions and the auxiliary dataset (see Section 4.3). Fine-tuning is not competitive with RAG. However, fine-tuning with multiple paraphrases still provides a significant improvement over the baseline. We note that combining RAG with fine-tuning shows inferior performance compared to RAG alone.
+
+It is worth noting that although the questions are based on information the models were not exposed to during training, the results of the base models surpass \(\frac{1}{L}=0.25\). This can partially be explained by the models using reasoning and/or pre-existing knowledge when answering questions that are not independent of the past information. Some examples of this can be found in Appendix C.
+
+Fine-Tuning vs. RAG:In the results of both the MMLU and current events tasks, a significant advantage for RAG over fine-tuning is evident. While fine-tuning improved results compared to the base model in most cases, it was not competitive with the RAG approach.
+
+Several factors might contribute to this behavior. Firstly, RAG not only adds knowledge to a model but also incorporates context relevant to the question, a feature lacking in fine-tuning. Additionally, fine-tuning may impact other capabilities of the model due to a degree of catastrophic forgetting. Finally, it's plausible that unsupervised fine-tuned models might benefit from further alignment through supervised or RL-based fine-tuning, as evidenced by the vastly improved performance of Orca2 over the base Llama2.
+
+## 6 The Importance of Repetition
+
+Unlike the other tasks, where the model has been exposed to aspects related to the topic during pretraining, _current events_ includes new information. In this case, standard regular fine-tuning not only did not improve the performance of Llama2 but also significantly degraded it. To improve the fine-tuning results, we explored augmentation of the data using paraphrases.
+
+Data AugmentationData augmentation is a well-established method for enhancing the performance of language models and has been surveyed extensively (Shorten
+
+Figure 3: Training loss over time for Mistral-7B.
+
+et al., 2021). Using generative models for augmentations has also been used successfully to improve classification models in the past Sharma et al. (2022). An example of data augmentation using paraphrasing can be found in Appendix B.
+
+**Monotonic Improvement** This approach resulted in notable improvements in our results, showcasing a direct correlation between the number of paraphrases utilized and the models' accuracy. Our experimentation revealed a compelling trend, shown in Figure 4. For all models tested, the accuracy was a monotonically increasing function of the number of paraphrases used. This observation strongly suggests the positive impact of paraphrase augmentation, yielding information repetition, on the model's ability to comprehend and generalize new knowledge from limited data.
+
+**Learning New Information** In Figure 3, we can see an interesting phenomenon observed throughout our experiments. After each epoch, i.e., completing another iteration over the entire dataset, the training loss drops significantly. This is consistent with what is known about LLMs memorizing the data during training and overfitting Tirumala et al. (2022).
+
+Our hypothesis is as follows:
+
+In order to teach pre-trained LLMs **new** knowledge, the knowledge must be repeated in numerous ways.
+
+This is well known for LLM pre-training Kandpal et al. (2023), and we see in this case that this holds for fine-tuning as well. The rationale for this hypothesis is that mere memorization of sentences does not entail knowledge of their content, as was already shown in Berglund et al. (2023). By providing the information in numerous forms (like the data augmentation process we used), the various relationships in the data (e.g., \(a\implies b,\ b\implies c\)) stand a higher chance of appearing naturally. We believe this can potentially both increase \(\mathcal{L_{M,Q}}\) in general, as well as ameliorate Berglund et al.'s _Reversal Curse_. While promising, this result still warrants further research.
+
+## 7 Conclusion and Future Work
+
+Large language models possess vast amounts of knowledge on various topics. In this work, we tested their capability to adapt to new knowledge: both specialized and completely unseen. This is among the first studies to compare two prominent approaches in this domain, namely fine-tuning and retrieval augmented generation. While fine-tuning can be useful for many use-cases, we found that RAG is a more reliable choice for knowledge injection.
+
+Some aspects of this work still warrant further research. For example, we focused on unsupervised training as our primary fine-tuning method, as opposed to instruction-tuning or RL-based methods. Researching combinations of various techniques, with diverse auxiliary knowledge bases, may yield improved results. This approach, combined with our hypothesis from Section 6, could further enhance our understanding of knowledge injection via FT.
+
+While we believe that this work further enhances our understanding of knowledge in LLMs, there is a lot more work to be done in this field. Specifically, more research is required regarding the question of knowledge representation in LLMs, especially from a theoretical perspective.
+
+Finally, further efforts are needed to measure knowledge in LLMs. While we employed an empirical approach as described in Equation (2), it is important to explore other definitions and perspectives on knowledge as well, and extend upon this work.
+
+## 8 Limitations
+
+As in all machine learning applications, the choice of hyperparameters significantly impacts the results. We therefore strongly recommend optimizing all relevant hyperparameters for specific cases.
+
+We have supported our claims by running the experiments on three different models. However, generalization to other LLMs should be tested thoroughly. For example, GPT-4 achieves near perfect accuracy for some MMLU tasks Nori et al. (2023), and thus further improvement is not applicable.
+
+Finally, while we chose various topics for the knowledge bases, all of our sources came from Wikipedia. Other datasets may yield different results, and must be evaluated carefully.
+
+Figure 4: Model accuracy on the _current events_ task as a function of the number of paraphrases.
+
+## References
+
+* Attardi (2015) Attardi, G. Wikiextractor. [https://github.com/attardi/wikiextractor](https://github.com/attardi/wikiextractor), 2015.
+* Berglund et al. (2023) Berglund, L., Tong, M., Kaufmann, M., Balesni, M., Stickland, A. C., Korbak, T., and Evans, O. The reversal curse: LIms trained on" a is b" fail to learn" b is a". _arXiv preprint arXiv:2309.12288_, 2023.
+* Chen et al. (2020) Chen, S., Hou, Y., Cui, Y., Che, W., Liu, T., and Yu, X. Recall and learn: Fine-tuning deep pretrained language models with less forgetting. _arXiv preprint arXiv:2004.12651_, 2020.
+* Chen et al. (2022) Chen, X., Zhang, N., Xie, X., Deng, S., Yao, Y., Tan, C., Huang, F., Si, L., and Chen, H. Knowprompt: Knowledge-aware prompt-tuning with synergistic optimization for relation extraction. In _Proceedings of the ACM Web conference 2022_, pp. 2778-2788, 2022.
+* Chen et al. (2021) Chen, Y., Zhong, R., Zha, S., Karypis, G., and He, H. Meta-learning via language model in-context tuning. _arXiv preprint arXiv:2110.07814_, 2021.
+* Chia et al. (2023) Chia, Y. K., Hong, P., Bing, L., and Poria, S. Instructeval: Towards holistic evaluation of instruction-tuned large language models. _arXiv preprint arXiv:2306.04757_, 2023.
+* Chung et al. (2022) Chung, H. W., Hou, L., Longpre, S., Zoph, B., Tay, Y., Fedus, W., Li, Y., Wang, X., Dehghani, M., Brahma, S., et al. Scaling instruction-finetuned language models. _arXiv preprint arXiv:2210.11416_, 2022.
+* Cohen et al. (2023) Cohen, R., Geva, M., Berant, J., and Globerson, A. Crawling the internal knowledge-base of language models. _arXiv preprint arXiv:2301.12810_, 2023.
+* Dua et al. (2019) Dua, D., Wang, Y., Dasigi, P., Stanovsky, G., Singh, S., and Gardner, M. Drop: A reading comprehension benchmark requiring discrete reasoning over paragraphs. _arXiv preprint arXiv:1903.00161_, 2019.
+* Gao et al. (2021) Gao, L., Tow, J., Biderman, S., Black, S., DiPofi, A., Foster, C., Golding, L., Hsu, J., McDonell, K., Muennighoff, N., Phang, J., Reynolds, L., Tang, E., Thite, A., Wang, B., Wang, K., and Zou, A. A framework for few-shot language model evaluation, September 2021. URL [https://doi.org/10.5281/zenodo.5371628](https://doi.org/10.5281/zenodo.5371628).
+* Goodfellow et al. (2013) Goodfellow, I. J., Mirza, M., Xiao, D., Courville, A., and Bengio, Y. An empirical investigation of catastrophic forgetting in gradient-based neural networks. _arXiv preprint arXiv:1312.6211_, 2013.
+* Hendrycks et al. (2021) Hendrycks, D., Burns, C., Basart, S., Zou, A., Mazeika, M., Song, D., and Steinhardt, J. Measuring massive multitask language understanding. _Proceedings of the International Conference on Learning Representations (ICLR)_, 2021.
+* Hu et al. (2023) Hu, L., Liu, Z., Zhao, Z., Hou, L., Nie, L., and Li, J. A survey of knowledge enhanced pre-trained language models. _IEEE Transactions on Knowledge and Data Engineering_, 2023.
+* Huang et al. (2023) Huang, Q., Tao, M., An, Z., Zhang, C., Jiang, C., Chen, Z., Wu, Z., and Feng, Y. Lawyer llama technical report. _arXiv preprint arXiv:2305.15062_, 2023.
+* Jiang et al. (2023) Jiang, A. Q., Sablayrolles, A., Mensch, A., Bamford, C., Chaplot, D. S., Casas, D. d. l., Bressand, F., Lengyel, G., Lample, G., Saulnier, L., et al. Mistral 7b. _arXiv preprint arXiv:2310.06825_, 2023.
+* Johnson et al. (2019) Johnson, J., Douze, M., and Jegou, H. Billion-scale similarity search with GPUs. _IEEE Transactions on Big Data_, 7(3):535-547, 2019.
+* Kandpal et al. (2023) Kandpal, N., Deng, H., Roberts, A., Wallace, E., and Raffel, C. Large language models struggle to learn long-tail knowledge. In _International Conference on Machine Learning_, pp. 15696-15707. PMLR, 2023.
+* Kirkpatrick et al. (2017) Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Desjardins, G., Rusu, A. A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., et al. Overcoming catastrophic forgetting in neural networks. _Proceedings of the national academy of sciences_, 114(13):3521-3526, 2017.
+* Lampinen et al. (2022) Lampinen, A. K., Dasgupta, I., Chan, S. C., Matthewson, K., Tessler, M. H., Creswell, A., McClelland, J. L., Wang, J. X., and Hill, F. Can language models learn from explanations in context? _arXiv preprint arXiv:2204.02329_, 2022.
+* Lauscher et al. (2020) Lauscher, A., Majewska, O., Ribeiro, L. F., Gurevych, I., Rozanov, N., and Glavas, G. Common sense or world knowledge? investigating adapter-based knowledge injection into pretrained transformers. _arXiv preprint arXiv:2005.11787_, 2020.
+* Lewis et al. (2020) Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., Kuttler, H., Lewis, M., Yih, W.-t., Rocktaschel, T., et al. Retrieval-augmented generation for knowledge-intensive nlp tasks. _Advances in Neural Information Processing Systems_, 33:9459-9474, 2020.
+* Liu et al. (2020) Liu, W., Zhou, P., Zhao, Z., Wang, Z., Ju, Q., Deng, H., and Wang, P. K-bert: Enabling language representation with knowledge graph. In _Proceedings of the AAAI Conference on Artificial Intelligence_, volume 34, pp. 2901-2908, 2020.
+* Luo et al. (2023) Luo, Y., Yang, Z., Meng, F., Li, Y., Zhou, J., and Zhang, Y. An empirical study of catastrophic forgetting in large language models during continual fine-tuning. _arXiv preprint arXiv:2308.08747_, 2023.
+
+Min, S., Lewis, M., Zettlemoyer, L., and Hajishirzi, H. Metaicl: Learning to learn in context. _arXiv preprint arXiv:2110.15943_, 2021.
+* Mishra et al. (2021) Mishra, S., Khashabi, D., Baral, C., and Hajishirzi, H. Cross-task generalization via natural language crowdsourcing instructions. _arXiv preprint arXiv:2104.08773_, 2021.
+* Mitra et al. (2023) Mitra, A., Del Corro, L., Mahajan, S., Codas, A., Simoes, C., Agrawal, S., Chen, X., Razdaibiedina, A., Jones, E., Aggarwal, K., et al. Orca 2: Teaching small language models how to reason. _arXiv preprint arXiv:2311.11045_, 2023.
+* Neelakantan et al. (2022) Neelakantan, A., Xu, T., Puri, R., Radford, A., Han, J. M., Tworek, J., Yuan, Q., Tezak, N. A., Kim, J. W., Hallacy, C., Heidecke, J., Shyam, P., Power, B., Nekoul, T. E., Sastry, G., Krueger, G., Schnurr, D. P., Such, F. P., Hsu, K. S.-K., Thompson, M., Khan, T., Sherbakov, T., Jang, J., Welinder, P., and Weng, L. Text and code embeddings by contrastive pre-training. _ArXiv_, abs/2201.10005, 2022. URL [https://api.semanticscholar.org/CorpusID:246275593](https://api.semanticscholar.org/CorpusID:246275593).
+* Nguyen (2023) Nguyen, H.-T. A brief report on lawgpt 1.0: A virtual legal assistant based on gpt-3. _arXiv preprint arXiv:2302.05729_, 2023.
+* Nori et al. (2023) Nori, H., King, N., McKinney, S. M., Carignan, D., and Horvitz, E. Capabilities of gpt-4 on medical challenge problems. _ArXiv_, abs/2303.13375, 2023. URL [https://api.semanticscholar.org/CorpusID:257687695](https://api.semanticscholar.org/CorpusID:257687695).
+* OpenAI (2023) OpenAI. Gpt-4 technical report. _ArXiv_, abs/2303.08774, 2023. URL [https://api.semanticscholar.org/CorpusID:257532815](https://api.semanticscholar.org/CorpusID:257532815).
+* Ouyang et al. (2022) Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. Training language models to follow instructions with human feedback. _Advances in Neural Information Processing Systems_, 35:27730-27744, 2022.
+* Petroni et al. (2019) Petroni, F., Rocktaschel, T., Lewis, P., Bakhtin, A., Wu, Y., Miller, A. H., and Riedel, S. Language models as knowledge bases? _arXiv preprint arXiv:1909.01066_, 2019.
+* Radford et al. (2019) Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I., et al. Language models are unsupervised multitask learners. _OpenAI blog_, 1(8):9, 2019.
+* Rafailov et al. (2023) Rafailov, R., Sharma, A., Mitchell, E., Ermon, S., Manning, C. D., and Finn, C. Direct preference optimization: Your language model is secretly a reward model. _arXiv preprint arXiv:2305.18290_, 2023.
+* Sakaguchi et al. (2021) Sakaguchi, K., Bras, R. L., Bhagavatula, C., and Choi, Y. Winogrande: An adversarial winograd schema challenge at scale. _Communications of the ACM_, 64(9):99-106, 2021.
+* Schulman et al. (2017) Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. Proximal policy optimization algorithms. _arXiv preprint arXiv:1707.06347_, 2017.
+* Sharma et al. (2022) Sharma, S., Joshi, A., Mukhija, N., Zhao, Y., Bhathena, H., Singh, P., Santhanam, S., and Biswas, P. Systematic review of effect of data augmentation using paraphrasing on named entity recognition. In _NeurIPS 2022 Workshop on Synthetic Data for Empowering ML Research_, 2022. URL [https://openreview.net/forum?id=rc2h1h89aDi](https://openreview.net/forum?id=rc2h1h89aDi).
+* Shorten et al. (2021) Shorten, C., Khoshgoftaar, T. M., and Furht, B. Text data augmentation for deep learning. _Journal of Big Data_, 8, 2021. URL [https://api.semanticscholar.org/CorpusID:236096559](https://api.semanticscholar.org/CorpusID:236096559).
+* Singhal et al. (2023a) Singhal, K., Azizi, S., Tu, T., Mahdavi, S. S., Wei, J., Chung, H. W., Scales, N., Tanwani, A., Cole-Lewis, H., Pfohl, S., et al. Large language models encode clinical knowledge. _Nature_, 620(7972):172-180, 2023a.
+* Singhal et al. (2023b) Singhal, K., Tu, T., Gottweis, J., Sayres, R., Wulczyn, E., Hou, L., Clark, K., Pfohl, S., Cole-Lewis, H., Neal, D., et al. Towards expert-level medical question answering with large language models. _arXiv preprint arXiv:2305.09617_, 2023b.
+* Srivastava et al. (2022) Srivastava, A., Rastogi, A., Rao, A., Shoeb, A. A. M., Abid, A., Fisch, A., Brown, A. R., Santoro, A., Gupta, A., Garriga-Alonso, A., et al. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _arXiv preprint arXiv:2206.04615_, 2022.
+* Tan et al. (2023) Tan, Y., Min, D., Li, Y., Li, W., Hu, N., Chen, Y., and Qi, G. Can chatgpt replace traditional kbqa models? an in-depth analysis of the question answering performance of the gpt llm family. In _International Semantic Web Conference_, pp. 348-367. Springer, 2023.
+* Taori et al. (2023) Taori, R., Gulrajani, I., Zhang, T., Dubois, Y., Li, X., Guestrin, C., Liang, P., and Hashimoto, T. B. Alpaca: A strong, replicable instruction-following model. _Stanford Center for Research on Foundation Models. [https://crfm.stanford.edu/2023/03/13/alpaca](https://crfm.stanford.edu/2023/03/13/alpaca). html_, 3(6):7, 2023.
+* Tirumala et al. (2022) Tirumala, K., Markosyan, A. H., Zettlemoyer, L., and Aghajanyan, A. Memorization without overfitting: Analyzing the training dynamics of large language models. _ArXiv_, abs/2205.10770, 2022. URL [https://api.semanticscholar.org/CorpusID:248986465](https://api.semanticscholar.org/CorpusID:248986465).
+
+* [Touvron et al.2023] Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S., et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023.
+* [Tunstall et al.2023] Tunstall, L., Beeching, E., Lambert, N., Rajani, N., Rasul, K., Belkada, Y., Huang, S., von Werra, L., Fourrier, C., Habib, N., et al. Zephyr: Direct distillation of lm alignment. _arXiv preprint arXiv:2310.16944_, 2023.
+* [Wang et al.2023] Wang, C., Liu, X., Yue, Y., Tang, X., Zhang, T., Jiayang, C., Yao, Y., Gao, W., Hu, X., Qi, Z., et al. Survey on factuality in large language models: Knowledge, retrieval and domain-specificity. _arXiv preprint arXiv:2310.07521_, 2023.
+* [Wang et al.2020] Wang, R., Tang, D., Duan, N., Wei, Z., Huang, X., Cao, G., Jiang, D., Zhou, M., et al. K-adapter: Infusing knowledge into pre-trained models with adapters. _arXiv preprint arXiv:2002.01808_, 2020.
+* [Wang et al.2022] Wang, Y., Mishra, S., Alipoormolabashi, P., Kordi, Y., Mirzaei, A., Arunkumar, A., Ashok, A., Dhanasekaran, A. S., Naik, A., Stap, D., et al. Super-naturalinstructions: Generalization via declarative instructions on 1600+ nlp tasks. _arXiv preprint arXiv:2204.07705_, 2022.
+* [Wu et al.2023a] Wu, C., Zhang, X., Zhang, Y., Wang, Y., and Xie, W. Pmc-llama: Further finetuning llama on medical papers. _arXiv preprint arXiv:2304.14454_, 2023a.
+* [Wu et al.2023b] Wu, S., Irsoy, O., Lu, S., Dabravolski, V., Dredze, M., Gehrmann, S., Kambadur, P., Rosenberg, D., and Mann, G. Bloomberggpt: A large language model for finance. _arXiv preprint arXiv:2303.17564_, 2023b.
+* [Xiao et al.2023] Xiao, S., Liu, Z., Zhang, P., and Muennighoff, N. C-pack: Packaged resources to advance general chinese embedding, 2023.
+* [Yang et al.2023] Yang, H., Liu, X.-Y., and Wang, C. D. Fingpt: Open-source financial large language models. _arXiv preprint arXiv:2306.06031_, 2023.
+* [Yu et al.2022] Yu, W., Zhu, C., Li, Z., Hu, Z., Wang, Q., Ji, H., and Jiang, M. A survey of knowledge-enhanced text generation. _ACM Computing Surveys_, 54(11s):1-38, 2022.
+* [Zhou et al.2023] Zhou, C., Liu, P., Xu, P., Iyer, S., Sun, J., Mao, Y., Ma, X., Efrat, A., Yu, P., Yu, L., et al. Lima: Less is more for alignment. _arXiv preprint arXiv:2305.11206_, 2023.
+
+A RAG Ablation Study
+
+As mentioned in Section 5, we compared various values of \(K\in\{0,\ldots,5\}\), shown in Table 3.We were unable to find an optimal value of \(K\) per model, per \(0/5\)-shot, or per task. In fact, other than Anatomy that worked well with \(K=2\) consistently, there seems to be no patterns that aid in predicting the performance per \(K\), unlike the results presented in (Lewis et al., 2020) for other setups. Moreover, the gap between the best and worst performing \(K\)s can be large.
+
+Unfortunately, we must conclude that this additional hyperparameter is unstable. This is a downside of using RAG in practice, and the choice of \(K\) cannot be ignored.
+
+## Appendix B Paraphrase Examples
+
+Below is the prompt we used to generate paraphrases with GPT-4:
+
+\begin{table}
+\begin{tabular}{l l c|c c c} Task & Model & \multicolumn{5}{c}{\# Retrieved documents (\(k\))} \\  & & 1 & 2 & 3 & 4 & 5 \\ \hline \multirow{4}{*}{Anatomy (0-shot)} & Mistral 7B & 0.615 & **0.681** & 0.630 & 0.644 & 0.622 \\  & Llama2 7B & 0.444 & **0.489** & 0.467 & 0.474 & 0.481 \\  & Orca2 7B & 0.607 & **0.637** & 0.600 & 0.585 & **0.637** \\  & Mistral 7B & 0.659 & 0.667 & 0.659 & **0.681** & 0.674 \\  & Llama2 7B & 0.496 & **0.563** & 0.541 & 0.526 & 0.526 \\  & Orca2 7B & 0.630 & **0.659** & 0.600 & 0.600 & 0.600 \\ \hline \multirow{4}{*}{Astronomy (0-shot)} & Mistral 7B & 0.651 & **0.678** & **0.678** & 0.664 & 0.664 \\  & Llama2 7B & 0.447 & 0.434 & 0.447 & 0.434 & **0.467** \\  & Orca2 7B & 0.711 & 0.730 & 0.730 & **0.750** & 0.730 \\  & Mistral 7B & 0.704 & 0.684 & 0.658 & 0.684 & **0.724** \\  & Llama2 7B & 0.461 & 0.447 & **0.474** & 0.428 & 0.454 \\  & Orca2 7B & 0.730 & 0.737 & 0.750 & 0.743 & **0.763** \\ \hline \multirow{4}{*}{Biology (0-shot)} & Mistral 7B & 0.736 & 0.722 & **0.757** & 0.743 & 0.736 \\  & Llama2 7B & 0.438 & 0.472 & **0.493** & 0.479 & 0.472 \\  & Orca2 7B & **0.639** & 0.618 & **0.639** & 0.625 & **0.639** \\  & Mistral 7B & 0.722 & **0.778** & **0.778** & 0.771 & 0.743 \\  & Llama2 7B & 0.500 & **0.521** & 0.507 & 0.465 & 0.472 \\  & Orca2 7B & 0.625 & 0.639 & 0.625 & **0.660** & **0.660** \\ \hline \multirow{4}{*}{Chemistry (0-shot)} & Mistral 7B & 0.450 & 0.470 & 0.470 & **0.500** & 0.470 \\  & Llama2 7B & 0.320 & 0.320 & 0.300 & **0.380** & 0.360 \\  & Orca2 7B & 0.370 & 0.420 & 0.400 & 0.410 & **0.440** \\  & Mistral 7B & **0.540** & 0.490 & 0.500 & 0.510 & 0.470 \\  & Llama2 7B & 0.280 & 0.320 & 0.340 & 0.340 & **0.380** \\  & Orca2 7B & 0.390 & 0.430 & 0.400 & 0.430 & **0.470** \\ \hline \multirow{4}{*}{Prehistory (0-shot)} & Mistral 7B & 0.728 & 0.725 & **0.750** & 0.735 & 0.728 \\  & Llama2 7B & **0.481** & 0.460 & 0.457 & 0.457 & 0.429 \\  & Orca2 7B & 0.648 & 0.645 & 0.660 & 0.670 & **0.679** \\ \cline{1-1}  & Mistral 7B & 0.710 & 0.750 & 0.759 & 0.756 & **0.762** \\ \cline{1-1}  & Llama2 7B & 0.512 & 0.485 & 0.525 & 0.519 & **0.531** \\ \cline{1-1}  & Orca2 7B & 0.660 & 0.688 & 0.685 & **0.698** & 0.688 \\ \hline \end{tabular}
+\end{table}
+Table 3: RAG ablation study.
+
+Your task is to paraphrase a text paragraph. The paragraph is given below.
+
+Make sure to keep the same meaning but change the wording. Do not change any factual information.
+
+Try to keep roughly the same length of the original text.
+
+Give NUM _PARAPHHASES different paraphrases for each text.
+
+These paraphrases should be as different from each other as possible.
+
+Return a JSON formatted string with one key, called 'paraphrases', and a list of paraphrases.
+
+Input paragraph:
+
+Below are some examples. First, an example taken from the following Wikipedia page: "51st International Emmy Awards".
+
+**Paraphrase I**
+
+The fifty-first edition of the International Emmy Awards Competition accepted submissions across all categories from December 7, 2022, until the closing date of February 16, 2023.
+
+**Paraphrase II**
+
+The International Emmy Awards Competition, now in its 51st year, accepted submissions across all categories starting from December 7, 2022, until the deadline on February 16, 2023.
+
+**Paraphrase III**
+
+The fifty-first edition of the International Emmy Awards Competition accepted submissions across all categories from December 7, 2022, until the closing date of February 16, 2023.
+
+The next example was taken from the following Wikipedia page: "2023 Indianapolis mayoral election".
+
+**Paraphrase I** The mayoral election in Indianapolis took place on November 7, 2023, with preliminary elections occurring on May 2. The sitting mayor, Democrat Joe Hogsett, successfully ran for a third term. Both Hogsett and his Republican opponent, Jefferson Shreve, moved on to the main election.
+
+**Paraphrase II** On November 7, 2023, citizens of Indianapolis cast their votes to elect their Mayor, following primary elections on May 2. Joe Hogsett, the Democrat already in office, won his bid for a third term. Hogsett and the Republican candidate, Jefferson Shreve, were the two contenders in the final electoral round.
+
+**Paraphrase III**
+
+The mayoral election in Indianapolis took place on the 7th of November, 2023, following primary elections that occurred on the 2nd of May. Joe Hogsett, the incumbent Democrat, successfully ran for a third term. Both Hogsett and his Republican challenger, Jefferson Shreve, made it through to the final round of the election.
+
+## Appendix C Current Events Existing Knowledge Examples
+
+To give a better understanding of how a model might be able to answer questions about new information, with better than random success, we present three possible scenarios as examples. These scenarios show how models with stronger reasoning skills can infer the correct answer even for unseen information.
+
+The first scenario involves questions about previously unseen information, where basic reasoning abilities allow a model to make an educated guess.
+
+**Question:** What was a key issue that led to the 2023 United Auto Workers strike?
+
+**Answers:**
+
+1. Dissatisfaction with the quality of cafeteria food.
+2. Disagreements over employee dress codes.
+3. Discontent with stagnant wages and tiered employment systems.
+
+4. Debates over the color scheme of the factories.
+
+In this case it is easy to guess that the third option is the most likely, even without knowledge of this specific strike.
+
+A second scenario involves questions where prior knowledge about a topic may aid a model in answering.
+
+**Question:** What environmental concern was raised by some scientists as a result of the 2023 Hawaii wildfires?
+
+**Answers:**
+
+1. Rising temperatures.
+2. Melting ice caps.
+3. Charred soils running off into the shoreline.
+4. Increased air pollution.
+
+In this case, knowing the geography of Hawaii, as well as immediate effects of wildfires, enables a model to give the first two options a lower likelihood. This process of elimination increases the probability of choosing one of the remaining options (the third option is the correct answer).
+
+A third scenario arises due to the automatic question generation process, some questions strongly rely on pre-existing knowledge.
+
+**Question:** What event in 2021 was compared to the September 2023 New York floods?
+
+**Answers:**
+
+1. Hurricane Katrina.
+2. Hurricane Ida.
+3. Hurricane Sandy.
+4. Hurricane Harvey.
+
+Since only one of these events occurred in 2021 (Hurricane Ida), and all the models tested have been exposed to events from 2021 during pre-training, this question can potentially be answered without using additional current information.
+
+Finally, to demonstrate why it is reasonable to assume that models cannot generally answer questions about new information, with better than random success, look at the following example:
+
+**Question:** How did Matthew Belk, a National Weather Service meteorologist, describe the September 2023 northeastern U.S. floods?
+
+**Answers:**
+
+1. 50-year event.
+2. 100-year event.
+3. 200-year event.
+4. 500-year event.
+
+Even with some knowledge about floods and their statistical properties, it would be very difficult to guess that this specific meteorologist would call the flood a '200-year event'. This is especially true if the model was not exposed to information about the details of the flood.
