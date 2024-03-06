@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# 언어 모델의 지속적 지식 학습을 위한 방안\n' +
+      '\n' +
+      '조엘장\\({}^{1}\\) 성현예\\({}^{1}\\) 소희양\\({}^{1}\\) 중보신\\({}^{2}\\)\n' +
+      '\n' +
+      '장훈한\\({}^{2}\\)경훈김\\({}^{2}\\)스탠리정규최\\({}^{2}\\)민준서\\({}^{1}\\)\n' +
+      '\n' +
+      'KAIST AI \\({}^{1}\\)KAIST AI \\({}^{2}\\)LG AI 연구\n' +
+      '\n' +
+      '{joeljang,vano1205,sohee.yang,minjoon}@kaist.ac.kr\n' +
+      '\n' +
+      '{jb.shin,janghoon.han,ghkayne.kim,stanleyjk.choi}@lgresearch.ai\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '대용량 언어 모델(Large Language Models, LMs)은 방대한 양의 웹 코퍼스를 사전 훈련함에 따라 세계 지식을 매개변수에 인코딩하는 것으로 알려져 있으며, 이는 종종 질의 응답, 사실 확인 및 열린 대화와 같은 지식 의존적 다운스트림 작업을 수행하는 데 활용된다. 실제 시나리오에서 LMs에 저장된 세계 지식은 세계가 변화함에 따라 빠르게 구식이 될 수 있지만, 불변 지식을 보존하면서 치명적인 망각을 피하고 새로운 지식을 안정적으로 습득하는 것은 사소하지 않다. 커뮤니티를 지속적으로 변화하는 LMs의 더 나은 유지로 밀어붙이기 위해 우리는 연속 지식 학습(CKL)이라고 하는 새로운 연속 학습(CL) 문제를 공식화한다. 우리는 시간 불변 세계 지식의 보유, 오래된 지식의 업데이트 및 새로운 지식의 획득을 정량화하기 위해 새로운 벤치마크와 메트릭을 구성한다. 우리는 몇 가지 강력한 기준을 만들기 위해 문헌에서 적용 가능한 최근 방법을 채택한다. 광범위한 실험을 통해 CKL이 지식을 안정적으로 유지하고 동시에 학습하기 위해 매개변수 확장이 필요한 이전 CL 설정에서 해결되지 않은 고유한 문제를 나타냄을 발견했다. 지식 망각의 중요한 원인을 강조함으로써 CKL이 끊임없이 변화하는 LM을 더 잘 이해하고 훈련하는 데 도움이 되는 도전적이고 중요한 문제임을 보여준다. 우리의 결과를 재현할 벤치마크 데이터 세트, 모델 체크포인트 및 코드는 이 https URL에서 사용할 수 있습니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '최근 연구에 따르면 T5(Raffel et al., 2019) 및 GPT-3(Brown et al., 2020)과 같은 대규모 언어 모델(LM)은 방대한 텍스트 코퍼스(Petroni et al., 2019)에서 사전 훈련될 때 매개변수에 엄청난 양의 세계 지식을 저장할 수 있는 능력을 가지고 있다. 이러한 사전 훈련된 LMs들은 LAMA(LAnguage Model Analysis) 태스크(Petroni et al., 2019)를 통해 어떠한 미세 조정도 없이 세계지식에 대해 탐색할 때 지식 베이스 역할을 할 수 있는 가능성을 보여주었으며, 슬롯 채움을 통해 제로 샷 방식으로 세계지식에 대해 LMs를 탐색하고, 다양한 지식 집약 언어 태스크(Knowledge Intensive Language Tasks, KILT)에서 미세 조정될 때 인코딩된 세계지식을 활용하는 유망한 결과들(Petroni et al., 2021), 예를 들어, 질의 응답, 지식 가능한 열린 대화들(knowledgeable open dialogues).\n' +
+      '\n' +
+      'LMs에 저장된 세계 지식은 다양한 사용 사례를 가지고 있지만, 세계가 빠르게 변화함에 따라 빠르게 구식이 될 수 있으며 LMs는 이에 따라 내부 세계 지식을 자주 갱신해야 한다. 예를 들어, 2019년 4월부터 C4 웹 코퍼스에서 사전 훈련된 원본 T5(Raffel et al., 2019)에서 "_- _원 the US Election 2020_"과 같은 _new_ 정보를 조사하는 것은 불가능하다. 또한, 정보가 _업데이트_되었기 때문에 한번 정확하다고 간주되었을 수 있는 정보는 더 이상 유효하지 않을 수 있다. 예를 들어, "크리스티아누 호날두가 어떤 축구팀에서 뛰나요?"에 대한 대답은 다음과 같다. 2021년 9월 유벤투스에서 맨체스터 유나이티드로 변경되었다. 한편, "버락 오바마는 하와이 호놀룰루에서 태어났다"와 같은 원래 말뭉치에서 배운 시간 불변 정보는 LMs 내에서 변경되어서는 안 된다.\n' +
+      '\n' +
+      '각주 1: T5는 2019년 4월 웹에서 추출한 커먼 크롤의 청소된 덤프인 C4 데이터 세트(약 750GB)에서 처음에 사전 훈련되었다.\n' +
+      '\n' +
+      '중요함에도 불구하고 LM의 매개변수에 저장된 내부 세계 지식을 갱신하는 문제는 사소하지 않으며 다소 구체적인 설정에서만 탐구되었다. 예를 들어, 최근의 연구들은 개별 사실들과 같은 특정 목표 지식을 수정하는 것을 제안하였다(De Cao et al., 2021; Zhu et al., 2020; Dai et al., 2021). Dhingra et al.(2021)은 텍스트와 타임스탬프를 공동으로 모델링하여 LMs을 시간적 지식베이스로 다루었다. 그러나 새로운 지식을 가진 코퍼스에 대한 지속적인 사전 훈련을 통해 LMs의 세계 지식을 보다 일반적이고 확장 가능한 방식으로 갱신하는 문제는 이전 연구에서 공식적으로 공식화되거나 탐색되지 않았다. 더욱이 커뮤니티는 새로운 정보에 대한 교육을 통해 LMs의 내부 지식이 어떻게 변화하는지를 체계적으로 연구하는 데 사용할 수 있는 벤치마크가 부족하다. 마지막으로, 규모에서 LMs의 지식을 효과적으로 갱신하기 위한 방법론은 아직 철저히 탐구되지 않았다.\n' +
+      '\n' +
+      '본 연구에서는 새로운 코퍼라에 대한 지속적인 사전 훈련을 통해 LMs의 내부 세계 지식을 갱신하고자 하는 연속 지식 학습(Continual Knowledge Learning, CKL)이라는 새로운 연속 학습 공식을 제안한다. 우리는 CKL 동안 세계 지식을 세 가지 주요 범주로 체계적으로 분류하고 각각을 측정하기 위한 벤치마크 데이터 세트를 만든다: (1) 잊혀지거나 변경되어서는 안 되는 LMs에서 _시간 불변_ 세계 지식에 대한 불변 LAMA, (2) LMs에서 _업데이트되어야 하는 구식 세계 지식에 대한 UpdatedLAMA, (3) LMs에 주입되어야 하는 _new_ 세계 지식에 대한 NewLAMA. 또한 망각, 업데이트 및 지식 획득 사이의 트레이드오프를 측정할 수 있는 FUAR(Forgotten/(Updated + Acquired) Ratio)라는 새로운 메트릭을 제안한다. 마지막으로, 이 벤치마크에 대한 현대 CL 방법을 구현하는 것을 생각할 수 있지만 CKL이 전통적인 CL 공식과 사소한 차이가 있고 CKL에 특정한 접근법이 필요함을 보여준다. 모델 아키텍처 및 훈련 방법론(Chen et al., 2020; He et al., 2021; Hu et al., 2021; Wang et al., 2021b)을 사전 훈련 중에 얻은 지식의 망각을 완화하여 CKL 벤치마크의 기준선으로 설정할 가능성을 보여준 문헌에서 찾고 비교한다.\n' +
+      '\n' +
+      '요약하면, LM의 내부 세계 지식을 갱신하는 문제는 실제 시나리오에서 필수적이지만 아직 공식화되거나 광범위하게 탐구되지 않았다. 따라서, 본 논문에서는:\n' +
+      '\n' +
+      '* 우리는 연속 지식 학습(CKL)이라는 새로운 CL 공식을 제안하고 새로운 지식을 포함하는 새로운 언어 모델링 코퍼스에 대한 지속적인 사전 훈련으로 얻은 망각의 양과 세계 지식의 양을 측정하기 위한 새로운 벤치마크를 구성합니다.\n' +
+      '* 문헌에서 CKL의 기본 기준인 LM 아키텍처 및 교육 방법론을 탐색하고 CKL 방법으로 표시하며 CKL 벤치마크에 대해 광범위한 실험을 수행합니다. 우리는 전통적인 CL 문헌과 동일한 정규화, 리허설 및 매개변수 확장 방법으로 분류하고 잊혀진 지식과 업데이트되거나 획득된 지식 간의 트레이드오프를 측정하기 위해 제안하는 FUAR이라는 새로운 메트릭을 사용하여 각 유형의 방법의 효과를 비교한다.\n' +
+      '* 끊임없이 변화하는 LM을 만들기 위해 CKL 벤치마크에서 광범위한 분석을 수행하고 중요한 과제 및 결과를 강조합니다. 매개변수 확장 방법은 대부분의 실험에서 최선을 다하고 지속적인 사전 훈련 동안 동일한 데이터를 반복적으로 보는 것이 망각의 중요한 원인임에도 불구하고 메모리 비효율성의 한계를 가지고 있습니다. 또한, 우리는 추가 탐색이 필요한 흥미로운 결과를 보여준다: 학습률은 새로운 지식의 망각과 학습의 균형을 맞추기 위해 변할 수 있으며, CKL은 도움이 될 수 있다.\n' +
+      '\n' +
+      '그림 1: 지속적인 지식 학습 벤치마크의 개요. 불변 LAMA는 \\(D_{0}\\)에서 얻은 _시간 불변_ 세계 지식을 측정하는 데 사용됩니다. UpdatedLAMA는 \\(D_{0}\\)\\(\\rightarrow\\)\\(D_{1}\\)에서 세계 지식의 _업데이트_를 측정하는 데 사용됩니다. NewLAMA는 \\(D_{1}\\)에서 얻은 _new_ 세계 지식을 측정하는 데 사용됩니다.\n' +
+      '\n' +
+      '새로운 세계 지식을 얻은 후 이전 지식 집약적인 작업을 수행하고 CKL 방법은 성능의 다른 추세를 보여도 LM 아키텍처 간에 이전할 수 있다.\n' +
+      '\n' +
+      '제안된 CKL 벤치마크의 개요는 그림 1에 나와 있다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      'RAG( Retrieval-Augmented Generation)(Lewis et al., 2020) 및 Blender Bot 2.0(Xu et al., 2021; Komeili et al., 2021)과 같은 외부 소스로부터의 지식을 활용하는 언어 모델(LMs)은 최근 정보를 검색하기 위해 추론 또는 인터넷을 검색하는 동안 외부 소스를 업데이트함으로써 변화하는 세계에 대처한다. 그러나 최근 연구에 따르면 이러한 메모리 증강 모델은 추론 중 업데이트된 지식을 제공 받았음에도 불구하고 잘못된 정보를 올바른 것처럼 제시하는 _환각_에 시달리고 있으며(Zhang and Choi, 2021), LM 크기가 증가함에 따라 악화되어(Longpre et al., 2021), 암시적 매개변수도 갱신되는 것이 더 중요하다.\n' +
+      '\n' +
+      'LLM의 내부 지식을 갱신하기 위해 전체 위키피디아의 최근 덤프와 같이 초기 사전 훈련 동안 사용된 것과 유사한 스케일의 새로 업데이트된 텍스트 코퍼스로 LM을 처음부터 사전 훈련하는 것을 고려할 수 있다. 그러나, 이러한 접근법은 계산적으로 까다롭고 또한 환경적으로 유해하다(Patterson et al., 2021). 또 다른 대안적인 접근법은 새로운 세계 지식을 포함하는 훨씬 더 작은 코퍼스에 대한 사전 훈련 프로세스를 계속하는 것이지만, 그러한 방법론은 모델이 새로운 지식을 획득함에 따라 이전에 학습된 지식을 잊는 _재난적 망각_(McCloskey and Cohen, 1989; Kirkpatrick et al., 2017)으로 고통받는 것으로 알려져 있다.\n' +
+      '\n' +
+      'Lazaridou et al.(2021); Jin et al.(2021)은 이러한 문제를 해결하기 위해 선행 Continual Learning (CL) 방법(Sun et al., 2020; d\'Autume et al., 2019)을 구현하는 것을 제안한다. 그러나, 전통적인 CL 방법을 적용하는 것이 부적절하게 만드는 전통적인 CL(Continual Knowledge Learning) 공식과 제안된 CKD(Continual Knowledge Learning) 공식 사이에는 자명한 차이가 있다는 점에 유의하는 것이 중요하다. 전통적인 CL에서 메서드는 크게 _정규화_, _리허설_ 및 _매개 변수 확장_ 메서드로 분류할 수 있습니다. (1) 정규화 방법들(Kirkpatrick et al., 2017)은 이전 작업들에 사용되는 중요한 파라미터들을 식별하는 것을 요구하지만, 정확히 어떻게 그리고 어디서 지식이 LM의 파라미터들에 저장되는지는 현재 식별 및 국지화하는 것이 매우 어렵다(Vig et al., 2020; De Cao et al., 2021). (2) 사전 리허설 방법(Lopez-Paz and Ranzato, 2017)이 태스크의 모든 스트림을 한 번에 학습하는 것(다중 태스크 학습)을 성능 상한으로 간주하고 이러한 설정을 에피소드 메모리에 저장된 샘플로 복제하는 반면, 사전 훈련 말뭉치의 일부 샘플은 말뭉치의 전체 세계 지식을 나타낼 수 없다. 더욱이, 만약 LMs들이 말뭉치 스트림들의 뒤섞인 연결에 사전 훈련된다면, 특히 전자의 말뭉치가 후자의 말뭉치보다 훨씬 더 큰 경우에, LMs들이 최근의 말뭉치로부터 정확한, 최근의 정보를 획득할 것이라는 보장은 없다. (3) 마지막으로, 이전의 파라미터-확장 방법들(Rusu et al., 2016; Yoon et al., 2018)은 강한 감독을 통해 상이한 태스크들의 스트림을 학습하는 것에 초점을 맞춘 반면, CKL에서는 자기 감독을 통해 말뭉치 스트림으로부터 세계 지식을 끊임없이 업데이트하는 것에 초점을 맞춘다.\n' +
+      '\n' +
+      '이러한 근본적인 차이 때문에 위에서 언급한 현대 CL 방법 대신 CKL에 적합한 문헌(Chen 등, 2020; He 등, 2021; Hu 등, 2021; Wang 등, 2021)에서 CKL 방법으로 필요에 따라 각 방법을 수정하고 적응하는 방법론을 탐구한다. 마지막으로, 전통적인 CL 공식 중 일부는 프라부 외(2020)에 의해 실제 시나리오에서 실질적인 중요성이 거의 없을 수 있다는 지적이 있었지만 CKL은 CL의 초기 동기에 훨씬 더 가깝다. 즉, "자연 지능의 기본 특성은 오래된 지식에 대한 정보를 업데이트하면서 지속적으로 새로운 지식을 배우는 능력"이다(프라부 외, 2020). 전통적인 CL 방법과 CKL 방법이 근본적인 차이를 해결하는 방법에 관한 관련 작업의 세부 사항은 부록 A에 나와 있다.\n' +
+      '\n' +
+      '## 3 연속 지식 학습(CKL)\n' +
+      '\n' +
+      '이 절에서는 태스크의 공식화, 데이터 구성 프로세스, 그리고 이전 세계 지식을 잊는 것과 새로운 세계 지식의 업데이트 및 학습 사이의 트레이드오프를 측정하는 제안된 메트릭에 대해 설명한다.\n' +
+      '\n' +
+      '### Task Formulation\n' +
+      '\n' +
+      'LLM의 내부 지식을 갱신하는 작업을 CL 공식 중 하나로 볼 때, 원래 말뭉치에 대한 사전 훈련은 _이전 작업_으로 간주될 수 있고, 새로운 말뭉치에 대한 지속적인 사전 훈련은 _현재 작업_으로 간주될 수 있으며, 주요 목표는 초기 사전 훈련을 통해 얻은 _시간 불변_ 세계 지식을 유지하는 동시에 지속적인 사전 훈련을 통해 _새로운_ 및 _업데이트된_ 세계 지식을 효율적으로 학습하는 것이다. 본 논문에서는 \\(D_{0}\\)이 초기 사전학습에 사용된 말뭉치를 의미하고 \\(D_{1}\\)이 연속 사전학습에 사용된 새로운 말뭉치를 의미한다.\n' +
+      '\n' +
+      '언어 모델링을 위한 새로운 텍스트 코퍼스 LMs의 내부 지식을 갱신하기 위해서는 새로운 정보가 갱신된 새로운 텍스트 코퍼스 \\(D_{1}\\)에 대한 지속적인 사전 훈련이 필요하다. \\ (D_{1}\\)는 이상적으로는 \\(D_{0}\\)보다 훨씬 작아야 하는데, 이는 \\(D_{0}\\)의 크기에 비례하는 큰 \\(D_{1}\\)이 LMs를 처음부터 사전 훈련하는 것과 유사한 막대한 계산 비용을 초래할 것이기 때문이다. 우리는 \\(D_{1}\\)을 구축하기 위해 CC-RecentNews.2를 만드는 웹에서 최근에 발표된 뉴스 기사를 크롤링한다.\n' +
+      '\n' +
+      '각주 2: CC-RecentNews는 221,779개의 기사(\\(\\sim\\)168M 토큰)로 구성되며, 이는 T5 LM을 초기에 사전 훈련하는 데 사용된 2019년 4월 공통 크롤 데이터 세트([https://commoncrawl.org/](https://commoncrawl.org/))의 정제된 버전인 C4보다 약 750배 작은 것으로 추정된다(Raffel et al., 2019).\n' +
+      '\n' +
+      '세계지식에 대한 LMs 프로빙 세계지식에 대한 LMs 프로빙을 위해 가장 널리 사용되는 작업은 LAMA(LAnguage Model Analysis)(Petroni et al., 2019) 작업이며, 이는 수동으로 정의된 템플릿을 사용하여 지식 소스 세트로부터 생성된 클로즈 문장으로 구성된다. 우리는 LM이 "_단테가 in_로 태어났다."와 같은 클로즈 문장에서 마스킹된 엔티티를 제로 샷 방식으로 성공적으로 예측할 수 있다면 사실을 알고 있다고 정의합니다. LMs3에 인코딩된 세계 지식을 측정하기 위한 다른 대안이 있을 수 있지만 주요 데이터 세트를 LAMA 작업으로 구성하는 동시에 CBQA에서 테스트하려는 사람들을 위한 클로즈 문장에 해당 질문 쌍을 추가로 제공한다.\n' +
+      '\n' +
+      '각주 3: Closed-book Question answering (CBQA) (Roberts et al., 2020)도 Finetuning을 통해 LMs의 세계 지식을 측정하는 작업으로 간주할 수 있지만, 데이터 세트에서 테스트-트레인 겹침 (Lewis et al., 2020; Wang et al., 2021)으로 인해 성능 증가의 많은 부분이 발생한다는 점이 지적되었다.\n' +
+      '\n' +
+      '시간 불변 세계 지식의 보유량 측정 우리는 시간 불변 세계 지식을 \\(D_{1}\\)의 정보와 충돌할 가능성이 없는 \\(D_{0}\\)에 존재하는 정보로 정의한다. 예를 들어, _버락 오바마의 출생지_ 정보가 \\(D_{0}\\)에 있는 경우, \\(D_{1}\\)에 해당 사실과 모순되는 정보가 포함될 가능성은 거의 없습니다. 또한, "_Cristiano Ronaldo played for_. _in 2010_."과 같이 타임 스탬프가 고정된 경우를 _time-invariant_로 분류한다. 이러한 _시간 불변_ 인스턴스는 LMs가 \\(D_{1}\\)에서 지속적으로 사전 훈련되므로 변경되지 않아야 합니다. 계속된 사전 훈련 중 _재난적 망각_으로 인해 _시간 불변_ 정보가 얼마나 손실되는지 측정하기 위해 부록 B.1에 자세히 설명된 _시간 불변_ 클로즈 문장만으로 구성된 LAMA(페트로니 등, 2019)의 하위 집합인 InvariantLAMA를 만듭니다.\n' +
+      '\n' +
+      '오래된 세계 지식의 업데이트 측정 이 작업에서는 _outdated_ 세계 지식을 \\(D_{0}\\)와 \\(D_{1}\\) 사이에 충돌하는 정보로 정의합니다. 예를 들어, 미국 대통령은 \\(D_{0}\\)의 _Barack Obama_ 및 \\(D_{1}\\)의 _Joe Biden_일 수 있다. 이 경우 LM은 미국 대통령으로서 _Joe Biden_으로 내부 지식을 갱신해야 한다. LM이 \\(D_{0}\\)과 \\(D_{1}\\)에서 동시에 사전 훈련되면 LM이 \\(D_{1}\\)로부터 정확한 최근 정보를 얻을 것이라는 보장은 없으며, 특히 \\(D_{0}\\)이 \\(D_{1}\\)보다 훨씬 큰 경우 CKL과 전통적인 CL 설정의 가장 큰 차이 중 하나이다. 구식 정보의 _업데이트_를 측정하기 위해 \\(D_{0}\\)와 \\(D_{1}\\) 모두에서 답을 찾을 수 있지만 상충되는 클로즈 문장으로 구성된 UpdatedLAMA를 구성한다.\n' +
+      '\n' +
+      '새로운 세계 지식의 획득 측정 우리는 새로운 세계 지식을 \\(D_{1}\\)에 존재하는 정보로 정의하지만 \\(D_{0}\\)에는 존재하지 않는다. 본 논문에서는 \\(D_{1}\\)에 대한 지속적인 사전학습을 통해 습득한 _new_ 지식을 측정하기 위해, \\(D_{1}\\)의 _new_ 지식이 필요한 상세한 클로즈 문장으로 구성된 NewLAMA를 구성하여 정답을 맞추도록 한다. 새로운 세계 지식을 측정하기 위한 두 개의 데이터셋을 제공한다. NewLAMA는 각 인스턴스가 \\(D_{0}\\)에 답이 존재하지 않고 \\(D_{1}\\)에만 답이 존재하는 것으로 검증되는 데이터이며, NewLAMA-Easy는 각 인스턴스가 생성 과정으로 인해 우리의 엄격한 새로운 세계 지식의 정의를 완벽하게 준수하지 않지만 일반적으로 \\(D_{1}\\)에 대한 지속적인 사전 훈련에서 얻은 새로운 지식을 더 큰 규모로 측정하는 데 사용된다.\n' +
+      '\n' +
+      'NewLAMA-Easy는 각 인스턴스가 지속적인 사전 훈련 동안 볼 수 있는 데이터 분포와 유사하도록 구성되었기 때문에 _더 쉬운_ 것으로 간주할 수 있다.\n' +
+      '\n' +
+      'Dataset Construction The data for continual pretraining, CC-RecentNews, is constructed using news-please(Hamborg et al., 2017). 불변 LAMA는 T-Rex(Elsahar et al., 2018)에서 28개의 _시간 불변_ 관계를 수동으로 선택하여 구성된다. UpdatedLAMA 및 NewLAMA의 경우 Amazon Mechanical Turk(mturk)4를 사용하여 HIT(인간 지능 태스크)를 크라우드 소싱합니다. 이 과정은 Lewis et al.(2021)에 소개된 모델에 의해 생성된 질문 목록에서 답변 가능한 질문을 선택하여 클로즈 문장으로 변환해야 한다. 또한 11명의 전문가를 별도로 고용하여 정확성을 확인하고 C4 데이터베이스를 검색하여 _업데이트_ 및 _새로_에 대한 정의에 따라 각 인스턴스를 분류했습니다. 뉴라마-이지(NewLAMA-Easy)는 새로운 정보가 포함된 기사로부터 선택된 문장이 마스킹, 검증 및 해당 질문으로 변환되기 전에 탈맥락화 및 패러프레이즈5되는 2단계 mturk 프로세스를 통해 더 큰 규모로 구성된다. 구축된 데이터 세트 통계는 표 1에 나와 있습니다. 데이터 구성 파이프라인, 예제 및 보다 세밀한 통계에 대한 중요한 세부 정보는 부록 B에 나와 있습니다.\n' +
+      '\n' +
+      '각주 4: [https://www.mturk.com](https://www.mturk.com)\n' +
+      '\n' +
+      '각주 5: Choi et al.(2021)의 탈맥락화 모델과 Tiedemann & Thottingal(2020)의 역번역 모델이 사용된다.\n' +
+      '\n' +
+      '### CKL에 대한 결합 메트릭\n' +
+      '\n' +
+      '잊혀진 시간 불변 지식과 업데이트되거나 새로 획득한 지식 간의 트레이드오프를 사용하여 각 CKL 방법의 효율성을 비교할 수 있는 새로운 메트릭인 **FUAR** (**F**rorgottes/(**U**pdated + **A**cquired) **R**atio)를 제안합니다. FUAR은 _1_ 새 또는 업데이트된 지식 인스턴스를 학습하기 위해 상대적으로 _얼마나 많은_ 시간 불변 지식 인스턴스가 잊혀졌는지 나타냅니다. 우리는 먼저 끊임없이 변화하는 LM을 훈련하는 데 사용되는 여러 개의 말뭉치가 있을 수 있는 일반적인 경우를 위해 FUAR을 정의한다.\n' +
+      '\n' +
+      '\\(T\\)는 임의의 작업이고 \\((D_{i})_{i=0}^{n}\\)는 LM 프리트레이닝에 사용되는 말뭉치의 시퀀스라고 하자. 여기서 \\(D_{0}\\)는 초기 프리트레이닝 말뭉치이다. 우리는 \\(LM_{a}-Score(T)\\)의 \\(\\text{Gap}(T,D_{a},D_{b})=Score(T)\\)를 정의하며, 여기서 \\(LM_{a}\\)는 \\(D_{a}\\에 사전 훈련된 후 LM을 나타낸다. 그런 다음, 각 대응 말뭉치로부터 불변지식의 망각을 측정하는 \\((D_{i})_{i=0}^{n-1}\\)로부터 일련의 작업으로 \\(\\mathbb{T}^{F}=(T_{i}^{F})_{i=0}^{n-1}\\)을 표기한다. 코퍼스 \\(D_{i}\\)에서 그러한 작업이 없는 경우, \\(T_{i}^{F}\\)의 값은 \\(n.d.\\)로 설정되며, 이는 _ 정의되지 않은_ 을 의미한다. 마찬가지로, 우리는 새로운 지식의 _업데이트_ 및 _획득_을 각각 측정하는 \\(D_{n}\\)로부터 \\(T_{n}^{U}\\) 및 \\(T_{n}^{A}\\)를 과제로 나타낸다. FUAR을 다음과 같이 정의한다:\n' +
+      '\n' +
+      '\\[\\text{FUAR}(\\mathbb{T}^{F},T_{n}^{U},T_{n}^{A})=\\begin{cases}\\sum\\limits_{i=0 }^{n-1}\\max(0,\\text{Gap}(T_{i}^{F},D_{i},D_{n})\\mathbb{1}_{\\{T_{i}^{F}\\neq n.d.\\}}\\sum\\limits_{i=0}^{n-1}\\{\\max(0,\\text{Gap}(T_{n}^{U},D_{n},D_{i}))\\mathbb{1}_{ \\{T_{i}^{F}\\neq n.d.\\}}+\\max(0,\\text{Gap}(T_{n}^{A},D_{n},D_{i}))\\mathbb{1}_{ \\{T_{i}^{F}\\neq n.d.\\}+\\max(0,\\text{Gap}(T_{n}^{A},D_{\n' +
+      '\n' +
+      '벤치마크 작업 \\(\\mathbb{T}^{F}\\), \\(T_{n}^{U}\\), \\(T_{n}^{A}\\)의 선택은 각 실험 설정에 따라 다를 수 있다. 1.0의 FUAR 값은 \\(\\mathbb{T}^{F}\\)의 _1_ 시간 불변 지식 인스턴스가 평균적으로 잊혀져 \\(T_{n}^{U}\\) 및 \\(T_{n}^{A}\\)의 하나의 새로운 또는 업데이트된 지식 인스턴스를 얻는 동일한 트레이드오프 시나리오를 나타낸다. 분모에서 두 용어는 새로 얻은 지식과 업데이트된 지식이 정의에 의해 상호 배타적이기 때문에 합산된다. 값이 1보다 작은 경우, 모델은 잊혀진 지식의 양보다 더 많은 새로운 또는 업데이트된 지식을 얻는 것을 의미하므로, 방법들은\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c|l c c c} \\hline \\hline\n' +
+      '**Dataset** & **Size** & **Input Length** & **Answer Length** & **Dataset** & **Size** & **Input Length** & **Answer Length** \\\\ \\hline InvariantLAMA & 17474 & 11.9 & 1.3 & NewLAMA & 797 & 14.7 & 8.7 \\\\ UpdatedLAMA & 924 & 13.7 & 9.4 & NewLAMA-Easy & 11177 & 44.4 & 6.1 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 데이터 세트 통계. 입력 및 답변 길이는 해당 평균 토큰 길이입니다.\n' +
+      '\n' +
+      '낮은 FUAR 값을 나타내는 것은 CKL에 적합한 것으로 간주될 수 있다. 값이 0이면 전혀 망각이 일어나지 않는 경우로서 성능의 상한이 된다. 분모가 0인 경우 경우를 _이득 없음_으로 표시하고 최악의 경우.6으로 간주합니다.\n' +
+      '\n' +
+      '각주 6: 마지막 두 문장 각각은 우리가 각각 긍정적인 _backward_ 전달과 부정적인 _forward_ 전달을 측정하지 않는다는 것을 의미합니다. 어떤 경우에는 후자가 실제로 발생한다(부록 G에 표시됨). 후진 및 전진 이송에 대한 설명은 부록 A.1에 나와 있다.\n' +
+      '\n' +
+      '## 4 실험 설정\n' +
+      '\n' +
+      '우리는 인코더-디코더 모델인 T5(Raffel et al., 2019)를 사용하여 2019년 4월 C4 덤프와 2020년 5월 Wikipedia 덤프(thus \\(D_{0}\\)에서 SSM을 사용하여 초기에 사전 훈련된 대형 LM(\\(\\sim\\) 737M params)을 사용하여 광범위한 실험을 수행했다. 사전 훈련, 지속적인 사전 훈련 및 평가 구성의 세부 사항은 부록 C에 나와 있습니다. CKL 벤치마크의 기준으로 다음 방법을 설정하고 _정규화_, _리허설_ 및 _매개 변수 확장_ 방법으로 분류합니다. 각 방법의 구현에 사용된 특정 하이퍼파라미터는 부록 D에 자세히 설명되어 있다.\n' +
+      '\n' +
+      '**초기** 는 지속적인 사전 훈련 전에 LM을 평가하는 설정을 나타냅니다. 이 모델의 성능은 UpdatedLAMA 및 NewLAMA에서 InvariantLAMA에 대한 _상위-바운드_ 및 _하위-바운드_로 간주할 수 있습니다.\n' +
+      '\n' +
+      '**바닐라** 는 추가 사전 훈련의 특정 설정입니다 (Gururangan 등, 2020). 여기서 도메인은 _new_ 지식이고 LM은 훈련 전략 없이 추가로 사전 훈련됩니다.\n' +
+      '\n' +
+      '**RecAdam**(Chen 등, 2020)은 정규화 방법의 범주에 속합니다. 이는 전통적인 정규화 방법(EWC(Kirkpatrick et al., 2017))보다 모델 파라미터들 사이에 더 강한 독립 가정을 두며, 지속된 프리트레이닝 동안 모델 가중치를 정규화하기 위해 초기 프리트레이닝 코퍼스에 접근하지 않는다. 최적화기는 트레이닝이 진행됨에 따라 더 적은 정규화가 적용되도록 어닐링된다.\n' +
+      '\n' +
+      '**믹스-리뷰**(He et al., 2021)는 초기 프리트레이닝 코퍼스에 대한 액세스를 가정하고 현재 시간 단계의 믹스 비율에 따라 계속된 프리트레이닝 동안 초기 프리트레이닝 데이터의 랜덤 하위 집합에서 믹스를 사용하는 리허설 방법의 범주에 속한다. 훈련이 진행됨에 따라 혼합 비율은 0을 향해 감쇠하여 각 반복에서 혼합된 원본 데이터의 양이 감소한다.\n' +
+      '\n' +
+      '**LoRA**(Hu 등, 2021)는 매개 변수 확장 방법의 범주에 속합니다. LM의 원래 매개변수를 동결하고 지속적인 사전 훈련 동안 업데이트되는 각 계층에 훈련 가능한 순위 분해 행렬을 추가한다. Hu et al.(2021)은 디코더 전용 모델(GPT-2(Radford et al., 2019) & GPT-3(Brown et al., 2020))을 사용하여 이 접근법을 구현했으며, 이를 T5-LoRA로 표시하는 인코더-디코더 모델에 적용했다.\n' +
+      '\n' +
+      '**K-Adapter**(Wang 등, 2021)는 계속된 사전 훈련 중에 업데이트되는 \\(k\\) 수의 새 계층, 즉 _adapters_ 를 추가하면서 LM의 원래 매개 변수를 동결하는 또 다른 매개 변수 확장 방법입니다. Wang et al.(2021)은 인코더 전용 모델인 BERT(Devlin et al., 2019) & RoBERTa(Liu et al., 2019)에 대한 _사실적_ 및 _언어적_ 지식의 성공적인 주입을 보여주었고, 인코더-디코더 모델인 T5 및 디코더 전용 모델인 GPT-2에도 적용하였다.\n' +
+      '\n' +
+      '**모듈러** 는 원래 사전 훈련된 인코더를 동결하는 동시에 계속된 사전 훈련 중에 업데이트되는 새로운 무작위로 초기화된 인코더를 추가하는 인코더-디코더 모델에 대해 특별히 새로 제안된 매개 변수 확장 방법입니다. 새로 추가된 인코더의 경우 원래 인코더와 디코더의 크기를 _T5-large_로 유지하면서 크기를 _T5-small_로 변경한다.\n' +
+      '\n' +
+      '## 5 실험 결과\n' +
+      '\n' +
+      '이 절에서는 먼저 CKL 벤치마크에 대한 주요 실험 결과를 보여준다. 그런 다음, 지속적인 지식 학습의 여러 단계, 즉 CKL이 진정으로 끊임없이 변화하는 LM을 훈련하기 위해 필요하기 때문에, 우리는 여러 CKL 단계의 영향과 epoch, 말뭉치 크기 및 총 훈련 단계 수가 CKL에 어떻게 영향을 미치는지 탐구한다. 또한 학습률이 부록 E의 CKL에 어떻게 영향을 미치는지, 부록 F의 \\(D_{0}\\)에서 지식을 요구하는 KILT 태스크의 성능에 어떻게 영향을 미치는지, 부록 G의 LM 아키텍처 간에 CKL 방법이 어떻게 전달되는지, 부록 H의 CKL 동안 예측 출력이 어떻게 변화하는지를 탐구한다.\n' +
+      '\n' +
+      '### Main Results\n' +
+      '\n' +
+      '표 2는 CKL 벤치마크에 대한 주요 실험 결과를 보여준다. 표 2에는 정확한 일치(EM)만 보고되어 있지만, 부록 J에서는 F1 점수와 k(_P@k_, k=1,5,10,20,50,100)에서의 평균 정밀도를 보고한다. T5 모델은 원래 C4(약 1조 토큰 업데이트) 및 Wikipedia에서 사전 훈련되었으며, 이는 \\(D_{0}\\).7로 간주되며, 이후 각 CKL 방법을 사용하여 4개의 epoch(25k 글로벌 훈련 단계, 약 6억 7,300만 토큰 업데이트)에 대해 CC-RecentNews(corpus \\(D_{1}\\))에서 지속적으로 사전 훈련되었다. IL, UL, NL, NLE 각각은 InvariantLAMA, UpdatedLAMA, NewLAMA, NewLAMA-Easy의 약자이다. 이 실험을 위한 설정에 대한 자세한 설명은 캡션에 포함되어 있습니다.\n' +
+      '\n' +
+      '각주 7: 이 작업에서 우리는 C4와 위키피디아를 함께 \\(D_{0}\\)로 봅니다. 왜냐하면 우리는 LMs에 대한 지식이 두 말뭉치에 대한 훈련 사이에서 어떻게 변화하는지를 측정하지 않기 때문입니다.\n' +
+      '\n' +
+      '우리는 먼저 FUAR에서 볼 수 있듯이 T5-Vanilla의 순진한 접근법을 사용하는 것보다 T5-MixReview를 제외한 모든 CKL 방법이 새로운 지식을 업데이트하고 습득하는 동안 시간 불변 지식을 덜 잊는 데 더 효과적임을 발견했다. 이 결과는 또한 CKL과 CL의 주요 차이점을 강조하며, 리허설 방법은 전통적인 CL 설정(Prabhu et al., 2020; Bang et al., 2021)에서 강한 성능을 보여주지만, CKL에서는 UL 및 NL의 성능에서 볼 수 있듯이 오래된 지식의 업데이트와 새로운 지식의 획득이 심각하게 억제되고 다른 CKL 방법에 비해 IL의 성능에서 볼 수 있듯이 망각의 경쟁적 완화는 보이지 않기 때문에 최악의 성능을 보여준다. 다른 CKL 방법 중에서 매개변수 확장 방법이 더 나은 결과를 얻는 다소 일관된 경향을 관찰한다. UL, NL 및 NLE 모두에 대한 첫 번째 및 두 번째 최상의 결과는 모두 매개변수 확장 방법에서 나온 것이다. 한편, UL과 NL은 동일한 절차를 따라 구성되지만 UL과 NL의 EM 점수 사이에는 큰 차이가 있다. 우리는 부록 I에서 이러한 차이의 근원을 분석한다.\n' +
+      '\n' +
+      '그림 9는 각 태스크의 EM 점수가 T5-Kadapters, 가장 강력한 성능을 가진 CKL 방법 및 T5-Vanilla가 \\(D_{1}\\)에서 지속적으로 사전 훈련됨에 따라 어떻게 변화하는지를 시각화한다. 모든 작업에서 T5-Initial의 성능은 IL의 경우 상위 바운드로, UL, NL, NLE의 경우 하위 바운드로 간주될 수 있다. 우리의 주요 관찰과 일치하는 CKL은 T5-바닐라에 비해 업데이트 및 새로운 세계 지식을 개선하여 전반적인 트레이드오프를 완화하면서 _시간 불변_ 세계 지식을 상당히 유지할 수 있다.\n' +
+      '\n' +
+      '### CKL의 여러 단계 탐색\n' +
+      '\n' +
+      '진정으로 끊임없이 변화하는 LM을 생성할 가능성을 보여주기 위해 원래 말뭉치의 무작위로 샘플링된 10%로 구성된 CC-RecentNews의 작은 변형인 Small으로 표시된 CC-RecentNews-Small을 생성하여 여러 CKL 단계의 효과를 탐구한다. 그 다음엔 흩어졌어\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multirow{2}{*}{\n' +
+      '\\begin{tabular}{c} **\\# of Params** \\\\ **(Trainable / Total)** \\\\ \\end{tabular} } & **IL** & **UL** & **NL** & **NLE** & **FUAR** \\\\ \\cline{2-7}  & EM & EM & EM & EM & \\(\\text{EM}\\) & \\((\\mathbf{(IL)},\\mathbf{UL},\\mathbf{NL})\\downarrow\\) \\\\ \\hline T5-Initial & 0M / 737M & **24.17** & 1.62 & 1.88 & 10.32 & - \\\\ \\hline T5-Vanilla & 737M / 737M & 12.89 & 10.17 & 3.77 & 17.75 & 1.08 \\\\ T5-RecAdam & 737M / 737M & 13.20 & 12.55 & 4.02 & 17.85 & 0.84 \\\\ T5-MixReview & 737M / 737M & 13.92 & 6.49 & 2.89 & 14.86 & 1.74 \\\\ T5-LoRA & 403M / 738M & 16.58 & **12.77** & 4.52 & **19.56** & 0.55 \\\\ T5-Kadapters (k=2) & 427M / 762M & 19.59 & 12.34 & **5.03** & 18.75 & 0.33 \\\\ T5-Kadapters (k=3) & 440M / 775M & 19.76 & 12.66 & 4.02 & 19.00 & 0.33 \\\\ T5-Modular & 438M / 773M & 20.29 & 12.66 & 4.65 & 19.24 & **0.28** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: CKL 벤치마크에 대한 제로 샷 프로빙 성능. 각 작업 및 메트릭에 대한 최상의 결과는 굵게 표시되고 두 번째 최상의 결과는 밑줄이 그어져 표시됩니다.\n' +
+      '\n' +
+      'CC-RecentNews-Small은 Small-P1(05.2020 - 11.2020)) 및 Small-P2(11.2020 - 04.2021)로 표시된 여러 CKL 단계가 필요한 설정을 시뮬레이션하기 위해 각 기사의 게시 날짜까지 두 개의 다른 분할로 분할됩니다. NLE8은 또한 두 개의 서로 다른 작은 데이터 세트인 NLEp1 및 NLEp2로 분할되며, 각각은 Small-P1 및 Small-P2의 기사로부터 구성된 인스턴스로 구성된다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c} \\hline \\hline \\multirow{2}{*}{**Corpus**} & \\multirow{2}{*}{**Method**} & **\\# of Params** & **IL** & **NLEp1** & **NLEp2** \\\\  & & **(Trainable / Total)** & EM & EM & EM & \\\\ \\hline \\hline  & & & & & & \\\\ \\hline  & T5-Initial & 0M / 737M & **24.17** & 8.69 & 9.45 & \\((\\textbf{IL}),\\textbf{n.d.},\\textbf{NLE})\\downarrow\\) \\\\ \\hline  & T5-Vanilla & 737M / 737M & 11.86 & 17.77 & 16.42 & 1.53 \\\\  & T5-RecAdam & 737M / 737M & 11.85 & 16.46 & 13.93 & 2.01 \\\\ Small & T5-MixReview & 737M / 737M & 14.36 & 14.18 & 13.93 & 1.97 \\\\ (Small-P1 & T5-LoRA & 403M / 738M & 14.26 & 20.60 & 19.90 & 0.87 \\\\ + Small-P2 & T5-Kadapters (k=2) & 427M / 762M & 18.16 & 18.34 & 16.42 & 0.72 \\\\  & T5-Kadapters (k=3) & 440M / 775M & 17.12 & **20.98** & **20.39** & **0.61** \\\\  & T5-Modular & 438M / 773M & 16.40 & 19.47 & 19.90 & 0.73 \\\\ \\hline  & & & & & & \\\\ \\hline  & T5-Initial & 0M / 737M & **24.17** & 8.69 & 9.45 & \\((\\textbf{IL}),\\textbf{n.d.},\\textbf{NLEp1})\\downarrow\\) \\\\ \\hline  & T5-Vanilla & 737M / 737M & 9.68 & 20.60 & _11.44_ & 1.22 \\\\  & T5-RecAdam & 737M / 737M & 11.78 & 20.42 & _11.94_ & 1.06 \\\\  & T5-MixReview & 737M / 737M & 16.13 & 15.88 & _11.94_ & 1.12 \\\\ Small-P1 & T5-LoRA & 403M / 738M & 14.75 & **20.79** & _13.93_ & 0.78 \\\\  & T5-Kadapters (k=2) & 427M / 762M & 19.11 & 20.60 & _10.95_ & **0.42** \\\\  & T5-Kadapters (k=3) & 440M / 775M & 19.08 & 18.15 & _10.94_ & 0.54 \\\\  & T5-Modular & 438M / 773M & 17.08 & 18.90 & _11.94_ & 0.69 \\\\ \\hline  & & & & & & \\\\ \\hline  & T5-Vanilla & 737 M / 737M & 9.40 & 14.37 & **23.38** & 1.06 \\\\  & T5-RecAdam & 737M / 737M & 7.25 & 14.56 & 20.90 & 1.48 \\\\ Small-P1\\(\\rightarrow\\) & T5-MixReview & 737M / 737M & 13.20 & **17.20** & 16.92 & 1.47 \\\\ Small-P2 & T5-LoRA & 404M / 740M & 13.25 & 16.07 & 22.39 & 0.84 \\\\ Small-P2 & T5-Kadapters (k=2) & 427M / 788M & 15.78 & 16.07 & **23.38** & **0.60** \\\\  & T5-Kadapters (k=3) & 440M / 813M & 15.47 & 15.31 & 20.90 & 0.76 \\\\  & T5-Modular & 438M / 809M & 14.66 & 15.31 & 20.40 & 0.87 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: T5 모델 이후의 제로 샷 프로빙 성능은 CC-RecentNews의 서로 다른 하위 집합에 대해 지속적으로 사전 훈련된다. NLE와 IL은 각각 NewLAMA-Easy와 InvariantLAMA를 나타낸다. 5.2절 본문에 설명된 연속 사전 훈련에 사용된 코퍼스에 따라 세 가지 시나리오가 있다. 세 가지 시나리오의 FUAR은 다르게 계산되며 해당 태스크는 FUAR의 매개변수인 \\(\\mathbb{T}^{F}\\), \\(T_{1}^{U}\\), \\(T_{2}^{A}\\)로 표에 표시된다. 이 설정에서 \\(\\mathbb{T}^{F}\\)는 \\(D_{0}\\)에서만 손실된 시간 불변 정보를 측정하는 단일 작업 \\(T_{2}^{U}\\)(IL)로 구성된다. Small의 경우 균일한 가중치를 갖는 NLEp1 및 NLEp2의 갭의 가중합을 사용하여 NLE의 갭을 계산한다.\n' +
+      '\n' +
+      '그림 2: 주요 실험 설정에서 지속적인 사전 훈련 동안 각 에포크에서의 성능.\n' +
+      '\n' +
+      '(p<0.05). 우리는 T5에 대한 CKL 방법이 5k 단계(8개의 epoch) 동안 Small에서 지속적으로 완전히 사전 훈련될 때 IL, NLE\\({}_{\\text{P1}}\\) 및 NLE\\({}_{\\text{P2}}\\)에서 수행되는 방법과 Small-P1에서 순차적으로 사전 훈련될 때 그리고 Small-P2에서 각각 2.5k 단계(8개의 epoch)에서 수행되는 방법을 비교한다. Small-P1\\(\\rightarrow\\)Small-P2 시나리오에서, \\(D_{0}\\)는 C4이고 위키피디아, \\(D_{1}\\)는 Small-P1이고 \\(D_{2}\\)는 Small-P2인 두 개의 CKL 단계가 있다. 나머지 구성은 주요 실험과 동일하게 설정된다.\n' +
+      '\n' +
+      '두 가지 시나리오인 Small과 Small-P1\\(\\rightarrow\\)Small-P2의 IL에 대한 성능을 비교한 결과, LMs는 동일한 수의 훈련 단계를 가짐에도 불구하고 여러 CKL 단계를 거칠수록 더 많은 망각을 하는 경향이 있음을 보여준다. 그 이유들 중 하나는 각각의 페이즈의 시작 시에 초기화되는 학습 레이트 스케줄링에 기인할 수 있다.\n' +
+      '\n' +
+      '또한, 전반적으로 가장 좋은 성능을 보였음에도 불구하고, Small-P1\\(\\rightarrow\\)Small-P2 설정에서는 파라미터 확장 방법의 단점들이 강조되며, 업데이트의 모든 단계에서 새로운 파라미터를 추가해야 한다. 예를 들어, T5-Modular의 총 매개변수 수는 연속 사전 훈련 단계의 모든 라운드에서 36M 증가한다. 마찬가지로 많은 CKL 단계를 고려할 때 추가 연구해야 하는 새로운 문제가 발생한다. LMs는 계산 효율적인 방식으로 끊임없이 변화하는 세계에 대한 최신 세계 지식을 얻기 위해 실제 시나리오에서 소량의 데이터로 자주 업데이트되어야 한다는 점을 고려하면, 더 많은 업데이트 단계의 수에 따르는 망각의 양을 완화하기 위한 더 많은 연구가 필요하다.\n' +
+      '\n' +
+      '**잊기에 대한 CKL의 Epochs, 코퍼스 크기 및 총 훈련 단계 수의 영향** 그림 3은 표 2 및 3의 다른 시나리오에서 계속된 사전 훈련 동안 T5-바닐라 및 T5-카답터의 결과를 보여주며, 그래프의 각 점은 매 에포크 후 IL의 성능을 나타낸다. 그림 3의 (a) T5-Vanilla에서 Main(4 epochs)과 Small(8 epochs)을 비교하면, 5배 적은 수의 글로벌 트레이닝 단계 동안 트레이닝되었음에도 불구하고 Small에서 더 많은 망각이 발생함을 알 수 있다. 이 현상은 10배 적은 수의 글로벌 훈련 단계에 대해 훈련되었음에도 불구하고 가장 많은 망각의 양을 보여주는 Small-P1(8개의 epoch)의 결과를 비교할 때 더욱 강조된다. 그림 3(b) T5-카답터에서는 전반적인 하락이 훨씬 완화되지만, 우리는 각 시나리오 간에 동일한 경향을 관찰하며, 이는 지속적인 사전 훈련 동안 동일한 데이터를 반복적으로 관찰하는 것이 망각을 유발하는 데 얼마나 중요한지 보여준다.\n' +
+      '\n' +
+      '이 결과는 Lee et al.(2021)의 결과와 일치하며, LMs는 효율성을 위해 중복이 적은 데이터에 대해 몇 가지 에포크로 사전 훈련되어야 함을 시사한다. 우리는 그들의 발견에 추가적인 직관을 추가하고 중복 데이터로부터의 사전 훈련의 비효율성이 사전 훈련 코퍼스의 다소 긴 꼬리 지식을 망각함으로써 야기되었을 수 있다고 추측한다.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      '본 논문에서는 벤치마크 데이터 세트와 메트릭을 구축하고, 끊임없이 변화하는 LM에 대한 지속적인 지식 학습을 위한 방법론을 탐색하는 연속 지식 학습(Continual Knowledge Learning, CKL)을 제안한다. 파라미터 확장 방법은 모든 실험 환경에서 가장 강력한 성능을 보여주며, 그럼에도 불구하고 심각한 메모리 비효율성을 가지고 있으며 동일한 데이터를 자주 보는 것이 망각의 중요한 원인임을 발견했다. 우리는 또한 향후 연구에 추가 탐색을 맡긴 몇 가지 다른 흥미로운 결과에 대해 논의한다. 이를 위해 커뮤니티가 끊임없이 변화하는 LM의 더 나은 설계를 위해 CKL을 탐색할 것을 제안한다.\n' +
+      '\n' +
+      '그림 3: Main, Small 및 Small-P1\\(\\rightarrow\\)Small-P2 시나리오에서 지속적인 사전 훈련 동안 InvariantLAMA의 각 에포크에서의 성능. 각 마커는 각 지속적인 사전 훈련 에포크에서 결과를 나타낸다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:10]\n' +
+      '\n' +
+      '* He et al.(2021) Tianxing He, Jun Liu, Kyunghyun Cho, Myle Ott, Bing Liu, James Glass, and Fuchun Peng. 개방형 대화 응답 모델의 사전 훈련-미세 조정에서 망각 문제를 분석한다. 2021년 EACL에서.\n' +
+      '* Hoffart 등(2011) Johannes Hoffart, Mohamed Amir Yosef, Ilaria Bordino, Hagen Furstenau, Manfred Pinkal, Marc Spaniol, Bilyana Taneva, Stefan Thater, and Gerhard Weikum. 텍스트에서 명명된 도면요소의 강력한 명확화 2011년 \'EMNLP\'에서\n' +
+      '* Hu et al.(2021) Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, and Weizhu Chen. 로라: 대형 언어 모델의 저순위 적응입니다. _ arXiv preprint arXiv:2106.09685_, 2021.\n' +
+      '* Jin et al.(2021) Xisen Jin, Dejiao Zhang, Henghui Zhu, Wei Xiao, Shang-Wen Li, Xiaokai Wei, Andrew Arnold, and Xiang Ren. 평생 사전 훈련: 언어 모델을 떠오르는 코퍼스에 계속 적용합니다. _ arXiv preprint arXiv:2110.08534_, 2021.\n' +
+      '* Joshi et al.(2017) Mandar Joshi, Eunsol Choi, Daniel S Weld, and Luke Zettlemoyer. 트리비아카: 읽기 이해를 위해 멀리 감독된 대규모 챌린지 데이터 세트. 2017년 _ACL_에서.\n' +
+      '* Kirkpatrick 등(2017) James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neural networks. _ Proceedings of the National Academy of sciences_, 114(13):3521-3526, 2017.\n' +
+      '* Komeili 등 (2021) Mojtaba Komeili, Kurt Shuster, and Jason Weston. 인터넷 기반 대화 생성입니다. _ arXiv preprint arXiv:2107.07566_, 2021.\n' +
+      '* Kwiatkowski 등(2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, et al. Natural questions: a benchmark for question answering research. _ TACL_, 7:453-466, 2019.\n' +
+      '* Lazaridou 등(2021) Angeliki Lazaridou, Adhiguna Kuncoro, Elena Gribovskaya, Devang Agrawal, Adam Liska, Tayfun Terzi, Mai Gimenez, Cyprien de Masson d\'Autume, Sebastian Ruder, Dani Yogatama, et al. Pitfalls of static language modelling. _ arXiv preprint arXiv:2102.01951_, 2021.\n' +
+      '* Lee et al.(2021) Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch, and Nicholas Carlini. 훈련 데이터를 복제하면 언어 모델이 더 좋아집니다. _ arXiv preprint arXiv:2107.06499_, 2021.\n' +
+      '* Levy et al.(2017) Omer Levy, Min준 Seo, Eunsol Choi, and Luke Zettlemoyer. 독해력을 통한 제로샷 관계 추출 2017년 CoNLL에서.\n' +
+      '* Lewis 등(2020a) Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Kuttler, Mike Lewis, Wen-tau Yih, Tim Rocktaschel, et al. Retrieval-augmented generation for knowledge-intensive nlp tasks. 2020a에서 _NeurIPS_ 입니다.\n' +
+      '* Lewis et al.(2020b) Patrick Lewis, Pontus Stenetorp, and Sebastian Riedel. 오픈 도메인 질문 답변 데이터 세트에서 질문 및 답변 테스트-트레인이 겹칩니다. _ arXiv preprint arXiv:2008.02637_, 2020b.\n' +
+      '* Lewis et al.(2021) Patrick Lewis, Yuxiang Wu, Linqing Liu, Pasquale Minervini, Heinrich Kuttler, Aleksandra Piktus, Pontus Stenetorp, and Sebastian Riedel. 6천 5백만 명이 질문했을 겁니다 그걸로 뭘 할 수 있는지요 2021년 EACL에서.\n' +
+      '* Li et al.(2021) Yanyang Li, Ye Lin, Tong Xiao, and Jingbo Zhu. 압축된 하위 계층을 가진 효율적인 변압기 디코더입니다. _ arXiv preprint arXiv:2101.00542_, 2021.\n' +
+      '* Liu 등(2019) Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 로베르타: 강력하게 최적화된 버트 사전 훈련 접근법입니다. _ arXiv preprint arXiv:1907.11692_, 2019.\n' +
+      '* Longpre 등(2021) Shayne Longpre, Kartik Perisetla, Anthony Chen, Nikhil Ramesh, Chris DuBois, and Sameer Singh. 질문에 응답할 때 엔터티 기반 지식이 충돌합니다. _ arXiv preprint arXiv:2109.05052_, 2021.\n' +
+      '* Liu et al. (2020)David Lopez-Paz and Marc\'Aurelio Ranzato. 지속적인 학습을 위한 점진적 일화 기억. 2017년 NeurIPS에서.\n' +
+      '* McCloskey and Cohen (1989) Michael McCloskey and Neal J Cohen. 연결주의 네트워크의 치명적인 간섭: 순차 학습 문제. _ Psychology of learning and motivation_, 24:109-165, 1989.\n' +
+      '* Patterson 등(2021) David Patterson, Joseph Gonzalez, Quoc Le, Chen Liang, Lluis-Miquel Munguia, Daniel Rothchild, David So, Maud Texier, and Jeff Dean. 탄소 배출과 대규모 신경망 훈련입니다. _ arXiv preprint arXiv:2104.10350_, 2021.\n' +
+      '* Petroni 등(2019) Fabio Petroni, Tim Rocktaschel, Patrick Lewis, Anton Bakhtin, Yuxiang Wu, Alexander H Miller, and Sebastian Riedel. 지식 기반으로서의 언어 모델? 2019년 \'EMNLP\'에서\n' +
+      '* Petroni et al.(2021) Fabio Petroni, Aleksandra Piktus, Angela Fan, Patrick Lewis, Majid Yazdani, Nicola De Cao, James Thorne, Yacine Jernite, Vladimir Karpukhin, Jean Maillard, et al. Kilt: a benchmark for knowledge intensive language tasks. 2021년 NAACL에서.\n' +
+      '* Poerner et al.(2019) Nina Poerner, Ulli Waltinger, and Hinrich Schutze. E-bert: 버트에 대한 효율적이고 아직 효과적인 엔티티 임베딩. 2019년 EMNLP의 발견에서.\n' +
+      '* Prabhu et al.(2020) Ameya Prabhu, Philip HS Torr, and Puneet K Dokania. Gdumb: 지속적인 학습에서 우리의 진보에 의문을 제기하는 간단한 접근법. 2020년 _ECCV_에서.\n' +
+      '* Radford et al. (2019) Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. 언어 모델은 감독되지 않은 다중 작업 학습자입니다. _ OpenAI blog_, 1(8):9, 2019.\n' +
+      '* Raffel 등(2019) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 통합 텍스트 대 텍스트 변환기를 사용하여 전이 학습의 한계를 탐색합니다. _ arXiv preprint arXiv:1910.10683_, 2019.\n' +
+      '* Roberts et al.(2020) Adam Roberts, Colin Raffel, and Noam Shazeer. 언어 모델의 매개변수에 얼마나 많은 지식을 담을 수 있습니까? _EMNLP_, 2020.\n' +
+      '* Rusu 등(2016) Andrei A Rusu, Neil C Rabinowitz, Guillaume Desjardins, Hubert Soyer, James Kirkpatrick, Koray Kavukcuoglu, Razvan Pascanu, and Raia Hadsell. 진보적인 신경망입니다. _ arXiv preprint arXiv:1606.04671_, 2016.\n' +
+      '* Shin et al. (2020) Taylor Shin, Yasaman Razeghi, Robert L. 로건 4세, 에릭 월리스 사미르 싱 자동 프롬프트: 자동으로 생성된 프롬프트로 언어 모델에서 지식을 추출합니다. _EMNLP_, 2020.\n' +
+      '* Sun et al.(2020) Fan-Keng Sun, Cheng-Hao Ho, and Hung-Yi Lee. 라몰: 평생 언어 학습을 위한 언어 모델링. 2020년 _ICLR_ 에서.\n' +
+      '* Thorne et al.(2018) James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. 열: 사실 추출 및 검증을 위한 대규모 데이터 세트입니다. 2018년 NAACL에서.\n' +
+      '* Tiedemann and Thottingal (2020) Jorg Tiedemann and Santhosh Thottingal. OPUS-MT - 세계를 위한 개방형 번역 서비스를 구축합니다. EAMT, 리스본, 포르투갈, 2020년입니다.\n' +
+      '* Verga et al.(2021) Pat Verga, Haitian Sun, Livio Baldini Soares, and William W Cohen. 전문가로서의 사실: 상징적 지식보다 적응 가능하고 해석 가능한 신경 기억. 2021년 NAACL에서.\n' +
+      '* Vig 등(2020) Jesse Vig, Sebastian Gehrmann, Yoatan Belinkov, Sharon Qian, Daniel Nevo, Simas Sakenis, Jason Huang, Yaron Singer, and Stuart Shieber. 신경 nlp를 해석하기 위한 인과적 매개 분석: 성별 편향의 경우. 2020년 NeurIPS에서.\n' +
+      '* Wang et al.(2021) Cunxiang Wang, Pai Liu, and Yue Zhang. 생성적 사전 훈련 언어 모델이 닫힌 책 qa에 대한 지식 베이스 역할을 할 수 있는가? 2021a에서 _ACL_ 입니다.\n' +
+      '* Wang 등(2021) Ruize Wang, Duyu Tang, Nan Duan, Zhongyu Wei, Xuanjing Huang, Cuihong Cao, Daxin Jiang, Ming Zhou, et al. K-adapter: Adapter를 사용하여 사전 학습된 모델에 지식을 주입합니다. Acl의 발견에서, 2021b.\n' +
+      '\n' +
+      '* Wolf 등(2020) Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Remi Louf, Morgan Funtowicz, Joe Davison, Sam Shleifer, Patrick von Platen, Clara Ma, Yacine Jernite, Julien Plu, Canwen Xu, Teven Le Scao, Sylvain Gugger, Mariama Drame, Quentin Lhoest, and Alexander M. 러쉬 트랜스포머: 최첨단 자연어 처리입니다. 2020년 _EMNLP 시스템 시연_ 에서.\n' +
+      '* Xu et al.(2021) Jing Xu, Arthur Szlam, and Jason Weston. 금붕어 기억 너머: 장기적인 오픈 도메인 대화. _ arXiv preprint arXiv:2107.07567_, 2021.\n' +
+      '* Yang et al.(2018) Zilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William W Cohen, Ruslan Salakhutdinov, and Christopher D Manning. Hotpotqa: 다양하고 설명 가능한 다중 홉 질문 응답을 위한 데이터 세트입니다. 2018년 \'EMNLP\'에서요\n' +
+      '* Yoon 등(2018) 윤재홍, 양은호, 이정태, 황성주. 동적으로 확장 가능한 네트워크를 사용하여 평생 학습합니다. 2018년 <ICLR>에서.\n' +
+      '* Zellers 등(2019) Rowan Zellers, Ari Holtzman, Hannah Rashkin, Yoatan Bisk, Ali Farhadi, Franziska Roesner, and Yejin Choi. 신경 가짜 뉴스에 대한 방어 2019년 NeurIPS에서.\n' +
+      '* Zhang & Choi (2021) Michael J.Q. Zhang and Eunsol Choi. 상황 QA: 추가 언어적 컨텍스트를 QA에 통합합니다. _ EMNLP_, 2021.\n' +
+      '* Zhu et al.(2020) Chen Zhu, Ankit Singh Rawat, Manzil Zaheer, Srinadh Bhojanapalli, Daling Li, Felix Yu, and Sanjiv Kumar. 변압기 모델의 메모리를 수정합니다. _ arXiv preprint arXiv:2012.00363_, 2020.\n' +
+      '\n' +
+      '관련 업무의 확장\n' +
+      '\n' +
+      '섹션 2에서 언급했듯이 이전 CL 방법을 CKL 설정에 부적절하게 만드는 전통적인 CL 제형과 CKL 사이에는 근본적인 차이가 있다. 이 절에서는 이전의 전통적인 연속 학습 방법을 자세히 소개하고 CKL 벤치마크의 기준선으로 설정된 문헌의 방법과 CL 방법의 식별된 한계를 해결하는 방법을 탐색하고 LM이 변화하는 세계에 대처하도록 하는 대체 방법에 대한 설명을 제공한다.\n' +
+      '\n' +
+      '### 전통적인 연속 학습\n' +
+      '\n' +
+      '전통적인 연속 학습(CL) 방법은 순차적으로 들어오는 작업 간의 전달의 두 가지 측면인 _전진 전달_ 과 _후진 전달_ (Lopez-Paz and Ranzato, 2017)을 해결하는 데 중점을 둡니다. _ Forward transfer_는 과거 태스크가 현재 및 미래 태스크의 성능에 미치는 영향을 나타냅니다. _ Backward transfer_는 현재 또는 미래의 태스크들이 이전 태스크들의 성능에 어떻게 영향을 미치는지 나타낸다. 일반적인 사전 훈련-미세 조정 접근법은 모델이 보다 일반적인 소스 태스크에서 사전 훈련된 후 대상 태스크에서 더 나은 성능을 수행하는 _긍정적 전진 전달_의 사례로 볼 수 있다. 또한, 치명적인 망각은 이전 작업이 다른 작업에 대한 지속적인 훈련으로 인해 성능이 저하되는 _부정적인 역방향 이전_의 사례로 볼 수 있다. 이 두 가지 측면과 관련하여 CL 접근법은 정규화, 리허설 및 매개변수 확장 방법의 세 가지 주요 접근법으로 분류할 수 있다.\n' +
+      '\n' +
+      'RegularizationElastic Weight Consolidation (EWC)(Kirkpatrick et al., 2017)은 현재 작업에 대해 훈련하는 동안 이전 작업의 중요한 매개 변수를 정규화하여 이전 작업의 부정적인 역방향 전송을 완화시키는 방법입니다. 중요한 파라미터들은 이전 태스크들의 트레이닝 동안 각 파라미터의 구배 업데이트 단계의 크기를 측정함으로써 계산된 피셔 정보 매트릭스를 통해 측정된다.\n' +
+      '\n' +
+      'RehearsalGradient Episodic Memory (GEM)(Lopez-Paz and Ranzato, 2017)는 _episodic memory_에 저장된 각 태스크의 샘플을 활용하는 첫 번째 리허설 방법 중 하나이며 _음의 역방향 이전_을 방지하고 _양의 역방향 이전_을 허용하기 위해 샘플의 손실과 관련하여 부등식 제약을 둡니다. 경험 리플레이 및 로컬 적응(d\'Autume et al., 2019)과 같은 다른 방법들은 망각을 완화하기 위해 트레이닝 동안 이전 태스크들의 메모리에 저장된 샘플들을 리플레이한다.\n' +
+      '\n' +
+      'Parameter-expansionProgressive Neural Networks (PNN)(Rusu et al., 2016)는 이전 파라미터가 동결되고 _positive forward transfer_ 를 허용하는 측방향 연결을 통해 연결될 수 있는 각각의 새로운 작업에 대한 새로운 파라미터 세트를 도입하는 가장 초기의 파라미터-확장/공유 접근법 중 하나이다. PNN은 일부 작업에서 _음의 역방향 전달_을 방지할 뿐만 아니라 _양의 순방향 전달_ 측면에서 이전 사전 훈련-미세 조정 접근법을 능가했다.\n' +
+      '\n' +
+      '### 언어 모델 CKL 메서드\n' +
+      '\n' +
+      '섹션 2에서 언급했듯이 CL 방법의 한계를 해결하여 CKL에 적용할 수 있는 문헌에서 방법을 탐구한다. 또한 이러한 방법을 CL의 세 가지 주요 범주로 분류한다.\n' +
+      '\n' +
+      '정규화를 활용하는 대부분의 CL 방법은 이전 작업의 중요한 매개변수를 계산해야 하며, 이 경우 원본 텍스트 코퍼스에 대한 사전 훈련이다. 이러한 매개변수를 결정하는 것은 대부분에 의해 복제될 수 없는 대규모 사전 훈련이 필요하기 때문에 종종 비현실적이다. 또한, LM의 파라미터에서 지식이 정확히 어떻게 그리고 어디서 저장되는지는 현재 식별 및 국지화하기가 매우 어렵다(Vig et al., 2020; De Cao et al., 2021). RecAdam(Chen et al., 2020)은 더 강한 독립 가정으로 EWC(Kirkpatrick et al., 2017)와 동일한 훈련 목표를 따라 이러한 한계를 극복하고 초기 사전 훈련 코퍼스에 액세스할 필요성을 타고 2차 페널티를 부과한다.\n' +
+      '\n' +
+      '리허설 라지 LMs는 보통 Common Craww9와 같은 방대한 양의 원시 텍스트 코퍼스에 대해 사전 훈련된다. 사전 훈련을 CL 작업으로 처리할 때 사전 훈련 코퍼스의 일부 샘플이 원래 사전 훈련 코퍼스의 전체 세계 지식을 나타낼 수 없기 때문에 이전 리허설 방법을 적용하려고 할 때 한계가 존재한다. 믹스-리뷰(He et al., 2021)는 트레이닝이 진행됨에 따라 타겟 태스크를 향해 어닐링되는 믹스-비율에 의존하여 프리트레이닝 코퍼스의 미세조정 및 혼합 동안 프리트레이닝 코퍼스에 대한 액세스를 가정함으로써 더 작은 프리트레이닝 설정에서 예비 실험을 수행함으로써 이 문제를 해결한다. 믹스-리뷰는 멀티 태스크 학습의 온화한 버전으로 간주될 수 있다.\n' +
+      '\n' +
+      '각주 9: [https://commoncrawl.org/](https://commoncrawl.org/)\n' +
+      '\n' +
+      '파라미터-확장 K-어댑터(Wang et al., 2021)는 사실적 및 언어적 지식의 지속적인 사전 훈련과 세 가지 다른 지식 기반 다운스트림 태스크에 대한 성능 향상을 위해 원래 파라미터를 공유 및 동결하고 어댑터를 통해 새로운 파라미터를 추가한다. 보다 최근에, LoRA(Hu et al., 2021)는 원래의 파라미터를 동결시키고 트랜스포머 아키텍처의 각 레이어에 트레이닝 가능한 랭크-분해 매트릭스를 주입함으로써, 온-파 또는 모든 파라미터를 트레이닝하는 것보다 더 잘 수행하면서 트레이닝 가능한 파라미터의 수 및 계산 하드웨어 요구량을 크게 감소시킨다. 두 방법 모두 원래 매개변수를 동결하면 치명적인 망각을 완화할 수 있다고 가정한다. 우리는 CKL 벤치마크에서 구현을 통해 가설을 테스트한다.\n' +
+      '\n' +
+      '### 언어 모델과 세계 지식 통합 방법\n' +
+      '\n' +
+      '명시적 MethodsFacts-as-Experts (Verga et al., 2021)는 추론 시간 동안 수정될 수 있는 외부 메모리에 키-값 쌍들의 형태로 엔티티들의 표현들을 저장한다. RAG(Lewis et al., 2020)는 Wikipedia의 dense vector index를 retriever로 액세스하고, 세계의 변화에 따라 모델의 거동을 업데이트하기 위한 index들을 스왑한다. 블렌더 봇 2.0(Xu et al., 2021; Komeili et al., 2021)은 또한 인터넷을 검색하여 최근의 대화를 외부 장기 기억에 저장하는 명시적인 방법 중 하나이다. 인덱스 교환, 명시적 엔티티-관계 지식 추가 또는 인터넷 검색과 같은 명시적 방법은 추론 중에 수동 개입이 필요하거나 검색이 필요한 작업에 구속된다. 본 논문에서는 암묵적인 방법에만 초점을 맞춘다.\n' +
+      '\n' +
+      'Implicit MethodsZhu et al. (2020)은 수정되지 않은 사실을 잊지 않고 특정 사실을 명시적으로 수정하는 새로운 작업을 제안했으며 제약된 계층 단위 미세 조정을 포함하여 비모수 메모리를 사용하지 않고 여러 벤치마크 접근법을 제공했다. Wang 등(2021)은 사전 훈련된 LMs의 동결 레이어에 어댑터를 추가하여 사실적, 언어적 지식을 주입하고 다운스트림 태스크에 대한 성능을 향상시키는 방법인 K-Adapter를 제안했다. Chen et al.(2020)은 사전 훈련 코퍼스에 액세스할 필요 없이 대상 태스크에서 미세 조정하면서 사전 훈련 최적화를 시뮬레이션하여 GLUE 벤치마크에서 성능을 향상시키는 새로운 최적화기를 제안했다. De Cao et al.(2021)은 사실적 지식을 편집하기 위해 하이퍼 네트워크를 사용하는 것을 제안한다.\n' +
+      '\n' +
+      '이러한 암시적 방법은 LMs의 암시적 매개변수로부터 지식을 주입하거나 수정하는 효율적인 방법임에도 불구하고, 모두 (Wang et al., 2021)의 경우와 같은 _특정 지식_을 주입하거나 (Zhu et al., 2020; De Cao et al., 2021)의 경우와 같은 _과거 지식_을 수정하는 것으로 제한된다. 우리가 아는 한, 새로운 세계 지식의 획득을 위해 새로운 텍스트 코퍼스에 대한 지속적인 사전 훈련 시 초기 사전 훈련에서 얻은 세계 지식의 _재난적 망각_ 을 구체적으로 다루지 않았다.\n' +
+      '\n' +
+      '## Appendix B 데이터 세트 구성\n' +
+      '\n' +
+      '이 섹션에서는 CKL에 사용되는 벤치마크 데이터 세트를 만들 때 겪는 데이터 세트 구성 프로세스에 대해 설명한다. 구축을 위해 Amazon Mechanical Turk (mturk)10을 사용하여 Human Intelligent Tasks (HITs)를 크라우드소싱하고 C4 말뭉치를 광범위하게 검색해야 하는 주석에 11명의 전문가를 별도로 고용한다. 또한, 데이터 구축 프로세스를 설정하고 주석 가이드라인을 작성한 3명의 전문가11은 사후 검증 및 주석자에게 실시간 피드백을 통해 데이터의 품질을 보장할 수 있도록 하였다. mturk HIT에 사용되는 인터페이스는 부록 B.2에 나와 있다.\n' +
+      '\n' +
+      'CC-RecentNewsWe는 먼저 비교적 _새로운_ 지식을 \\(D_{1}\\)로 포함하는 새로운 텍스트 코퍼스인 CC-RecentNews를 구축한다. 우리는 2020년 5월부터 2021년 4월까지 발표된 221,779개의 뉴스 기사를 크롤링하기 위해 CC-NEWS(Liu et al., 2019) 및 REALNEWS 데이터 세트(Zellers et al., 2019)와 유사한 뉴스-please(Hamborg et al., 2017)를 사용한다. 2020년 5월 이전에 구축된 \\(D_{0}\\)에 초기 사전 훈련된 LMs는 상대적으로 _최근_ 세계 지식을 얻기 위해 CC-RecentNews에 지속적으로 사전 훈련될 수 있다.\n' +
+      '\n' +
+      '불변 LAMA 우리는 CKL 동안 잊혀질 수 있는 _시간 불변_ 지식을 측정하기 위한 LAMA(Petroni et al., 2019) 작업의 하위 집합인 InvariantLAMA를 만듭니다. LAMA의 T-REx(Elsahar et al., 2018) 하위 집합의 41개 관계 중 _시간 불변_ 인스턴스에 대해 조사하는 28개의 관계 유형(전체 _시간 불변_ 관계 목록이 부록 B.1에 제공됨)을 수동으로 선택합니다. 또한 Poerner et al.(2019)에 따라 답변이 주제와 겹치는 경우는 클로즈 문장 자체에서 추론할 수 있기 때문에 제거한다. 마지막으로, 응답에 대한 예측을 위해 세계 지식을 필요로 하는 인스턴스만을 남기기 위해 답변이 비개체였던 인스턴스들을 제거한다(Guu et al., 2020).\n' +
+      '\n' +
+      'UpdatedLAMA 및 NewLAMA우리는 CKL 동안 오래된 지식의 업데이트와 새로운 지식의 습득을 측정하기 위해 UpdatedLAMA 및 NewLAMA를 구축한다. UpdatedLAMA 구축의 과제는 지식 인스턴스가 세부 정보가 변경된 \\(D_{0}\\)와 \\(D_{1}\\)에 모두 존재하는 경우에만 업데이트가 필요한 지식으로 간주될 수 있다는 것이고, NewLAMA 구축의 과제는 지식이 \\(D_{1}\\)에 있지만 \\(D_{0}\\)에는 존재하지 않는 경우에만 새로운 지식으로 간주될 수 있다는 것이다. 따라서 우리는 데이터 구축 프로세스를 신중하게 설정한다. UpdatedLAMA 및 NewLAMA의 단일 인스턴스 생성을 위한 파이프라인은 그림 4(a)와 같다. 각 잠재적 인스턴스는 CC-RecentNews의 단일 문서에서 시작하여 파이프라인을 거쳐 결국 (1) 폐기(2) UpdatedLAMA에 추가되거나 (3) NewLAMA에 추가됩니다. 그 절차는 다음과 같다:\n' +
+      '\n' +
+      '(1) 먼저, CC-RecentNews로부터의 단일 뉴스 기사에 PAQ 질문 생성기를 사용하여 아마도-질문들의 리스트(Lewis et al., 2021)가 생성된다. (2) PAQ 리스트 및 뉴스 기사는 크라우드소싱된 작업자에게 주어져 기사 내에서 답변( _새로운 답변_으로 표시됨)을 찾을 수 있는 가장 _최근_ 지식을 묻는 질문을 선택한다. (3) 크라우드 소스 작업자에게 질문을 클로즈 문장으로 변환하도록 지시하여 미리 훈련된 T5 LM에 입력으로 주어질 수 있도록 한다. T5 LM의 예측은 질문과 클로즈 문장과 함께 저장된다. (4) 전문가 주석기는 질문의 품질을 보장하고, 코어에 의한 문장 클로징\n' +
+      '\n' +
+      '도 4: (a) UpdatedLAMA, NewLAMA, 및 (b) NewLAMA-Easy용 데이터셋 구축 파이프라인\n' +
+      '\n' +
+      '필요할 때마다 이를 수정하고 \\(D_{0}\\)12의 대표자로 C4 코퍼스를 통해 검색하여 모델 예측이 올바른지 확인한다. 예측이 올바르고 예측과 _새로운 답변_이 동일하지 않은 경우 세부 정보가 변경된 \\(D_{0}\\)와 \\(D_{1}\\) 모두에 다음 인스턴스가 존재해야 하므로 C4에서 찾은 증거 문서와 함께 UpdatedLAMA에 추가됩니다. 동일한 경우 인스턴스가 _업데이트_도 아니고 _새로운_도 아니므로 인스턴스는 폐기됩니다. (5) 마지막으로, 모델 예측이 잘못된 경우, 전문가 주석자는 C4에서 질문에 대한 대안적인 답변을 찾도록 요청받는다. 발견되지 않은 경우, 질문에 대한 답변은 CC-RecentNews(\\(D_{1}\\)), C4(\\(D_{0}\\))의 기사에서만 찾을 수 있기 때문에 인스턴스는 NewLAMA에 추가된다. 마찬가지로 C4에서 대체 답변이 발견되면 _새 답변_과 동일한지 확인하고 동일하지 않으면 인스턴스를 UpdatedLAMA에 추가하고 그렇지 않으면 무시합니다.\n' +
+      '\n' +
+      '각주 12: 전문가 주석자는 C4 코퍼스를 통해 검색하기 위해 [https://c4-search.apps.allenai.org/](https://c4-search.apps.allenai.org/)를 사용하도록 지시됩니다.\n' +
+      '\n' +
+      '전체 프로세스에서 검증자는 데이터의 건전성을 확인하고 주석자의 작업에 대한 자세한 실시간 피드백을 제공한다.\n' +
+      '\n' +
+      'NewLAMA-EasyNewLAMA는 태스크 공식에서 정의하는 _새로운 지식_에 대한 정확한 정의에 해당하지만 각 인스턴스가 전체 C4 데이터베이스에서 답변을 검색해야 하기 때문에 데이터 세트의 크기를 조정하는 것이 어려웠다. 대신 CC-RecentNews에 대한 지속적인 사전 교육 동안 획득한 일반적인 새로운 지식을 테스트하는 훨씬 더 크고 쉬운 변형 NewLAMA-Easy를 제공한다. NewLAMA-Easy의 단일 인스턴스의 생성을 위한 파이프라인이 도 4의 (b)에 도시되어 있으며, 다음의 절차를 따른다:\n' +
+      '\n' +
+      '(1) 먼저 크라우드소싱 작업자에게 주어진 기사에 _new_ 정보가 포함되어 있는지 여부를 분류하도록 지시한다. (2020년 5월 이전에 알 수 없는 것으로 _new_를 정의합니다. 작업자는 기사가 새로운 정보를 포함하는 경우, 문장에서 가능한 답변 후보들 중 가장 많은 _최근_ 정보와 _엔티티_가 포함된 기사로부터 문장을 선택하고, 그렇지 않은 경우 기사를 폐기하도록 지시받는다. 개체명 인식 모델을 통해 가능한 개체를 제공한다. (2) Choi et al.(2021)에서 제공하는 탈맥락화 모델을 통해 기사로부터 선택된 문장을 _stand-alone_으로 만든다. (3) 탈맥락화된 문장은 역번역 모델(en\\(\\rightarrow\\)de\\(\\rightarrow\\)en)(Tiedemann and Thottingal, 2020)에 의해 패러프레이징되고, 선택된 단어가 패러프레이징된 문장에 여전히 있는지 체크하고, 그렇지 않은 경우 문장은 폐기된다. (4) 다음으로, 문장에서 선택된 단어를 마스킹하고 두 명의 크라우드 소스 작업자에게 클로즈 문장을 질문으로 변환하고 질문에 대답한다. (5) 실제 선택된 단어에 상응할 뿐만 아니라 작업자 간에 답변이 일치하면 NewLAMA-Easy에 인스턴스를 추가한다.\n' +
+      '\n' +
+      'Mturk HIT에 사용되는 특정 인터페이스는 부록 B.2에 나와 있다. 구축된 데이터 세트의 통계는 부록 B.3에 나와 있다.\n' +
+      '\n' +
+      '### LAMA 시간 불변 관계\n' +
+      '\n' +
+      '<표 4>는 InvariantLAMA의 28개의 시불변 관계 목록을 보여준다. 우리는 44개의 원래 LAMA 관계를 수동으로 필터링하여 시간 불변 관계만 남긴다. "[X]는 [Y]에 대해 작동합니다." 및 "[X]는 [Y]의 구성원입니다."와 같은 템플릿은 다른 타임스탬프에 대해 답변이 변경될 수 있으므로 제외됩니다. 템플릿에서 [X]와 [Y]는 각각 주체 레이블과 객체 레이블을 의미한다. 주제만 포함된 템플릿이 주어지면 모델은 지식 탐사를 위해 객체 레이블[Y]을 예측해야 한다.\n' +
+      '\n' +
+      '### CKL 벤치마크 구성에 사용되는 인터페이스\n' +
+      '\n' +
+      'UpdatedLAMA 및 NewLAMA, NewLAMA-Easy 및 NewLAMA-Easy 구축 시 사용된 Mturk 인터페이스는 각각 그림 5, 6 및 7에 나와 있다.\n' +
+      '\n' +
+      '### 데이터 세트 통계 및 예제\n' +
+      '\n' +
+      '표 5의 CKL 벤치마크에 대한 데이터 통계를 보고한다. 구축된 각 데이터 세트의 크기, 평균 입력 토큰 길이, 평균 답변 토큰 길이 및 답변 유형을 측정한다. 고려해야 할 한 가지는, 우리가 InvariantLAMA를 구성한 LAMA(Petroni et al., 2019)는 원래 단일-토큰 디코딩(1.3 with the T5-tokenizer)만을 위해 구성되는데, 이는 다중-토큰 디코딩은 추가적인 튜닝가능한 파라미터들(빔 사이즈, n-그램 반복 페널티들 등)을 수반하기 때문이다.\n' +
+      '\n' +
+      '새로 구축된 데이터셋 UpdatedLAMA, NewLAMA, NewLAMA-Easy는 InvariantLAMA에 비해 태스크의 난이도를 높이는 멀티토큰 디코딩이 필요하다. 또한, NewLAMA-Easy는 각 인스턴스를 생성하기 위해 탈맥락화 및 역번역 과정을 적용하므로 다른 데이터 세트와 입력 분포(입력 시퀀스 길이)가 달라 문장이 길어진다. 마지막으로 CKL 벤치마크 데이터 세트의 몇 가지 예는 표 6에 나와 있다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline\n' +
+      '**Relation** & **Template ([X], [Y])** & **Example** \\\\ \\hline P19 & [X] was born in [Y]. & Taras Kuzio was born in Halifax. \\\\ P20 & [X] died in [Y]. & Georgios Roilos died in Athens. \\\\ P279 & [X] is a subclass of [Y]. & Hutterite German is a subclass of Bavarian. \\\\ P37 & The official language of [X] is [Y]. & The official language of Azad Kashmir is English. \\\\ P449 & [X] was originally aired on [Y]. & Microsoft was originally aired on BBC. \\\\ P47 & [X] shares border with [Y]. & Illinois shares border with Kentucky. \\\\ P138 & [X] is named after [Y]. & Logan International Airport is named after Boston. \\\\ P364 & The original language of [X] is [Y]. & The original language of The Fatal Eggs is Russian. \\\\ P527 & [X] consists of [Y]. & AIM alliance consists of Apple. \\\\ P176 & [X] is produced by [Y]. & Alfa Romeo 155 is produced by Fiat. \\\\ P27 & [X] is [Y] citizen. & Woodrow Lloyd is Canada citizen. \\\\ P407 & [X] was written in [Y]. & France Culture was written in French. \\\\ P30 & [X] is located in [Y]. & Lavoisier Island is located in Antarctica. \\\\ P178 & [X] is developed by [Y]. & Tizen is developed by Intel. \\\\ P1376 & [X] is the capital of [Y], & London is the capital of England. \\\\ P131 & [X] is located in [Y]. & Pershing County is located in Nevada. \\\\ P1412 & [X] used to communicate in [Y]. & Jacques Rivette used to communicate in French. \\\\ P17 & [X] is located in [Y]. & Eibenstock is located in Germany. \\\\ P276 & [X] is located in [Y]. & Delhi Technological University is located in India. \\\\ P937 & [X] used to work in [Y]. & Pierre Trudeau used to work in Ottawa. \\\\ P140 & [X] is affiliated with the [Y] religion. & Emirate of Granada is affiliated with the Islam religion. \\\\ P103 & The native language of [X] is [Y]. & The native language of Anastasy Vonsyatsky is Russian. \\\\ P190 & [X] and [Y] are twin cities. & Beijing and Milan are twin cities. \\\\ P1001 & [X] is a legal term in [Y]. & Surgeon General is a legal term in Canada. \\\\ P495 & [X] was created in [Y]. & La Grande Vadrouille was created in France. \\\\ P36 & The capital of [X] is [Y]. & The capital of Granville County is Oxford. \\\\ P740 & [X] was founded in [Y]. & Grimaldi Group was founded in Naples. \\\\ P361 & [X] is part of [Y]. & Sinqa is part of Andes. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 불변 LAMA의 관계\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '**Dataset** & **Size** & **Avg. Input** & **Avg. Answer** & **Answer Types** \\\\ \\hline InvariantLAMA & 17474 & 11.9 & 1.3 & Geographical (54\\%), Language (14.9\\%), Nationalities (7.2\\%) \\\\  & & & Person (6.3\\%), Location (5.7\\%), Organization (5.3\\%), etc. (6.6\\%) \\\\ \\hline UpdatedLAMA & 924 & 13.7 & 9.4 & Person (61.47\\%), Organization (8.3\\%), Geographical (6.6\\%), \\\\  & & & Numerals (5.19\\%), Date (2.4\\%), etc. (16.04\\%) \\\\ \\hline NewLAMA & 797 & 14.7 & 8.7 & Person (59.7\\%), Organization (10.2\\%), Numerals (7.6\\%) \\\\  & & & Date (5.3\\%), Geographical (4.8\\%), etc. (12.4\\%) \\\\ \\hline NewLAMA-Easy & 11177 & 44.4 & 6.1 & Person (48.5\\%), Organization (13\\%), Geographical (9.8\\%) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: CKL 벤치마크 데이터세트 통계치 그림 5: UpdatedLAMA 및 NewLAMA 구축에 사용되는 머트크 인터페이스\n' +
+      '\n' +
+      '도 6: NewLAMA-Easy 구축을 위해 사용된 첫 번째 mturk 인터페이스\n' +
+      '\n' +
+      '도 7: NewLAMA-Easy 구축을 위해 사용된 두번째 mturk 인터페이스\n' +
+      '\n' +
+      '## 부록 C 실험 구성\n' +
+      '\n' +
+      '사전 훈련 구성 초기화로 C4(2019년 4월)에서 초기에 사전 훈련된 T5와 위키피디아(2020년 5월)에서 현저 스팬 마스킹(Guu et al., 2020)으로 지속적으로 사전 훈련된 T5를 활용한다. 우리는 Wolf et al.(2020)의 검문소를 사용한다. 또한 CKL 동안 SSM 목표를 수행하는 이유는 LMs "세계 지식을 필요로 하는 문제에 초점을 맞춘다"(Guu et al., 2020; Roberts et al., 2020)를 돕는 것으로 나타났기 때문이다.\n' +
+      '\n' +
+      '연속 사전 학습 구성 입력 및 출력 시퀀스 길이는 350으로 고정됩니다. 서로 다른 방법에 필요한 메모리 소모가 다양하기 때문에 동일한 수의 훈련 배치가 GPU에 로드될 수 없는 경우에 대해 기울기 축적을 사용하고 전역 배치 크기를 60으로 설정합니다. 초기 학습률이 1e-3인 Adafactor 최적화기를 사용합니다. 부록 E에서 이전 지식 유지와 새로운 지식 획득 사이의 트레이드오프에 대한 학습률 변동의 영향을 보여줍니다. 훈련의 처음 10%에 대해 학습률 워밍업을 사용하고 학습이 끝날 때까지 학습률을 초기 학습률의 절반으로 선형 감쇠시킵니다. 모든 실험에 대해 Mix-Review를 제외한 각 방법으로 훈련하기 위해 4개의 32GB V100 GPU를 사용하며, 여기서 16개의 32GB V100 GPU를 사용한다. 각 개별 CKL 작업에 대한 평가에 사용된 구성의 세부 사항은 부록 C에 나와 있다.\n' +
+      '\n' +
+      '평가 구성 T5 기반 모델의 경우 모든 평가는 제로 샷 방식으로 수행되며 단일 GPU로 처리됩니다. InvariantLAMA의 경우, 입력 및 출력 길이는 각각 25 및 4로 고정된다. UpdatedLAMA 및 NewLAMA의 경우 입력 및 출력 길이는 각각 50 및 10이다. 마지막으로 입력 및 출력 길이는 NewLAMA-Easy의 경우 각각 150 및 10이다. 이 하이퍼파라미터의 근거는 표 5의 평균 입력 및 답변 토큰을 기반으로 한다.\n' +
+      '\n' +
+      'T5 모델과 달리 GPT-2 기반 모델은 평가를 위해 1 에포크에 대해 추가 _조명 조정_이 필요합니다. InvariantLAMA의 경우, 입력 및 출력 길이는 각각 50 및 3이다. 학습 배치 크기는 32이고 학습률은 1e-3이다. 새로운 지식의 획득에 대한 평가를 위해 입력 길이와 출력 길이는 각각 100과 10이다. 훈련 배치 크기는 메모리 제약으로 인해 8이고 학습 속도는 1e-3이다. 두 튜닝 프로세스 모두에 대해 4개의 V100 32GB GPU가 사용된다. GPT-2 기반 모델의 자세한 결과와 논의는 부록 G에 나와 있다.\n' +
+      '\n' +
+      '## CKL 메서드 구현을 위한 부록 D 하이퍼파라미터\n' +
+      '\n' +
+      '**RecAdam**(Chen et al., 2020) Chen et al.(2020)과 동일한 하이퍼파라미터 설정을 최적화기에 사용합니다. 2차 패널티 \\(\\gamma\\)의 계수를 5,000으로 설정하고 어닐링 계수 \\(\\lambda(t)\\에 대해 100, 250, 500, 1,000 및 0.05, 0.1, 0.2, 0.5, 1에서 가장 좋은 \\(t_{0}\\) 및 \\(k\\)를 선택합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l|l} \\hline \\hline\n' +
+      '**Task** & **Input** & **Output** \\\\ \\hline \\multirow{3}{*}{InvariantLAMA} & iPod Touch is produced by & Apple \\\\  & The Sharon Cuneta Show was created in & Philippines \\\\  & The native language of Lee Chang-dong is & Korean \\\\ \\hline \\multirow{6}{*}{UpdatedLAMA} & is the prime minister of England. & Theresa May\\(\\rightarrow\\) \\\\  & has the most passing yards in the NFL. & Boris Johnson \\\\  & has the most passing yards in the NFL. & Brady Quinn\\(\\rightarrow\\) \\\\  & Bale has & champions league titles with & Jalen Guyton \\\\  & Real Madrid. & 3\\(\\rightarrow\\)4 \\\\ \\hline \\multirow{3}{*}{NewLAMA} & Alicia Braga plays & in the New Mutant. & Cecilia Reyes \\\\  & owns the rights to the Falcon and the & Disney \\\\  & Winter Soldier. & 1.5 billion \\\\  & Tesla invested & in the digital currency bitcoin. & 1.5 billion \\\\ \\hline \\multirow{3}{*}{NewLAMA-Easy} & The decision of the two volleyball stars Bria and Cimone & \\multirow{3}{*}{Howard University} \\\\  & Woodard to withdraw from the Power 5 School to study & \\\\ \\cline{1-1}  & at & has become a national story. & \\\\ \\cline{1-1}  & Allen Lazard is officially listed as questionable with a & \\\\ \\cline{1-1}  & nuclear injury after missing the last & games. & six \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: 불변 LAMA, Updated LAMA, NewLAMA, NewLAMA-Easy의 예\n' +
+      '\n' +
+      '**Mix-Review**(He et al., 2021) 영어 위키피디아 13을 사용하여 원래 사전 훈련 코퍼스를 나타냅니다. 믹스-디케이와 믹스-비율은 논문에서 가장 좋은 하이퍼파라미터 설정인 각각 4와 0.7로 설정된다.\n' +
+      '\n' +
+      '각주 13: [https://huggingface.co/datasets/wikipedia](https://huggingface.co/datasets/wikipedia)\n' +
+      '\n' +
+      '**LoRA**(Hu 등, 2021) 인코더-디코더 LM에 대한 인코더와 디코더 전용 LM에 대한 전체 모델만 동결합니다. 최적의 순위 \\(r\\) 4를 사용하고, 자체 주의 모듈에서 \\(W_{q}\\)와 \\(W_{v}\\)를 모두 적용하며, 이는 논문에서 가장 잘 수행되는 하이퍼파라미터 설정에 해당한다.\n' +
+      '\n' +
+      '**K-Adapter**(Wang et al., 2021) T5-LoRA와 마찬가지로 인코더-디코더 LM에 대한 인코더와 GPT-2에 대한 전체 모델을 동결합니다. 매개 변수의 # 증가 효과를 보기 위해 T5 및 GPT-2 모두에 대해 \\(k=2,3\\)를 구현합니다. 원본 논문에서와 달리, 우리는 업-프로젝션 및 다운-프로젝션 층의 필요성을 제거하면서, 원래의 LM으로부터 단일 변압기 층과 동일한 어댑터의 구성을 설정했다.\n' +
+      '\n' +
+      '**모듈러** 차원과 일치하도록 두 인코더의 숨겨진 상태 출력을 추가하기 전에 투영 계층을 사용합니다.\n' +
+      '\n' +
+      '**T5에 대해 인코더에만 매개 변수를 추가하는 이유는 무엇입니까?* * 매개 변수 확장 방법의 경우 인코더가 입력 시퀀스에 적용되고 디코더가 출력 시퀀스에 적용되기 때문에 인코더에만 매개 변수를 추가합니다. 계산 비용의 대부분은 (Li 등, 2021)에서 강조된 바와 같이 자동-회귀 방식으로 출력 시퀀스에 대한 디코더 컴퓨팅으로부터 나오기 때문에, 인코더에서 새롭게 추가된 파라미터들은 대략 최소의 추가적인 계산 비용을 가질 것으로 예상된다.\n' +
+      '\n' +
+      '**T5에 대한 인코더만 매개 변수를 동결하는 이유는 무엇입니까?* * K-Adapter 및 LoRA는 처음에 새로 추가된 매개 변수를 제외한 모든 매개 변수를 동결하도록 제안되었습니다. 그러나, 이 방법론을 T5에 적용할 때, 디코더의 파라미터를 언프리징하는 것이 전체 트레이드오프 측면에서 파라미터 확장 방법과 함께 사용될 때 더 나은 성능을 가져온다는 것을 경험적으로 보여주었다.\n' +
+      '\n' +
+      '## 부록 E 연속 사전 학습을 위한 학습률 변동의 Trade-off 탐색\n' +
+      '\n' +
+      '표 7은 지속적인 사전 훈련에 대한 학습률을 낮추면 원지식에 대한 망각이 줄어들 뿐만 아니라 새로운 지식에 대한 학습도 줄어든다는 것을 보여준다. 실험은 표 3의 Small 시나리오 설정 하에 수행된다.\n' +
+      '\n' +
+      '학습률이 다른 T5-Vanilla 모델 중 FUAR을 비교하여 FUAR이 가장 낮기 때문에 적절한 학습률을 선택하기 위한 경험칙이 없음을 알 수 있다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multirow{2}{*}{**Learning Rate**} & **IL** & **NLE** & **FUR** \\\\ \\cline{3-5}  & & EM & EM & \\((\\mathbf{IL}),\\mathbf{n.d.},\\mathbf{NLE})\\downarrow\\) \\\\ \\hline T5-Initial & - & **24.17** & 8.9 & - \\\\ \\hline T5-Vanilla & 1e-05 & 19.15 & 13.56 & 1.08 \\\\ T5-Vanilla & 1e-04 & 17.45 & 15.21 & 1.06 \\\\ T5-Vanilla & 5e-04 & 14.88 & 15.89 & 1.33 \\\\ T5-Vanilla & 1e-03 & 11.19 & 18.77 & 1.32 \\\\ \\hline T5-Kadapters (k=2) & 1e-04 & 19.93 & 14.93 & **0.70** \\\\ T5-Kadapters (k=2) & 1e-03 & 16.46 & **19.59** & 0.72 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 7: T5-Vanilla와 T5-Kadapters의 결과 다양한 학습률로 지속적으로 사전 훈련되었다. 실험은 표 3의 Small 시나리오 설정 하에 수행되므로 \\(D_{0}\\)는 C4(2019년 4월) 및 위키피디아(2020년 5월)이고 \\(D_{1}\\)는 CC-RecentNews-Small이다. IL 및 NLE 각각은 InvariantLAMA 및 newLAMA-Easy의 약자이다. FUAR의 매개변수는 \\(\\mathbb{T}^{F}\\), \\(T_{1}^{U}\\), \\(T_{1}^{A}\\), 말뭉치로부터 시간불변 지식의 양을 측정하는 작업 \\(D_{0}\\), \\(D_{1}\\), \\(D_{1}\\) 그리고 \\(D_{1}\\)이다.\n' +
+      '\n' +
+      '1e-4의 학습률에서 더 낮은 학습률과 더 높은 학습률 모두에서 증가한다. 최적의 학습률은 \\(D_{1}\\)의 말뭉치 크기와 LM 모델의 용량에 크게 의존한다고 가정한다. 또한 대부분의 실험에서 강건한 성능을 보이는 CKL 방법인 T5-Kadapters의 성능을 보고한다. T5-카다프터를 적용하면 학습률의 값에 따라 효과 수준이 다르지만 동일한 학습률을 가진 T5-바닐라 모델에서 FUAR의 개선에서 알 수 있듯이 망각과 새로운 지식 획득 사이의 트레이드오프를 일관되게 완화한다. 이 연구에서는 서로 다른 연속 사전 훈련 설정에 대한 최적의 학습률을 검색하는 것이 범위를 벗어날 수 있기 때문에 다양한 학습률 각각에 대해 광범위한 실험을 수행하지 않는다.\n' +
+      '\n' +
+      '## 부록 F Exploring How Continually Pretraining on \\(D_{1}\\) Affect Kilt\n' +
+      '\n' +
+      '\\(D_{0}\\)로부터 지식을 필요로 하는 과제\n' +
+      '\n' +
+      'CKL 벤치마크 외에도 표 2의 각 연속 사전 훈련 모델을 미세 조정한 후 KILT(Petroni et al., 2021)의 dev 집합에 대한 성능도 표 8에 보여준다. KILT는 이전 사전 훈련 말뭉치 \\(D_{0}\\)에 해당하는 위키피디아에서 만들어지므로, KILT에 대한 성능은 새로운 말뭉치 \\(D_{1}\\)에 대한 연속 사전 훈련이 \\(D_{0}\\)의 지식을 대신하여 미세 조정하면 \\(D_{0}\\)에서 얻은 지식에 대한 성능에 어떻게 영향을 미치는지 측정한다.\n' +
+      '\n' +
+      'ConfigurationKILT (Petroni et al., 2021)는 5개의 상이한 태스크 및 11개의 데이터세트: Open-Domain Question Answering (Joshi et al., 2017; Kwiatkowski et al., 2019; Fan et al., 2019; Yang et al., 2018), Fact Checking (Thorne et al., 2018), Entity Linking (Hoffart et al., 2011; Guo and Barbosa, 2018), Slot-filling (Levy et al., 2017), 및 Knowledgeable Open Dialogue (Dinan et al., 2019). 각 작업에는 사전 훈련 시 사용되는 것과 다른 훈련 목표가 필요하기 때문에 추가 미세 조정이 필요하다. Petroni et al. (2021)이 보고한 T5-base dev 성능과 일치하도록 각 개별 KILT 태스크의 학습 에폭, 배치 크기, 입력 크기, 출력 크기 및 학습 속도와 같은 하이퍼파라미터를 검색한다. 확인된 구성들을 이용하여, 각 방법에 대해 연속적으로 미리 학습된 모델들을 초기화 체크포인트로 하여 모든 KILT 태스크들에 대한 실험을 수행한다. 평가 메트릭은 각 데이터 세트에 대해 다릅니다. 이산에 대한 정확도\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c c} \\hline \\hline \\multirow{3}{*}{**Method**} & \\multicolumn{2}{c}{Fact Checking} & \\multicolumn{2}{c}{Entity Linking} & \\multicolumn{2}{c}{Slot-filling} & \\multicolumn{3}{c}{Open Domain QA} & \\multicolumn{2}{c}{Dialogue} \\\\ \\cline{2-11}  & **FEVER** & **AY2** & **WaWi** & **WnCw** & **T-REx** & **zsRE** & **NQ** & **HoPo** & **TQA** & **EL15** & **WoW** \\\\ \\cline{2-11}  & ACC & ACC & ACC & ACC & ACC & ACC & EM & EM & EM & Rouge & F1 \\\\ \\hline T5-Initial & 80.39 & 81.44 & **50.47** & **48.92** & 44.64 & **4.40** & 25.63 & 17.64 & **28.38** & 13.46 & 13.92 \\\\ \\hline T5-Vanilla & 78.02 & 81.19 & 48.17 & 46.46 & 44.08 & 2.04 & 24.93 & 14.36 & 26.51 & 13.38 & 13.07 \\\\ T5-RecAdam & 77.83 & 81.44 & 49.12 & 47.01 & 43.04 & 2.58 & 24.65 & 14.86 & 25.99 & 13.71 & 12.69 \\\\ T5-MixReview & 77.17 & 80.77 & 49.38 & 46.22 & 44.08 & 2.47 & 25.07 & 14.57 & 26.36 & 13.57 & 12.73 \\\\ T5-LoRA & 79.89 & 81.44 & 48.82 & 47.29 & 45.68 & 3.01 & 25.49 & 16.71 & 28.23 & 13.42 & 13.60 \\\\ T5-Kadapters (k=2) & 80.35 & 80.94 & 48.91 & 46.65 & 45.52 & 3.33 & **26.20** & 16.57 & 26.89 & 13.15 & 12.94 \\\\ T5-Kadapters (k=3) & 80.31 & 80.52 & 47.09 & 46.26 & 45.60 & 3.12 & 24.79 & 16.57 & 25.62 & **13.82** & 13.42 \\\\ T5-Modular & **80.54** & **82.44** & 48.44 & 44.81 & **48.16** & 2.44 & 24.51 & **18.43** & 28.31 & 13.72 & **14.03** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 8: 미세 조정 후 KILT 벤치마크 데이터 세트에 대한 데브 성능. 각 모델은 4개의 에폭 동안 CC-RecentNews 데이터 세트에서 지속적으로 훈련된 후 KILT의 열차 세트에서 미세 조정된다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c c} \\hline \\hline  & \\multicolumn{2}{c}{Fact Checking} & \\multicolumn{2}{c}{Entity Linking} & \\multicolumn{2}{c}{Slot-filling} & \\multicolumn{3}{c}{Open Domain QA} & \\multicolumn{2}{c}{Dialogue} \\\\ \\cline{2-11}  & **FEV** & **AY2** & **WaWi** & **WnCw** & **T-REx** & **zsRE** & **NQ** & **HoPo** & **TQA** & **EL15** & **WoW** \\\\ \\hline Epoch & 5 & 20 & - & - & 9 & 30 & 45 & 12 & 50 & 6 & 8 \\\\ Input Seq & 25 & 768 & 512 & 2.048 & 25 & 25 & 35 & 50 & 25 & 35 & 175 \\\\ Output Seq & 10 & 6 & 6 & 6 & 6 & 6 & 8 & 10 & 350 & 40 \\\\ LR & 1e-4 & 1e-4 & - & - & 1e-3 & 1e-4 & 1e-3 & 1e-4 & 1e-3 & 1e-3 & 1e-4 \\\\ Batch Size & 128 & 16 & 128 & 48 & 512 & 256 & 256 & 256 & 128 & 32 & 64 \\\\ Train Size & 104,966 & 18,395 & - & - & 2.284,168 & 147,909 & 87,372 & 88,869 & 61,844 & 272,634 & 63,734 \\\\ Dev Size & 10,444 & 4,784 & 3,396 & 5,599 & 5,000 & 3,724 & 2,837 & 5,600 & 5,359 & 1,507 & 3,054 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 9: KILT의 모든 태스크에 대한 하이퍼파라미터 및 데이터세트 세부사항.\n' +
+      '\n' +
+      '출력(팩트 검사, 엔터티 연결, 슬롯 채우기), 출력이 짧은 질문 응답 태스크에 대한 Exact Match(EM), EL15에 대한 ROUGE-L(출력이 긴 질문 응답 태스크), 위키피디아의 마법사에 대한 F1-점수(대화)를 포함한다. 각 KILT 데이터 세트의 미세조정에 사용된 데이터 통계 및 하이퍼파라미터는 표 9에 보고되어 있다.\n' +
+      '\n' +
+      '실험 결과 우리는 먼저 제로-샷 관계 추출(zsRE)에 대한 성능에 초점을 맞추며, 이는 열차 세트의 84개의 관계들과 중첩되지 않도록 보장되는 12개의 관계들의 dev 세트 상에서 측정된다(Levy et al., 2017). 설정이 IL의 제로 샷 프로빙 설정과 유사하기 때문에 두 데이터 세트에 대한 결과의 경향은 유사하다. T5-바닐라의 성능은 IL에서 볼 수 있듯이 T5-Initial의 성능에서 절반으로 떨어지며 두 데이터 세트에 대해 가장 잘 수행되는 방법은 T5-Modular이다. 또한, CKL 벤치마크 결과와 일치하는 파라미터 확장 방법은 일반적으로 다른 방법보다 더 강한 성능을 보인다.\n' +
+      '\n' +
+      '그러나 제로샷 방식으로 수행될 수 없는 다른 데이터 세트의 경우, 코퍼스 \\(D_{1}\\)에 대한 지속적인 사전 훈련의 중간 과정은 \\(D_{0}\\)의 지식과 더 관련이 있음에도 불구하고 대상 작업에 대한 미세 조정에 그다지 해롭지 않은 것 같다. 심지어 T5-바닐라조차도 적당한 성능을 보이며, 때로는 다른 CKL 기준선보다 더 나은 결과를 보인다. 한 가지 가설은 모델들이 미세 조정 과정을 통해 말뭉치 \\(D_{0}\\)로부터 원래의 지식을 되찾을 수 있다는 것이다. 또한, 일부 지식은 테스트-트레인 오버랩(Lewis et al., 2020; Wang et al., 2021)을 통해 회복될 수 있었다.\n' +
+      '\n' +
+      '더 놀라운 발견은 일부 매개변수 확장 방법의 성능이 T5-Initial의 성능보다 훨씬 높다는 것인데, 이는 T5-Initial이 \\(D_{0}\\)의 지식을 대신해서만 훈련되기 때문에 KILT의 상한으로 간주된다. 예를 들어, T5-Modular는 11개 과제 중 6개 과제에서 T5-Initial보다 높은 점수를 보인다. 매개변수 확장 방법은 연속 사전 훈련 동안 모델이 새로 추가된 매개변수에 새로운 지식을 저장하도록 강제하기 때문에 한 가지 주의 깊은 추측은 이러한 LMs가 성능을 최대화하기 위해 미세 조정 동안 별도의 매개변수에 저장된 오래된 지식과 새로운 지식의 내부 표현을 결합하고 활용하는 것을 학습했다는 것이다.\n' +
+      '\n' +
+      '## 부록 G CKL 메서드를 LM 아키텍처 간에 전송하는 방법 탐색\n' +
+      '\n' +
+      'GPT-2 Large (\\(\\sim\\) 774M params) (Radford et al., 2019)는 WebText와 Wikipedia14 (\\(D_{0}\\))에서 초기에 사전 훈련되었고 CC-RecentNews-Small, 즉 Small (\\(D_{1}\\))에서 8 epoch 동안 지속적으로 훈련되었다. 지속적인 사전 훈련을 위해, 우리는 공통의 교사 강제 사전 훈련 목표를 사용한다. 지속적인 사전 훈련 단계에 대한 초기 학습률은 경험적으로 1e-4로 선택된다(학습률이 1e-3인 결과는 부록 G.1에 나와 있다). 계속된 사전 훈련 후 평가 집합과 유사한 데이터의 작은 부분에 대해서만 모델을 미세 조정하기 위해 표시된 프로세스인 _조명 조정_ 을 적용한다. 단일 에포크에 대한 훈련은 모델이 데이터의 입력-출력 형태에 거의 적응하지 않고 샘플 튜닝에 대한 지식을 학습하지 않도록 제한하여 Lewis 등(2020)이 제안한 문제를 완화한다.\n' +
+      '\n' +
+      '각주 14: GPT-2는 처음에 위키피디아 페이지가 제외된 800만 개의 문서로 구성된 WebText(2019년 12월)에서 사전 훈련되었다. 위키피디아에서 구축된 InvariantLAMA에서 성능을 측정하기 위해 CKL 이전에 14k 글로벌 트레이닝 단계에 대해 위키피디아 하위 집합(2020년 5월)에서 GPT-2를 지속적으로 사전 트레이닝한다.\n' +
+      '\n' +
+      '시간 불변 지식을 측정하기 위해 채울 슬롯의 대부분이 문장의 끝에 있기 때문에 InvariantLAMA(IL)를 사용한다. IL을 대신하여 조명 조정을 위해 IL의 인스턴스와 유사한 분포를 갖는 Shin 등(2020)의 추가 T-Rex 데이터를 사용한다. 그 중 IL과 동일한 _시간 불변_ 관계를 가진 5,000개의 인스턴스가 _조명 조정_을 위해 무작위로 샘플링된다. 반면에, 채울 슬롯의 대부분이 문장의 끝에 있는 IL과 달리, 우리의 CKL 벤치마크에서 새로운 지식을 위한 LAMA 데이터 세트는 대부분 문장의 시작 부분에 슬롯을 가지고 있다. 따라서 우리는 NewLAMA-Easy, NewQuestions-Easy(NQE)의 해당 CBQA 데이터 세트를 사용하여 새로운 지식을 대략적으로 측정한다. 15 NQE를 대신하여 조명 조정을 위해 CC-RecentNews에서 구성되었지만 CC-RecentNews-Small에서 구성되지 않은 QA 쌍 세트에서 5,000개의 인스턴스를 샘플링하여 테스트-트레인 중첩을 제거한다.\n' +
+      '\n' +
+      '각주 15: UL, NL 및 NLE의 QA 버전도 주요 CKL 벤치마크와 함께 출시됩니다.\n' +
+      '\n' +
+      '표 10은 GPT-2 모델의 CKL 벤치마크 성능을 보여준다. 우리는 다른 무작위 종자를 사용하여 5회 실행 동안 평균한 결과를 보고한다. 표 2에서와 같이 매개변수 확장 방법은 IL과 NQE 모두에서 강력한 성능을 보여 FUAR이 낮다. 이는 이러한 방법들이 인코더-디코더 모델뿐만 아니라 디코더 전용 모델에서도 효과적임을 보여준다. 표 10의 한 가지 흥미로운 결과는 GPT2-믹스리뷰가 IL에 대해 가장 잘 수행하고 초기 모델보다 성능이 훨씬 높아 망각이 전혀 발생하지 않았음을 의미하는 최고의 FUAR이 0이라는 것이다. 지속적인 사전 훈련 동안 \\(D_{0}\\)의 샘플에 액세스할 수 있는 GPT2-MixReview의 훈련 전략이 _빛 조정_ 단계에서 \\(D_{0}\\)의 지식에 빠르게 적응할 수 있다고 가정한다. GPT2-MixReview의 성능은 작은 튜닝 단계에서도 디코더 전용 모델에 대한 원래의 지식을 되찾을 수 있음을 시사한다.\n' +
+      '\n' +
+      '부호화기-복호화기 LM(T5)과 복호화기 전용 LM(GPT-2) 사이의 CKL 방법 간의 성능 불일치는 LM 아키텍처에만 있는 것이 아니라 학습률과 평가 방법(T5를 제로 샷 방식으로 평가하면서 GPT-2를 평가하기 위해 라이트 튜닝을 사용함)에 있을 수 있음을 강조하고자 한다. 우리는 GPT-2와 같은 끊임없이 변화하는 디코더 전용 LMs 훈련에 대한 추가 탐색을 향후 작업으로 남겨둔다.\n' +
+      '\n' +
+      '### Larger Learning Rate를 사용한 실패한 GPT-2 실험\n' +
+      '\n' +
+      '표 11은 1e-3의 학습률을 갖는 8 epoch 동안 CC-RecentNews-Small에서 지속적으로 사전 트레이닝된 GPT-2 모델의 CKL 벤치마크 결과를 보여준다. 이 표의 결과를 1e-4의 학습률을 지속적으로 사전 트레이닝된 모델에 대한 표 10의 결과와 비교함으로써, 표 11의 결과는 IL 및 NQE 모두에서 더 나쁜 성능을 보여준다. 부록 E와 달리 학습률을 높인다고 해서 새로운 지식을 더 잘 학습하는 것은 아니다. 대신, NQE 성능은 GPT2-Vanilla, GPT2-Recadam 및 GPT2-MixReview의 경우 GPT2-Initial보다 훨씬 더 나쁘다. FUAR은 분모가 0의 값을 갖기 때문에 메트릭의 정의에 따라 이러한 경우에 대해 _이득 없음_입니다. 이것은 지속적인 사전 훈련을 위한 큰 학습률이 오래된 지식을 유지하거나 새로운 지식을 효과적으로 획득하지 못하는 실패로 이어질 수 있음을 보여준다. 파라미터 확장 방법의 경우, 디코더를 포함한 많은 파라미터들이 지속적인 트레이닝 과정에서 동결되기 때문에, 큰 학습률의 영향을 덜 받는 것으로 보인다.\n' +
+      '\n' +
+      '## 부록 H 연속 사전 훈련 중 예측 변경 탐색\n' +
+      '\n' +
+      '표 12는 InvariantLAMA, UpdatedLAMA, NewLAMA의 세 가지 지식 탐사 작업에 대한 T5-Vanilla와 T5-Modular의 예측 결과를 보여준다. 우리는 각 모델에 대한 모든 훈련 에포크에 대한 예측을 보여준다. EM의 간격이 어디에서 오는지를 보기 위해 최종 예측에서 T5-Modular는 맞았지만 T5-Initial은 틀렸다는 예측에서 인스턴스를 선택한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & **IL** & **NQE** & **FUAR** \\\\ \\cline{2-4}  & EM & EM & \\(((\\mathbf{IL}),\\mathbf{n.d.},\\mathbf{NQE})\\downarrow\\) \\\\ \\hline GPT2-Initial & 38.11 & 4.3 & - \\\\ \\hline GPT2-Vanilla & 35.88 & 5.79 & 1.58 \\\\ GPT2-Recadam & 35.50 & 5.79 & 1.84 \\\\ GPT2-Mixreview & **38.93** & 5.57 & **0** \\\\ GPT2-Lora & 37.99 & 6.23 & 0.06 \\\\ GPT2-Kadapters (k=2) & 37.85 & **6.34** & 0.13 \\\\ GPT2-Kadapters (k=3) & 38.03 & 5.79 & 0.06 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 10: 웹텍스트의 2019년 12월 덤프와 위키피디아(\\(D_{0}\\))의 2020년 5월 덤프에서 초기에 사전 트레이닝된 디코더 전용 모델의 성능: 1e-4의 학습률을 갖는 8개의 에폭 동안 CC-RecentNews-Small(\\(D_{1}\\))에서 연속적으로 사전 트레이닝된다. IL 및 NQE 각각은 InvariantLAMA 및 NewQuestions-Easy의 약자이다. FUAR의 매개변수는 \\(\\mathbb{T}^{F}\\), \\(T_{l}^{U}\\), \\(T_{1}^{A}\\), 코퍼스로부터 시간불변 지식의 양을 측정하는 작업 \\(D_{0}\\), \\(D_{1}\\), \\(D_{1}\\)이다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:25]\n' +
+      '\n' +
+      '진실의 역할을 하는 개체들의 각 말뭉치에서 빈도수, 예를 들어, 이러한 개체들은 \\(D_{1}\\)보다 \\(D_{0}\\)에서 더 많이 나타난다. EM 갭의 원인을 분석할 때 개체 빈도의 영향을 제거하기 위해 UL과 NL에서 중복되는 _Person_ 유형의 답변을 찾고 이들 개체 중 하나에 각각 쌍을 이루는 두 데이터 세트에 대해 67개의 프로빙 문장만 분석한다. 도 (b)b에 도시된 바와 같이, UL 상의 EM은 여전히 NL의 것보다 훨씬 높다. 이러한 사례들을 수작업으로 분석한 결과, NL에 대한 프로빙 문장은 말뭉치 \\(D_{0}\\)와 \\(D_{1}\\)에서 서로 다른 답을 가진 가까운 문장들이 중첩되어 자연스럽게 _coarse-grained_이 되기 때문에 UL에 비해 상대적으로 더 많은 _fine-grained_ 지식을 요구한다. 예를 들어 UL과 NL의 개체 "Tim Walz"에 대한 조사 문장은 각각 "\\(\\xrightarrow{\\}\\)는 올해 미네소타 주지사"이고 "\\(\\xrightarrow{\\}\\)는 세인트 폴의 철수를 요구하는 미네소타 주지사"이다. 따라서 EM 갭의 주요 원인은 \\(D_{1}\\)에서 더 많이 나타날 가능성이 있는 _coarse-grained_ 지식이 필요한 인스턴스로 구성된 UL인 반면 NL은 \\(D_{1}\\)에서 더 적게 나타날 가능성이 있는 _fine-grained_ 지식이 필요한 인스턴스로 구성된 UL이라고 추측한다.\n' +
+      '\n' +
+      '## 부록 J 주요 결과의 추가 분석\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & **IL** & **UL** & **NL** & **NLE** & **FUAR** \\\\ \\cline{2-6}  & EM & EM & EM & EM & \\(((\\mathbf{IL}),\\mathbf{UL},\\mathbf{NL})\\downarrow\\) \\\\ \\hline T5-Initial & **24.88** & 2.62 & 3.19 & 14.49 & - \\\\ \\hline T5-Vanilla & 13.11 & 11.89 & 5.84 & 22.53 & 0.68 \\\\ T5-RecAdam & 13.39 & 14.33 & 6.15 & 22.68 & 0.57 \\\\ T5-MixReview & 14.09 & 8.11 & 4.80 & 18.89 & 1.10 \\\\ T5-LoRA & 17.04 & **14.50** & **7.45** & **24.59** & 0.36 \\\\ T5-Kadapters (k=2) & 19.88 & 13.67 & 7.43 & 24.04 & 0.22 \\\\ T5-Kadapters (k=3) & 19.91 & 14.31 & 6.55 & 23.33 & 0.21 \\\\ T5-Modular & 21.35 & 12.78 & 6.94 & 24.42 & **0.17** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 13: 주요 결과의 F1 점수.\n' +
+      '\n' +
+      '그림 8: UpdatedLAMA와 NewLAMA 사이의 EM 갭의 원인 분석.\n' +
+      '\n' +
+      '그림 9: k가 변하는 CKL 벤치마크에 대한 평균 P@k 곡선이다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
