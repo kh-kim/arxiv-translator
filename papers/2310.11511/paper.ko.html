@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Self-rag: Self-Reflection을 통해 검색, 생성, 비판하는 학습\n' +
+      '\n' +
+      ' Akari Asi\\({}^{\\dagger}\\), Zeqiu Wu\\({}^{\\dagger}\\), Yizhong Wang\\({}^{\\dagger\\lx@sectionsign}\\), Avirup Sil\\({}^{\\ddagger}\\), Hannaneh Hajishirzi\\({}^{\\dagger\\lx@sectionsign}\\)\n' +
+      '\n' +
+      '({}^{\\dagger}\\) Washington University \\({}^{\\lx@sectionsign}\\)Allen Institute for AI \\({}^{\\ddagger}\\)IBM Research AI\n' +
+      '\n' +
+      '{akari,zeqiuwu,yizhongw,hannaneh}@cs.washington.edu,avi@us.ibm.com\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '뛰어난 능력에도 불구하고, 대규모 언어 모델(LLM)은 종종 그들이 캡슐화하는 모수적 지식에만 의존하기 때문에 사실적 부정확성을 포함하는 응답을 생성한다. RAG(Retrieval-Augmented Generation)는 관련 지식의 검색으로 LMs를 증가시키는 임시 접근법으로 이러한 문제를 감소시킨다. 그러나, 검색이 필요한지 또는 지문이 관련이 있는지 여부에 관계없이 고정된 수의 검색된 지문을 무분별하게 검색하고 통합하면 LM 범용성이 저하되거나 도움이 되지 않는 응답 생성으로 이어질 수 있다. 검색 및 자기 반성을 통해 LM의 품질과 사실성을 향상시키는 새로운 프레임워크인 **Self-Reflective Retrieval-Augmented Generation (Self-RAG)** 를 소개합니다. 본 프레임워크는 주문형 패시지를 적응적으로 검색하고 _반사_ 토큰이라고 하는 특수 토큰을 사용하여 검색된 패시지와 자체 세대를 생성하고 반영하는 단일 임의 LM을 훈련합니다. 반사 토큰을 생성하면 추론 단계에서 LM을 제어할 수 있어 다양한 작업 요구 사항에 따라 동작을 조정할 수 있다. 실험 결과, Self-RAG(7B 및 13B 파라미터)는 다양한 태스크 집합에서 최신 LLM 및 검색 강화 모델보다 훨씬 우수하다는 것을 보여준다. 구체적으로, Self-RAG는 오픈 도메인 QA, 추론 및 사실 검증 작업에서 ChatGPT 및 검색 강화 Llama2-chat보다 우수하며, 이러한 모델에 비해 롱폼 세대에 대한 사실성 및 인용 정확도 향상에 상당한 이득을 보여준다.\n' +
+      '\n' +
+      '각주 1: 코드 및 학습된 모델은 [https://selffrag.github.io/](https://selffrag.github.io/)에서 사용할 수 있습니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '최첨단 LLM들은 그들의 증가된 모델 및 데이터 스케일(Ouyang et al., 2022)에도 불구하고 사실적 오류들(Mallen et al., 2023; Min et al., 2023)과 계속 싸우고 있다. 검색-증강 생성(retrieval-Augmented Generation; RAG) 방법(도 1 좌측; Lewis et al. 2020; Guu et al. 2020)은 관련 검색된 패시지를 갖는 LLMs의 입력을 증강시켜, 지식 집약적 태스크에서의 사실적 오류를 감소시킨다(Ram et al., 2023; Asai et al., 2023a). 그러나, 이러한 방법들은 LLM의 범용성을 저해하거나, 실제 접지가 도움이 되는지 여부에 관계없이 무분별하게 통로를 회수하기 때문에 저품질 세대로 이어지는 불필요한 또는 주제외 통로를 도입할 수 있다(Shi et al., 2023). 더욱이, 모델들이 제공된 패시지들로부터 사실들을 레버리지하고 따르도록 명시적으로 훈련되지 않기 때문에, 출력은 검색된 관련 패시지들과 일치하도록 보장되지 않는다(Gao 등, 2023). 이 작업은 온디맨드 검색 및 자기 반성을 통해 다용성을 손상시키지 않으면서 사실적 정확성을 포함하여 LLM의 생성 품질을 개선하기 위해 **Self-Reflective Retrieval-augmented Generation (Self-RAG)** 을 도입합니다. 우리는 임의의 LM을 엔드 투 엔드 방식으로 훈련하여 태스크 출력과 간헐적인 특수 토큰(즉, _반사 토큰_)을 모두 생성함으로써 태스크 입력이 주어졌을 때 자신의 생성 프로세스를 반영하는 것을 학습한다. 리플렉션 토큰은 각각 검색의 필요성 및 그 생성 품질을 나타내기 위해 _retrieval_ 및 _critique_ 토큰으로 분류된다(그림 1 오른쪽). 특히, 입력 프롬프트 및 선행 세대들이 주어지면, Self-RAG는 먼저 검색된 패시지로 계속된 세대를 증가시키는 것이 도움이 될지를 결정한다. 그런 경우 주문형 검색기 모델을 호출하는 **검색** 토큰을 출력합니다(1단계). 이후 Self-RAG는 검색된 여러 구절을 동시에 처리하여 관련성을 평가한 다음 해당 작업 출력을 **생성** 합니다 (2 단계). 그런 다음 평가 토큰을 생성 하 여 자체 출력을 **비판** 하 고 사실성 및 전체 품질 측면에서 가장 좋은 출력 (3 단계)을 선택 합니다. 이 프로세스는 종래의 RAG(도 1 좌측)와 상이하며, 이는 검색 필요성(예를 들어, 하단 그림 예는 사실적 지식을 요구하지 않음)에 관계없이 생성을 위해 고정된 수의 문서를 일관되게 검색하고 결코 생성 품질을 두 번 방문하지 않는다. 또한 Self-Rag는 출력이 패시지에 의해 지원되는지 여부에 대한 자체 평가로 각 세그먼트에 대한 인용을 제공하여 더 쉬운 사실 검증으로 이어진다.\n' +
+      '\n' +
+      'Self-Rag는 임의의 LM을 훈련시켜 확장된 모델 어휘로부터 다음 토큰 예측으로 통합함으로써 반사 토큰이 있는 텍스트를 생성한다. 우리는 반사 토큰과 검색된 지문으로 인터리빙된 다양한 텍스트 모음에서 생성기 LM을 훈련한다. 강화 학습(Ziegler et al., 2019; Ouyang et al., 2022)에서 사용된 보상 모델에서 영감을 얻은 반사 토큰은 훈련된 _critic_ 모델에 의해 원본 코퍼스에 오프라인으로 삽입된다. 이를 통해 훈련 중에 비평가 모델을 호스트할 필요가 없어져 오버헤드를 줄일 수 있다. 비평가 모델은 부분적으로 적절한 LM(즉, GPT-4; OpenAI 2023)을 프롬프트함으로써 수집된 입력, 출력 및 대응하는 반사 토큰의 데이터세트에 대해 감독된다. 제어 토큰을 사용하여 텍스트 생성을 시작하고 안내하는 연구에서 영감을 끌어내는 동안(Lu 등, 2022; Keskar 등, 2019), 훈련된 LM은 크리틱 토큰을 사용하여 각 생성된 세그먼트 이후의 자체 예측을 생성 출력의 필수 부분으로 평가한다.\n' +
+      '\n' +
+      'Self-Rag는 반사 토큰 예측들에 의해 정의되는 하드 또는 소프트 제약들을 만족시키기 위해 커스터마이징 가능한 디코딩 알고리즘을 추가로 가능하게 한다. 특히, 추론 시간 알고리즘은 (1) 다른 다운스트림 애플리케이션에 대한 검색 빈도를 유연하게 조정하고 (2) 반사 토큰 확률의 가중 선형 합을 세그먼트 점수로 사용하여 세그먼트 레벨 빔 검색을 통해 반사 토큰을 활용함으로써 모델의 행동을 사용자 선호도에 맞게 맞춤화할 수 있다.\n' +
+      '\n' +
+      '추론 및 장기 형태 생성을 포함한 6개의 태스크에 대한 경험적 결과는 Self-Rag가 더 많은 매개변수를 갖는 사전 훈련 및 명령어 조정 LLMs보다 훨씬 우수하고 인용 정확도가 더 높은 RAG 접근법을 널리 채택했음을 보여준다. 특히 Self-Rag는 모든 태스크에서 Llama2-chat (Touvron et al., 2023)과 Alpaca (Dubois et al., 2023)의 4가지 태스크에서 검색 증강 ChatGPT를 능가한다. 우리의 분석은 전체 성능 개선뿐만 아니라 테스트-시간 모델 커스터마이징(예를 들어, 인용 우세성과 완전성 사이의 트레이드오프 균형)을 위한 반사 토큰을 사용한 훈련 및 추론의 효과를 입증한다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      '검색-증강 세대 검색-증강 세대(retrieval-Augmented Generation Retrieval-Augmented Generation, RAG)는 검색된 텍스트 패시지를 갖는 LMs의 입력 공간을 증강시키고(Guu et al., 2020; Lewis et al., 2020), 미세 조정 후에 지식 집약적 태스크를 크게 개선하거나 기성 LMs와 함께 사용한다(Ram et al., 2023). 보다 최근의 작업(Luo et al., 2023) 명령어 - 고정된 숫자로 LM을 튜닝함\n' +
+      '\n' +
+      '그림 1: Self-Rag 개요입니다. 셀프 랙은 전체 생성 품질, 사실성 및 검증 가능성을 향상시키기 위해 텍스트 지문을 검색, 비판 및 생성하는 방법을 학습합니다.\n' +
+      '\n' +
+      '(Izacard et al., 2022b). 이전 작업은 처음에 한 번만 검색하는 경우가 많지만, 장 등(2023)은 독점 LLM 위에 생성을 위한 패시지를 적응적으로 검색하는 것을 제안하거나 Schick 등(2023)은 명명된 엔티티에 대한 API 호출을 생성하기 위해 LM을 훈련시킨다. 그러나, 이러한 접근법들의 개선된 태스크 성능은 종종 런타임 효율성(Mallen et al., 2023), 무관한 컨텍스트에 대한 견고성(Shi et al., 2023), 및 속성들의 결여(Liu et al., 2023; Gao et al., 2023)를 희생시키면서 온다. 다양한 명령어 후속 쿼리에 대한 검색 _주문형_ 을 사용하는 방법을 학습하도록 임의의 LM을 훈련하고 생성 품질과 속성을 더욱 향상시키기 위해 반사 토큰에 의해 안내되는 제어된 생성을 도입하는 방법을 소개한다.\n' +
+      '\n' +
+      '동시 RAG 작업. RAG에 대한 몇 가지 동시 작업 2는 널리 채택된 RAG 접근법을 개선하기 위한 새로운 훈련 또는 프롬프트 전략을 제안한다. Lin et al. (2023)은 명령어 조정 데이터 세트에서 리트리버와 LM을 두 단계로 미세 조정한다. 또한 다양한 명령어 후속 데이터 세트에 대해 모델을 훈련하지만 Self-Rag는 세분화된 자기 반성을 통해 요구 시 검색 및 가능한 최상의 모델 출력 선택을 가능하게 하여 널리 적용 가능하고 보다 강력하고 제어 가능하다. Yoran 등(2023)은 자연어 추론 모델을 사용하고 Xu 등(2023)은 요약 모델을 사용하여 검색된 구절을 필터링하거나 압축한 후 LM이 출력을 생성하도록 프롬프트한다. Self-Rag는 패스를 병렬로 처리하고 추론 시 외부 모델에 의존하지 않고 자기 성찰을 통해 관련 없는 패스를 걸러낸다. 더욱이, 우리의 자기 성찰 메커니즘은 또한 사실성을 포함한 모델 출력 품질의 다른 측면을 평가한다. LATS(Zhou et al., 2023)는 질문 응답 작업에 대한 관련 정보를 검색하고 LM-생성 값 점수에 의해 안내되는 트리 검색으로 생성하기 위해 기성 LMs을 프롬프트한다. 그들의 가치 함수는 단순히 각 세대의 전체 점수를 나타내는 반면, Self-Rag는 세밀한 자기 성찰과 사용자 지정 가능한 추론을 생성하는 방법을 배우기 위해 임의의 LM으로 훈련한다.\n' +
+      '\n' +
+      '각주 2: 모든 작업은 이 사전 인쇄 후 일주일 이내에 생성됩니다.\n' +
+      '\n' +
+      '비평가와 함께 훈련 및 생성. 인간 피드백(RLHF)으로부터 강화 학습(예를 들어, 근접 정책 최적화 또는 PPO; 슐만 등, 2017)으로 LLM을 훈련시키는 것은 LLM을 인간 선호도와 정렬시키는데 효과적인 것으로 입증되었다(Ouyang 등, 2022). Wu et al. (2023)은 다수의 보상 모델을 갖는 세립 RLHF를 도입한다. 우리의 작업도 검색 및 생성에 대한 세밀한 비평을 연구하지만, 우리는 RLHF에 비해 훨씬 낮은 훈련 비용으로 오프라인에서 비평가 모델의 반사 토큰으로 증강된 작업 예에서 목표 LM을 훈련한다. 또한, Self-Rag의 반사 토큰은 추론에서 제어 가능한 생성을 가능하게 하는 반면, RLHF는 훈련 동안 인간의 선호 정렬에 초점을 맞춘다. 다른 작업은 LM 생성을 안내하기 위해 일반 제어 토큰을 사용하는 반면(Lu 등, 2022; Korbak 등, 2023), Self-Rag는 검색의 필요성을 결정하고 생성 품질을 자체 평가하기 위해 반사 토큰을 사용한다. Xie et al. (2023)은 자체 평가 유도 디코딩 프레임워크를 제안하지만, 이들은 하나의 평가 차원(추론 경로 일관성)을 갖는 추론 작업에만 초점을 맞추고 검색은 하지 않는다. LLM 정제(Dhuliawala et al., 2023; Madaan et al., 2023; Paul et al., 2023)에 관한 최근의 작업은 태스크 출력, 자연 언어 피드백 및 정제된 태스크 출력을 반복적으로 생성하도록 모델을 프롬프트하지만, 추론 효율성의 비용을 지불한다.\n' +
+      '\n' +
+      '## 3 Self-Rag: Learning to Retrieve, Generate and Critique\n' +
+      '\n' +
+      '<그림 1>에 나타난 자기반성적 회상증강세대(Self-Rag)를 소개한다. Self-Rag는 LLM 본래의 창의성과 다재다능성을 희생하지 않고, 회상과 자기반성을 통해 LLM의 품질과 사실성을 높이는 프레임워크이다. 엔드 투 엔드 교육을 통해 LM \\(\\mathcal{M}\\)**이 필요한 경우 **검색된** 구절에 의해 안내된 텍스트를 생성하고 특수 토큰을 생성하는 방법을 학습하여 출력을 **비판** 할 수 있습니다. 이러한 _반사 토큰_ (표 1)은 검색의 필요성을 신호하거나 출력의 관련성, 지원 또는 완전성을 확인합니다. 대조적으로, 일반적인 RAG 접근법은 인용된 출처의 완전한 지원을 보장하지 않고 무분별하게 통로를 검색한다.\n' +
+      '\n' +
+      '### 문제 형식화 및 개요\n' +
+      '\n' +
+      '형식적으로, 입력 \\(x\\)이 주어지면, 우리는 \\(\\mathcal{M}\\)을 훈련시켜 다수의 세그먼트 \\(y=[y_{1},\\ldots,y_{T}]\\로 구성된 텍스트 출력 \\(y\\)을 순차적으로 생성한다. 여기서 \\(y_{t}\\)는 \\(t\\)-번째 세그먼트에 대한 토큰의 시퀀스를 나타낸다. 3 \\(y_{t}\\)에서 생성된 토큰은 원래 어휘의 텍스트와 반사 토큰을 포함한다(표 1).\n' +
+      '\n' +
+      '각주 3: 본 논문에서는 한 문장을 하나의 세그먼트로 다루지만, 본 논문의 프레임워크는 임의의 세그먼트 단위(즉, 하위 문장)에 적용할 수 있다.\n' +
+      '\n' +
+      '**추론 개요.** 그림 1 및 알고리즘 1은 추론 시 Self-Rag에 대한 개요를 제공합니다. 모든 \\(x\\) 및 이전 세대 \\(y_{<t}\\)에 대해 모델은 검색 토큰을 디코딩하여 검색의 유용성을 평가한다. 검색이 필요하지 않은 경우 모델은 표준 LM에서와 같이 다음 출력 세그먼트를 예측합니다. 검색이 필요한 경우 모델은 검색된 구절의 관련성을 평가하기 위한 비판 토큰, 다음 응답 세그먼트 및 응답 세그먼트의 정보가 구절에 의해 지원되는지 평가하기 위한 비판 토큰을 생성한다. 마지막으로 새로운 비판 토큰은 응답의 전반적인 유용성을 평가합니다.4 각 세그먼트를 생성하려면 Self-Rag는 여러 통로를 병렬로 처리하고 자체 생성된 반사 토큰을 사용하여 생성된 작업 출력에 대해 소프트 제약 조건(섹션 3.3) 또는 하드 컨트롤(알고리즘 1)을 적용합니다. 예를 들어 그림 1 (오른쪽)에서 검색 된 통로 \\(d_{1}\\)는 첫 번째 시간 단계에서 선택 됩니다. \\(d_{2}\\)는 직접적인 증거를 제공 하지 않습니다 (\\(\\boxed{\\texttt{IsNet}}\\)는 관련이 없으며 \\(d_{3}\\) 출력은 부분적으로만 지원 되지만 \\(d_{1}\\)는 완전히 지원 됩니다.\n' +
+      '\n' +
+      '각주 4: 우리는 리우 등(2023a)을 따라 검색된 구절과 무관한 "지각된" 효용 가치를 사용한다.\n' +
+      '\n' +
+      '**교육 개요** 자체 래그를 사용하면 임의의 LM이 확장된 모델 어휘(즉, 원래 어휘와 반사 토큰)에서 다음 토큰 예측으로 통합하여 반사 토큰을 사용하여 텍스트를 생성할 수 있습니다. 구체적으로, 우리는 큐레이팅된 코퍼스에서 생성기 모델 \\(\\mathcal{M}\\)을 훈련하는데, 이 코퍼스는 _retriever_\\(\\mathcal{R}\\)에 의해 검색된 인터리빙 통로와 _critic_ 모델 \\(\\mathcal{C}\\)에 의해 예측된 반사 토큰을 포함한다(부록 알고리즘 2에 요약). 우리는 \\(\\mathcal{C}\\)를 훈련하여 검색된 구절과 주어진 작업 출력의 품질을 평가하기 위한 반사 토큰을 생성한다(섹션 3.2.1). 비평가 모델을 사용하여 오프라인 작업 출력에 반사 토큰을 삽입하여 학습 코퍼스를 업데이트한다. 이후, 기존의 LM 목적(3.2.2절)을 이용하여 최종 생성기 모델(\\(\\mathcal{M}\\))을 학습하여 추론 시 비평가에게 의존하지 않고 스스로 반사 토큰을 생성할 수 있도록 한다.\n' +
+      '\n' +
+      '### Self-Rag Training\n' +
+      '\n' +
+      '여기서는 비평가 \\(\\mathcal{C}\\)(섹션 3.2.1)와 생성기 \\(\\mathcal{M}\\)(섹션 3.2.2)의 두 가지 모델의 감독된 데이터 수집 및 훈련을 설명한다.\n' +
+      '\n' +
+      '#### 3.2.1 Training of Critic Model\n' +
+      '\n' +
+      '**비평가 모델에 대한 데이터 컬렉션.** 각 세그먼트에 대한 반사 토큰의 수동 주석은 비용이 많이 듭니다(Wu 등, 2023). GPT-4(OpenAI, 2023)와 같은 최첨단 LLM을 효과적으로 사용할 수 있다\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c l l} \\hline \\hline Type & Input & Output & Definitions \\\\ \\hline \\hline Retrieve & \\(x/x,y\\) & \\{yes, no, continue\\} & Decides when to retrieve with \\(\\mathcal{R}\\) \\\\ \\hline IsRel & \\(x,d\\) & \\{**relevant**, irrelevant\\} & \\(d\\) provides useful information to solve \\(x\\). \\\\ \\hline IsStP & \\(x,d,y\\) & \\{**fully supported**, partially supported, no support\\} & All of the verification-worthy statement in \\(y\\) \\\\ \\hline IsUsNet & \\(x,y\\) & \\{**5**, 4, 3, 2, 1\\} & \\(y\\) is a useful response to \\(x\\). \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: Self-Rag에서 사용되는 4가지 유형의 반사 토큰. 각 유형은 여러 토큰을 사용하여 출력 값을 나타냅니다. 아래 세 행은 세 가지 유형의 \\(\\boxed{\\texttt{Critigen}}\\) 토큰이며 **굵은 텍스트** 는 가장 바람직한 critique 토큰을 나타냅니다. \\ (x,y,d\\)는 각각 입력, 출력 및 관련 통로를 나타낸다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:5]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:6]\n' +
+      '\n' +
+      '**챌린지**; Clark 등.2018). 우리는 정확도를 평가 메트릭으로 사용하고 테스트 세트에 대해 보고한다. 우리는 이 두 데이터 세트 모두에 대한 대상 클래스의 답변 확률을 집계한다(부록 B.2).\n' +
+      '\n' +
+      '**짧은 형식 세대 작업**에는 두 개의 개방형 도메인 질문 응답(QA) 데이터 세트인 PopQA(Mallen 등, 2023) 및 TriviaQA 필터링되지 않은(Joshi 등, 2017)이 포함되며, 여기서 시스템은 사실 지식에 대한 임의 질문에 답해야 합니다. PopQA의 경우, 월간 Wikipedia 페이지 뷰가 100 미만인 1,399개의 희귀 개체 쿼리로 구성된 롱테일 서브세트를 사용한다. TriviaQA 필터링되지 않은(열린) 테스트 세트가 공개적으로 이용 가능하지 않기 때문에, 평가를 위해 11,313개의 테스트 쿼리를 사용하여 선행 작업의 검증 및 테스트 분할(Min et al., 2019; Guu et al., 2020)을 따른다. 우리는 Mallen et al. (2023); Schick et al. (2023)에 따라 정확한 매칭을 엄격하게 요구하는 대신 골드 답변이 모델 세대에 포함되는지 여부에 따라 성능을 평가한다.\n' +
+      '\n' +
+      '**긴 형식 생성 작업**에는 전기 생성 작업(Min 등, 2023) 및 긴 형식 QA 작업 **ALCE-ASQA** Gao 등(2023); Stelmakh 등(2022). 우리는 팩트스코어(Min et al., 2023)를 사용하여 전기를 평가하고 ASQA에 대한 정확성(str-em), MAUVE(Pillutla et al., 2021), 인용 정밀도 및 재현율(Gao et al., 2023)의 공식 메트릭을 사용한다. 5\n' +
+      '\n' +
+      '각주 5: [https://github.com/princeton-nlp/ALCE](https://github.com/princeton-nlp/ALCE)\n' +
+      '\n' +
+      '### Baselines\n' +
+      '\n' +
+      '**검색이 없는 기준선** 공개적으로 사용 가능한 강력한 사전 훈련 LLM, Llama278133(Touvron et al., 2023), 명령 조정 모델, Alpac278133(Dubois et al., 2023)(Llama2 기반 복제) 및 개인 데이터, Chat-GPT(Ouyang et al., 2022) 및 Llama2-chat1333을 사용하여 훈련 및 보강된 모델을 평가합니다. 명령 조정 LM의 경우 공개적으로 사용 가능한 경우 훈련 중에 사용되는 공식 시스템 프롬프트 또는 명령 형식을 사용합니다. 또한 LLM 세대의 사실성을 향상시키기 위해 반복적인 신속한 엔지니어링을 도입한 동시 작업인 CoVE65(Dhuliawala et al., 2023)와 우리의 방법을 비교한다.\n' +
+      '\n' +
+      '**검색이 있는 기준** 테스트 시간 또는 훈련 중에 검색으로 증강된 모델을 평가합니다. 첫 번째 범주에는 표준 RAG 기준선이 포함되며, 여기서 LM(Llama2, Alpaca)은 시스템에서와 동일한 검색기를 사용하여 상위 검색된 문서로 준비된 쿼리가 주어지면 출력을 생성한다. 또한 Llama2-FT를 포함하며, 여기서 Llama2는 반사 토큰 또는 검색된 패시지 없이 우리가 사용하는 모든 훈련 데이터에서 미세 조정된다. 또한 비공개 데이터로 학습된 LMs(Ret-ChatGPT, Ret-Llama2-chat)를 이용한 검색 기반조사와 InstructGPT 기반의 프로덕션 검색 시스템인 Perplexity.ai의 결과를 보고한다. 두 번째 카테고리는 검색된 텍스트 통로들로 트레이닝되는 동시 방법들, 즉 SAIL(Luo et al., 2023)이 명령어들 이전에 삽입된 상위 검색된 문서들을 갖는 Alpaca 명령-튜닝 데이터 상의 LM을 명령-튜닝하고, 툴포머(Schick et al., 2023)가 API 호출들(예를 들어, 위키피디아 API들)로 LM을 사전 트레이닝하는 동시 방법들을 포함한다. 6\n' +
+      '\n' +
+      '각주 6: 구현에 사용할 수 없기 때문에 논문에서 보고된 결과를 사용하여 숫자를 보고한다.\n' +
+      '\n' +
+      '### Experimental settings\n' +
+      '\n' +
+      '**교육 데이터 및 설정** 교육 데이터는 다양한 명령어 후속 입력-출력 쌍으로 구성됩니다. 특히, Open-Instruct 처리된 데이터(Wang et al., 2023) 및 지식 집약적 데이터 세트(Petroni et al., 2021; Stelmakh et al., 2022; Mihaylov et al., 2018)로부터 인스턴스를 샘플링한다. 총 150k개의 명령어-출력 쌍을 사용한다. 우리는 Llama 7B와 13B(Touvron et al., 2023)를 발전기 베이스 LM으로 사용하고, Llama2 7B를 베이스 비평가 LM으로 사용한다. 리트리버 모델 \\(\\mathcal{R}\\)의 경우 기본적으로 Off-the-shelf Contriever-MS MARCO (Izacard et al., 2022)를 사용하고 각 입력에 대해 최대 10개의 문서를 검색한다. 자세한 교육 내용은 부록 B.1에 나와 있습니다.\n' +
+      '\n' +
+      '**추론 설정** 기본 구성으로서 각각 1.0, 1.0 및 0.5의 가중치 용어 \\(\\boxed{\\text{IsRel}}\\), \\(\\boxed{\\text{IsNet}}\\), \\(\\boxed{\\text{IsNet}}\\) 값을 할당합니다. 빈번한 검색을 장려하기 위해 대부분의 태스크의 경우 검색 임계값을 0.2로 설정하고 인용 요구 사항으로 인해 ALCE(Gao 등, 2023)의 경우 검색 임계값을 0으로 설정한다. 우리는 vllm을 이용하여 추론을 빠르게 한다(Kwon et al., 2023). 각 세그먼트 레벨에서 빔 폭은 2를 사용한다. 토큰 레벨 생성을 위해 그리디 디코딩을 사용한다. 기본적으로 Contriever-MS MARCO(Izacard et al., 2022)의 상위 5개의 문서를 사용하고, 전기 및 오픈 도메인 QA는 Luo et al.(2023)에 이어 웹 검색 엔진에서 검색된 상위 5개의 문서를 추가로 사용하고, ASQA는 GTR-XXL(Ni et al., 2022)의 저자가 제공한 상위 5개의 문서를 모든 기준선에서 사용하여 공정한 비교를 수행한다.\n' +
+      '\n' +
+      '## 5 결과 및 분석\n' +
+      '\n' +
+      '### Main Results\n' +
+      '\n' +
+      '검색이 없는 기준선과 비교.표 2(상단)는 검색이 없는 기준선을 나타낸다. 우리의 Self-Rag(아래 두 줄)는 모든 작업에서 감독된 미세 조정된 LLM보다 상당한 성능 이점을 보여주며 PubHealth, PopQA, 전기 세대 및 ASQA(루즈 및 MAUVE)에서 ChatGPT를 능가한다. 우리의 접근법은 또한 정교한 프롬프트 엔지니어링을 사용하는 동시 방법을 상당히 능가하며, 특히 바이오 생성 작업에서 우리의 7B 및 13B 모델은 동시 CoVE(Dhuliawala 등, 2023)를 능가하며, 이는 Llama2658이 출력을 정제하도록 반복적으로 촉구한다.\n' +
+      '\n' +
+      '검색과의 기준선 비교.표 2(아래)에서 볼 수 있듯이 자체 래그는 많은 작업에서 기존 RAG를 능가하여 모든 작업에서 비독점 LM 기반 모델 중 최상의 성능을 얻습니다. 이 방법은 PopQA 또는 Bio에서 다른 기준선보다 우수하지만, 검색이 가능한 강력한 명령어 조정 LMs(예: LLama2-chat, Alpaca)는 검색이 불가능한 기준선에서 큰 이득을 보인다. 그러나 이러한 기준선은 단순히 검색된 구절의 하위 문자열을 복사하거나 추출할 수 없는 작업에 대해 제한된 솔루션을 제공한다는 것을 발견했다. PubHealth와 ARC-Challenge에서 검색이 있는 기준선은 검색이 없는 기준선보다 성능이 크게 향상되지 않는다. 또한 인용의 정확도를 높이기 위해 검색이 가능한 대부분의 기준선이 어려움을 겪는다는 것을 알 수 있었다. ASQA에서 우리 모델은 ChatGPT를 제외한 모든 모델보다 훨씬 더 높은 인용 정확도와 재현율을 보여준다. Gao et al. (2023)은 ChatGPT가 더 작은 LMs를 능가하는 이 특정 작업에서 일관되게 우수한 효능을 나타낸다는 것을 발견했다. 우리의 Self-Rag는 이러한 성능 격차를 해소하여 모델이 생성한 주장이 인용된 증거에 의해 완전히 뒷받침되는지 여부를 측정하는 인용 정밀도에서 ChatGPT를 능가한다. 우리는 또한 사실적 정밀도에 대한 메트릭에서 Self-Rag 7B가 종종 생성하는 작은 Self-Rag의 경향으로 인해 때때로 우리의 13B보다 우수하다는 것을 발견했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r r r r r r r r r r} \\hline \\hline  & \\multicolumn{3}{c}{Short-form} & \\multicolumn{3}{c}{Closed-set} & \\multicolumn{3}{c}{Long-form generations (with citations)} \\\\  & PopQA & TQA & Pub & ARC & Bio & & & & & ASQA & \\\\ LM & (acc) & (acc) & (acc) & (acc) & (FS) & (em) & (rg) & (mau) & (pre) & (rec) \\\\ \\hline \\multicolumn{9}{c}{_LMs with proprietary data_} \\\\ Llama2-c\\({}_{18}\\) & 20.0 & 59.3 & 49.4 & 38.4 & 55.9 & 22.4 & 29.6 & 28.6 & – & – \\\\ Ret-Llama2-c\\({}_{13b}\\) & 51.8 & 59.8 & 52.1 & 37.9 & 79.9 & 32.8 & 34.8 & 43.8 & 19.8 & 36.1 \\\\ ChatGPT & 29.3 & 74.3 & 70.1 & 75.3 & 71.8 & 35.3 & 36.2 & 68.8 & – & – \\\\ Ret-ChatGPT & 50.8 & 65.7 & 54.7 & 75.3 & – & 40.7 & 39.9 & 79.7 & 65.1 & 76.6 \\\\ Perplexity.ai & – & – & – & – & 71.2 & – & – & – & – & – & – \\\\ \\hline \\multicolumn{9}{c}{_Baselines without retrieval_} \\\\ Llama278 & 14.7 & 30.5 & 34.2 & 21.8 & 44.5 & 7.9 & 15.3 & 19.0 & – & – \\\\ Alpaca78 & 23.6 & 54.5 & 49.8 & 45.0 & 45.8 & 18.8 & 29.4 & 61.7 & – & – \\\\ Llama2138 & 14.7 & 38.5 & 29.4 & 29.4 & 53.4 & 7.2 & 12.4 & 16.0 & – & – \\\\ Alpaca138 & 24.4 & 61.3 & 55.5 & 54.9 & 50.2 & 22.9 & 32.0 & 70.6 & – & – \\\\ CoVE658 * & – & – & – & – & 71.2 & – & – & – & – & – \\\\ \\hline \\multicolumn{9}{c}{_Baselines with retrieval_} \\\\ Toolformer*66 & – & 48.8 & – & – & – & – & – & – & – & – & – \\\\ Llama278 & 38.2 & 42.5 & 30.0 & 48.0 & 78.0 & 15.2 & 22.1 & 32.0 & 2.9 & 4.0 \\\\ Alpaca78 & 46.7 & 64.1 & 40.2 & 48.0 & 76.6 & 30.9 & 33.3 & 57.9 & 5.5 & 7.2 \\\\ Llama2-FT*78 & 48.7 & 57.3 & 64.3 & 65.8 & 78.2 & 31.0 & 35.8 & 51.2 & 5.0 & 7.5 \\\\ SALT*78 & – & – & 69.2 & 48.4 & – & – & – & – & – & – \\\\ Llama2138 & 45.7 & 47.0 & 30.2 & 26.0 & 77.5 & 16.3 & 20.5 & 24.7 & 2.3 & 3.6 \\\\ Alpaca138 & 46.1 & 66.9 & 51.1 & 57.6 & 77.7 & **34.8** & 36.7 & 56.6 & 2.0 & 3.8 \\\\\n' +
+      '**우리** Self-Rag 78 & 54.9 & 66.4 & 72.4 & 67.3 & **81.2 & 30.0 & 35.7 & **74.3 & 66.9 & 67.8 \\\\\n' +
+      '**Our** Self-Rag 138 & **55.8** & **69.3** & **74.5** & **73.1** & 80.2 & 31.7 & **37.0** & 71.6 & **70.3** & **71.3** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 6개의 태스크에 대한 전체 실험 결과. **굵은** 숫자는 비독점 모델 중 가장 좋은 성능을 나타내고 회색 색상의 굵은 텍스트는 모든 비독점 모델을 능가할 때 가장 좋은 독점 모델을 나타냅니다. \\ ({}^{*}\\)는 동시 작업에 의해 보고된 동시 또는 최근 결과를 나타낸다. - 원본 문서에서 보고되지 않았거나 해당되지 않는 숫자를 나타낸다. 모델은 축척에 따라 정렬됩니다. FS, em, rg, mau, prec, rec는 FactScore (factuality); str-em, rouge (correctness); MAUVE (fluency); 인용 정밀도 및 재현율을 각각 나타낸다.\n' +
+      '\n' +
+      '정확하게 접지되었지만 출력이 더 짧습니다. Llama2-FT\\({}_{78}\\)는 검색이나 자기성찰 없이 Self-Rag와 동일한 명령어-출력 쌍으로 학습되고 테스트 시간에만 검색이 증강되는 기준선 LM으로 Self-Rag에 뒤처진다. 이 결과는 Self-Rag 이득이 학습 데이터로부터만 얻어지는 것이 아님을 나타내며 Self-Rag 프레임워크의 효과를 입증한다.\n' +
+      '\n' +
+      '### Analysis\n' +
+      '\n' +
+      '절제 연구.우리는 어떤 요인이 중요한 역할을 하는지 식별하기 위해 프레임워크의 일련의 절제 작업을 수행한다. 모델과 다르게 훈련된 두 모델 변형을 평가한다: _No Retriever_ 는 검색된 패시지가 없는 명령-출력 쌍이 주어진 표준 명령-추종 방법을 사용하여 LM을 훈련시키고, _No Critic_ 은 반사 토큰 없이 항상 상위 검색 문서로 증강되는 입력-출력 쌍으로 훈련된 LM을 훈련시킨다. 이것은 SAIL(Luo 등, 2023)과 유사하며, 우리는 SAIL에서와 같이 Alpaca 데이터 세트(Dubois 등, 2023)를 사용하는 대신 명령 출력 데이터를 사용한다. 또한, 추론 시간 알고리즘에 대한 삭제를 수행하는데, 이 알고리즘에는 추론 중 검색을 불가능하게 하는 검색 없음; 적응 임계값을 사용하는 대신 \\(\\boxed{Retrieve}\\)=Yes일 때 검색하는 모델 성능을 나타내는 하드 제약 조건; 표준 RAG 접근법과 유사하게 항상 상위 1개의 문서만 검색하고 사용한다; _Remove_ \\(\\boxed{Isstr}\\)는 Eq. 4에서 비판 유도 빔 탐색 동안에만 \\(\\boxed{Isstr}\\) 점수만을 제거하는 모델 성능을 나타낸다. 이 삭제 실험에서 우리는 훈련 변형의 보다 효율적인 탐색을 위해 훈련 인스턴스 크기 50k를 사용한다. 이후 이 절에서는 학습 데이터 크기의 영향에 대한 분석을 실시한다. 우리는 PopQA, PubHealth 및 ASQA의 세 가지 데이터 세트에 대한 절제 연구를 수행한다. ASQA에서 샘플링된 150개의 인스턴스에 대한 모델을 평가하고 적응 또는 검색 프로세스가 없는 삭제를 제외한다.\n' +
+      '\n' +
+      '우리는 절제 결과를 표 2(a)에 보여준다. 표의 상단 부분은 훈련 삭제에 대한 결과를 나타내고, 하단 부분은 추론 삭제에 대한 결과를 나타낸다. 우리는 모든 구성 요소가 중요한 역할을 한다는 것을 안다. 또한 작업 전반에 걸쳐 Self-Rag와 No Retriever 또는 Critic 기준선 사이의 큰 성능 격차를 관찰하여 이러한 모델로 LM을 훈련하는 것이 Self-Rag의 성능 향상에 크게 기여함을 나타낸다. 기존의 RAG 접근법과 같이 상위 통로를 연관성에 관계없이 사용(상위 1 검색)하면 PopQA와 ASQA가 크게 떨어지고, 빔 탐색 과정에서 \\(\\boxed{Isstr}\\)을 제거하면 ASQA의 성능이 저하된다. 이는 검색 모델의 모든 상위 구절을 순진하게 사용하거나 관련성 점수에만 의존하는 대신 세밀하게 세분화된 다중 기준을 기반으로 세대를 신중하게 선택하는 Self-Rag의 능력의 효율성을 보여준다.\n' +
+      '\n' +
+      '**추론 시간 사용자 지정의 효과** 제안된 프레임워크의 한 가지 주요 이점은 각 비판 유형이 최종 세대 샘플링에 미치는 영향을 제어할 수 있다는 것입니다. 여러 평가 측면이 고려된 ASQA에 대한 추론 시간 동안 7B 모델 상단에 대한 서로 다른 매개변수 가중치의 영향을 분석한다. 그림 2(b)는 \\(\\boxed{Isstr}\\)에 대한 가중항 변경 효과를 보여주는데, 이는 텍스트 구절에 의해 출력이 얼마나 지원되는지를 비판한다. 그림에서 알 수 있듯이 가중치를 높이면 모델 생성이 증거에 의해 뒷받침되는지 여부에 더 중점을 두기 때문에 모델의 인용 정밀도에 긍정적인 영향을 미친다. 그 위에.\n' +
+      '\n' +
+      '그림 3: **Self-Rag에 대한 분석: (a) 7B 모델을 기반으로 하는 Self-Rag 훈련 및 추론의 주요 구성 요소에 대한 절제 연구. (b) 소프트 웨이트가 ASQA 인용 정밀도 및 Mauve(유창성)에 미치는 영향. (c) PubHealth 및 PopQA에서 빈도 및 _정규화_ 정확도를 검색 합니다.**\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:10]\n' +
+      '\n' +
+      '## Ethical Concerns\n' +
+      '\n' +
+      '이 작업은 LLM 산출물의 사실성을 개선하는 것을 목표로 하며, LLM 산출물의 부족은 수많은 실제 문제(예: 잘못된 정보의 확산 및 부정확하고 위험한 조언 제공)를 계속 유발한다. 우리의 방법은 성능, 사실성 및 인용 정확성 측면에서 상당한 개선을 보여주지만 여전히 인용에 의해 완전히 지원되지 않는 출력을 생성할 수 있다. 우리는 명시적인 자기반성과 세밀한 귀인이 사용자가 모델 출력의 사실적 오류를 확인하는 데 도움이 될 수 있기를 바란다.\n' +
+      '\n' +
+      '#### Acknowledgments\n' +
+      '\n' +
+      '우리는 이 작품의 초기 단계에서 유익한 토론을 한 세원민, 스콧 원타우 이, 션 웰렉, 카윈 에타야라지에 감사한다. 논문에 대한 귀중한 피드백은 세원민, 중원(다니엘) 김, 샌디 카플란, 평가에 대한 도움은 톈유 가오와 웨이자 시에게 감사드린다. 아카리 아사이는 IBM 펠로우십의 지원을 받고 있습니다. 우리는 이 작업에서 LMs를 훈련하고 평가하기 위한 컴퓨팅을 제공하는 안정성 AI와 OpenAI API에 대한 액세스를 위한 Microsoft 가속 기반 모델 연구 프로그램에 감사한다. 이 작업은 NIWC 퍼시픽(N66001-19-2-4031), NSF IIS-2044660 및 AI2의 선물을 통한 DARPA MCS 프로그램에 의해 부분적으로 지원되었다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Asai 등(2020) Akari Asai, Kazuma Hashimoto, Hannaneh Hajishirzi, Richard Socher, and Caiming Xiong. 질문에 응답하기 위해 위키피디아 그래프에서 추론 경로를 검색하는 방법. 2020년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=SJgVWkrYDH](https://openreview.net/forum?id=SJgVWkrYDH)입니다.\n' +
+      '* Asai 등(2023a) Akari Asai, Sewon Min, Zexuan Zhong, and Danqi Chen. 검색 기반 언어 모델 및 응용 프로그램 [계산 언어학 협회(자습서)의 제61차 연례 회의] 2023a에서. URL [https://aclanthology.org/2023.acl-tutorials.6](https://aclanthology.org/2023.acl-tutorials.6).\n' +
+      '* Asai 등(2023b) Akari Asai, Timo Schick, Patrick Lewis, Xilun Chen, Gautier Izacard, Sebastian Riedel, Hannaneh Hajishirzi, and Wen-tau Yih. 명령어를 사용한 작업 인식 검색 계산 언어학 협회의 결과 2023b. URL [https://aclanthology.org/2023.findings-acl.225](https://aclanthology.org/2023.findings-acl.225).\n' +
+      '* Bohnet et al.(2022) Bernd Bohnet, Vinh Q Tran, Pat Verga, Roee Aharoni, Daniel Andor, Livio Baldini Soares, Jacob Eisenstein, Kuzman Ganchev, Jonathan Herzig, Kai Hui, et al. Attributed question answering: Evaluation and modeling for attributed large language models. _ arXiv preprint arXiv:2212.08037_, 2022. URL [https://arxiv.org/abs/2212.08037](https://arxiv.org/abs/2212.08037).\n' +
+      '* Chen et al.(2023) Lingjiao Chen, Matei Zaharia, and James Zou. 채팅의 행동은 시간이 지남에 따라 어떻게 변하는가? _ arXiv preprint arXiv:2307.09009_, 2023. URL [https://arxiv.org/abs/2307.09009](https://arxiv.org/abs/2307.09009).\n' +
+      '* Clark 등(2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문을 풀었다고 생각해? try arc, ai2 reasoning challenge. _ arXiv preprint arXiv:1803.05457_, 2018. URL [https://arxiv.org/abs/1803.05457](https://arxiv.org/abs/1803.05457).\n' +
+      '* Dao et al.(2022) Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher Re. 플래시 어텐션: 빠르고 기억 효율이 높은 정확한 주의력과 인식력. 2022년 _신경 정보 처리 시스템의 발전_ 에서 URL [https://openreview.net/forum?id=H4DqfPSibmx](https://openreview.net/forum?id=H4DqfPSibmx).\n' +
+      '* Dhuliawala et al. (2023) Shehzaad Dhuliawala, Mojtaba Komeili, Jing Xu, Roberta Raileanu, Xian Li, Asli Celikyilmaz, and Jason Weston. 연쇄 검증은 대형 언어 모델에서 환각을 감소시킵니다. _ arXiv preprint arXiv:2309.11495_, 2023. URL [https://arxiv.org/abs/2309.11495](https://arxiv.org/abs/2309.11495).\n' +
+      '* Dinan 등(2019) Emily Dinan, Stephen Roller, Kurt Shuster, Angela Fan, Michael Auli, and Jason Weston. 위키피디아 마법사: 지식 기반 대화 에이전트. 2019년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=r1173iRqKm](https://openreview.net/forum?id=r1173iRqKm)을 참조 하세요.\n' +
+      '* Dubois 등(2019) Yann Dubois, Xuechen Li, Rohan Taori, Tianyi Zhang, Ishaan Gulrajani, Jimmy Ba, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 알파카팜: 인간의 피드백에서 학습하는 방법에 대한 시뮬레이션 프레임워크입니다. _ arXiv preprint arXiv:2305.14387_, 2023. URL [https://arxiv.org/abs/2305.14387](https://arxiv.org/abs/2305.14387)입니다.\n' +
+      '*Gao et al.(2023) Tianyu Gao, Howard Yen, Jiatong Yu, and Danqi Chen. 큰 언어 모델을 사용 하 여 인용을 사용 하 여 텍스트를 생성 합니다. _ arXiv preprint arXiv:2305.14627_, 2023. URL [https://arxiv.org/abs/2305.14627](https://arxiv.org/abs/2305.14627).\n' +
+      '* Guu et al.(2020) Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Mingwei Chang. 증강 언어 모델 사전 훈련을 검색합니다. 2020년 _Machine Learning에 대한 국제 회의_ 에서 URL [https://dl.acm.org/doi/pdf/10.5555/3524938.3525306](https://dl.acm.org/doi/pdf/10.5555/3524938.3525306).\n' +
+      '* Izacard 등 (2022a) Gautier Izacard, Mathilde Caron, Lucas Hosseini, Sebastian Riedel, Piotr Bojanowski, Armand Joulin, and Edouard Grave. 대조 학습을 통한 감독되지 않은 밀집 정보 검색. _ Transactions on Machine Learning Research_, 2022a. URL [https://openreview.net/forum?id=jKN1pX1?b0](https://openreview.net/forum?id=jKN1pX1?b0)\n' +
+      '* Izacard 등(2022b) Gautier Izacard, Patrick Lewis, Maria Lomeli, Lucas Hosseini, Fabio Petroni, Timo Schick, Jane Dwivedi-Yu, Armand Joulin, Sebastian Riedel, and Edouard Grave. 검색 증강 언어 모델을 사용한 샷 학습은 거의 없습니다. _ arXiv preprint arXiv:2208.03299_, 2022b. URL [https://arxiv.org/abs/2208.03299](https://arxiv.org/abs/2208.03299).\n' +
+      '*장 외 (2023) 정바오 장, 프랭크 F 쉬, 루위 가오, 즈칭 선, 치안 류, 제인 드위베디-유, 이밍 양, 제이미 캘란, 및 그레이엄 노이비히. 활성 검색으로 생성이 증가했습니다. _ arXiv preprint arXiv:2305.06983_, 2023. URL [https://arxiv.org/abs/2305.06983](https://arxiv.org/abs/2305.06983).\n' +
+      '* Joshi et al.(2017) Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. TriviaQA: 읽기 이해를 위해 멀리 감독된 대규모 챌린지 데이터 세트입니다. 2017년 _계산 언어학 협회 제55차 연차 회의 회보(제1권: 장문)_에서 URL [https://aclanthology.org/P17-1147](https://aclanthology.org/P17-1147)입니다.\n' +
+      '* Keskar et al.(2019) Nitish Shirish Keskar, Bryan McCann, Lav R Varshney, Caiming Xiong, and Richard Socher. Ctrl: 제어 가능한 생성을 위한 조건부 변압기 언어 모델. _ arXiv preprint arXiv:1909.05858_, 2019. URL [https://arxiv.org/abs/1909.05858](https://arxiv.org/abs/1909.05858).\n' +
+      '* Korbak 등(2023) Tomasz Korbak, Kejian Shi, Angelica Chen, Rasika Vinayak Bhalerao, Christopher Buckley, Jason Phang, Samuel R Bowman, and Ethan Perez. 인간의 기호로 언어 모델을 사전 훈련합니다. 2023 _Machine Learning에 대한 국제 회의_ 에서 URL [https://openreview.net/forum?id=AT8I%8K0eCc](https://openreview.net/forum?id=AT8I%8K0eCc).\n' +
+      '* Kwiatkowski et al. (2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina Toutanova, Llion Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. 다이, 야콥 우즈코리트, 콕 르, 슬라브 페트로프 자연스러운 질문: 질의 응답 연구를 위한 벤치마크입니다. _ 컴퓨팅 언어학 협회의 트랜잭션_, 2019. URL [https://aclanthology.org/Q19-1026](https://aclanthology.org/Q19-1026).\n' +
+      '* Kwon et al. (2023) 우석 권, 주한 리, 시위안 장, 영성, 리안민 정, 코디 하오 유, 조셉 E. 곤잘레스, 하오 장, 및 이온 스토이카. 페이지 주의와 함께 제공되는 대용량 언어 모델을 위한 효율적인 메모리 관리. *운영 체제 원리에 대한 ACM SIGOPS 29th Symposium의 진행률_ 2023. URL [https://arxiv.org/abs/2309.06180](https://arxiv.org/abs/2309.06180).\n' +
+      '* Lewis et al.(2020) Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Kuttler, Mike Lewis, Wen-tau Yih, Tim Rocktaschel, Sebastian Riedel, and Douwe Kiela. 지식 집약적인 nlp 작업을 위한 검색 강화 생성. `Advances in Neural Information Processing Systems_, 2020. URL [https://proceedings.neurips.cc/paper/2020/file/6b493230205f780elbc26945df7481e5-Paper.pdf](https://proceedings.neurips.cc/paper/2020/file/6b493230205f780elbc26945df7481e5-Paper.pdf)\n' +
+      '* Lin et al.(2023) Xi Victoria Lin, Xilun Chen, Mingda Chen, Weijia Shi, Maria Lomeli, Rich James, Pedro Rodriguez, Jacob Kahn, Gergely Szilvasy, Mike Lewis, Luke Zettlemoyer, and Scott Yih. Ra-dit: 검색 강화 이중 명령 튜닝, 2023. URL [https://arxiv.org/abs/2310.01352](https://arxiv.org/abs/2310.01352).\n' +
+      '* Liu et al.(2023a) Nelson F Liu, Tianyi Zhang, and Percy Liang. 생성 검색 엔진에서 검증 가능성 평가 _ arXiv preprint arXiv:2304.09848_, 2023a. URL [https://arxiv.org/abs/2304.09848](https://arxiv.org/abs/2304.09848).\n' +
+      '\n' +
+      '* Liu et al. (2023) Yang Liu, Dan Iter, Yichong Xu, Shuohang Wang, Ruochen Xu, and Chenguang Zhu. Gpteval: 인간 정렬이 더 양호한 gpt-4를 사용한 Nlg 평가 _ arXiv preprint arXiv:2303.16634_, 2023b. URL [https://arxiv.org/abs/2303.16634](https://arxiv.org/abs/2303.16634).\n' +
+      '* Lu et al.(2022) Ximing Lu, Sean Welleck, Jack Hessel, Liwei Jiang, Lianhui Qin, Peter West, Prithviraj Ammanabrolu, and Yejin Choi. QUARK: 강화되지 않은 학습으로 제어 가능한 텍스트 생성 2022년 _신경 정보 처리 시스템의 발전_ 에서 URL [https://openreview.net/forum?id=5HaIds3ux50](https://openreview.net/forum?id=5HaIds3ux50).\n' +
+      '* Luo et al. (2023) Hongyin Luo, Yung-Sung Chuang, Yuan Gong, Tianhua Zhang, Yoon Kim, Xixin Wu, Danny Fox, Helen Meng, and James Glass. 세일: 검색 강화 교육 학습입니다. _ arXiv preprint arXiv:2305.15225_, 2023. URL [https://arxiv.org/abs/2305.15225](https://arxiv.org/abs/2305.15225).\n' +
+      '* Madaan 등(2023) Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, Shashank Gupta, Bhisattwa Prasad Majumder, Katherine Hermann, Sean Welleck, Amir Yazdanbakhsh, and Peter Clark. 셀프 정제: 셀프 피드백으로 반복 정제합니다. _ arXiv preprint arXiv:2303.17651_, 2023. URL [https://arxiv.org/abs/2303.17651](https://arxiv.org/abs/2303.17651).\n' +
+      '* Mallen et al. (2023) Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Daniel Khashabi, and Hannaneh Hajishirzi. 언어 모델을 신뢰하지 않을 때: 모수적 기억과 비모수적 기억의 효과 조사 [컴퓨팅 언어학 협회 제61차 연차 회의 회보(제1권: 장문)_, 2023. URL [https://aclanthology.org/2023.acl-long.546](https://aclanthology.org/2023.acl-long.546).\n' +
+      '* Menick 등(2022) Jacob Menick, Maja Trebacz, Vladimir Mikulik, John Aslanides, Francis Song, Martin Chadwick, Mia Glaese, Susannah Young, Lucy Campbell-Gillingham, Geoffrey Irving, et al. Teaching language models to support answers with verified quote. _ arXiv preprint arXiv:2203.11147_, 2022. URL [https://arxiv.org/abs/2203.11147](https://arxiv.org/abs/2203.11147).\n' +
+      '* Mihaylov et al. (2018) Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. 갑옷이 전기를 통할 수 있나요? 오픈 북 질문 응답을 위한 새 데이터 세트 _Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing_, 2018. URL [https://aclanthology.org/D18-1260](https://aclanthology.org/D18-1260).\n' +
+      '* Min et al.(2019) Sewon Min, Danqi Chen, Hannaneh Hajishirzi, and Luke Zettlemoyer. 약하게 감독된 질문 응답을 위한 이산 하드 EM 접근법. _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, 2019. URL [https://aclanthology.org/D19-1284](https://aclanthology.org/D19-1284).\n' +
+      '* Min et al. (2023) Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Wei Koh, Mohit Iyyer, Luke Zettlemoyer, and Hannaneh Hajishirzi. 팩트스코어: 긴 형식의 텍스트 생성에서 사실적 정밀도에 대한 세밀한 원자 평가 _ arXiv preprint arXiv:2305.14251_, 2023. URL [https://arxiv.org/abs/2305.14251](https://arxiv.org/abs/2305.14251).\n' +
+      '* Nakano 등(2021) Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, et al. Webgpt: Browser-assisted question-answering with human feedback. _ arXiv preprint arXiv:2112.09332_, 2021. URL [https://arxiv.org/abs/2112.09332](https://arxiv.org/abs/2112.09332).\n' +
+      '* Ni et al.(2022) Jianmo Ni, Chen Qu, Jing Lu, Zhuyun Dai, Gustavo Hernandez Abrego, Ji Ma, Vincent Zhao, Yi Luan, Keith Hall, Ming-Wei Chang, and Yinfei Yang. 대형 듀얼 인코더는 일반화할 수 있는 리트리버입니다. *Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, 2022. URL [https://aclanthology.org/2022.emnlp-main.669](https://aclanthology.org/2022.emnlp-main.669).\n' +
+      '* OpenAI (2023) OpenAI. Gpt-4 기술 보고서입니다. _ arXiv preprint arXiv:2303.08774_, 2023. URL [https://arxiv.org/abs/2303.08774](https://arxiv.org/abs/2303.08774).\n' +
+      '* Ouyang et al.(2022) Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Gray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, and Ryan Lowe. 언어 모델을 훈련시켜 인간의 피드백으로 지침을 따르도록 합니다. *신경 정보 처리 시스템의 발전_2022. URL [https://openreview.net/forum?id=TGSKACxEON](https://openreview.net/forum?id=TGSKACxEON)입니다.\n' +
+      '* Paul et al. (2023) Debjit Paul, Mete Ismayilkada, Maxime Peyrard, Beatriz Borges, Antoine Bosselut, Robert West, and Boi Faltings. 정제자: 중간 표현에 대한 피드백을 추론합니다. _ arXiv preprint arXiv:2304.01904_, 2023. URL [https://arxiv.org/abs/2304.01904](https://arxiv.org/abs/2304.01904).\n' +
+      '* Petroni 등(2021) Fabio Petroni, Aleksandra Piktus, Angela Fan, Patrick Lewis, Majid Yazdani, Nicola De Cao, James Thorne, Yacine Jernite, Vladimir Karpukhin, Jean Maillard, Vassilis Plachouras, Tim Rocktaschel, and Sebastian Riedel. KILT: 지식 집약적인 언어 작업을 위한 벤치마크. `Proceedings of the 2021 Conference of the North American Chapter of the Computational Linguistics: Human Language Technologies_, 2021. URL [https://aclanthology.org/2021.naacl-main.200](https://aclanthology.org/2021.naacl-main.200).\n' +
+      '* Pillutla 등(2021) Krishna Pillutla, Swabha Swayamdipta, Rowan Zellers, John Thickstun, Sean Welleck, Yejin Choi, and Zaid Harchaoui. MAUVE: 발산 프론티어를 사용하여 신경 텍스트와 인간 텍스트 사이의 갭을 측정하는 단계. 2021년 _신경 정보 처리 시스템의 발전_ 에서 URL [https://openreview.net/forum?id=Tqx7nJp7PR](https://openreview.net/forum?id=Tqx7nJp7PR).\n' +
+      '* Rajbhandari et al. (2020) Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, and Yuxiong He. 제로: 조 개의 파라미터 모델을 학습하기 위한 메모리 최적화. `Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis_, 2020. URL [https://dl.acm.org/doi/10.5555/3433701.3433727](https://dl.acm.org/doi/10.5555/3433701.3433727).\n' +
+      '* Ram et al. (2023) Ori Ram, Yoav Levine, Itay Dalmedigos, Dor Muhlgay, Amnon Shashua, Kevin Leyton-Brown, and Yoav Shoham. 문맥 검색 강화 언어 모델입니다. _ 계산 언어학 협회의 트랜잭션_, 2023. URL [https://arxiv.org/abs/2302.00083](https://arxiv.org/abs/2302.00083).\n' +
+      '* 산 등 (2022) 빅터 산, 알버트 웹슨, 콜린 라펠, 스티븐 바흐, 린탕 수타위카, 자이드 알랴페이, 앙투안 차핀, 아르나우 슈티글러, 아룬 라자, 만난 데이, M 사룰 바리, 캔웬 쉬, 우르미시 타케르, 샨야 샤르마 샤르마, 일라이자 샤르마, 태운 김, 군잔 차비아니, 니할 나약, 데바요티 다타, 조나단 창, 마이크 톈-젠 장, 한 왕, 마테오 마니카, 션 션, 정신용, 하르시트 판데, 레이첼 보덴, 토마스 왕, 트리샬라 니라지, 조스 로젠, 아비슈트 샤르마, 안드레아 산틸리, 티볼트 페브리, 제이슨 앨런 프라이, 라이언 티한, 테벤 르 스카오, 스텔라 비드만, 레오 가오, 토마스 울프, 알렉산더 M 러시. 멀티태스킹 프롬프트 트레이닝은 제로 샷 태스크 일반화를 가능하게 한다. 2022년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=9Vrb9D0WI4](https://openreview.net/forum?id=9Vrb9D0WI4).\n' +
+      '* Schick 등(2023) Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 도구 형성기: 언어 모델은 도구를 사용하는 방법을 스스로 가르칠 수 있습니다. _ arXiv preprint arXiv:2302.04761_, 2023. URL [https://arxiv.org/abs/2302.04761](https://arxiv.org/abs/2302.04761).\n' +
+      '* Schulman 등(2017) John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 근위 정책 최적화 알고리즘 _ arXiv preprint arXiv:1707.06347_, 2017. URL [https://arxiv.org/abs/1707.06347](https://arxiv.org/abs/1707.06347).\n' +
+      '* Shi et al. (2023) Freda Shi, Xinyun Chen, Kanishka Misra, Nathan Scales, David Dohan, Ed H. Chi, Nathanael Scharli, and Denny Zhou. 큰 언어 모델은 관련 없는 맥락에 의해 쉽게 산만해질 수 있다. [Machine Learning에 대한 제40회 국제 회의의 진행]에서 2023. URL [https://proceedings.mlr.press/v202/shi23a.html](https://proceedings.mlr.press/v202/shi23a.html)을 참조하세요.\n' +
+      '* Stelmakh 등 (2022) Ivan Stelmakh, Yi Luan, Bhuwan Dhingra, and Ming-Wei Chang. ASQA: 팩토이드 질문들은 긴 형태의 답변들을 충족시킨다. *Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, 2022. URL [https://aclanthology.org/2022.emnlp-main.566](https://aclanthology.org/2022.emnlp-main.566).\n' +
+      '* Thorne et al.(2018) James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. FEVER: 사실 추출 및 VERification을 위한 대규모 데이터 세트. <Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers)_, 2018. URL [https://aclanthology.org/N18-1074](https://aclanthology.org/N18-1074).\n' +
+      '\n' +
+      '* Touvron 등(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_, 2023. URL [https://arxiv.org/abs/2307.09288](https://arxiv.org/abs/2307.09288).\n' +
+      '* Wang et al.(2023) Yizhong Wang, Hamish Ivison, Pradeep Dasigi, Jack Hessel, Tushar Khot, Khyathi Raghavi Chandu, David Wadden, Kelsey MacMillan, Noah A Smith, Iz Beltagy, et al. 낙타는 어디까지 갈 수 있는가? 오픈 리소스에서 명령어 튜닝 상태를 탐색합니다. _ arXiv preprint arXiv:2306.04751_, 2023. URL [https://arxiv.org/abs/2306.04751](https://arxiv.org/abs/2306.04751).\n' +
+      '* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. 다이, 퀵 브이 레 파인튜닝 언어 모델은 제로샷 학습자입니다. 2022년 _International Conference on Learning Representations_ 에서 URL [https://openreview.net/forum?id=gE2rGc0zdqR](https://openreview.net/forum?id=gE2rGc0zdqR).\n' +
+      '* Wu et al.(2023) Zeqiu Wu, Yushi Hu, Weijia Shi, Nouha Dziri, Alane Suhr, Prithviraj Ammanabrolu, Noah A Smith, Mari Ostendorf, and Hannaneh Hajishirzi. 세립된 인간 피드백은 언어 모델 훈련에 더 나은 보상을 제공합니다. _ arXiv preprint arXiv:2306.01693_, 2023. URL [https://arxiv.org/abs/2306.01693](https://arxiv.org/abs/2306.01693).\n' +
+      '*Xie et al. (2023) Yuxi Xie, Kenji Kawaguchi, Yiran Zhao, Xu Zhao, Min-Yen Kan, Junxian He, and Qizhe Xie. 분해는 자체 평가 유도 디코딩을 통해 추론을 향상시킵니다. _ arXiv preprint arXiv:2305.00633_, 2023. URL [https://arxiv.org/abs/2305.00633](https://arxiv.org/abs/2305.00633).\n' +
+      '*Xu et al.(2023) Fangyuan Xu, Weijia Shi, and Eunsol Choi. 복구: 압축 및 선택적 증강으로 검색 강화 lms 향상, 2023. URL [https://arxiv.org/abs/2310.04408](https://arxiv.org/abs/2310.04408).\n' +
+      '* Yoran et al.(2023) Ori Yoran, Tomer Wolfson, Ori Ram, and Jonathan Berant. 검색 강화 언어 모델을 관련 없는 컨텍스트에 강력하게 만드는 2023. URL [https://arxiv.org/abs/2310.01558](https://arxiv.org/abs/2310.01558).\n' +
+      '*Yue et al. (2023) Xiang Yue, Boshi Wang, Kai Zhang, Ziru Chen, Yu Su, and Huan Sun. 대규모 언어 모델에 의한 속성 자동 평가 _ arXiv preprint arXiv:2305.06311_, 2023. URL [https://arxiv.org/abs/2305.06311](https://arxiv.org/abs/2305.06311).\n' +
+      '* Zhang et al. (2023) Tianhua Zhang, Hongyin Luo, Yung-Sung Chuang, Wei Fang, Luc Gaitskell, Thomas Hartvigsen, Xixin Wu, Danny Fox, Helen Meng, and James Glass. 통역 가능한 통합 언어 검사입니다. _ arXiv preprint arXiv:2304.03728_, 2023. URL [https://arxiv.org/abs/2304.03728](https://arxiv.org/abs/2304.03728).\n' +
+      '* Zhou et al. (2023) Andy Zhou, Kai Yan, Michal Shlapentokh-Rothman, Haohan Wang, and Yu-Xiong Wang. 언어 에이전트 트리 검색은 언어 모델 2023에서 추론 작업 및 계획을 통합 합니다. URL [https://arxiv.org/abs/2310.04406](https://arxiv.org/abs/2310.04406).\n' +
+      '* Ziegler 등(2019) Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. 인간의 기호에서 언어 모델을 미세 조정합니다. _ arXiv preprint arXiv:1909.08593_, 2019. URL [https://arxiv.org/abs/1909.08593](https://arxiv.org/abs/1909.08593).\n' +
+      '\n' +
+      '## 부록 A Self-Rag 세부 정보\n' +
+      '\n' +
+      '1. 반사 토큰.\n' +
+      '2. 셀프 래그 트레이닝 3. 셀프 래그 추론\n' +
+      '3. 실험 상세 1. 훈련 상세 2. 평가 상세\n' +
+      '4. 결과 5.1 분석 5.2 인체평가예 5.3 정성적 실시예\n' +
+      '5. GPT-4 Self-Rag 상세들에 대한 명령들 및 입증들의 전체 리스트\n' +
+      '\n' +
+      '### Reflection Tokens.\n' +
+      '\n' +
+      '리플렉션 토큰의 정의 아래에서는 리플렉션 유형 및 출력 토큰에 대한 자세한 정의를 제공합니다. 처음 세 가지 측면은 각 세그먼트 레벨에서 제공되는 반면, 최종 측면은 각 출력 레벨에서만 제공된다.\n' +
+      '\n' +
+      '* **검색 주문형** ([검색]): 입력 및 이전 단계 생성(해당되는 경우)이 주어지면 LM은 계속에 사실적 접지가 필요한지 여부를 결정합니다. No는 시퀀스가 사실적 근거를 필요로 하지 않거나 지식 검색에 의해 강화되지 않을 수 있으므로 검색이 불필요함을 나타내고, Yes는 검색이 필요함을 나타낸다. 우리는 또한 증거를 계속 사용하고 있는데, 이는 모델이 이전에 검색된 증거를 계속 사용할 수 있음을 나타낸다. 예를 들어, 통로는 풍부한 사실 정보를 포함할 수 있고, 따라서 Self-Rag는 통로에 기초하여 다수의 세그먼트들을 생성한다.\n' +
+      '* **관련** ([IsIsIs]): 검색 된 지식이 항상 입력과 관련 되지 않을 수 있습니다. 이러한 양상은 증거가 유용한 정보를 제공하는지(Relevant) 또는 제공하지 않는지(Irrelevant)를 나타낸다.\n' +
+      '* **지원됨** ([IsIsIs]): 기여는 출력이 특정 증거에 의해 완전히 지원되는지 여부에 대한 개념입니다 (Menick 등, 2022; Bohnet 등, 2022). 이 측면은 산출물의 정보가 증거에 의해 얼마나 수반되는지 판단한다. We evaluate attributions in three scale, Fully supported, Partially supported, and No support/Contradictory, following Yue et al.(2023); Nakano et al.(2021).\n' +
+      '* **유용한** ([IsIsIs]): Liu 등(2023)의 정의에 따라 인식된 유틸리티를 응답이 실제 사실인지 여부와 독립적으로 쿼리에 대한 유용하고 유익한 답변인지 여부로 정의합니다. 이는 Menick 등(2022)에서도 그럴듯하다고 볼 수 있다. 유용성을 위해 5개의 척도 평가(1이 가장 낮고 5가 가장 높음)를 사용한다.\n' +
+      '\n' +
+      'GPT-4 기반 데이터 컬렉션에 대한 세부 정보. 명령 및 데모 쌍을 사용하여 섹션 D에 나열된 GPT-4를 프롬프트합니다. 공식 권장 사항에 따라 "#"으로 명령 및 출력을 분리합니다. 우리는 온도 1을 사용하고 최대 출력 토큰 카운트를 200으로 설정한다. GPT-4가 지정된 출력 형식 또는 예상 카테고리 이름과 일치하지 않는 출력 시퀀스를 따르지 않는 인스턴스를 폐기한다. 그 결과 [검색]의 경우 1,2594개, [IsIsIs]의 경우 11,181개, 관련성의 경우 19,317개, 유용성의 경우 3,831개를 수집했다.\n' +
+      '\n' +
+      'GPT-4 예측의 수동 분석.본 논문의 저자는 각 측면에 대해 무작위로 샘플링된 20개의 인스턴스를 수동으로 평가하고 동일한 명령, 시연 및 테스트 인스턴스가 주어진 경우 GPT-4 예측이 평가와 일치하는지 확인한다. 우리는 우리의 평가가 특히 관련성(95%), 검색 필요성(95%), 지원 정도(90%)에 대해 GPT-4 예측과 높은 일치를 보인다는 것을 발견했다. 동의는 유용성(80%)에서 약간 낮았는데, 이는 대부분 1과 2 또는 4와 5 사이의 불일치로 인한 것이었다.\n' +
+      '\n' +
+      '### Self-Rag Training\n' +
+      '\n' +
+      '훈련 개요.알고리즘 2는 훈련에 대한 높은 수준의 개요를 제공합니다.\n' +
+      '\n' +
+      '시드 데이터 세트의 전체 목록.다양한 입력-출력 쌍을 샘플링하기 위해 Open-Instruct (Wang et al., 2023) 데이터 세트의 인스턴스를 샘플링한다. 특히, 우리는 그들의 ShareGPT, GPT-4 Alpaca, Alpaca, OpenAssistant 및 FLAN 하위 집합 하위 집합을 사용한다. 또한 KILT 벤치마크(Petroni et al., 2021), ASQA(Stelmakh et al., 2022) 및 ARC-Easy 및 OpenBookQA를 포함한 다수의 QA 데이터 세트(Mihaylov et al., 2018)로부터 지식집약적 데이터 세트, Natural Questions(Kwiatkowski et al., 2019), Wizard of Wikipedia(Dinan et al., 2019) 및 FEVER(Thorne et al., 2018)의 사례를 샘플링하였다. 표 3은 전체 트레이닝 인스턴스 목록을 보여주며, 총 145,619개의 인스턴스를 사용한다.\n' +
+      '\n' +
+      'Critic \\(\\mathcal{C}\\).우리는 GPT-4가 생성한 피드백을 훈련, 개발, 테스트 세트로 나누어 보상 예측의 정확도를 평가한다. 보상 모델의 정확도는 다음과 같다. 표 5는 GPT-4 판단을 예측한 모형 성과를 보여준다. 보다시피, 전반적으로 미세 조정된 보상 모델은 GPT-4 예측 피드백과 높은 예측 매칭을 보여준다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:18]\n' +
+      '\n' +
+      '지원한 다음 계속하여 샘플을 채취합니다. 이 기준을 만족하는 구절이 하나 이상일 경우 검색 점수가 가장 높은 구절을 사용한다. \\(\\frac{\\texttt{IsREL}}{\\texttt{IsREL}}\\)=무관련 또는 \\(\\texttt{IsSUP}\\)=지원 통로가 없는 경우 무작위로 하나의 통로를 샘플링한다.\n' +
+      '\n' +
+      '```\n' +
+      '1 : 입력 입출력 데이터 \\(\\mathcal{D}\\) = \\(X,Y\\)\n' +
+      '2:for\\((x,y)\\in\\{X,Y\\}\\)do\n' +
+      '3 : 부여 \\((x,y)\\in\\{X,Y\\}\\)do\n' +
+      '4:if\\(\\frac{\\texttt{Retriev}}{\\texttt{Retriev}}\\) is predicted then\n' +
+      '5: \\((x,y)\\)\\(\\triangleright\\)가 주어진 \\(\\mathcal{R}\\)를 사용하여 관련 통로 \\(\\mathbf{D}\\) 검색 통로\n' +
+      '6:for\\(d\\in\\mathbf{D}\\)do\n' +
+      '7:\\(\\mathcal{C}\\) predicted \\(\\frac{\\texttt{IsREL}}{\\texttt{IsREL}}\\) for each \\(d\\)\\(\\triangleright\\) Predict relevance of passages\n' +
+      '8:\\(\\mathcal{C}\\) 예측 \\(\\frac{\\texttt{IsSUP}}{\\texttt{Retriev}}\\) 각 \\((y,d)\\)\\(\\triangleright\\) 출력에 대한 예측 지원\n' +
+      '9:\\(\\mathcal{C}\\) predict \\(\\frac{\\texttt{IsUSE}}{\\texttt{Retriev}}\\) for each \\(d\\)\\(\\triangleright\\) Predict overall utility (\\(t=\\mathcal{T}\\) only)\n' +
+      '10:Sample \\(d\\)\n' +
+      '11:elseif\\(\\frac{\\texttt{Retriev}}{\\texttt{Retriev}}\\) is not predicted then\n' +
+      '12:\\(\\mathcal{C}\\) predicts \\(\\frac{\\texttt{IsUSE}}{\\texttt{Retriev}}\\) given \\(x,y\\)\n' +
+      '13: \\((x,y,d,r)\\)를 \\(\\mathcal{D}_{gen}\\)에 추가\n' +
+      '```\n' +
+      '\n' +
+      '**알고리즘 3**\\(\\mathcal{M}_{gen}\\) 데이터 생성\n' +
+      '\n' +
+      '훈련 예. 표 4는 \\(\\mathcal{M}\\) 훈련에 사용된 여러 훈련 예를 보여준다.\n' +
+      '\n' +
+      '### Self-Rag Inference\n' +
+      '\n' +
+      '빔-서치 점수 계산의 세부 사항 먼저 바람직한 토큰의 정규화된 확률을 취하여 각 비평 유형에 대한 점수를 계산한다. \\(\\frac{\\texttt{IsREL}}{\\texttt{Retriev}}\\)에 대해 다음과 같이 점수를 계산합니다.\n' +
+      '\n' +
+      '\\[s\\big{(}\\texttt{IsREL}\\big{)}=\\frac{p\\big{(}\\texttt{IsREL}\\big{)}=\\texttt{ Relevant}\\big{)}}{p\\big{(}\\texttt{IsREL}=\\texttt{Relevant}\\big{)}+p\\big{(}\\texttt{IsREL}=\\texttt{ Irrelevant}\\big{)}}}}.\\]\n' +
+      '\n' +
+      '\\(\\frac{\\texttt{IsSUP}}{\\texttt{Retriev}}\\)의 경우 다음과 같이 점수를 계산합니다.\n' +
+      '\n' +
+      '\\[s\\big{(}\\texttt{IsREL}\\big{)}=\\frac{p\\big{(}\\texttt{IsSUP}=\\texttt{ Fully}\\big{)}}{S}+0.5\\times\\frac{p\\big{(}\\texttt{IsSUP}=\\texttt{Partially}\\big{)}}{S},\\]\n' +
+      '\n' +
+      '여기서 \\(S=\\sum_{t\\in\\{\\texttt{FULL},\\texttt{Partially},\\texttt{NO}\\}}p\\big{(}\\texttt{ IsSUP}=t\\big{)}\\). 5-척도 점수가 있는 \\(\\frac{\\texttt{IsUSE}}{\\texttt{Retriev}}\\)의 경우 점수의 가중합을 계산한다. 우리는 토큰 \\(\\frac{\\texttt{IsUSE}}{\\texttt{Retriev}}}\\)=\\(\\{1,2,3,4,5\\}\\)에 \\(w=\\{-1,-0.5,0,0.5,1\\}\\)의 가중 점수를 할당하고 다음과 같이 최종 점수를 계산한다:\n' +
+      '\n' +
+      '\\[s\\big{(}\\texttt{IsUST}\\big{)}=\\sum_{i}^{5}w_{i}\\frac{p\\big{(}\\texttt{IsUST}=i \\big{)}}{S},\\]\n' +
+      '\n' +
+      'where \\(S=\\sum_{t\\in\\{1,2,3,4,5\\}}p\\big{(}\\texttt{IsUST}=t\\big{)}\\).\n' +
+      '\n' +
+      '적응적 검색의 세부 사항.소프트 제약에 기초한 검색을 위해, 다음 조건이 만족되면 검색을 트리거한다:\n' +
+      '\n' +
+      '\\[\\frac{p\\big{(}\\texttt{Retriev}=\\texttt{Yes}\\big{)}}{p(\\texttt{IsRetriev}= \\texttt{Yes})+p(p(\\texttt{IsRetriev}=\\texttt{NO})}>\\delta.\\]\n' +
+      '\n' +
+      '## 부록 B 실험 세부 정보\n' +
+      '\n' +
+      '### Training에 대한 자세한 내용\n' +
+      '\n' +
+      '훈련 및 계산에 대한 자세한 내용은 80GB 메모리와 함께 4개의 Nvidia A100을 사용하여 모델을 훈련합니다. 모든 모델은 배치 크기가 128이고, 워밍업 단계가 3%인 피크 학습률이 2e-5이고, 이후 선형 붕괴가 있는 3개의 에폭에 대해 훈련된다. 최대 토큰 길이는 메모리 제약으로 인해 7B 모델의 경우 2,048, 13B 모델의 경우 1,524로 설정하였다. 우리는 Deepspeed Stage 3 (Rajbhandari et al., 2020)을 사용하여 훈련 정밀도 Bfloat16이 활성화된 다중 GPU 분산 훈련을 수행한다. FlashAttention (Dao et al., 2022)는 긴 컨텍스트 트레이닝을 보다 효율적으로 하기 위해 사용된다. 우리는 24GB 메모리가 있는 1-2 쿼드로 RTX 6000 GPU를 사용하여 훈련된 모델의 추론을 실행한다.\n' +
+      '\n' +
+      '### 평가 세부 정보\n' +
+      '\n' +
+      '검색 설정 세부 정보.기본적으로 Contriever-MS MARCO를 사용하여 위키피디아에서 상위 5개 문서를 검색하고 2018년 영어 위키피디아 기반 공식 위키피디아 임베딩을 사용합니다. 2022년 위키데이터를 기반으로 질의응답 쌍이 생성되는 PopQA에서 2018년 위키피디아는 때때로 위키피디아에 더 최근에 추가된 일부 엔티티에 대한 기사가 부족하다는 것을 발견했다. 따라서 PopQA의 경우, Izacard et al.(2022b)에서 제공하는 12월 2020년 전처리된 Wikipedia 말뭉치와 생성된 문서 임베딩을 사용하였다. 8 서로 다른 Wikipedia 덤프들로부터 성능 분산의 이슈들은 선행 연구(Asai et al., 2020; Izacard et al., 2022b)에 의해 보고되었다. 그러나, 우리는 개방형 생성(예를 들어, 명령어 후속)을 위한 지식 집약적 태스크에 주로 훈련된 이러한 기성 검색 모델의 제한된 효과를 관찰한다. 최근 또는 동시 작업에서는 검색 시스템의 명령-조정(Asai et al., 2023b) 또는 검색 및 LM 구성요소의 공동 훈련(Lin et al., 2023)을 연구하지만, 향후 작업에 대한 이러한 접근법의 효과를 탐구하는 것은 남겨둔다. 바이오 생성 및 오픈 도메인 QA 작업을 위해 Google Programmable Search9를 사용하여 5개의 문서를 추가로 검색하고 영어 위키피디아에서 문서를 검색한다. 이 API는 조각만 제공하므로 해당 엔터티에 대한 위키피디아 소개 문단을 검색합니다.\n' +
+      '\n' +
+      '각주 8: [https://github.com/facebookresearch/atlas](https://github.com/facebookresearch/atlas)\n' +
+      '\n' +
+      '각주 9: [https://programmablesearchengine.google.com/about/](https://programmablesearchengine.google.com/about/)\n' +
+      '\n' +
+      '개별 데이터 세트에 대한 자세한 실험 설정 OpenQA 데이터 세트의 경우 최대 새 토큰 번호를 100 토큰으로 설정합니다. 닫힌 집합 작업 (PubMedHealth 및 ARC-C)의 경우 모든 기준선에 대해 최대 새 토큰 길이를 50으로 설정 합니다. PubMed와 ARC-C에 대한 Self-Rag 추론의 경우 다른 작업에서와 같이 가장 높은 점수 4로 출력을 결정하는 대신 각 옵션에 대한 점수를 집계하고 가장 높은 점수를 가진 답변 옵션을 선택한다. 사실 확인의 제로샷 설정에서 일부 LLM은 대문자 클래스 레이블(예: True)을 생성할 수 있는 반면 골드 레이블은 더 낮은 케이스로 생성됩니다. 따라서 다른 LLM에 걸쳐 사실 확인을 위해 예측을 소문자화한다. 선다형 과제에서 우리는 일부 모델이 약간 다른 방식(예: A 대신 (A))으로 답변을 생성한다는 것을 발견했다. 이러한 형식 위반을 피하기 위해 각 LLM에 대한 지침을 약간 수정하고 형식 위반이 여전히 남아 있는 경우 각 후보와 모델 예측 간의 문자열 매칭을 추가로 수행한다. 그 처리 후, 닫힌 집합 작업에서 모델 예측은 거의 모든 경우에 골드 클래스 중 하나와 일치한다. ALCE의 경우 Llama2-chat이 다른 모델보다 훨씬 낮은 출력을 생성하는 경향이 있음을 발견했다(예를 들어, 평균적으로 출력은 거의 100 토큰인 반면 ChatGPT는 평균적으로 40 토큰을 생성함). 우리는 ALCE 논문의 원래 300개의 토큰이 아닌 이 문제를 피하기 위해 모든 기준선에 대해 최대 생성 길이를 100개의 토큰으로 제한한다. 결과적으로, 베이스라인 출력 길이는 모두 30-60 토큰 내에 있다. FactScore의 경우 각 세그먼트 수준에서 최대 새 토큰 길이를 기준선의 경우 500, Self-Rag의 경우 200으로 설정합니다.\n' +
+      '\n' +
+      '작업별 지침.표 5는 평가 중에 사용된 지침의 목록을 보여준다. 오픈 도메인 QA의 경우 명시적인 지침을 제공하지 않습니다.\n' +
+      '\n' +
+      '## 부록 C 결과\n' +
+      '\n' +
+      '### Analysis\n' +
+      '\n' +
+      '모수적 기억과 비모수적 기억의 관계.검색된 구절(비모수적 기억) 또는 그들 자신의 모수적 기억에서 모델 답변이 얼마나 자주 발생하는지에 대한 분석을 수행한다. 두 개의 오픈 도메인 QA 데이터 세트인 TriviaQA와 PopQA에 대해, 우리는 다음과 같은 분석을 수행한다: 1) 샘플 쿼리 모델이 올바르게 대답하는 경우, 2) 이 그룹의 각 쿼리에 대해 일치하는 그라운드-진실 답변이 검색된 구절의 하위 문자열인지 여부를 확인합니다. 우리는 Self-Rag 7B, Alpaca 7B, Alpaca 13B 및 Llama2-Chat-13B를 평가한다. 우리는 Self-Rag가 제공된 증거에 포함되지 않는 답변을 훨씬 덜 자주 생성한다는 것을 발견했는데, 특히 Alpaca 30B에서는 올바른 예측의 20%가 제공된 구절에 포함되지 않고, Llama2-chat 13B(18%)와 Alpaca(15%)가 그 뒤를 이었고, Self-Rag에서는 2%에 불과했다. 검색된 구절이 관련이 없는 경우 Self-Rag는 [IsREL]=무관련을 생성하며, 이는 다음 대답이 사실적으로 근거하지 않을 수 있음을 나타내는 반면, 이러한 명령 조정 모델은 그럴듯한 답변을 계속 생성한다.\n' +
+      '\n' +
+      '### 인간 평가 예제\n' +
+      '\n' +
+      '표 6은 S&P 및 [1.1] 및 [1.1] 반사 토큰의 정확성에 대한 인간 평가가 있는 예를 보여준다.\n' +
+      '\n' +
+      '### Qualitative Examples\n' +
+      '\n' +
+      '표 7은 우리의 Self-Rag(13B)에 의해 예측된 몇 가지 예를 보여준다. 첫 번째 예는 ASQA 질문에 대한 모델 출력입니다. 첫 번째 참고문헌은 콘스탄틴 황제가 일요일을 노동으로부터 휴식의 날로 삼았다는 것이고, 두 번째 인용문헌은 AD 321에서 콘스탄틴이 일요일을 휴식의 날로 공식 채택했다는 사실을 뒷받침한다. 두 번째 예에서 모델은 그 사람이 2010년 이후 CEO를 역임했다고 발표하면서 첫 번째 산출물에 대한 모순을 예측하지만, 이 지문은 그가 2015년에 CEO에서 물러났다고 말한다. 이러한 사실적 모순을 반영 토큰으로 표시하면 강력한 통제와 모델 산출물의 검증이 쉽게 가능하다. 세 번째 예에서 세대가 대부분 맞지만 셀프 랙은 명시적으로 언급되지 않은 것처럼 노래의 이름을 나열한 진술에 부분적으로 지원을 예측한다.\n' +
+      '\n' +
+      '## 부록 D GPT-4에 대한 명령 및 시연 전체 목록\n' +
+      '\n' +
+      '여기서는 GPT-4가 반사 토큰을 수집하도록 프롬프트하는 데 사용되는 지침 및 데모를 보여준다. 표 8은 초기 검색 토큰에 대한 명령 및 데모를 보여준다. 표 9는 주어진 명령, 선행 문장 및 이전에 검색된 구절에 대한 [1.1]에 대한 삼원 출력 토큰을 수집하기 위해 사용된 명령 및 데모를 보여준다. 더 긴 데모 및 테스트 입력으로 인해 단일 데모만 사용합니다. 표 10은 [1.1]에 대한 삼원 출력 토큰을 수집하는 데 사용되는 명령 및 데모를 보여준다. 표 11은 [1.1]에 대한 삼원 출력 토큰을 수집하는 데 사용되는 명령 및 데모를 보여준다. 표 12는 [1.1]에 대한 5원 출력 토큰을 수집하는 데 사용되는 명령 및 데모를 보여준다.\n' +
+      '\n' +
+      '**입력** 두 가지 유형의 컴퓨터 메모리를 식별합니다. (from gpt4_alpaca)\n' +
+      '\n' +
+      '**출력**[[**Retriee**]=예]<p>컴퓨터 메모리 컴퓨터 메모리 - 컴퓨팅에서 메모리는 컴퓨터에서 즉시 사용할 수 있도록 정보를 저장하는 컴퓨터 하드웨어 집적 회로를 의미하며, "기본 저장소"라는 용어와 동의어입니다. 컴퓨터 메모리는 저속-대-액세스 정보를 제공하지만 더 높은 용량을 제공하는 스토리지와의 구별로서 고속, 예를 들어 랜덤-액세스 메모리(RAM)로 동작한다. 필요한 경우 컴퓨터 메모리의 내용을 보조 저장소로 전송할 수 있으며, 이를 수행하는 매우 일반적인 방법은 "가상 메모리"라는 메모리 관리 기술을 통한 것이다. 메모리의 아카이브 동의어는 저장됩니다. "기본 스토리지" 또는 "주 메모리"를 의미하는 "메모리"라는 용어는 <p>[[**Nexi**]=RelevantPrimary** 메모리(**주 메모리라고도 함)는 컴퓨터가 직접 액세스하고 조작할 수 있는 메모리입니다. [[**Nexi**]=Fully Supported[**Retriee**]=Yes]<p>컴퓨터 메모리-종종 주소 지정 가능한 반도체 메모리, 즉 예를 들어 기본 스토리지로 사용되지만 컴퓨터 및 기타 디지털 전자 장치에서 다른 용도로도 사용되는 실리콘 기반 트랜지스터로 구성된 집적 회로와 연결됩니다. 반도체 메모리에는 크게 휘발성 메모리와 비휘발성 두 가지가 있다. 비휘발성 메모리의 예는 플래시 메모리(보조 메모리로서 사용됨) 및 ROM, PROM, EPROM 및 EEPROM 메모리(BIOS와 같은 펌웨어를 저장하기 위해 사용됨)이다. 휘발성 메모리의 예로는 일반적으로 동적 랜덤 액세스 메모리(DRAM)인 기본 스토리지와 속도가 빠르지만 에너지가 많이 드는 정적 랜덤 액세스 메모리(SRAM)인 빠른 CPU 캐시 메모리가 있으며, 낮은 메모리<p>[[**Nexi**]=RelevantPrimary 메모리는 **빠르게 액세스할 수 있지만 휘발성이므로 전원이 꺼지면 데이터가 손실됩니다.] [[**Nexi**]=부분 지원[**]. [[**Isstr**]]**\n' +
+      '\n' +
+      '**입력** 작업을 위임 해야 하는 상황의 예를 제공 합니다 (gpt4_alpaca에서).\n' +
+      '\n' +
+      '**출력**[[**Retriee**]=No[관리자는 이벤트를 성공 시키기 위해 완료 해야 하는 광범위한 작업 목록이 있음을 인식 합니다.] [[**Retriee**]=예]<p>위임-위임은 특정 활동을 수행하기 위해 다른 사람(일반적으로 관리자에서 부하 직원으로)에게 모든 책임이나 권한을 할당하는 것입니다. 이는 경영 리더십의 핵심 개념 중 하나입니다. 그러나 작업을 위임한 사람은 위임된 작업의 결과에 대해 책임이 남아 있습니다. 위임은 부하 직원이 의사 결정을 내릴 수 있도록 권한을 부여합니다. 즉, 의사 결정 권한을 한 조직 수준에서 하위 단계로 전환하는 것입니다. 위임이 제대로 수행되면 위조가 아닙니다. 효과적인 위임의 반대는 관리자가 너무 많은 입력을 제공하는 세밀한 관리입니다. [[**Isstr**]=Relevant여기에는 게스트 목록 만들기, 초대 디자인 및 보내기, 장소 예약, 벤더와 조정, 이벤트 프로그램 계획 및 예산 모니터링과 같은 작업이 포함됩니다.[[[**Isstr**]=부분 지원[**Retriee**]=No[관리자가 모든 작업을 단독으로 처리할 수 없기 때문에 팀 구성원에게 작업을 위임해야 합니다.[[**Retriee**]=No[관리자가 개별 기술 집합 및 강점에 따라 각 팀 구성원에게 특정 책임을 할당합니다.[[**Retriee**]=Yes]<p] 공동 애플리케이션 설계 - 주제 중요 전문가: 성공적인 워크샵을 위해 필요한 비즈니스 사용자, IS 전문가 및 외부 전문가입니다. 이 그룹은 회의의 중추입니다-- [[**Isstr**]=Irelevant**]예를 들어 팀 그래픽 디자이너는 초대장을 디자인하는 작업을 수행할 수 있는 반면 이벤트 코디네이터는 프로그램 계획 및 공급업체와의 작업을 담당합니다. [[**Retriee**]=아니요[작업을 위임하여 관리자는 필요한 모든 작업이 적시에 완료되도록 하는 동시에 팀 구성원이 책임을 지고 이벤트 성공에 기여할 수 있도록 권한을 부여할 수 있습니다. [[[**Isstr**]=5]]\n' +
+      '\n' +
+      '**입력** 이 프롬프트를 기반으로 시를 합성합니다. "해가 지고 있습니다." (stanford_alpaca에서)\n' +
+      '\n' +
+      '**출력**[[**Retriee**]=No[별들은 밤 내내 흩어져 나무들을 반짝이기 시작합니다. 밤 내내 흩어져 나무들을 반짝이기 시작합니다. [[**Retriee**]=No[별들은 밤 내내 흩어져 나무들을 반짝이기 시작합니다. [[**Retriee**]=No[그들은 침묵의 춤처럼 깜박거립니다. 추적에서 평화로운 순간입니다.] [[**Retriee**]=No[] 그들은 침묵의 춤처럼 깜박거립니다. 추적에서 평화로운 순간입니다. [[**Retriee**]=No[] 귀뚜라미 합창단이 자장가를 부르고, 하늘을 배회하는 모든 생명체에게[[**Isstr**]=5]\n' +
+      '\n' +
+      '**입력** 워킹 데드 시즌 7이 언제 나왔습니까(nq에서)\n' +
+      '\n' +
+      '**출력**[**Retriee**]=예]<p>워킹 데드(시즌 7)-워킹 데드(시즌 7) AMC의 미국 포스트 아포칼립티브 공포 텔레비전 시리즈인 "워킹 데드"의 7번째 시즌은 2016년 10월 23일에 초연되었고 2017년 4월 2일에 16개의 에피소드로 마무리되었습니다. 프랭크 다어바웃이 텔레비전용으로 개발한 이 시리즈는 로버트 커크먼, 토니 무어, 찰리 애들라드의 만화책의 모조 시리즈를 기반으로 한다. [[**Isstr**]=Relevant**]October 23, 2016[**Isstr**]=Fully Supported[[[**Isstr**]=5]\n' +
+      '\n' +
+      '**입력** 새 줄로 구분 된 채팅 기록을 제공 하면 유익 하 고 지식이 풍부 하 고 매력적인 응답을 생성 합니다. 안녕하세요, 독일 양치기 개와 당신을 사랑합니다. 내가 제일 좋아하는 개가 \'저먼 셰퍼드 도그스\'야? 네, 저먼 셰퍼드가 집에 있는데 임신했어요\n' +
+      '\n' +
+      '**출력** 또한 쉽게 훈련되고, 순종적이며, 지능적입니다. [[**Retriee**]=Yes]<p>독일 셰퍼드 - 단순한 의견 차이, 이는 품종 필수 형태와 운동의 근본적인 문제입니다. 훈련이 쉽고 작업을 수행하고 지시를 따르는 데 좋은 것으로 알려져 있습니다. 그들은 특히 경찰 업무로 잘 알려져 있으며, 범죄자를 추적하고, 문제가 있는 지역을 순찰하고, 용의자를 탐지하고 붙잡는 데 사용된다. <p>[[**Isstr**]=Relevant**] 때문에 장애 지원 및 경찰 업무에 자주 사용됩니다. [[**Isstr**]=Partially Supported[[**Isstr**]=2]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**입력** 두 가지 유형의 컴퓨터 메모리를 식별합니다. (from gpt4_alpaca)\n' +
+      '\n' +
+      '**출력**[[**Retriee**]=예]<p>컴퓨터 메모리 컴퓨터 메모리 – 컴퓨팅에서 메모리는 컴퓨터에서 즉시 사용할 수 있도록 정보를 저장하는 컴퓨터 하드웨어 집적 회로를 의미하며, "기본 저장소"라는 용어와 동의어입니다. 컴퓨터 메모리는 저속-대-액세스 정보를 제공하지만 더 높은 용량을 제공하는 스토리지와의 구별로서 고속, 예를 들어 랜덤-액세스 메모리(RAM)로 동작한다. 필요한 경우 컴퓨터 메모리의 내용을 보조 저장소로 전송할 수 있습니다. 이를 수행하는 매우 일반적인 방법은 "가상 메모리"라는 메모리 관리 기술을 통한 것입니다. 메모리의 아카이브 동의어는 저장됩니다. "기본 저장소" 또는 "주 메모리"를 의미하는 "메모리"라는 용어는 <p>[[**Isstr**]=RelevantPrimary** 메모리(**주 메모리라고도 함)는 컴퓨터가 직접 액세스하고 조작할 수 있는 메모리입니다. [[**Isstr**]=Fully Supported[**Retriee**]=Yes]<p>컴퓨터 메모리-종종 주소 지정 가능한 반도체 메모리, 즉 예를 들어 기본 스토리지로 사용되지만 컴퓨터 및 기타 디지털 전자 장치에서 다른 용도로도 사용되는 실리콘 기반 트랜지스터로 구성된 집적 회로와 연결됩니다. 반도체 메모리에는 크게 휘발성 메모리와 비휘발성 두 가지가 있다. 비휘발성 메모리의 예는 플래시 메모리(보조 메모리로서 사용됨) 및 ROM, PROM, EPROM 및 EEPROM 메모리(BIOS와 같은 펌웨어를 저장하기 위해 사용됨)이다. 휘발성 메모리의 예로는 일반적으로 동적 랜덤 액세스 메모리(DRAM)인 기본 스토리지와 속도가 빠르지만 에너지가 많이 드는 정적 랜덤 액세스 메모리(SRAM)인 빠른 CPU 캐시 메모리가 있으며, 낮은 메모리<p>[[**Isstr**]=RelevantPrimary 메모리는 **빠르게 액세스할 수 있지만 휘발성이므로 전원이 꺼지면 데이터가 손실됩니다.] [[**Isstr**]=부분 지원[**]. [[**Isstr**]=**0[관리자는 이벤트를 성공 시키기 위해 완료 해야 하는 광범위한 작업 목록이 있음을 인식 합니다.] [[**Retriee**]=예]<p>위임-위임은 특정 활동을 수행하기 위해 다른 사람(일반적으로 관리자에서 부하 직원으로)에게 모든 책임이나 권한을 할당하는 것입니다. 이는 경영 리더십의 핵심 개념 중 하나입니다. 그러나 작업을 위임한 사람은 위임된 작업의 결과에 대해 책임이 남아 있습니다. 위임은 부하 직원이 의사 결정을 내릴 수 있도록 권한을 부여합니다. 즉, 의사 결정 권한을 한 조직 수준에서 하위 단계로 전환하는 것입니다. 위임이 제대로 수행되면 위조가 아닙니다. 효과적인 위임의 반대는 관리자가 너무 많은 입력을 제공하는 세밀한 관리입니다. [[**Isstr**]=Relevant**]여기에는 게스트 목록 만들기, 초대 디자인 및 보내기, 장소 예약, 벤더와의 조정, 이벤트 프로그램 계획 및 예산 모니터링과 같은 작업이 포함됩니다.[[**Isstr**]=부분 지원[**Retriee**]=No[**관리자가 모든 작업을 단독으로 처리할 수 없기 때문에 팀 구성원에게 작업을 위임해야 합니다.[[**Retriee**]=No[관리자가 개별 기술 집합 및 강점에 따라 각 팀 구성원에게 특정 책임을 할당합니다.[[**Retriee**]=Yes]<p] 공동 응용 프로그램 설계 – 주제 중요 전문가: 성공적인 워크샵을 위해 필요한 비즈니스 사용자, IS 전문가 및 외부 전문가입니다. 이 그룹은 회의의 중추입니다-- [[**Isstr**]=**Irelevant**]예를 들어 팀 그래픽 디자이너는 초대를 디자인하는 작업을 수행할 수 있는 반면 이벤트 코디네이터는 프로그램 계획 및 공급업체와의 작업을 담당합니다. [[**Retriee**]=아니요[작업을 위임하여 관리자는 필요한 모든 작업이 적시에 완료되도록 하는 동시에 팀 구성원이 책임을 지고 이벤트 성공에 기여할 수 있도록 권한을 부여할 수 있습니다. [[**Isstr**]=5]\n' +
+      '\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**입력** 이 프롬프트를 기반으로 시를 합성합니다. "해가 지고 있습니다." (stanford_alpaca에서)\n' +
+      '\n' +
+      '**Output**[[**Retriee**]=No[The stars begin to twinkle bright the trees, scattered throughout the night; [[**Retriee**]=No[The stars begin to twinkle bright the trees, scattered throughout the night [[**Retriee**]=No[They flicker like a silent dance, A peaceful moment in its trace. [[**Retriee**]=No[] They flicker like a silent dance, A peaceful moment in its trace. [[**Retriee**]=No[] A chorus of crickets sing a lullaby, To every creature that roams the sky [[**Isstr**]=5] ] \\\\ \\hline\n' +
+      '**입력** 워킹 데드 시즌 7이 언제 나왔습니까(nq에서)\n' +
+      '\n' +
+      '**출력**[**Retriee**]=예]<p>워킹 데드(시즌 7)-워킹 데드(시즌 7) AMC의 미국 포스트 아포칼립티브 공포 텔레비전 시리즈인 "워킹 데드"의 7번째 시즌은 2016년 10월 23일에 초연되었고 2017년 4월 2일에 16개의 에피소드로 마무리되었습니다. 프랭크 다어바웃이 텔레비전용으로 개발한 이 시리즈는 로버트 커크먼, 토니 무어, 찰리 애들라드의 만화책의 모조 시리즈를 기반으로 한다. [[**Isstr**]=Relevant**]October 23, 2016[**Isstr**]=Fully Supported[**[**Isstr**]=**5]\n' +
+      '\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**입력** 새 줄로 구분된 채팅 히스토리를 제공하고 유익하고 지식이 풍부하며 매력적인 응답을 생성합니다. 안녕하세요, 저는 독일 셰퍼드 개와 당신을 사랑합니다. 내가 제일 좋아하는 개가 \'저먼 셰퍼드 도그스\'야? 네, 저먼 셰퍼드가 집에 있는데 임신했어요\n' +
+      '\n' +
+      '**출력** 또한 쉽게 훈련되고, 순종적이며, 지능적입니다. [[**Retriee**]=Yes]<p>독일 셰퍼드 – 단순한 의견 차이, 그것은 품종 필수 형태 및 운동의 근본적인 문제이다. 훈련이 쉽고 작업을 수행하고 지시를 따르는 데 좋은 것으로 알려져 있습니다. 그들은 특히 경찰 업무로 잘 알려져 있으며, 범죄자를 추적하고, 문제가 있는 지역을 순찰하고, 용의자를 탐지하고 붙잡는 데 사용된다. <p>[[**Isstr**]=Relevant**] 때문에 장애 지원 및 경찰 업무에 자주 사용됩니다. [[**Isstr**]=Partially Supported[**Isstr**]=2]\n' +
+      '\n' +
+      '## Appendix A\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Dataset** & **Instruction** \\\\ \\hline ARC-C & Given four answer candidates, A, B, C and D, choose the best answer choice. Please answer with the capitalized alphabet only, without adding any extra phrase or period. \\\\ PubHealth & Is the following statement correct or not? Say true if it’s correct; otherwise, say false. Don’t capitalize or add periods, just say “true” or “false”. \\\\ Bio Generation & Tell me a bio about [Person Name] \\\\ ASQA (baseline) & Instruction: Write an accurate, engaging, and concise answer for the given question using only the provided search results (some of which might be irrelevant) and cite them properly. Use an unbiased and journalistic tone. Always cite for any factual claim. When citing several search results, use [1][2][3]. Cite at least one document and at most three documents in each sentence. If multiple documents support the sentence, only cite a minimum sufficient subset of the documents. \\\\ ASQA (ours) & Answer the following question. The question may be ambiguous and have multiple correct answers, and in that case, you have to provide a long-form answer including all correct answers. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: 제로 샷 평가 동안 사용된 지침의 전체 목록. 오픈 도메인 QA의 경우, 태스크 특정 명령어를 사용하지 않고 단순히 원래 질문을 입력 쿼리로 사용한다.\n' +
+      '\n' +
+      '**입력** 천문학에 대한 질문 및 답변 가이드는 어떤 장르입니까? (PopQA)\n' +
+      '\n' +
+      '**출력** [[Retriev=Yes] <p>Reference [1] <p>I [IsRel] =Relevant] 천문학에 대한 질문 및 답변 가이드는 천문 및 우주학의 장르에 해당하는 논픽션 책입니다. [[IsNew] =Fully Supported[[IsNew] =5]\n' +
+      '\n' +
+      '**참고 문헌 [1]** 천문학에 대한 질문 및 답변 가이드는 천문학과 우주론에 관한 책이며 일반 청중을 대상으로 합니다. 이 책은 피에르 이브 벨리, 캐롤 크리스티안, 장 르네 로이가 집필했으며 2010년 케임브리지 대학 출판사에서 영어로 출판했으며 원래 프랑스어로 쓰여졌다. 책 안의 내용은 질의응답 포럼을 이용하여 작성된다. 그것은 과학 교사가 각각 유익하고 읽을 수 있는 간결하고 잘 짜여진 에세이로 대답하는 약 250개의 질문을 포함한다. 과학 교사 리뷰는 계속해서 책에 제시된 많은 답변이 과학 글쓰기의 작은 보석이라고 말한다. 과학 교사는 각 문항이 학생이 생각할 가능성이 높고, 답안이 유익하고, 잘 구성되어 있으며, 철저하다고 진술하여 요약한다. 이 책은 행성, 지구, 우주, 실용적인 천문학, 역사, 성경의 천문학, UFO, 외계인 등 어색한 질문에 대한 정보를 다룬다. 또한 빅뱅, 큰 숫자에 대한 이해, 달의 환영과 같은 주제를 다룬다.\n' +
+      '\n' +
+      '**S&P**지원되고 그럴듯합니다.\n' +
+      '\n' +
+      '**의 정확성** [IsRel] -- [IsNew] -- [IsRel] 및 [IsNew] 모두 정확합니다. 참조 [1]은 장르를 포함한 책의 세부 정보를 제공하고 모델 출력은 참조에서 완전히 지원되기 때문입니다.\n' +
+      '\n' +
+      '**입력** 거짓말의 저자는 누구입니까? (PopQA)\n' +
+      '\n' +
+      '**Output** [[Retriev=Yes] <p>Reference [1] <p>I [IsRel] =Relevant] The Lie의 저자는 Sam Harris입니다.[\n' +
+      '\n' +
+      '[IsNew] =Fully Supported[[IsNew] =5]\n' +
+      '\n' +
+      '**참고문헌 [1]** 거짓말은 2011년 미국 작가이자 신경과학 전문가인 샘 해리스가 쓴 긴 형식의 에세이 책입니다. 해리스는 다른 사람들이 종종 거짓말을 하는 상황에서 단순히 진실을 말함으로써 우리의 삶을 근본적으로 단순화하고 사회를 개선할 수 있다고 주장한다.\n' +
+      '\n' +
+      '**S&P** 그럴듯하지만 지원되지 않습니다.\n' +
+      '\n' +
+      '참조 [1]은 제목이 거짓말과 유사한 다른 책에 대한 것이기 때문에 **의 정확성** [IsRel] - 및 [IsNew] [IsRel] 및 [IsNew] 모두 잘못되었습니다.\n' +
+      '\n' +
+      '**입력** 호나우지뉴에 대한 바이오(바이오)를 알려주세요.\n' +
+      '\n' +
+      '**출력** [[Retriev=Yes] <p>Reference [1] <p>I [IsRel] =Relevant] 호나우지뉴는 브라질에서 은퇴한 프로 축구 선수입니다. [[IsNew] = 완전히 지원받는[[Retriev=Continue]그는 공격형 미드필더로 뛰었고 프리킥으로 기술력, 창의력, 드리블 능력, 정확성으로 유명했다[Retriev=Continue]그는 FIFA 올해의 선수상 2개와 발롱도르를 수상했다. [[IsNew] =5].\n' +
+      '\n' +
+      '**참조문헌 [1]** 일반적으로 호나우지뉴 가이치코 또는 단순히 호나우지뉴로 알려진 호날두 아시스 모이라라(1980년 3월 21일 출생)는 주로 공격형 미드필더로 뛰었지만 윙어로도 배치된 브라질 은퇴 프로축구 선수이다. 호나우지뉴는 그의 세대 최고의 선수 중 한 명으로 간주되고 많은 사람들이 역사상 가장 위대한 선수 중 한 명으로 간주하는 두 명의 FIFA 올해의 선수상과 발롱도르를 수상했습니다. 그 스포츠의 세계적인 아이콘인 그는 기술력, 창의력, 드리블 능력과 프리킥으로 인한 정확성, 그리고 속임수, 연기, 노 룩 패스, 오버헤드 사용으로 유명했다.\n' +
+      '\n' +
+      '**S&P**그럴듯하고 완전히 지원됩니다.\n' +
+      '\n' +
+      '**의 정확성** [IsNew] - [IsNew] [IsRel] 및 [IsNew] 모두 정확합니다.\n' +
+      '\n' +
+      '**입력** Sergei Bodrov (Bio)에 대한 정보를 알려주세요.\n' +
+      '\n' +
+      '**출력** [[Retriev=Yes] <p>Reference [1] <p>I [IsRel] =Relevant] Sergei Vladimirovich Bodrov (1948년 6월 28일 출생)는 러시아 영화 감독, 시나리오 작가 및 프로듀서입니다. [[IsNew] = 완전히 지원[[Retriev=Continue]그는 러시아 모스크바에서 태어났다. [[Retriev=Continue]그는 러시아 영화 제작자 협회의 회장이다. [IsNew] =5]\n' +
+      '\n' +
+      '**참조 [1]** Sergei Vladimirovich Bodrov (1948년 6월 28일 출생)는 러시아 영화 감독, 시나리오 작가 및 프로듀서입니다. 2003년에 그는 제25회 모스크바 국제 영화제에서 심사위원장을 맡았다.\n' +
+      '\n' +
+      '**S&P**그럴듯하지만 부분적으로만 지원됩니다. 참고문헌 [1]은 그 사람이 모스크바에서 태어났다고 명시적으로 언급하고 있지 않으며 러시아 영화 제작자 조합에 대한 설명은 없다.\n' +
+      '\n' +
+      '**의 정확성** [IsNew] -- [IsNew] -- [IsNew] 및 [IsNew]는 참조 문서의 관련성이 높고 첫 번째 문장이 완전히 지원되므로 정확합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**입력** 호나우지뉴에 대한 바이오(바이오)를 알려주세요.\n' +
+      '\n' +
+      '**출력** [[Retriev=Yes] <p>Reference [1] <p>I [IsRel] =Relevant] 호나우지뉴는 브라질에서 은퇴한 프로 축구 선수입니다. [[IsNew] =완전 지원[[Retriev=Continue] 그는 공격형 미드필더로 뛰었고 프리킥으로 기술력, 창의력, 드리블 능력, 정확성으로 유명했다[Retriev=Continue] 그는 FIFA 올해의 선수상 2개와 발롱도르를 수상했다. [[IsNew] =5].\n' +
+      '\n' +
+      '**참조문헌 [1]** 일반적으로 호나우지뉴 가이치코 또는 단순히 호나우지뉴로 알려진 호날두 아시스 모이라라(1980년 3월 21일 출생)는 주로 공격형 미드필더로 뛰었지만 윙어로도 배치된 브라질 은퇴 프로축구 선수이다. 호나우지뉴는 그의 세대 최고의 선수 중 한 명으로 여겨지고 많은 사람들이 역사상 가장 위대한 선수 중 한 명으로 간주하며 두 개의 FIFA 올해의 선수상과 발롱도르를 수상했습니다. 그 스포츠의 세계적인 아이콘인 그는 기술력, 창의력, 드리블 능력과 프리킥으로 인한 정확성, 그리고 속임수, 연기, 노 룩 패스, 오버헤드 사용으로 유명했다.\n' +
+      '\n' +
+      '**S&P**그럴듯하고 완전히 지원됩니다.\n' +
+      '\n' +
+      '**의 정확성** [IsNew] - [IsNew] [IsRel] 및 [IsNew] 모두 정확합니다.\n' +
+      '\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**입력** Sergei Bodrov (Bio)에 대한 정보를 알려주세요.\n' +
+      '\n' +
+      '**Output** [[Retriev=Yes] <p>Reference [1]<p>I [IsRel] =Relevant] Sergei Vladimirovich Bodrov (born June 28, 1948) is a Russian film director, screenwriter, and producer.[[IsNew] =Fully Supported[[Retriev=Continue]He was born in Moscow, Russia.[[Retriev=Continue]He is the president of the Russian Guild of Film Producers.[IsNew] =5] \\\\ \\hline\n' +
+      '**참조 [1]** Sergei Vladimirovich Bodrov (1948년 6월 28일 출생)는 러시아 영화 감독, 시나리오 작가 및 프로듀서입니다. 2003년에 그는 제25회 모스크바 국제 영화제에서 심사위원장을 맡았다.\n' +
+      '\n' +
+      '**S&P**그럴듯하지만 부분적으로만 지원됩니다. 참고문헌 [1]은 그 사람이 모스크바에서 태어났다고 명시적으로 언급하고 있지 않으며 러시아 영화 제작자 조합에 대한 설명은 없다.\n' +
+      '\n' +
+      '**의 정확성** [IsNew] -- [IsNew] -- [IsNew] 및 [IsNew]는 참조 문서의 관련성이 높고 첫 번째 문장이 완전히 지원되므로 정확합니다.\n' +
+      '\n' +
+      '**입력** 일요일이 7번째 요일이 된 시간(asqa)\n' +
+      '\n' +
+      '**출력**[[검색=예] <p>참조 [1] <p>[ [IsRET] =Relevant] 321 AD에서 로마 황제 콘스탄틴 대왕은 일요일을 노동에서 쉬는 날로 만들었는데, "태양의 존귀한 날에 치안판사와 도시에 거주하는 사람들이 쉬게 하고 모든 공방을 폐쇄하라." [ [IsRET]=Fully Supported]\n' +
+      '\n' +
+      '[[Retrieve=Yes] <p>Reference [2]<p>[ [IsRET] =Relevant] AD 321에서 Constantine the Great에 의한 휴식의 날로서 일요일의 공식 채택은 일요일을 7번째 요일로 만들었다.[2] [IsRET] = 완전 지원][IsRET]=5]\n' +
+      '\n' +
+      '**참고문헌 [1]** 콘스탄티누스 황제는 그 후 서기 321년에 "태양의 존귀한 날"에 대한 첫 번째 일요일 법을 제정했습니다. 321년 3월 7일, 로마 황제 콘스탄티누스 황제는 일요일을 노동으로부터 쉬는 날로 만드는 법령을 발표했습니다. 다음과 같이 명시되어 있는 휴식일과 같은 출처에서 이에 대한 좋은 설명을 찾습니다. 영적 7일 안식일과 영주의 날 집회가 모두 이그나티우스에게 보낸 편지에서 증거됩니다. 110.\n' +
+      '\n' +
+      '**참고 문헌 [2]** 콘스탄틴에 의해 일요일을 휴식일로 공식 채택했음에도 불구하고, 적어도 354년의 달력까지 주 7일과 해시 주기는 계속 나란히 사용되었으며 아마도 나중에 사용될 것이다. 캐논을 발행해야 한다는 사실은 콘스탄티누스의 321번 칙령을 채택하는 것이 여전히 보편적이지 않다는 것을 암시한다.\n' +
+      '\n' +
+      '**입력** 로리 탭너에 대한 정보를 알려주세요. (바이오 생성)\n' +
+      '\n' +
+      '**출력** <p>Reference [1]<p>[ [IsRET] =Relevant] Rory Tapner는 2010년부터 프라이빗 뱅킹 및 자산 관리 회사인 Coutts의 최고 경영자를 역임한 영국의 사업가입니다.[ [IsRET] =Contradictory], **Reference [2]<p>[ [IsRET] =Relevant] Rory Tapner는 1959년 9월 30일 영국 런던에서 태어났습니다. [ [IsRET] = Fully Supported]\n' +
+      '\n' +
+      '**참고문헌 [1]** 로리 탭너 로리 탭너는 2010년 9월 스코틀랜드 로열 은행 그룹의 자산 관리 부서인 쿠츠의 CEO로 임명된 영국 사업가입니다. 그는 2015년 2월 앨리슨 로즈의 역할로 교체되면서 CEO 자리에서 물러났다.\n' +
+      '\n' +
+      '**참조 [2]** 홀딩스(2016년 8월) 및 버킹엄 대학교 협의회(2017년 7월)입니다. 로리 태프너 로리 태프너(1959년 9월 30일 출생)는 영국의 사업가이다.\n' +
+      '\n' +
+      '**입력** G. 베누고파에 대한 정보를 알려주세요. (바이오 생성)\n' +
+      '\n' +
+      '**출력(순위 1)**[검색=예] <p>참조 [1]<p>[IsRET] =Relevant] G. 베누고팔은 말라얄람 영화 산업에서 인기 있는 재생 가수입니다. [[검색=계속] 그는 말라얄람, 타밀, 힌디어 영화에서 300곡 이상을 불렀다. [ [IsRET] =Partially Supported][ [Retrieve=Yes] <p>Reference [2]<p>G. 베누고팔은 1960년 12월 10일 인도에서 태어났습니다. [ [IsRET] = Fully Supported]\n' +
+      '\n' +
+      '**참고문헌 [1]** G. Venugopal & Venugopal (1960년 12월 10일 출생)은 말라얄람 영화에서의 작품으로 유명한 인도 재생 가수입니다. 그는 영화 "오두란트만나바 알라비얌"(1984)에서 가수 생활을 시작했다. 그 이후로 그는 300개 이상의 영화에서 노래를 불렀고, 그의 거주자에게 500개 이상의 개인 앨범을 가지고 있다. 그가 수상한 많은 상들은 그가 세 번 수상한 탐나는 베스트 플레이백 가수(케랄라 주), 영화 비평상, 케랄라 카우문디 갈롭 폴상(두 번)을 포함한다. 그는 영화 "울람.베누고팔"의 노래 "에이드에이드"로 세 번째로 케랄라 주 최고의 플레이백 가수상(2004)을 수상했다.\n' +
+      '\n' +
+      '**참고문헌 [2]** 케랄라 주 영화상: 케랄라 영화 비평가상 케랄라 주 정부상(전문 드라마): 아시아 영화상: 케랄라 카우마디 갤럽 여론 조사상: 아카데믹 G. 베누고팔 G 베누고팔(1960년 12월 10일 출생)은 말라얄람 영화에서 그의 작품으로 유명한 인도 재생 가수입니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**입력** G. 베누고파에 대한 정보를 알려주세요. (바이오 생성)\n' +
+      '\n' +
+      '**Output** (ranked 1)**[Retrieve=Yes] <p>Reference [1]<p>[ [IsRET] =Relevant] G. Venugopal is a popular playback singer in the Malayalam film industry. [[Retrieve=Continue] He has sung over 300 songs in Malayalam, Tamil, and Hindi movies.[ [IsRET] =Partially Supported][ [Retrieve=Yes] <p>Reference [2]<p>G. Venugopal was born on December 10, 1960 in India.[ [IsRET] =Fully Supported] \\\\ \\hline\n' +
+      '**참조 [1]** G. Venugopal \\& Venugopal (1960년 12월 10일 출생)은 말라얄람 영화에서 그의 작품으로 유명한 인도 재생 가수입니다. 그는 영화 “오두란트만나바 알라비얌” (1984)에서 가수 생활을 시작했다. 그 이후로 그는 300개 이상의 영화에서 노래를 불렀고, 그의 거주자에게 500개 이상의 개인 앨범을 가지고 있다. 그가 수상한 많은 상들은 그가 세 번 수상한 탐나는 베스트 플레이백 가수(케랄라 주), 영화 비평상, 케랄라 카우문디 갈롭 폴상(두 번)을 포함한다. 그는 영화 “울람”에서 “에이드에이드에이드”로 세 번째로 케랄라 주 최우수 플레이백 가수상을 수상했다.\n' +
+      '\n' +
+      '**참고문헌 [2]** 케랄라 주 영화상: 케랄라 영화 비평가상 케랄라 주 정부상(전문 드라마): 아시아 영화상: 케랄라 카우마디 갤럽 여론 조사상: 아카데믹 G. 베누고팔 G 베누고팔(1960년 12월 10일 출생)은 말라얄람 영화에서 그의 작품으로 유명한 인도 재생 가수입니다.\n' +
+      '\n' +
+      '\\end{table}\n' +
+      '표 7: 출력의 예.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:26]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:27]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:28]\n' +
+      '\n' +
+      '**Instructions**\n' +
+      '\n' +
+      '지시, 증거, 출력 및 선택적 선행 문장이 제공됩니다. 선행문이 주어지면 그 선행문을 따르는 문장이 출력되어야 한다. 귀하의 작업은 출력이 증거에 제공된 정보에 의해 완전히 지원되는지 평가하는 것입니다.\n' +
+      '\n' +
+      '다음 수반 척도를 사용하여 점수를 생성합니다.\n' +
+      '\n' +
+      '- [완전히 지원됨]\n' +
+      '- 출력의 모든 정보는 증거 또는 증거에서 추출에 의해 지원 됩니다. 이는 산출물과 증거의 일부가 거의 동일한 경우에만 적용된다.\n' +
+      '\n' +
+      '- [부분적으로 지원됨]\n' +
+      '- 출력은 증거에 의해 어느 정도 지원되지만 출력에는 증거에서 논의되지 않는 주요 정보가 있습니다. 예를 들어, 지시가 두 개념에 대해 묻고 증거가 둘 중 하나만 논의하는 경우 [부분 지원]으로 간주되어야 한다.\n' +
+      '\n' +
+      '- [지지 없음/반대]\n' +
+      '- 출력은 증거를 완전히 무시하거나 증거와 관련이 없거나 증거와 모순됩니다. 증거가 지시와 관련이 없는 경우에도 발생할 수 있습니다.\n' +
+      '\n' +
+      '외부 정보/지식을 사용하여 출력이 참인지 아닌지를 판단하지 마십시오. 출력이 증거에 의해 지원되는지 여부만 확인하고 출력이 지침을 따르는지 여부는 확인하지 않습니다.\n' +
+      '\n' +
+      '**명령** 자연어 처리에서 단어 임베딩의 사용에 대해 설명 합니다.\n' +
+      '\n' +
+      '**선행 문장** 워드 임베딩은 자연어 처리(NLP)에 사용할 수 있는 가장 강력한 도구 중 하나입니다. 그것들은 벡터 공간에서 단어 또는 구를 수학적으로 표현한 것으로, 단어와 그것들이 측정되는 문맥 사이의 유사성을 허용한다.\n' +
+      '\n' +
+      '**출력** 워드 임베딩은 감정 분석, 텍스트 분류, 시퀀스의 다음 단어 예측, 동의어 및 유사어 이해와 같은 작업에 유용합니다.\n' +
+      '\n' +
+      '**증거** 워드 임베딩\n' +
+      '\n' +
+      '단어 임베딩은 어휘로부터의 단어들 또는 구들이 실수의 벡터들에 매핑되는 자연어 처리(NLP)에서의 언어 모델링 및 특징 학습 기법들의 세트에 대한 집합 이름이다. 개념적으로 단어당 1차원을 갖는 공간에서 훨씬 더 낮은 차원을 갖는 연속 벡터 공간으로의 수학적 임베딩을 포함한다. 이 매핑을 생성하는 방법에는 신경망, 단어 동시 발생 행렬에 대한 차원 축소, 확률 모델, 설명 가능한 지식 베이스 방법, 단어가 나타나는 문맥 측면에서 명시적 표현이 포함된다. 단어 및 구문 임베딩은 기본 입력 표현으로 사용될 때 구문 구문 분석, 감정 분석, 다음 토큰 예측 및 유사 검출과 같은 NLP 작업에서 성능을 향상시키는 것으로 나타났다.\n' +
+      '\n' +
+      '**점수** [완전히 지원됨]\n' +
+      '\n' +
+      '**설명** 출력 문장은 단어 임베딩의 적용에 대해 설명하며, 증거는 애플리케이션과 마찬가지로 구문 분석, 감정 분석, 다음 토큰 예측 및 모든 애플리케이션에 대해 언급합니다. 따라서 점수는 [완전히 지원됨]이어야 합니다.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:30]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
