@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Towards Conversational Diagnostic AI\n' +
+      '\n' +
+      'Tao Tu\\({}^{*,1}\\)\n' +
+      '\n' +
+      'Anil Palepu\\({}^{*,1}\\)\n' +
+      '\n' +
+      'Mike Schaekermann\\({}^{*,1}\\)\n' +
+      '\n' +
+      'Khaled Saab\\({}^{1}\\)\n' +
+      '\n' +
+      'Jan Freyberg\\({}^{1}\\)\n' +
+      '\n' +
+      'Ryutaro Tanno\\({}^{2}\\)\n' +
+      '\n' +
+      'Amy Wang\\({}^{1}\\)\n' +
+      '\n' +
+      'Brenna Li\\({}^{1}\\)\n' +
+      '\n' +
+      'Mohamed Amin\\({}^{1}\\)\n' +
+      '\n' +
+      'Nenad Tomasev\\({}^{2}\\)\n' +
+      '\n' +
+      'Shekoofeh Azizi\\({}^{2}\\)\n' +
+      '\n' +
+      'Karan Singhal\\({}^{1}\\)\n' +
+      '\n' +
+      'Yong Cheng\\({}^{2}\\)\n' +
+      '\n' +
+      'Le Hou\\({}^{1}\\)\n' +
+      '\n' +
+      'Albert Webson\\({}^{2}\\)\n' +
+      '\n' +
+      'Kavita Kulkarni\\({}^{1}\\)\n' +
+      '\n' +
+      'S. Sara Mahdavi\\({}^{2}\\)\n' +
+      '\n' +
+      'Christopher Semturs\\({}^{1}\\)\n' +
+      '\n' +
+      'Juraj Gottweis\\({}^{1}\\)\n' +
+      '\n' +
+      'Joelle Barral\\({}^{2}\\)\n' +
+      '\n' +
+      'Katherine Chou\\({}^{1}\\)\n' +
+      '\n' +
+      'Greg S. Corrado\\({}^{1}\\)\n' +
+      '\n' +
+      'Yossi Matias\\({}^{1}\\)\n' +
+      '\n' +
+      'Alan Karthikesalingam\\({}^{\\dagger,1}\\)\n' +
+      '\n' +
+      'Vivek Natarajan\\({}^{\\dagger,1}\\)\n' +
+      '\n' +
+      '\\({}^{1}\\)Google Research\n' +
+      '\n' +
+      '\\({}^{2}\\)Google DeepMind\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'At the heart of medicine lies the physician-patient dialogue, where skillful history-taking paves the way for accurate diagnosis, effective management, and enduring trust. Artificial Intelligence (AI) systems capable of diagnostic dialogue could increase accessibility, consistency, and quality of care. However, approximating clinicians\' expertise is an outstanding grand challenge. Here, we introduce AMIE (Articulate Medical Intelligence Explorer), a Large Language Model (LLM) based AI system optimized for diagnostic dialogue. AMIE uses a novel self-play based simulated environment with automated feedback mechanisms for scaling learning across diverse disease conditions, specialties, and contexts. We designed a framework for evaluating clinically-meaningful axes of performance including history-taking, diagnostic accuracy, management reasoning, communication skills, and empathy. We compared AMIE\'s performance to that of primary care physicians (PCPs) in a randomized, double-blind crossover study of text-based consultations with validated patient actors in the style of an Objective Structured Clinical Examination (OSCE). The study included 149 case scenarios from clinical providers in Canada, the UK, and India, 20 PCPs for comparison with AMIE, and evaluations by specialist physicians and patient actors. AMIE demonstrated greater diagnostic accuracy and superior performance on 28 of 32 axes according to specialist physicians and 24 of 26 axes according to patient actors. Our research has several limitations and should be interpreted with appropriate caution. Clinicians were limited to unfamiliar synchronous text-chat which permits large-scale LLM-patient interactions but is not representative of usual clinical practice. While further research is required before AMIE could be translated to real-world settings, the results represent a milestone towards conversational diagnostic AI.\n' +
+      '\n' +
+      '\\({}^{*}\\) Equal contributions. \\(\\dagger\\) Equal leadership. \\(\\ddagger\\) Corresponding authors: {taotu, mikeshake, alankarth, natvir}@google.com\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'The dialogue between the physician and the patient is fundamental to effective and compassionate care. The medical interview has been termed "the most powerful, sensitive, and most versatile instrument available to the physician" [1]. In some settings, it is believed that 60-80% of diagnoses are made through clinical history-taking alone [2, 3, 4, 5, 6]. The physician-patient dialogue extends beyond history-taking and diagnosis; it is a complex interaction which establishes rapport and trust, serves as a tool for addressing health needs and can empower patients to make informed decisions that account for their preferences, expectations, and concerns [7]. Clinicians yield considerable skills in clinical history-taking and the wider "diagnostic dialogue", but access to this expertise remains episodic and globally scarce [8].\n' +
+      '\n' +
+      'Recent progress in general-purpose large language models (LLMs) [9, 10, 11] has shown that artificial intelligence (AI) systems have capabilities to plan, reason, and incorporate relevant context to hold naturalistic conversations. This progress affords an opportunity to rethink the possibilities of AI in medicine towards the development of fully interactive conversational AI. Such medical AI systems would understand clinical language, intelligently acquire information under uncertainty, and engage in natural, diagnostically useful medical conversations with patients and those who care for them. The potential real-world utility of AI systems capable of clinical and diagnostic dialogue is broad, as the development of such capabilities might improve access to diagnostic and prognostic expertise, to improved quality, consistency, availability, and affordability of care, and to help realize better health outcomes (particularly for populations facing healthcare disparities).\n' +
+      '\n' +
+      'However, while LLMs have been shown to encode clinical knowledge and proven capable of highly accurate single-turn medical question-answering [12, 13, 14], their conversational capabilities have been tailored to domains outside clinical medicine [15, 16]. Prior work in LLMs for health [12, 13, 14, 17, 18] has not yet rigorously examined the clinical history-taking and diagnostic dialogue capabilities of AI systems or contextualized this by comparison to the extensive capabilities of expert clinicians.\n' +
+      '\n' +
+      'Clinical history-taking and diagnostic dialogue through which clinicians derive diagnosis and management plans represent a complex skill [19] whose optimal conduct is highly dependent on context. Thus, multiple evaluation axes are needed to assess the quality of a diagnostic dialogue, including the structure and completeness of\n' +
+      '\n' +
+      'Figure 1: **Overview of contributions.** AMIE is a conversational medical AI optimised for diagnostic dialogue. AMIE is instruction fine-tuned with a combination of real-world and simulated medical dialogues, alongside a diverse set of medical reasoning, question answering, and summarization datasets. Notably, we designed a self-play based simulated dialogue environment with automated feedback mechanisms to scale AMIE’s capabilities across various medical contexts and specialities. Specifically, this iterative self-improvement process consisted of two self-play loops: (1) An “inner” self-play loop, where AMIE leveraged in-context critic feedback to refine its behavior on simulated conversations with an AI patient agent; (2) An “outer” self-play loop where the set of refined simulated dialogues were incorporated into subsequent fine-tuning iterations. During online inference, AMIE used a chain-of-reasoning strategy to progressively refine its response conditioned on the current conversation to arrive at an accurate and grounded reply to the patient in each dialogue turn. We designed and conducted a blinded remote Objective Structured Clinical Examination (OSCE) with validated simulated patient actors interacting with AMIE or Primary Care Physicians (PCPs) via a text interface. Across multiple axes corresponding to both specialist physician (28 out of 32) and patient actor (24 out of 26) perspective, AMIE was rated as superior to PCPs while being non-inferior on the rest.\n' +
+      '\n' +
+      'the elicited history, diagnostic accuracy, the appropriateness of management plans and their rationale, and patient-centred considerations such as relationship-building, respect for the individual and communication efficacy [20]. If the conversational potential of LLMs is to be realized in medicine, there is a significant unmet need to better optimize development and evaluation of medical AI systems for characteristics such as these, which are unique to history-taking and diagnostic dialogue between clinicians and patients.\n' +
+      '\n' +
+      'In this work, we detail our progress towards a conversational medical AI system for clinical history-taking and diagnostic reasoning.\n' +
+      '\n' +
+      'Our key contributions are summarized as:\n' +
+      '\n' +
+      '* We introduced AMIE (Articulate Medical Intelligence Explorer), an LLM based AI system optimized for clinical history-taking and diagnostic dialogue.\n' +
+      '* To scale AMIE across a multitude of specialties and scenarios, we developed a novel self-play based simulated diagnostic dialogue environment with automated feedback mechanisms to enrich and accelerate its learning process. We also introduced an inference time chain-of-reasoning strategy to improve AMIE\'s diagnostic accuracy and conversation quality.\n' +
+      '* We developed a pilot evaluation rubric to assess the history-taking, diagnostic reasoning, communication skills and empathy of diagnostic conversational medical AI, encompassing both clinician-centred and patient-centred metrics.\n' +
+      '* We designed and conducted a blinded remote OSCE study with 149 case scenarios from clinical providers in Canada, the UK, and India, enabling randomized and counterbalanced comparison of AMIE to PCPs when performing consultations with validated patient actors. AMIE exhibited superior diagnostic accuracy compared to PCPs as assessed by various measures (e.g., top-1 and top-3 accuracy of the differential diagnosis list). Across 28 out of 32 evaluation axes from the specialist physician perspective and 24 out of 26 evaluation axes from the patient actor perspective, AMIE was rated superior to PCPs while being non-inferior on the rest.\n' +
+      '* We performed a range of ablations to further understand and characterize the capabilities of AMIE, highlighted important limitations, and proposed key next steps for real-world clinical translation of AMIE.\n' +
+      '\n' +
+      'Our research has important limitations, most notably that we utilized a text-chat interface, which although enabling potentially large-scale interaction between patients and LLMs specialized for diagnostic dialogue, was unfamiliar to PCPs for remote consultation. Thus our study should not be regarded as representative of usual practice in (tele)medicine.\n' +
+      '\n' +
+      '## 2 AMIE: An LLM based AI System for Diagnostic Dialogue\n' +
+      '\n' +
+      'In the following sections, we describe the real-world datasets, simulated self-play environment, fine-tuning process, and inference time chain-of-reasoning that we designed to optimize AMIE for diagnostic conversation capabilities and clinical communication skills.\n' +
+      '\n' +
+      '### Real-world Datasets for AMIE\n' +
+      '\n' +
+      'AMIE was developed using a diverse suite of real-world datasets including multiple-choice medical question-answering, expert-curated long-form medical reasoning, electronic health record (EHR) note summaries, and large-scale transcribed medical conversation interactions. As described in detail below, in addition to dialogue generation tasks, the training task mixture for AMIE consisted of medical question-answering, reasoning, and summarization tasks.\n' +
+      '\n' +
+      '**Medical Reasoning.** We used the MedQA (multiple-choice) dataset consisting of US Medical Licensing Examination (USMLE) multiple-choice style open domain questions with four or five possible answers [21]. The training set consisted of 11,450 questions and the test set had 1,273 questions. We also curated 191 MedQA questions from the training set where clinical experts crafted step-by-step reasoning leading to the correct answer [13].\n' +
+      '\n' +
+      '**Long-form Medical Question Answering.** The dataset used here consisted of expert-crafted long-form responses to 64 questions from HealthSearchQA, LiveQA, and Medication QA in MultiMedBench [12].\n' +
+      '\n' +
+      'Figure 2: **Overview of randomized study design. A primary care physician (PCP) and AMIE perform (in a randomized order) a virtual remote Objective Structured Clinical Examination (OSCE) with simulated patients via online multi-turn synchronous text chat and produce answers to a post-questionnaire. Both the PCP and AMIE are then evaluated by both the patient actors as well as specialist physicians.**\n' +
+      '\n' +
+      '**Medical Summarization.** A dataset consisting of 65 clinician-written summaries of medical notes from MIMIC-III, a large, publicly available database containing medical records of intensive care unit patients [22], was used as additional training data for AMIE. MIMIC-III contains approximately 2 million notes spanning 13 types including cardiology, respiratory, radiology, physician, general, discharge, case management, consult, nursing, pharmacy, nutrition, rehabilitation and social work. 5 notes from each category were selected, with a minimum total length of 400 tokens and at least one nursing note per patient. Clinicians were instructed to write abstractive summaries of individual medical notes, capturing key information while also permitting the inclusion of new informative and clarifying phrases and sentences not present in the original note.\n' +
+      '\n' +
+      '**Real-world Dialogue.** Here, we used a de-identified dataset licensed from a dialogue research organisation comprising 98,919 audio transcripts of medical conversations during in-person clinical visits from over 1,000 clinicians over a 10-year period in the United States [23]. It covered 51 medical specialties (primary care, rheumatology, hematology, oncology, internal medicine and psychiatry among others) and 168 medical conditions and visit reasons (type II diabetes, rheumatoid arthritis, asthma, depression among the common conditions). Audio transcripts contained utterances from different speaker roles such as doctors, patients, and nurses. On average a conversation had 149.8 turns (\\(P_{0.25}=75.0\\), \\(P_{0.75}=196.0\\)). For each conversation, the metadata contained information about patient demographics, reason for the visit (follow-up for pre-existing condition, acute needs, annual exam and more), and diagnosis type (new, existing or other unrelated). We refer to [23] for more details.\n' +
+      '\n' +
+      'For this study, we selected dialogues involving only doctors and patients, but not other roles such as nurses. During preprocessing, we removed paraverbal annotations such as "[LAUGHING]" and "[INAUDIBLE]" from the transcripts. We then divided the dataset into training (90%) and validation (10%) sets using stratified sampling based on condition categories and reasons for visits, resulting in 89,027 conversations for training and 9,892 for validation.\n' +
+      '\n' +
+      '### Simulated Dialogue Learning Environment and Self-play for AMIE\n' +
+      '\n' +
+      'While passively collecting and transcribing real-world dialogues from in-person clinical visits is feasible, two substantial challenges limit its effectiveness in training LLMs for medical conversations: (1) existing real-world data often fails to capture the vast range of medical conditions and scenarios, hindering its scalability and comprehensiveness; (2) the data derived from real-world dialogue transcripts tends to be noisy, containing ambiguous language (including slang, jargon, and sarcasm), interruptions, ungrammatical utterances, and implicit references. This in turn, may limit AMIE\'s knowledge, capabilities, and applicability.\n' +
+      '\n' +
+      'To address these limitations, we designed a self-play based simulated learning environment for diagnostic medical dialogues in a virtual care setting, enabling us to scale AMIE\'s knowledge and capabilities across a multitude of medical conditions and contexts. We used this environment to iteratively fine-tune AMIE with an evolving set of simulated dialogues in addition to the static corpus of medical QA, reasoning, summarization, and real-world dialogue data described above (see Figure 1).\n' +
+      '\n' +
+      'This process consisted of two self-play loops:\n' +
+      '\n' +
+      '* **An "inner" self-play loop** where AMIE leveraged in-context critic feedback to refine its behavior on simulated conversations with an AI patient agent.\n' +
+      '* **An "outer" self-play loop** where the set of refined simulated dialogues were incorporated into subsequent fine-tuning iterations. The resulting new version of AMIE could then participate in the inner loop again, creating a continuous learning cycle.\n' +
+      '\n' +
+      '**Simulated Dialogues.** At each iteration of fine-tuning, we produced 11,686 dialogues, stemming from 5,230 different medical conditions. Conditions were selected from three datasets:\n' +
+      '\n' +
+      '* **Health QA dataset**[12] which contained 613 common medical conditions.\n' +
+      '* **MalaCards Human Disease Database1** which contained 18,455 less common disease conditions. Footnote 1: [https://github.com/Shivanshu-Gupta/web-scrapers/blob/master/medical_ner/malacards-diseases.json](https://github.com/Shivanshu-Gupta/web-scrapers/blob/master/medical_ner/malacards-diseases.json)\n' +
+      '* **MedicineNet Diseases & Conditions Index2** which contained 4,617 less common conditions.\n' +
+      '\n' +
+      'Footnote 2: [https://github.com/Shivanshu-Gupta/web-scrapers/blob/master/medical_ner/medicinenet-diseases.json](https://github.com/Shivanshu-Gupta/web-scrapers/blob/master/medical_ner/medicinenet-diseases.json)\n' +
+      '\n' +
+      'At each self-play iteration, four conversations were generated from each of the 613 common conditions, while two conversations were generated from each of the 4,617 less common conditions randomly chosen from MedicineNet and MalaCards. The average simulated dialogue conversation length was 21.28 turns (\\(P_{0.25}=19.0\\), \\(P_{0.75}=25.0\\)).\n' +
+      '\n' +
+      'Using simulated dialogues allowed us to address the limited availability of high-quality, labelled real-world conversation data and improved the model\'s generalization and adaptability to diverse medical contexts. By leveraging this self-play paradigm, AMIE could continuously learn and refine its conversational and diagnostic capabilities during patient interactions.\n' +
+      '\n' +
+      '#### 2.2.1 Simulated Dialogue Data Curation\n' +
+      '\n' +
+      'In order to produce high-quality simulated dialogues at scale, we developed a novel multi-agent framework which comprised three key components:\n' +
+      '\n' +
+      '* **Vignette Generator**: AMIE leverages web searches to craft unique patient vignettes given a specific medical condition.\n' +
+      '* **Simulated Dialogue Generator**: Three LLM agents play the roles of patient agent, doctor agent, and moderator, engaging in a turn-by-turn dialogue simulating realistic diagnostic interactions.\n' +
+      '* **Self-play Critic**: A fourth LLM agent acts as a critic to give feedback to the doctor agent for self-improvement. Notably, AMIE acted as all agents in this framework. We describe each component in detail below.\n' +
+      '\n' +
+      '**Vignette Generator.** The vignette generator aimed to create varied and realistic patient scenarios at scale, which could be subsequently used as context for generating simulated doctor-patient dialogues thereby allowing AMIE to undergo a training process emulating exposure to a greater number of conditions and patient backgrounds. The patient vignette (scenario) included essential background information such as patient demographics, symptoms, past medical history, past surgical history, past social history, and patient questions, as well as an associated diagnosis and management plan.\n' +
+      '\n' +
+      'For a given condition, patient vignettes were constructed using the following process. First, we retrieved 60 passages (20 each) on the range of demographics, symptoms, and management plans associated with the condition from using an internet search engine. To ensure these passages were relevant to the given condition, we used the general-purpose LLM, PaLM-2 [10], to filter these retrieved passages, removing any passages deemed unrelated to the given condition. We then prompted AMIE to generate plausible patient vignettes aligned with the demographics, symptoms, and management plans retrieved from the filtered passages, by providing a one-shot exemplar to enforce a particular vignette format. The prompts for each of these steps are as follows:\n' +
+      '\n' +
+      '**Search Retrieval Template**\n' +
+      '\n' +
+      'What are the specific patient demographics/symptoms/management plan for the condition [Condition]?\n' +
+      '\n' +
+      '**Passage Filtering Template**\n' +
+      '\n' +
+      'For the clinical condition, [Condition], is the following a good description of common demographics/symptoms/management plans (Yes/No)?\n' +
+      '\n' +
+      'Description: [Retrieved Passage]\n' +
+      '\n' +
+      'Answer (Yes/No):\n' +
+      '\n' +
+      '**Vignette Generation Template**\n' +
+      '\n' +
+      'The following are several passages about the demographics, symptoms, and management plan for a given condition. Generate 2 different patient vignettes consistent with these passages. Follow the format of the given example (just list N/A if a particular field is unavailable).\n' +
+      '\n' +
+      'Condition: [Condition]\n' +
+      '\n' +
+      'Demographic Passages: [Retrieved Demographic Passages]\n' +
+      '\n' +
+      'Symptoms Passages: [Retrieved Symptom Passages]\n' +
+      '\n' +
+      'Management Plan Passages: [Retrieved Management Plan Passages]\n' +
+      '\n' +
+      'Example Format: [Oneshot example]\n' +
+      '\n' +
+      'Patient Vignettes for [Condition]:\n' +
+      '\n' +
+      '**Simulated Dialogue Generator.** Given a patient vignette detailing a specific medical condition, the simulated dialogue generator was designed to simulate a realistic dialogue between a patient and a doctor in an online chat setting where in-person physical examination may not be feasible.\n' +
+      '\n' +
+      'Three specific LLM agents (patient agent, doctor agent, and moderator), each played by AMIE, were tasked with communicating amongst each other to generate the simulated dialogues. Each agent had distinct instructions. The patient agent embodied the individual experiencing the medical condition outlined in the vignette. Their role involved truthfully responding to the doctor agent\'s inquiries as well as raising any additional questions or concerns they may have had. The doctor agent played the role of an empathetic clinician seeking to comprehend the patient\'s medical history within the online chat environment [24]. Their objective was to formulate questions that could effectively reveal the patient\'s symptoms and background, leading to an accurate diagnosis and an effective treatment plan. The moderator continually assessed the ongoing dialogue between the patient agent and doctor agent, determining when the conversation had reached a natural conclusion.\n' +
+      '\n' +
+      'The turn-by-turn dialogue simulation started with the doctor agent initiating the conversation: "Doctor: So, how can I help you today?". Following this, the patient agent responded, and their answer was incorporated into the ongoing dialogue history. Subsequently, the doctor agent formulated a response based on the updated dialogue history. This response was then appended to the conversation history. The conversation progressed until the moderator detected the dialogue had reached a natural conclusion, when the doctor agent had provided a differential diagnosis, treatment plan, and adequately addressed any remaining patient agent questions, or if either agent initiated a farewell.\n' +
+      '\n' +
+      '**Patient Agent Instruction:**\n' +
+      '\n' +
+      'You are a patient chatting with a doctor over an online chat interface. The doctor has never met you before. <patient vignette> Respond to the doctor\'s questions honestly as they interview you, asking any questions that may come up.\n' +
+      '\n' +
+      '**Doctor Agent Instruction:**\n' +
+      '\n' +
+      'You are an empathetic clinician asking a patient about their medical history over an online chat interface. You know nothing about the patient in advance. Respond to the patient with a single-turn response to better understand their history and symptoms. Do not ask more than two questions. If the patient asks a question, be sure to answer it appropriately.\n' +
+      '\n' +
+      '**Moderator Instruction:**\n' +
+      '\n' +
+      'The following is a conversation between a doctor and a patient: <dialog> The conversation should only come to an end if the doctor has finished giving the patient a diagnosis and treatment plan and the patient has no questions left. A conversation also comes to an end if the doctor or patient says goodbye. Question: has the conversation come to an end? Yes or No.\n' +
+      '\n' +
+      '**Self-play Critic.** To ensure high-quality dialogues, we implemented a tailored self-play [25] framework specifically for self-improvement of diagnostic conversations. This framework introduced a fourth LLM agent, acting as a "critic" which was also played by AMIE and aware of the ground truth diagnosis, to provide in-context feedback to the doctor agent and enhance its performance in subsequent conversations. The critic agent evaluated the doctor agent\'s responses based on the following criteria:\n' +
+      '\n' +
+      '* The doctor agent exhibits empathy and professionalism while addressing the patient agent\'s latest questions or comments in a concise manner.\n' +
+      '* The doctor agent avoids asking too many or repetitive questions (about information already acquired), focusing on a maximum of one or two per response.\n' +
+      '* The responses should not reveal that the doctor agent is an AI chatbot. They should flow naturally, maintain factual accuracy, and facilitate further engagement from the patient.\n' +
+      '* The doctor agent asks sufficient questions to identify at least two of the most likely differential diagnoses. They further refine their understanding through targeted questions towards the ground truth diagnosis and offer the corresponding treatment.\n' +
+      '\n' +
+      'Following the critic\'s feedback, the doctor agent incorporated the suggestions to improve its responses in subsequent rounds of dialogue with the same patient agent from scratch. Notably, the doctor agent retained access to its previous dialogue history at each new round. This self-improvement process was repeated twice to generate the dialogues used for each iteration of fine-tuning.\n' +
+      '\n' +
+      '### Instruction Fine-tuning\n' +
+      '\n' +
+      'AMIE, built upon the base LLM PaLM 2 [10], was instruction fine-tuned to enhance its capabilities for medical dialogue and reasoning. We refer to the PaLM-2 technical report for more details on the base LLM architecture.\n' +
+      '\n' +
+      'We employed task-specific instructions to fine-tune AMIE in playing either the patient or doctor role within medical dialogues, performing medical question answering and reasoning, and summarizing EHR notes. While the first round of fine-tuning from the base LLM only used the static datasets, subsequent rounds of fine-tuning leveraged the simulated dialogues generated through the self-play inner loop as described in Section 2.2.1.\n' +
+      '\n' +
+      'For dialogue generation tasks, AMIE was trained to predict the next conversational turn based on all previous interactions, assuming either the doctor or patient role. When playing the patient agent, AMIE was prompted to reply to the doctor agent\'s questions about their symptoms, drawing upon information provided in patient scenarios. These scenarios included patient vignettes (see Section 2.2.1) for simulated dialogues or metadata such as demographics, visit reason, and diagnosis type for the real-world dialogue dataset. In the doctor agent role, AMIE was prompted to act as an empathetic clinician, interviewing patients about their medical historyand symptoms to ultimately arrive at an accurate diagnosis. From each dialogue, we sampled on average 3 turns for each the doctor and patient roles as the target turns to predict based on the conversation leading up to that target turn. Target turns were randomly sampled from all turns in the dialogue that had a minimum length of 30 characters.\n' +
+      '\n' +
+      'Similarly, for the EHR note summarization task, AMIE was provided with a clinical note and prompted to generate a summary of the note. Medical reasoning/QA and long-form response generation tasks followed the same setup as in [13]. Notably, all tasks except dialogue generation and long-form response generation incorporated few-shot (1-5) exemplars in addition to task-specific instructions for additional context.\n' +
+      '\n' +
+      '### Chain-of-reasoning for Online Inference\n' +
+      '\n' +
+      'To address the core challenge in diagnostic dialogue - effectively acquiring information under uncertainty to enhance diagnostic accuracy and confidence while maintaining positive rapport with the patient - AMIE employed a chain-of-reasoning strategy before generating a response in each dialogue turn. Here, "chain-of-reasoning" refers to a series of sequential model calls, each dependent on the outputs of prior steps. Specifically, we used a three-step reasoning process, described as follows:\n' +
+      '\n' +
+      '1. **Analyzing patient information:** Given the current conversation history, AMIE was instructed to 1) summarize the positive and negative symptoms of the patient as well as any relevant medical/family/social history and demographic information, 2) produce a current differential diagnosis, 3) note missing information needed for a more accurate diagnosis and 4) assess confidence in the current differential and highlight its urgency.\n' +
+      '2. **Formulating response and action:** Building upon the conversation history and the output of step 1, AMIE performed the following: 1) Generate a response to the patient\'s last message and formulate further questions to acquire missing information and refine the differential diagnosis. 2) If necessary, recommend immediate action, such as an emergency room visit. If confident in the diagnosis based on available information, present the differential.\n' +
+      '3. **Refining the response:** AMIE revises its previous output to meet specific criteria based on the conversation history and outputs from earlier steps. The criteria are primarily related to factuality and formatting of the response (e.g., avoid factual inaccuracies on patient facts and unnecessary repetition, show empathy, and display in a clear format).\n' +
+      '\n' +
+      'This chain-of-reasoning strategy enabled AMIE to progressively refine its response conditioned on the current conversation to arrive at an informed and grounded reply.\n' +
+      '\n' +
+      '## 3 Evaluation\n' +
+      '\n' +
+      'Prior works developing models for clinical dialogue have focused on metrics such as the accuracy of note-to-dialogue or dialogue-to-note generations [26, 27], or natural language generation metrics such as BLEU or ROUGE scores that fail to capture the clinical quality of a consultation [28, 29].\n' +
+      '\n' +
+      'In contrast to these prior works we sought to anchor our human evaluation in criteria more commonly used for evaluating the quality of physicians\' expertise in history-taking, including their communication skills in consultation. We derived a framework from principles published in reviews of the consensus for best practices for patient-centered communication (PCCBP) in medical interviews [20], criteria examined for history-taking skills by the Royal College of Physicians in the UK as part of their Practical Assessment of Clinical Examination Skills (PACES)3[30], and criteria proposed by the UK General Medical Council Patient Questionnaire (GMCPQ)4 for doctors seeking patient feedback as part of professional re-validation5. We iterated upon these criteria to refine items for inclusion and derived pilot scales and instructions for assessment by using focus groups and interviews with clinicians and OSCE examiners based in the UK, Canada, US, and India. Our resulting pilot framework enabled assessment from two perspectives: clinician (board-certifiedphysicians) and lay raters (patient actors). The framework included consideration of consultation quality, structure and completeness, the roles, responsibilities, and skills of the interviewer (Tables A.1, A.2, A.3, and A.4).\n' +
+      '\n' +
+      '### Objective Structured Clinical Examination\n' +
+      '\n' +
+      'Objective Structured Clinical Examination (OSCE) is a practical assessment format used in healthcare to assess clinical skills and competencies in a standardized and objective fashion [31, 32, 33]. It differs from traditional written or oral exams that focus primarily on theoretical knowledge and instead aims to provide an environment in which the skills of real-world clinical practice might be assessed.\n' +
+      '\n' +
+      'The OSCE is typically divided into multiple stations (often 8-12), each simulating a real-life clinical scenario enacted by standardized patient actors trained to portray specific symptoms or conditions based on pre-defined scenario descriptions. At each station, students are given specific tasks to perform, such as taking a clinical history, or making a diagnosis. Each station has a set time limit, ensuring fairness and efficient assessment. Trained examiners observe students\' performance at each station using a pre-defined checklist or marking scheme. They assess clinical skills like communication, history-taking, physical examination techniques, clinical reasoning, and decision-making.\n' +
+      '\n' +
+      '### Remote OSCE Study Design\n' +
+      '\n' +
+      'To compare AMIE\'s performance to that of real clinicians, we conducted a randomized crossover study of blinded consultations in the style of a remote OSCE. Our OSCE study involved 20 board-certified primary care physicians (PCPs) and 20 validated patient actors, 10 each from India and Canada, respectively, to partake in online text-based consultations. PCPs had between 3 and 25 years of post-residency experience (median 7 years). Patient actors comprised of a mix of medical students, residents, and nurse practitioners with experience in OSCE participation. We sourced 149 scenario packs from India (75), Canada (60), and the UK (14).\n' +
+      '\n' +
+      'The scenario packs and simulated patients in our study were prepared by two OSCE laboratories (one each in Canada and India), each affiliated to a medical school and with extensive experience in preparing scenario packs and simulated patients for OSCE examinations. UK scenario packs were sourced from the samples provided on the MRCPUK website. Each scenario pack was associated with a ground truth diagnosis and a set of acceptable diagnoses. The scenario packs covered conditions from cardiovascular (29), respiratory (30), gastroenterology (31), neurology (30), urology, obstetric, and gynecology domains (15), and internal medicine (14). Pediatric or psychiatry domains were excluded from this study, as were intensive care or inpatient case management scenarios.\n' +
+      '\n' +
+      'Indian patient actors played the roles in all India scenario packs and 7 of the 14 UK scenario packs. Canadian patient actors participated in scenario packs for both Canada and the other half of UK-based scenario packs. This assignment process resulted in 149 distinct simulated patients ("scenarios"). Below, we use the term "OSCE agent" to refer to the conversational counterpart interviewing the patient actor, i.e., either PCP or AMIE. Table 1 summarizes the OSCE assignment information across three geographical locations. Each of the 149 simulated patients completed the three-step study flow depicted in Figure 2.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c} \\hline \\hline Location & \\# of Scenario Packs & \\# of Simulated Patients & \\# of Patient Actors & \\# of PCPs \\\\ \\hline Canada & 60 & 67 & 10 & 10 \\\\ India & 75 & 82 & 10 & 10 \\\\ UK & 14 & 0 & 0 & 0 \\\\\n' +
+      '**Total** & **149** & **149** & **20** & **20** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: **OSCE study summary.** Number of scenario packs, patient actors, simulated patients, and primary care physicians (PCPs) in each of the three locations (Canada, India, and the UK) in the remote OSCE study. 20 board-certified PCPs participated in the study as OSCE agents in comparison with AMIE, 10 each from India and Canada. 20 trained patient actors were involved, with 10 each from India and Canada. Indian patient actors played the roles in both India and UK scenario packs. Canadian patient actors participated in scenario packs for both Canada and the UK. This process resulted in 149 distinct simulated patients.\n' +
+      '\n' +
+      '#### 3.2.1 Online Text-based Consultation\n' +
+      '\n' +
+      'PCPs and patient actors were primed with sample scenarios and instructions, and participated in pilot consultations prior to the study commencing in order to familiarize themselves with the interface and experiment requirements.\n' +
+      '\n' +
+      'For the experiment, each simulated patient completed two online text-based consultations via a synchronous text chat interface (Figure A.2), one with a PCP (control) and one with AMIE (intervention). The ordering of PCP and AMIE was randomized and patient actors were not informed as to which they were talking to in each consultation. PCPs were located in the same country as patient actors, and were randomly drawn based on availability at the specified time slot for the consultation. Patient actors role-played the scenario and were instructed to conclude the conversation after no more than 20 minutes. Both OSCE agents were asked (PCPs via study-specific instructions, and AMIE as part of the prompt template) to not reveal their identity, or whether they were human, under any circumstances.\n' +
+      '\n' +
+      '#### 3.2.2 Post-questionnaires\n' +
+      '\n' +
+      'Upon conclusion of the consultation, the patient actor and OSCE agent each filled in a post-questionnaire in light of the resulting consultation transcript (Figure A.3). The post-questionnaire for patient actors consisted of the complete GMCPQ (Table A.1), the PACES components for "Managing Patient Concerns" and "Maintaining Patient Welfare" (Table A.2), and a checklist representation of the PCCBP category for "Fostering the Relationship" (Table A.3). Responses patient actors provided to the post-questionnaire are referred to as "patient actor ratings" below. The post-questionnaire for the OSCE agent asked for a ranked differential diagnosis (DDx) list with a minimum of 3 and no more than 10 conditions, as well as recommendations for escalation to in-person or video-based consultation, investigations, treatments, management plan, and the need for a follow-up.\n' +
+      '\n' +
+      '#### 3.2.3 Specialist Physician Evaluation\n' +
+      '\n' +
+      'Finally, a pool of 23 specialist physicians from India (14), North America (6), and the UK (3) evaluated PCPs and AMIE with respect to the quality of their consultation, and their responses to the post-questionnaire. During evaluation, specialist physicians also had access to the full scenario pack along with its associated ground truth differential and additional accepted differentials. All of the data the specialist physicians had access to during evaluation are collectively referred to as "OSCE data" below. Specialist physicians were sourced to match the specialties and geographic regions corresponding to the scenario packs included in our study, and had between 1 and 36 years of post-residency experience (median 5 years). Each set of OSCE data was evaluated by one specialist physician randomly assigned to match the specialty and geographic region of the underlying scenario (e.g., Canadian pulmonologist evaluated OSCE data from Canada-sourced respiratory medicine scenario). Each specialist evaluated OSCE data from both PCP and AMIE for a given scenario. Evaluations for PCP and AMIE were conducted by the same specialist in a randomized and blinded sequence. Evaluation criteria included the accuracy, appropriateness and comprehensiveness of the provided DDx list, appropriateness of recommendations regarding escalation, investigation, treatment, management plan and follow-up (Table A.4), and all PACES (Table A.2) and PCCBP (Table A.3) rating items. We also asked specialist physicians to highlight confabulations in the consultations and questionnaire responses, i.e., text passages that were non-factual or referred to information not provided in the conversation. Each OSCE scenario pack additionally supplied specialists with scenario-specific clinical information to assist with rating the clinical quality of the consultation, such as the ideal investigation or management plans; or important aspects of the clinical history that would ideally have been elucidated for the highest quality of consultation possible.\n' +
+      '\n' +
+      '### Auto-evaluation\n' +
+      '\n' +
+      'In addition to human evaluations, we implemented model-based auto-evaluation methods as economical consistent alternatives to specialist assessments. These techniques were employed to evaluate both dialogue quality and diagnostic accuracy of the OSCE agent. To establish the validity of our auto-evaluation methods for assessing dialogue quality, we initially focused on a subset of four evaluation axes from the PACES rubric(Table A.2) that were assessed by both the patient actors and the specialist physicians. The auto-evaluation, which uses a self-CoT strategy (details described in Section A.9) with AMIE to rate dialogues, was in good alignment with human raters and comparable to the inter-specialist agreement on these criteria. For the auto-evaluation of differential diagnoses, we leveraged another LLM, Med-PaLM 2 [13] as a surrogate for a specialist rater to grade the predicted diagnoses against the ground truth diagnoses (more details in Section A.7). Our auto-evaluation on DDx accuracy showed a similar trend for AMIE and OSCE agents compared to the specialist ratings. Overall, auto-evaluation trends aligned with human ratings for both dialogue quality and diagnostic accuracy.\n' +
+      '\n' +
+      'We also conducted additional auto-evaluation analyses for the following purposes:\n' +
+      '\n' +
+      '* To compare the performance of the DDx accuracy derived from AMIE or PCP consultations;\n' +
+      '* To compare the DDx accuracy between simulated patients performed in Canada and India and determine if there is systematic differences between the two locations;\n' +
+      '* To isolate the effects of information acquisition and information interpretation by analyzing the DDx accuracy of AMIE when provided the PCP consultation instead of its own;\n' +
+      '* To evaluate the efficiency of information acquisition between AMIE and PCPs by analyzing the DDx accuracy as the number of conversation turns increases;\n' +
+      '* To evaluate the benefit of inner-loop self-play on dialogue quality before and after critic feedback.\n' +
+      '\n' +
+      '### Statistical Analysis\n' +
+      '\n' +
+      'We evaluated the top-k accuracy of the DDx lists generated by AMIE and PCPs across all 149 simulated patients. Top-k accuracy was defined as the percentage of cases where the correct diagnosis appeared within the top-k positions of the DDx list. Specifically, a candidate diagnosis was considered a match if the specialist rater marked it as either an exact match with, very close to or closely related to the ground truth diagnosis (or accepted differential). Statistical significance for DDx accuracy was determined using bootstrap tests [34] with 10,000 samples and false discovery rate (FDR) correction [35] across all k. Statistical significance for patient actor and specialist ratings was determined using Wilcoxon signed-rank tests [36] FDR correction. Cases where either agent received "Cannot rate / Does not apply" were excluded from the test. Results below refer to \\(p\\)-values after FDR correction.\n' +
+      '\n' +
+      '## 4 Results\n' +
+      '\n' +
+      '### Diagnostic Accuracy\n' +
+      '\n' +
+      '#### 4.1.1 AMIE showed higher DDx accuracy than PCPs under specialist physician evaluation.\n' +
+      '\n' +
+      'AMIE\'s diagnostic accuracy was assessed as higher than that of PCPs. Figure 3 shows the top-k accuracy for AMIE and PCPs, considering matches with the ground truth diagnosis (a) and matches with any item on the accepted differential (b). AMIE showed significantly higher top-k accuracy than that of PCPs across all values of k (\\(p<0.05\\)). Note that unlike AMIE, PCPs did not always provide 10 diagnoses in their differential diagnoses (min: 3, mean: 5.39). Additionally, we performed a comparison of DDx accuracy between AMIE and PCP by varying the matching criteria for determining a match. Results depicted in Figure A.7 further substantiate AMIE\'s superior DDx performance across various matching criteria.\n' +
+      '\n' +
+      '**Accuracy by Specialty.** Figure A.8 illustrates the DDx accuracy achieved by AMIE and PCPs across the six medical specialties covered by scenarios in our study. We observed that AMIE\'s performance matched or surpassed PCP performance for all specialties with the most pronounced improvements in the respiratory and cardiovascular specialities.\n' +
+      '\n' +
+      '#### 4.1.2 Auto-evaluation suggested AMIE matched PCPs\' efficiency in acquiring information.\n' +
+      '\n' +
+      '**Auto-evaluation Accuracy.** We reproduced the DDx accuracy analysis with our model-based auto-evaluator instead of the specialist raters using the same procedure as in Figure 3. The overall performance trends obtained through the auto-evaluator align well with specialist assessments despite marginal differences in the computed accuracy values, as shown in Figure A.9.\n' +
+      '\n' +
+      '**Isolating the Source of Performance Gains.** To investigate whether AMIE\'s superior DDx performance observed in Figure 3 stemmed from improved information acquisition or from better diagnostic reasoning capability, we compared AMIE\'s diagnoses based on its own consultations with AMIE\'s diagnoses generated from the corresponding PCP consultations, using the DDx auto-evaluator. Results depicted in Figure A.10 revealed markedly similar DDx performance, indicating that the diagnostic performance remained consistent regardless of whether AMIE processed information from its own dialogue or from the PCP\'s conversation. Both methods significantly outperformed the differential diagnoses produced by PCPs. These results suggest that AMIE was approximately equivalent to PCPs at information acquisition but better than PCPs at interpreting that information to produce an accurate/complete differential diagnosis.\n' +
+      '\n' +
+      '**Efficiency of Information Acquisition.** Although AMIE displayed greater verbosity compared to PCPs in terms of total number of words generated in their responses during the consultation, the number of conversational turns and the number of words elicited from the patient actors were similar across both OSCE agents, as illustrated in Figure A.11. This suggests that both AMIE and PCPs acquired a similar amount of information from the patients during the encounter. To investigate how efficient AMIE or PCPs were at gathering sufficient information to formulate a correct diagnosis, we truncated the conversations at various turn counts and used AMIE to generate differential diagnoses based on these partial conversations. Figure A.12 depicts the top-3 DDx accuracy as a function of the number of turns provided to the model. The observed accuracies plateaued within the initial 10 conversational turns for both AMIE and PCPs. This suggests that both AMIE and PCPs were able to acquire the information necessary for formulating a diagnosis within the early stages of the conversation. Additionally, the comparable performance at every turn indicates that neither AMIE nor PCPs had a significant advantage in the efficiency or quality of information acquisition.\n' +
+      '\n' +
+      '### Conversation Quality\n' +
+      '\n' +
+      '#### 4.2.1 AMIE surpassed PCPs in conversation quality, per specialists and patient actors.\n' +
+      '\n' +
+      'Conversation quality was assessed using patient actor ratings, specialist ratings, and outputs from auto-evaluation. Figure A.5 and A.6 show two example consultations for the same simulated patient from AMIE and PCP, respectively.\n' +
+      '\n' +
+      'Figure 3: **Specialist-rated top-k diagnostic accuracy.** AMIE and PCPs top-k DDx accuracy are compared across 149 scenarios with respect to the ground truth diagnosis (**a**) and all diagnoses in the accepted differential (**b**). Bootstrapping (n=10,000) confirms all top-k differences between AMIE and PCP DDx accuracy are significant with \\(p<0.05\\) after FDR correction.\n' +
+      '\n' +
+      'Figure 4: **Patient actor ratings.** Conversation qualities as assessed by patient actors upon conclusion of the consultation. For illustration purposes, all responses from five-point rating scales were mapped to a generic five-point scale ranging from ‘Very favorable’ to ‘Very unfavorable’. For Yes/No questions, a (positive) ‘Yes’ response was mapped to the same color as ‘Favorable’ and a (negative) ‘No’ response to the same color as ‘Unfavorable’. Rating scales were adapted from the General Medical Council Patient Questionnaire (GMCPQ), the Practical Assessment of Clinical Examination Skills (PACES), and a narrative review about Patient-Centered Communication Best Practice (PCCBP). Details on question wording and response options are provided in Section A.1. Asterisks represent statistical significance (\\(*:p<0.05\\), \\(**:p<0.01\\), \\(***:p<0.001\\), \\(n.s.\\) : not significant).\n' +
+      '\n' +
+      '**Patient Actor Ratings.** Figure 4 presents the various conversation qualities patient actors assessed following their consultations with the OSCE agents. Overall, AMIE\'s consultations were rated significantly better (\\(p<0.05\\)) by patient actors than those from PCPs across 24 of 26 axes. No significant differences in ratings were detected for the two PCCBP axes "Respecting Patient\'s Privacy" (N=108) and "Acknowledging Mistakes" (N=41). For the latter criterion, the number of exclusions was substantially higher since the question applied only when mistakes were made by the OSCE agent and pointed out in the conversation.\n' +
+      '\n' +
+      '**Specialist Physician Ratings.** Specialist physicians evaluated both the conversational quality as well as the responses to the post-questionnaire for scenarios within their domain expertise (see Figure 5). Again, AMIE\'s responses were rated significantly better by specialists than those from PCPs on 28 of 32 evaluation axes; Specialists preferred AMIE\'s consultation, diagnoses, and management plan over those from PCPs. For this set of evaluations, differences in specialist ratings between AMIE and PCPs were statistically significant (\\(p<0.05\\)). No significant differences in ratings were detected for four of the axes in the Diagnosis & Management rubric, namely, "Escalation Recommendation Appropriate", "Treatment Inappropriate Avoided", "Followup Recommendation Appropriate" and "Confabulation Absent", despite no exclusions (N=149).\n' +
+      '\n' +
+      '**4.2.2 Auto-evaluations demonstrated the effectiveness of inner self-play for AMIE.**\n' +
+      '\n' +
+      '**Auto-evaluation of Conversation Ratings.** We leveraged the model-based self-CoT auto-evaluation strategy to rate conversations on four evaluation axes from the PACES rubric, and validated that these auto-evaluation ratings were accurate and well aligned with the specialist ratings (Figures A.17 and A.18). Furthermore, to demonstrate that the inner self-play loop improved simulated dialogue quality, we applied the auto-evaluation method to the simulated dialogues generated before and after the self-play procedure. Results in Figure A.19 revealed that the simulated dialogues after self-play were preferred more often than the baseline dialogues without self-critique.\n' +
+      '\n' +
+      '## 5 Related Work\n' +
+      '\n' +
+      '### Clinical History-taking and the Diagnostic Dialogue\n' +
+      '\n' +
+      'History-taking and the clinical interview are widely taught in both medical schools\' and postgraduate curricula [37, 38, 39, 40, 41, 42]. Consensus on physician-patient communication has evolved to embrace patient-centred communication practices, with recommendations that communication in clinical encounters should address six core functions: fostering the relationship, gathering information, providing information, making decisions, responding to emotions and enabling disease- and treatment-related behavior [43, 44, 20]. Specific skills and behaviours for meeting these goals have also been described, taught and assessed [45, 20] with validated tools [45]. Medical conventions consistently cite that certain categories of information should be gathered during a clinical interview, comprising topics such as the presenting complaint, past medical history and medication history, social and family history, and systems review [46, 47]. Clinicians\' ability to meet these goals is commonly assessed using the framework of an objective structured clinical examination (OSCE) [31, 32, 33]. Such assessments vary in their reproducibility or implementation and have even been adapted for remote practice as virtual OSCEs (vOSCEs) with telemedical scenarios, an issue of particular relevance during the COVID-19 pandemic [48].\n' +
+      '\n' +
+      '### Conversational AI and Goal-oriented Dialogue\n' +
+      '\n' +
+      'Conversational AI systems for goal-oriented dialogue and task completion have a rich history [49, 50, 51]. The emergence of transformers [52] and large language models [15] have led to renewed interest in this direction. The development of strategies for alignment [53], self-improvement [54, 55, 56, 57] and scalable oversight mechanisms [58] have enabled large scale deployment of such conversational systems in the real world [59, 16]. However, the rigorous evaluation and exploration of conversational and task-completion capabilities of such AI systems remains limited for clinical applications, where studies have largely focused on single-turn interaction use cases such as question-answering or summarization.\n' +
+      '\n' +
+      'Figure 5: **Specialist physician ratings.** Conversation and reasoning qualities as assessed by specialist physicians. For illustration purposes, all responses from five-point rating scales were mapped to a generic five-point scale ranging from ‘Very favorable’ to ‘Very unfavorable’. The only four-point scale (DDx Comprehensiveness) was mapped to the same scale, ignoring the ‘Neither favorable nor unfavorable’ option. For Yes/No questions, a (positive) ‘Yes’ response was mapped to the same color as ‘Favorable’ and a (negative) ’No’ response to the same color as ‘Unfavorable’. Rating scales were adapted from the Practical Assessment of Clinical Examination Skills (PACES), a narrative review about Patient-Centered Communication Best Practice (PCCBP), and other sources. Details on question wording and response options are provided in Section A.1. Asterisks represent statistical significance (\\(*:p<0.05\\), \\(**:p<0.01\\), \\(***:p<0.001\\), \\(n.s.\\) : not significant).\n' +
+      '\n' +
+      '### AI for Medical Consultations and Diagnostic Dialogue\n' +
+      '\n' +
+      'The majority of explorations of AI as tools for conducting medical consultations have focused on "symptom checker" applications rather than a full natural dialogue, or on topics such as transcription of medical audio or the generation of plausible dialogue given clinical notes or summaries [60, 61, 62, 63]. Language models have been trained using clinical dialogue datasets but not comprehensively evaluated [64]. Studies have been grounded in messages between doctors and patients in commercial chat platforms (which may have altered doctor-patient engagement compared to 1:1 medical consultations) [65, 28, 66]. Many focused largely on predicting next turns in the recorded exchanges rather than clinically meaningful metrics. And to date, there have been no reported studies that have examined the quality of AI models for diagnostic dialogue using the same criteria that are used to examine and train human physicians in dialogue and communication skills; nor evaluating AI systems in common frameworks such as the OSCE.\n' +
+      '\n' +
+      '### Evaluation of Diagnostic Dialogue\n' +
+      '\n' +
+      'Prior frameworks for human evaluation of AI systems\' performance in diagnostic dialogue have been limited in detail. They have not been anchored in established criteria for assessing communication skills and the quality of history-taking. For example, [29] reported a 5-point scale describing overall "human evaluation", [65] reported "relevance, informativeness and human likeness", [66] reported "fluency, expertise and relevance", [67] "fluency and adequacy" and [68] "fluency". These criteria are far less comprehensive and specific than those taught and practiced by medical professionals. A multi-agent framework for assessing conversational capabilities of LLMs is introduced in [64], however, the study was performed in the restricted setting of dermatology, used AI models to emulate both doctor and patient sides of simulated interactions, and performed limited expert evaluation of history-taking as "complete" or not.\n' +
+      '\n' +
+      '## 6 Discussion\n' +
+      '\n' +
+      'In this study, we introduced AMIE, an LLM based AI system optimised for clinical dialogue with diagnostic reasoning capabilities. We compared AMIE consultations to those performed by PCPs using a randomized, double-blind crossover study with human simulated patients in the style of an Objective Structured Clinical Examination (OSCE). Notably, our study was not designed to be representative of clinical conventions either for traditional OSCE evaluations, for remote- or tele-medical consultation practices, or for the ways clinicians usually use text and chat messaging to communicate with patients. Our evaluation instead mirrored the most common way by which people interact with LLMs today, leveraging a potentially scalable and familiar mechanism for AI systems to engage in remote diagnostic dialogue. In this setting, we observed that AMIE, an AI system optimised specifically for the task, outperformed PCPs on simulated diagnostic conversations when evaluated along multiple clinically-meaningful axes of consultation quality.\n' +
+      '\n' +
+      '**Diagnostic Performance.** The differential diagnoses provided by AMIE were more accurate and complete than those provided by board-certified PCPs, when both were evaluated by specialist physicians. Previous research has shown that AI systems may match or exceed human diagnostic performance in specific, narrow tasks [69, 70, 71] in retrospective evaluation. However, these situations typically involved both AI and physicians interpreting the same fixed input (for example, identifying the presence of a specific finding in a medical image). Our study was significantly more challenging because it required the AI system to actively acquire relevant information through conversation rather than relying on clinical information collated by human efforts [72]. Therefore the system\'s downstream differential diagnoses depended on not only its diagnostic inference capability, but also the quality of information gathered under uncertainty through natural conversation and building rapport.\n' +
+      '\n' +
+      'Our results suggested that AMIE was as adept as PCPs in eliciting pertinent information during the simulated consultations and was more accurate than PCPs in formulating a complete differential diagnosis if given the same amount of acquired information. This finding corroborates other work that LLMs may be able to produce more complete differential diagnoses given the same clinical information as physicians in challenging cases [70]. Though not explored in this study, the assistive performance of AMIE therefore represents an interesting and important avenue for future research, particularly given the real-world importance of expertoversight for AI systems in safety-critical settings such as medicine.\n' +
+      '\n' +
+      'Our study utilized a wide variety of simulated patients, comprising actors trained in both Canada and India and scenarios across a range of specialties. This allowed us to explore how performance varied along multiple axes: by specialty, and by the locations in which the scenario was derived and enacted. We observed that both PCPs and AMIE performed worse in obstetric/gynecology and internal medicine scenarios than those from other specialties (see Figure A.8). The study was not powered or designed to compare performance between different specialty topics, and we cannot exclude that the scenarios in some specialties might be harder than others. We observed that both AMIE and PCPs had higher diagnostic accuracy in consultations performed in the Canada OSCE lab compared to those enacted in the India OSCE lab (see Figure A.13). However, the differences were not statistically significant and in a subset of 40 scenarios enacted in both the Canada OSCE lab and the India OSCE lab, the performance of both AMIE and PCPs was equivalent (see Figure A.14).\n' +
+      '\n' +
+      '**Conversational Performance.** Patient actors and specialist raters both evaluated AMIE\'s performance to be higher than PCPs on metrics related to empathy and communication skills. These axes comprised a majority of the dimensions that were evaluated. This general finding is consistent with a prior study where LLM responses were found to be more empathetic than the responses from clinicians to health questions posted on Reddit [73]. However, the findings in that study may not be generalised directly to our setting due to the differences in study design. Specifically, prior work has not involved a direct, randomised comparison of physicians and AI systems in a prospective simulation of multi-turn dialogue with the same patient. In both settings, the lack of voice-based and non-verbal visual communication may be an unfair disadvantage to clinicians.\n' +
+      '\n' +
+      'The text-based chat interface used in this study introduces both advantages and disadvantages. People today most commonly engage with LLMs through synchronous text-chat interfaces [74], and patients often use patient portals to send messages to their providers. We therefore chose this mode of interaction as a representative interface for LLMs to perform multi-turn conversation, adapting the virtual OSCE framework accordingly. While this allowed a fair comparison of diagnostic dialogue between LLMs and clinicians when both were restricted to a synchronous text-chat, it is important to acknowledge that our experiments do not emulate the expected quality of diagnostic dialogue in real clinical practice (including telemedicine). Physicians may be more used to history-taking and diagnostic dialogue by telephone or video consultation than synchronous text-chat communication [75, 76]. Instead, text is more commonly used by clinicians to communicate with patients for episodic or asynchronous needs such as prescription refills or communication about specific test results [77]. Physicians may thus be more familiar with text/SMS or email rather than the synchronous text-chat medium we employed in this study. In both text/SMS and email, the conventions and expectations for communicating naturally and with empathic style might be different [78]. It is possible that the PCPs in our study had not yet become accustomed to the setting, and may have performed differently if subjected to a specific training program (similar in spirit to the training process for AMIE). Clinicians participating in the study undertook two preparatory pilot sessions of consultations with our synchronous text interface before the evaluation began, but this was not a formal training program, nor was it designed to optimize clinicians\' performance. Future research could explore this question more thoroughly including monitoring for the impact of a learning curve, or exploring whether performance varies according to the extent to which participating clinicians or simulated patients are familiar with telemedicine.\n' +
+      '\n' +
+      'Additionally, our findings regarding empathic communication could also be partially attributed to the fact that AMIE responses were significantly longer than clinician responses (shown in Figure A.11), and presented with greater structure. This could potentially suggest to an observer that more time was spent preparing the response, analogous to known findings that patient satisfaction increases with time spend with their physicians [79, 80, 81].\n' +
+      '\n' +
+      'Collectively, our findings suggest many avenues for further research that might leverage human-AI complementarity [82], combining clinicians\' skills in the analysis of verbal and non-verbal cues with the potential strengths of LLMs to suggest more enriched conversational responses including empathic statements, structure, eloquence, or more complete differential diagnoses.\n' +
+      '\n' +
+      '**Simulated Dialogue.** The use of simulated data allowed us to quickly scale training to a broad set of conditions and patient contexts, while the injection of knowledge from search encouraged these dialogues to remain grounded and realistic. Though the simulated patients encompassed a wide range of conditions, they failed to capture the full range of potential patient backgrounds, personalities, and motivations. Through the inner self-play procedure, we were able to iteratively improve the simulated dialogue we generated and used in fine-tuning. However, these improvements were limited by our ability to articulate what makes a good dialogue in the critic instructions, the critic\'s ability to produce effective feedback, and AMIE\'s ability to adapt to such feedback. For example, in the simulated environment we impose that AMIE reaches a proposed differential and testing/treatment plan for the patient, but such an endpoint may be unrealistic for some conditions, especially in the virtual chat-based setting.\n' +
+      '\n' +
+      '**Evaluation Framework.** In contrast to prior works, we anchored our evaluation in criteria already established to be relevant for assessing physicians\' communication skills and history-taking quality. We performed more extensive and diverse human evaluation than prior studies of AI systems, with ratings from both clinicians and simulated patients perspective. Our raters and scenarios were sourced from multiple geographic locations, including North America, India and the UK. Our pilot evaluation rubric is, to our knowledge, the first to evaluate LLMs\' history-taking and communication skills using axes that are also measured in the real world for physicians themselves, increasing the clinical relevance of our research. Our evaluation framework is considerably more granular and specific than prior works on AI-generated clinical dialogue, which have not considered patient-centred communication best practice or clinically-relevant axes of consultation quality [64, 65, 66, 29, 67, 68].\n' +
+      '\n' +
+      'However, our pilot framework is not definitive and can be further improved in future research. History-taking itself is contextual and what determines a "good history" is dependent on the specific clinical situation, patient and physician attributes, cultural characteristics, and many other factors. Despite variation in models for clinical history-taking [83, 84, 85, 86], studies have shown that good clinical interviews are associated with not only problem detection and diagnostic accuracy, but also quadruple aims for care delivery [87, 88] ranging from patient and physician satisfaction, resilience to stress and illness, and health outcomes or cost. Future studies on the quality of LLM history-taking might therefore utilise prospective measures of these outcomes in real-world settings (for example reductions in patient complaints [89], or improvements in cost and care effectiveness, patient and provider satisfaction), though evaluations as such may be challenging or impractical to compare to standard practice in the same individual patient, and randomisation of different approaches may also be challenging in real-world settings.\n' +
+      '\n' +
+      '**Breadth of Evaluation.** Our chosen axes of evaluation were not exhaustive and their interpretation was often subjective in nature. Although we conducted evaluations from both clinician and lay-perspectives, generating scenario-packs in three countries with assessors in both North America and India, the pool of clinicians and lay-people assessing the models could be expanded further to improve generalization of our insights. Our experiments could also undergo more extensive replication to explore other aspects such as inter-observer and inter-participant variability, including future work with an intentionally further diversified pool of human raters (clinicians and lay users). Participatory design in the development of model evaluation tools with a representative pool of patients, as well as clinical and health equity domain experts, could also be valuable.\n' +
+      '\n' +
+      'Although our scenarios comprised many different clinical conditions and specialties, our experiments were not necessarily representative of the decades of clinical practice accumulated by even a single doctor (who on average may perform tens of thousands of consultations in a career [90]). The range of conditions possible to examine in medicine is vast as is the variation in presentation of individual diseases. Our experiments were not designed to examine multi-morbidity and co-incident pathology, longitudinal case presentation or the consideration of sequential information from clinical investigations. We excluded entirely some clinical settings or specialties such as psychiatry, pediatrics, intensive care, and inpatient case management scenarios. Further research would be needed to understand the applicability of our findings in many settings such as these, where the requirements for high-quality history-taking might differ [91, 92]. The OSCE framework is commonly used in the assessment of clinicians\' skills. It encompasses a significant range of methodologies including real or simulated patients, interaction with physical artefacts or clinical materials, applications to a variety of medical specialties, tasks or settings; and both remote or in-person assessments. Although the OSCE approach is popular, there are significant limitations to its validity [93]. We utilised a remote text-basedassessment, replicating known issues with the paradigm of "virtual OSCE" such as the inability to incorporate non-verbal symptoms, signs and communication features. Additionally, this format could introduce unfamiliar constraints to the communication of PCP participants [48].\n' +
+      '\n' +
+      'The tone, content, and nature of the OSCE dialogues in our study are likely not to be representative of real-world patient populations. For example, patient actors may have described their symptoms with greater structure, depth or clinical detail than could be routinely expected in many consultations, or had greater comprehension of clinical context than would be ordinarily expected. Furthermore, although evaluation was blinded, the style of responses from AMIE was notably different to that by PCPs which limits the practical extent of blinding in study design.\n' +
+      '\n' +
+      'Therefore even within the distribution of diseases and specialties we addressed, our findings should be interpreted with humility and caution. There is a need for further research to examine varied presentations of the same diseases, alongside exploration of alternate approaches to evaluating history-taking and clinical dialogue in situations of different patient needs, preferences, behaviours and circumstances.\n' +
+      '\n' +
+      '**Fairness and Bias.** The evaluation protocol presented in this paper is limited in terms of its ability to capture potential issues related to fairness and bias, which remains an important open question that we will aim to address in subsequent system evaluations. Recent advances in the development of comprehensive frameworks for bias detection in large language models [94, 95] present a promising starting point for establishing such an approach. It should be noted that medical diagnostic dialogue is a particularly challenging use case, due to the complexity of the medical domain, the interactive information gathering nature of the dialogue, and the outcome-driven setting, with the potential of associated harms in case of incorrect diagnosis or incorrect medical advice. Nevertheless, disentangling these issues is an important further research area if LLMs in the domain are to overcome rather than propagate inequities in healthcare. For example, previous studies have found that physicians approach communication with their patients differently, on average, depending on patients\' race, resulting in Black patients receiving communication that was less patient-centered, and with a lower positive affect [96]. Other studies have found differences in physicians\' communication styles and conversation length based on gender [97]. Effective intercultural communication skills are essential [91]. There is therefore a non-negligible risk that such historical conversational biases may be replicated or amplified in an AI dialogue system, but at the same time there is also an opportunity to work towards designing conversational systems that can be more inclusive, and more personalized to the individual patient\'s needs.\n' +
+      '\n' +
+      'To help inform the development of the necessary fairness, bias, and equity frameworks, it is important to employ a participatory approach to solicit representative views across a wide range of patient demographics, as well as clinical and health equity domain experts. Such evaluation frameworks should be complemented by extensive model red teaming and an adversarial approach to identifying any remaining gaps and failure modes. Recent advances in red teaming LLMs could be useful in this scenario [98, 99, 100, 101]. These practices should not only inform the evaluation of the final model, but also its development and iterative refinement. Model development should follow the established data and model reporting practices and provide transparency into the training data and the associated decision processes [102, 103, 104]. The dialogue research dataset contributing to AMIE training data in our study was de-identified, reducing the availability of socio-economic factors, patient demographics, and information about clinical settings and locations.\n' +
+      '\n' +
+      'Further work is also needed to ensure the robustness of medical LLMs in multilingual settings [105, 106, 107, 108], and particularly their performance in low-resource languages [109]. The great variety of cultures [110], languages, localities, identities, and localized medical needs, makes the task of generating a priori static yet comprehensive fairness benchmarks practically infeasible. Measurement and mitigation of bias must move beyond the traditional narrow focus on specific axes that fails to scale globally [111]. LLM-based evaluators present a potential solution for preliminary assessments in languages where there are no systematic benchmarks, though prior studies have found these auto-evaluation frameworks to be biased, underscoring the need for calibrating them on native speaker evaluations, and using them with caution [112].\n' +
+      '\n' +
+      '**Deployment.** This research demonstrates the potential of LLMs for future use in healthcare in the context of diagnostic dialogue. Transitioning from an LLM research prototype that has been evaluated in this study to a safe and robust tool that can be used by healthcare providers, administrators, and people will require significant additional research to ensure the safety, reliability, efficacy, and privacy of the technology. Carefulconsideration will need to be given to the ethical deployment of this technology including rigorous quality assessment across different clinical settings and research into reliable uncertainty estimation methods [113, 114, 115, 116] that would allow for deferral to human clinical experts when needed. These and other guardrails are needed to mitigate potential overreliance on LLM technologies, with other specific measures for attention to ethical and regulatory requirements particular to future use-cases and the presence of qualified physicians in the loop to safeguard any model outputs. Additional research will also be needed to assess the extent to which biases and security vulnerabilities might arise either from base models or the circumstances of use in deployment, as we have highlighted in our prior work [12]. Given the continuous evolution of clinical knowledge, it will also be important to develop ways for LLMs to utilize up-to-date clinical information [117].\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      'The utility of medical AI systems could be greatly improved if they are better able to interact conversationally, anchoring on large-scale medical knowledge while communicating with appropriate levels of empathy and trust. This research demonstrates the significant potential capabilities of LLM based AI systems for settings involving clinical history-taking and diagnostic dialogue. The performance of AMIE in simulated consultations represents a milestone for the field, as it was assessed along an evaluation framework that considered multiple clinically-relevant axes for conversational diagnostic medical AI. However, the results should be interpreted with appropriate caution. Translating from this limited scope of experimental simulated history-taking and diagnostic dialogue, towards real-world tools for people and those who provide care for them, requires significant additional research and development to ensure the safety, reliability, fairness, efficacy, and privacy of the technology. If successful, we believe AI systems such as AMIE can be at the core of next generation learning health systems that help scale world class healthcare to everyone.\n' +
+      '\n' +
+      '#### Acknowledgments\n' +
+      '\n' +
+      'This project was an extensive collaboration between many teams at Google Research and Google DeepMind. We thank Yun Liu, Daniel McDuff, Jake Sunshine, Ali Connell, Paul McGovern and Zoubin Ghahramani for their comprehensive review and detailed feedback on the manuscript. We also thank Sami Lachgar, Lauren Winer, John Guilyard and Maggie Shiels for contributions to the narratives and visuals. We are grateful to Julie Anne Seguin, Sally Goldman, Yuri Vasilevski, Xinying Song, Akshay Goel, Chu-ling Ko, Abhinav Das, Haiyang Yu, Chang Liu, Yuchen Liu, SiWai Man, Brett Hatfield, Sean Li, Ajay Joshi, Gordon Turner, Annisah Um\'rani, Divya Pandya and Preeti Singh for their valuable insights, technical support and feedback during our research. We also thank our clinical provider partners in Canada and India for their partnership in conducting the OSCE study. Finally, we are grateful to Dale Webster, Ewa Dominowska, David Fleet, Philip Mansfield, Sushant Prakash, Renee Wong, Susan Thomas, Michael Howell, Karen DeSalvo, Jeff Dean, James Manyika, Zoubin Ghahramani and Demis Hassabis for their support during the course of this project.\n' +
+      '\n' +
+      '#### Data Availability\n' +
+      '\n' +
+      'Some of the real-world datasets used in the development of AMIE are open-source (MedQA). The scenario packs from UK used in the OSCE study are also available for download on the internet.\n' +
+      '\n' +
+      '#### Code Availability\n' +
+      '\n' +
+      'AMIE is an LLM based research AI system for diagnostic dialogue. We are not open-sourcing model code and weights due to the safety implications of unmonitored use of such a system in medical settings. In the interest of responsible innovation, we will be working with research partners, regulators, and providers to validate and explore safe onward uses of AMIE. For reproducibility, we have documented technical deep learning methods while keeping the paper accessible to a clinical and general scientific audience. Our work builds upon PaLM 2, for which technical details have been described extensively in the technical report [10].\n' +
+      '\n' +
+      '#### Competing Interests\n' +
+      '\n' +
+      'This study was funded by Alphabet Inc and/or a subsidiary thereof (\'Alphabet\'). All authors are employees of Alphabet and may own stock as part of the standard compensation package.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1] Engel, G. L. & Morgan, W. L. Interviewing the patient (1973).\n' +
+      '* [2] Peterson, M. C., Holbrook, J. H., Von Hales, D., Smith, N. & Staker, L. Contributions of the history, physical examination, and laboratory investigation in making medical diagnoses. _Western Journal of Medicine_**156,** 163 (1992).\n' +
+      '* [3] Hampton, J. R., Harrison, M., Mitchell, J. R., Prichard, J. S. & Seymour, C. Relative contributions of history-taking, physical examination, and laboratory investigation to diagnosis and management of medical outpatients. _Br Med J_**2,** 486-489 (1975).\n' +
+      '* [4] Kassier, J. P. _Teaching clinical medicine by iterative hypothesis testing: let\'s preach what we practice_ 1983.\n' +
+      '* [5] Roshan, M. & Rao, A. A study on relative contributions of the history, physical examination and investigations in making medical diagnosis. _The Journal of the Association of Physicians of India_**48,** 771-775 (2000).\n' +
+      '* [6] Sandler, G. The importance of the history in the medical clinic and the cost of unnecessary tests. _American heart journal_**100,** 928-931 (1980).\n' +
+      '* [7] Silverman, J., Kurtz, S. & Draper, J. _Skills for communicating with patients_ (crc press, 2016).\n' +
+      '* [8] Rennie, T., Marriott, J. & Brock, T. P. Global supply of health professionals. _N Engl J Med_**370,** 2246-7 (2014).\n' +
+      '* [9] OpenAI. _GPT-4 Technical Report_ 2023. arXiv: 2303.08774 [cs.CL].\n' +
+      '* [10] Google. _PaLM 2 Technical Report_[https://ai.google/static/documents/palm2techreport.pdf](https://ai.google/static/documents/palm2techreport.pdf). 2023.\n' +
+      '* [11] Deepmind, G. _Gemini: A Family of Highly Capable Multimodal Models_[https://assets.bwx.io/documents/users/iqjWHBFdKIU/rG7GTRrT6rnM/v0](https://assets.bwx.io/documents/users/iqjWHBFdKIU/rG7GTRrT6rnM/v0). 2023.\n' +
+      '* [12] Singhal, K., Azizi, S., Tu, T., Mahdavi, S. S., Wei, J., Chung, H. W., Scales, N., Tanwani, A., Cole-Lewis, H., Pfohl, S., _et al._ Large Language Models Encode Clinical Knowledge. _arXiv preprint arXiv:2212.13138_ (2022).\n' +
+      '* [13] Singhal, K., Tu, T., Gottweis, J., Sayres, R., Wulczyn, E., Hou, L., Clark, K., Pfohl, S., Cole-Lewis, H., Neal, D., _et al._ Towards expert-level medical question answering with large language models. _arXiv preprint arXiv:2305.09617_ (2023).\n' +
+      '* [14] Nori, H., Lee, Y. T., Zhang, S., Carignan, D., Edgar, R., Fusi, N., King, N., Larson, J., Li, Y., Liu, W., _et al._ Can Generalist Foundation Models Outcompete Special-Purpose Tuning? Case Study in Medicine. _arXiv preprint arXiv:2311.16452_ (2023).\n' +
+      '* [15] Thoppilian, R., De Freitas, D., Hall, J., Shazeer, N., Kultsreshtha, A., Cheng, H.-T., Jin, A., Bos, T., Baker, L., Du, Y., _et al._ LaMDA: Language models for dialog applications. _arXiv preprint arXiv:2201.08239_ (2022).\n' +
+      '* [16] OpenAI. _Introducing ChatGPT_ OpenAI. [https://openai.com/blog/chatgpt](https://openai.com/blog/chatgpt).\n' +
+      '* [17] Toma, A., Lawler, P. R., Ba, J., Krishnan, R. G., Rubin, B. B. & Wang, B. Clinical Camel: An Open-Source Expert-Level Medical Language Model with Dialogue-Based Knowledge Encoding. _arXiv preprint arXiv:2305.12031_ (2023).\n' +
+      '* [18] Chen, Z., Cano, A. H., Romanou, A., Bonnet, A., Matoba, K., Salvi, F., Pagliardini, M., Fan, S., Kopf, A., Mohtashami, A., _et al._ MEDITRON-70B: Scaling Medical Pretraining for Large Language Models. _arXiv preprint arXiv:2311.16079_ (2023).\n' +
+      '* [19] Levine, D. History taking is a complex skill. _BMJ_**358** (2017).\n' +
+      '* [20] King, A. & Hoppe, R. B. "Best practice" for patient-centered communication: a narrative review. _Journal of graduate medical education_**5,** 385-393 (2013).\n' +
+      '* [21] Jin, D., Pan, E., Qufattole, N., Weg, W.-H., Fang, H. & Szolovits, P. What disease does this patient have? a large-scale open domain question answering dataset from medical exams. _Applied Sciences_**11,** 6421 (2021).\n' +
+      '* [22] Johnson, A. E., Pollard, T. J., Shen, L., Lehman, L.-w. H., Feng, M., Ghassemi, M., Moody, B., Szolovits, P., Anthony Celi, L. & Mark, R. G. MIMIC-III, a freely accessible critical care database. _Scientific data_**3,** 1-9 (2016).\n' +
+      '* [23] Chiu, C.-C., Tripathi, A., Chou, K., Co, C., Jaitly, N., Jaunzeikare, D., Kannan, A., Nguyen, P., Sak, H., Sankar, A., _et al._ Speech recognition for medical conversations. _arXiv preprint arXiv:1711.07274_ (2017).\n' +
+      '* [24] Sharma, A., Miner, A. S., Atkins, D. C. & Althoff, T. A computational approach to understanding empathy expressed in text-based mental health support. _arXiv preprint arXiv:2009.08441_ (2020).\n' +
+      '* [25] Fu, Y., Peng, H., Khot, T. & Lapata, M. Improving language model negotiation with self-play and in-context learning from ai feedback. _arXiv preprint arXiv:2305.10142_ (2023).\n' +
+      '* [26] Abacha, A. B., Yim, W.-W., Adams, G., Snider, N. & Yetiesgen-Yildiz, M. _Overview of the mediga-chat 2023 shared tasks on the summarization & generation of doctor-patient conversations_ in _Proceedings of the 5th Clinical Natural Language Processing Workshop_ (2023), 503-513.\n' +
+      '* [27] Ionescu, B., Muller, H., Dragulinescu, A.-M., Yim, W.-W., Ben Abacha, A., Snider, N., Adams, G., Yetiesgen, M., Ruckert, J., G. Seco de Herrera, A., _et al._ Overview of the ImageCLEF 2023: Multimedia Retrieval in Medical, Social Media and Internet Applications in International Conference of the Cross-Language Evaluation Forum for European Languages_ (2023), 370-396.\n' +
+      '* [28] He, Z., Han, Y., Ouyang, Z., Gao, W., Chen, H., Xu, G. & Wu, J. DialMed: A Dataset for Dialogue-based Medication Recommendation. _arXiv preprint arXiv:2203.07094_ (2022).\n' +
+      '* [29] Naseem, U., Bandi, A., Raza, S., Rashid, J. & Chakravarthi, B. R. _Incorporating Medical Knowledge to Transformer-based Language Models for Medical Dialogue Generation_ in _Proceedings of the 21st Workshop on Biomedical Language Processing_ (2022), 110-115.\n' +
+      '* [30] Dacre, J., Besser, M. & White, P. MRCP (UK) PART 2 Clinical Examination (PACES): a review of the first four examination sessions (June 2001-July 2002). _Clinical Medicine_**3,** 452 (2003).\n' +
+      '* [31] Sloan, D. A., Donnelly, M. B., Schwartz, R. W. & Strodel, W. E. The Objective Structured Clinical Examination. The new gold standard for evaluating postgraduate clinical performance. _Annals of surgery_**222,** 735 (1995).\n' +
+      '* [32] Carraccio, C. & Englander, R. The objective structured clinical examination: a step in the direction of competency-based evaluation. _Archives of pediatrics & adolescent medicine_**154,** 736-741 (2000).\n' +
+      '* [33] Epstein, R. M. & Hundert, E. M. Defining and assessing professional competence. _Jama_**287,** 226-235 (2002).\n' +
+      '* [34] Horowitz, J. L. in _Handbook of econometrics_ 3159-3228 (Elsevier, 2001).\n' +
+      '* [35] Benjamini, Y. & Hochberg, Y. Controlling the false discovery rate: a practical and powerful approach to multiple testing. _Journal of the Royal statistical society: series B (Methodological)_**57,** 289-300 (1995).\n' +
+      '* [* [36] Woolson, R. F. Wilcoxon signed-rank test. _Wiley encyclopedia of clinical trials_, 1-3 (2007).\n' +
+      '* [37] Keifenheim, K. E., Teufel, M., Ip, J., Speiser, N., Leehr, E. J., Zipfel, S. & Herrmann-Werner, A. Teaching history taking to medical students: a systematic review. _BMC medical education_**15,** 1-12 (2015).\n' +
+      '* [38] Yedidia, M. J., Gillespie, C. C., Kachur, E., Schwartz, D. D., Ockene, J., Chepatitis, A. E., Snyder, C. W., Lazare, A. & Lipkin Jr, M. Effect of communications training on medical student performance. _Jama_**290,** 1157-1165 (2003).\n' +
+      '* [39] Makoul, G. Communication skills education in medical school and beyond. _Jama_**289,** 93-93 (2003).\n' +
+      '* [40] Tan, X. H., Foo, M. A., Lim, S. L. H., Lim, M. B. X. Y., Chin, A. M. C., Zhou, J., Chiam, M. & Krishna, L. K. R. Teaching and assessing communication skills in the postgraduate medical setting: a systematic scoping review. _BMC medical education_**21,** 1-19 (2021).\n' +
+      '* [41] Raper, S. E., Gupta, M., Oksunaya, O. & Morris, J. B. Improving communication skills: a course for academic medical center surgery residents and faculty. _Journal of Surgical education_**72,** 2620-e211 (2015).\n' +
+      '* [42] Von Fargeten, M., Silverman, J., Cushing, A., Quilligan, S., Salisbury, H., Wiskin, C. & for Clinical Communication Skills Teaching in Undergraduate Medical Education, U. C. UK consensus statement on the content of communication curricula in undergraduate medical education. _Medical education_**42,** 1100-1107 (2008).\n' +
+      '* [43] De Haes, H. & Bensing, J. Endpoints in medical communication research, proposing a framework of functions and outcomes. _Patient education and counseling_**74,** 287-294 (2009).\n' +
+      '* [44] Epstein, R. M. & Street Jr, R. L. Patient-centered communication in cancer care: promoting healing and reducing suffering (2007).\n' +
+      '* [45] Schirmer, J. M., Mauksch, L., Lang, F., Marvel, M. K., Zoppi, K., Epstein, R. M., Brock, D. & Pryzbylski, M. Assessing communication competence: a review of current tools. _Family Medicine_**37,** 184-92 (2005).\n' +
+      '* [46] Nichol, J. R., Sundjaja, J. H. & Nelson, G. Medical history. [http://europepmc.org/books/NBK534249](http://europepmc.org/books/NBK534249) (2018).\n' +
+      '* [47] Denness, C. What are consultation models for? _InnovAiT_**6,** 592-599 (2013).\n' +
+      '* [48] Chan, S. C. C., Choa, G., Kelly, J., Maru, D. & Rashid, M. A. Implementation of virtual OSCE in health professions education: A systematic review. _Medical Education_ (2023).\n' +
+      '* [49] Budzianowski, P., Wen, T.-H., Tseng, B.-H., Casanueva, I., Ultes, S., Ramadan, O. & Gasic, M. Multiwoz-a large-scale multi-domain wizard-of-oz dataset for task-oriented dialogue modelling. _arXiv preprint arXiv:1810.00278_ (2018).\n' +
+      '* [50] Wei, W., Le, Q., Dai, A. & Li, J. _Aridialogue: An environment for goal-oriented dialogue research in Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing_ (2018), 3844-3854.\n' +
+      '* [51] Lin, J., Tomlin, N., Andreas, J. & Eisner, J. _Decision-Oriented Dialogue for Human-AI Collaboration_ 2023. arXiv: 2305.20076 [cs.CL].\n' +
+      '* [52] Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, L. & Polosukhin, I. Attention is all you need. _Advances in neural information processing systems_**30** (2017).\n' +
+      '* [53] Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C. L., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., _et al._ Training language models to follow instructions with human feedback. _arXiv preprint arXiv:2203.02155_ (2022).\n' +
+      '* [54] Zhao, J., Khashabi, D., Khot, T., Sabharwal, A. & Chang, K.-W. Ethical-advice taker: Do language models understand natural language interventions? _arXiv preprint arXiv:2106.01465_ (2021).\n' +
+      '* [55] Saunders, W., Yeh, C., Wu, J., Bills, S., Ouyang, L., Ward, J. & Leike, J. Self-critiquing models for assisting human evaluators. _arXiv preprint arXiv:2206.05802_ (2022).\n' +
+      '* [56] Scheurer, J., Campos, J. A., Korbak, T., Chan, J. S., Chen, A., Cho, K. & Perez, E. Training language models with language feedback at scale. _arXiv preprint arXiv:2303.16755_ (2023).\n' +
+      '* [57] Glasee, A., McAlees, N., Trebacz, M., Aslanides, J., Firoiu, V., Ewalds, T., Rauh, M., Weidinger, L., Chadwick, M., Thacker, P., _et al._ Improving alignment of dialogue agents via targeted human judgements. _arXiv preprint arXiv:2209.14375_ (2022).\n' +
+      '* [58] Bai, Y., Kadavath, S., Kundu, S., Askell, A., Kernion, J., Jones, A., Chen, A., Goldie, A., Mirhoseini, A., McKinnon, C., _et al._ Constitutional AI: Harmlessness from AI feedback. _arXiv preprint arXiv:2212.08073_ (2022).\n' +
+      '* [59] Askell, A., Bai, Y., Chen, A., Drain, D., Ganguli, D., Henighan, T., Jones, A., Joseph, N., Mann, B., DasSarma, N., _et al._ A general language assistant as a laboratory for alignment. _arXiv preprint arXiv:2112.00861_ (2021).\n' +
+      '* [60] Shor, J., Bi, R. A., Venugopalan, S., Ibara, S., Goldenberg, R. & Rivien, E. Clinical BERTScore: An Improved Measure of Automatic Speech Recognition Performance in Clinical Settings. _arXiv preprint arXiv:2303.05737_ (2023).\n' +
+      '* [61] Abacha, A. B., Agichtein, E., Pinter, Y. & Demner-Fushman, D. _Overview of the medical question answering task at TREC 2017 LiveQA._ in _TREC_ (2017), 1-12.\n' +
+      '* [62] Wallace, W., Chan, C., Chidambaran, S., Hanna, L., Iqbal, F. M., Acharya, A., Normahani, P., Ashrafian, H., Markar, S. R., Sounderajah, V., _et al._ The diagnostic and triage accuracy of digital and online symptom checker tools: a systematic review. _NPJ Digital Medicine_**5,** 118 (2022).\n' +
+      '* [63] Zeltzer, D., Herzog, L., Pickman, Y., Steuerman, Y., Ber, R. I., Kugler, Z., Shaul, R. & Ebbert, J. O. Diagnostic accuracy of artificial intelligence in virtual primary care. _Mayo Clinic Proceedings: Digital Health_**1,** 480-489 (2023).\n' +
+      '* [64] Johri, S., Jeong, J., Tran, B. A., Schlessinger, D. I., Wongvibulsin, S., Cai, Z. R., Daneshjou, R. & Rajpurkar, P. Testing the Limits of Language Models: A Conversational Framework for Medical AI Assessment. _medRxiv_, 2023-09 (2023).\n' +
+      '* [65] Zeng, G., Yang, W., Ju, Z., Yang, Y., Wang, S., Zhang, R., Zhou, M., Zeng, J., Dong, X., Zhang, R., _et al.__MedDialog: Large-scale medical dialogue datasets in Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_ (2020), 9241-9250.\n' +
+      '* [66] Liu, W., Tang, J., Cheng, Y., Li, W., Zheng, Y. & Liang, X. _MedDG: an entity-centric medical consultation dataset for entity-aware medical dialogue generation_ in _CCF International Conference on Natural Language Processing and Chinese Computing_ (2022), 447-459.\n' +
+      '* [67] Varshney, D., Zafar, A., Behra, N. K. & Ekbal, A. Cdialog: A multi-turn COVID-19 conversation dataset for entity-aware dialog generation. _arXiv preprint arXiv:2212.06049_ (2022).\n' +
+      '* [68] Yan, G., Pei, J., Ren, P., Ren, Z., Xin, X., Liang, H., de Rijke, M. & Chen, Z. _ReMeDi: Resources for Multi-domain, Multi-service, Medical Dialogues in Proceedings of the 45th International ACM SIGIR Conference on Research and Development in Information Retrieval_ (2022), 3013-3024.\n' +
+      '* [69] Kelly, C. J., Karthikesalingam, A., Suleyman, M., Corrado, G. & King, D. Key challenges for delivering clinical impact with artificial intelligence. _BMC medicine_**17,** 1-9 (2019).\n' +
+      '* [* [70] McDuff, D., Schaekermann, M., Tu, T., Palepu, A., Wang, A., Garrison, J., Singhal, K., Sharma, Y., Azizi, S., Kulkarni, K., _et al._ Towards Accurate Differential Diagnosis with Large Language Models. _arXiv preprint arXiv:2312.00164_ (2023).\n' +
+      '* [71] Kanjee, Z., Crowe, B. & Rodman, A. Accuracy of a Generative Artificial Intelligence Model in a Complex Diagnostic Challenge. _JAMA_ (2023).\n' +
+      '* [72] Semigran, H. L., Linder, J. A., Gidengli, C. & Mehrotra, A. Evaluation of symptom checkers for self diagnosis and triage: audit study. _BMJ_ **351** (2015).\n' +
+      '* [73] Avers, J. W., Poliak, A., Dredze, M., Leas, E. C., Zhu, Z., Kelley, J. B., Faix, D. J., Goodman, A. M., Longhurst, C. A., Hogarth, M., _et al._ Comparing Physician and Artificial Intelligence Chatbot Responses to Patient Questions Posted to a Public Social Media Forum. _JAMA Internal Medicine_ (2023).\n' +
+      '* [74] OpenAI. _ChaotOPT_ OpenAI. [https://chat.openai.com/chat](https://chat.openai.com/chat).\n' +
+      '* [75] Carrillo de Albornoz, S., Sia, K.-L. & Harris, A. The effectiveness of teleconsultations in primary care: systematic review. _Family Practice_**39,** 168-182 (2022).\n' +
+      '* [76] Wharton, G. A., Sood, H. S., Sissons, A. & Mossialos, E. Virtual primary care: fragmentation or integration? _The Lancet Digital Health_**1,** e330-e331 (2019).\n' +
+      '* [77] Fuster-Casanova, A. & Vidal-Alaball, J. Asynchronous Remote Communication as a Tool for Care Management in Primary Care: A Rapid Review of the Literature. _International Journal of Integrated Care_**22** (2022).\n' +
+      '* [78] Hammersley, V., Donaghy, E., Parker, R., McNeilly, H., Atherton, H., Bikker, A., Campbell, J. & McKinstry, B. Comparing the content and quality of video, telephone, and face-to-face consultations: a non-randomised, quasi-experimental, exploratory study in UK primary care. _British Journal of General Practice_**69,** e595-e604 (2019).\n' +
+      '* [79] Gross, D. A., Zyzanski, S. J., Borawski, E. A., Cebul, R. D. & Stange, K. C. Patient satisfaction with time spent with their physician. _Journal of Family Practice_**47,** 133-138 (1998).\n' +
+      '* [80] Tates, K., Antheunis, M. L., Kanters, S., Nieboer, T. E. & Gerrites, M. B. The effect of screen-to-screen versus face-to-face consultation on doctor-patient communication: an experimental study with simulated patients. _Journal of medical Internet research_**19,** e421 (2017).\n' +
+      '* [81] Zyzanski, S. J., Stange, K. C., Langa, D. M. & Flocke, S. A. Trade-offs in high-volume primary care practice. _Journal of Family Practice_**46,** 397-402 (1998).\n' +
+      '* [82] Dvijotham, K., Winkens, J., Barsby, M., Ghaisas, S., Stanforth, R., Pawlowski, N., Strachan, P., Ahmed, Z., Azizi, S., Bachrach, Y., _et al._ Enhancing the reliability and accuracy of AI-enabled diagnosis via complementarity-driven deferral to clinicians. _Nature Medicine_**29,** 1814-1820 (2023).\n' +
+      '* [83] Bird, J. & Cohen-Cole, S. A. in _Methods in teaching consultation-liaison psychiatry_ 65-88 (Karger Publishers, 1990).\n' +
+      '* [84] Rezler, A. G., Woolliscroft, J. A. & Kalishman, S. G. What is missing from patient histories? _Medical Teacher_**13,** 245-252 (1991).\n' +
+      '* [85] Rosenberg, E. E. Lessons for Clinicians From Physician-Patient. _Arch Fam Med_**6,** 279-283 (1997).\n' +
+      '* [86] Smith, R. C. _Patient-centered interviewing: an evidence-based method_ (Lippincott Williams & Wilkins, 2002).\n' +
+      '* [87] Berwick, D. M., Nolan, T. W. & Whittington, J. The triple aim: care, health, and cost. _Health affairs_**27,** 759-769 (2008).\n' +
+      '* [88] Bodenheimer, T. & Sinsky, C. From triple to quadruple aim: care of the patient requires care of the provider. _The Annals of Family Medicine_**12,** 573-576 (2014).\n' +
+      '* [89] Adamson, T. E., Tschann, J. M., Gullion, D. & Oppenberg, A. Physician communication skills and malpractice claims. A complex relationship. _Western Journal of Medicine_**150,** 356 (1989).\n' +
+      '* [90] Silverman, J. & Kinnersley, P. _Doctors\' non-verbal behaviour in consultations: look at the patient before you look at the computer_ 2010.\n' +
+      '* [91] Rahman, U. & Cooling, N. Inter-Cultural Communication Skills Training in Medical Schools: A Systematic Review. _Medical Research Archives_**11** (2023).\n' +
+      '* [92] Kantar, A., Marchant, J. M., Song, W.-J., Shields, M. D., Chatziparasidis, G., Zacharasiewicz, A., Moeller, A. & Chang, A. B. History taking as a diagnostic tool in children with chronic cough. _Frontiers in pediatrics_**10,** 850912 (2022).\n' +
+      '* [93] Setsonuproho, W., Kennedy, K. M. & Kropmans, T. J. Reliability and validity of OSCE checklists used to assess the communication skills of undergraduate medical students: a systematic review. _Patient education and counseling_**98,** 1482-1491 (2015).\n' +
+      '* [94] Weidinger, L., Uesato, J., Rauh, M., Griffin, C., Huang, P.-S., Mellor, J., Glaese, A., Cheng, M., Balle, B., Kasirzadeh, A., _et al. Taxonomy of risks posed by language models in Proceedings of the 2022 ACM Conference on Fairness, Accountability, and Transparency_ (2022), 214-229.\n' +
+      '* [95] Gallegos, I. O., Rossi, R. A., Barrow, J., Tanjim, M. M., Kim, S., Dernoncourt, F., Yu, T., Zhang, R. & Ahmed, N. K. _Bias and Fairness in Large Language Models: A Survey_ 2023. arXiv: 2309.00770 [cs.CL].\n' +
+      '* [96] Johnson, R. L., Roter, D., Powe, N. R. & Cooper, L. A. Patient race/ethnicity and quality of patient-physician communication during medical visits. _American journal of public health_**94,** 2084-2090 (2004).\n' +
+      '* [97] Roter, D. L., Hall, J. A. & Aoki, Y. Physician gender effects in medical communication: a meta-analytic review. _Jama_**288,** 756-764 (2002).\n' +
+      '* [98] Perez, E., Huang, S., Song, F., Cai, T., Ring, R., Aslanides, J., Glaese, A., McAleese, N. & Irving, G. Red teaming language models with language models. _arXiv preprint arXiv:2202.03286_ (2022).\n' +
+      '* [99] Ganguli, D., Lovitt, L., Kernion, J., Askell, A., Bai, Y., Kadavath, S., Mann, B., Perez, E., Schiefer, N., Ndousse, K., _et al._ Red teaming language models to reduce harms: Methods, scaling behaviors, and lessons learned. _arXiv preprint arXiv:2209.07858_ (2022).\n' +
+      '* [100] Yu, J., Lin, X. & Xing, X. Optrazer: Red teaming large language models with auto-generated jailbreak prompts. _arXiv preprint arXiv:2309.10253_ (2023).\n' +
+      '* [101] Ge, S., Zhou, C., Hou, R., Khabsa, M., Wang, Y.-C., Wang, Q., Han, J. & Mao, Y. MART: Improving LLM Safety with Multi-round Automatic Red-Teaming. _arXiv preprint arXiv:2311.07689_ (2023).\n' +
+      '* [102] Mitchell, M., Wu, S., Zaldivar, A., Barnes, P., Vasserman, L., Hutchinson, B., Spitzer, E., Raji, I. D. & Gebru, T. _Model cards for model reporting_ in _Proceedings of the conference on fairness, accountability, and transparency_ (2019), 220-229.\n' +
+      '* [103] Crisan, A., Drouhard, M., Vig, J. & Rajani, N. _Interactive model cards: A human-centered approach to model documentation_ in _Proceedings of the 2022 ACM Conference on Fairness, Accountability, and Transparency_ (2022), 427-439.\n' +
+      '\n' +
+      '* [104] Pushkarma, M., Zaldivar, A. & Kjartansson, O. _Data cards: Purposeful and transparent dataset documentation for responsible ai_ in _Proceedings of the 2022 ACM Conference on Fairness, Accountability, and Transparency_ (2022), 1776-1826.\n' +
+      '* [105] Choudhury, M. & Deshpande, A. _How Linguistically Fair Are Multilingual Pre-Trained Language Models?_ in _Proceedings of the AAAI conference on artificial intelligence_ 35 (2021), 12710-12718.\n' +
+      '* [106] Talat, Z., Neved, A., Biderman, S., Chinciu, M., Dey, M., Longpre, S., Luccioni, S., Masoud, M., Mitchell, M., Radev, D., _et al.__You reap what you sow: On the challenges of bias evaluation under multilingual settings_ in _Proceedings of BigScience Episode# 5-Workshop on Challenges & Perspectives in Creating Large Language Models_ (2022), 26-41.\n' +
+      '* [107] Ahuja, S., Aggarwal, D., Gumm, V., Watts, I., Sathe, A., Ochieng, M., Hada, R., Jain, P., Axmed, M., Bali, K. & Sitaram, S. _GEGAVERSE: Benchmarking Large Language Models Across Languages, Modalities, Models and Tasks_ 2023. arXiv: 2311.07463 [cs.CL].\n' +
+      '* [108] ImanGoogbari, A., Lin, P., Kargaran, A. H., Severini, S., Jalili Sabet, M., Kassner, N., Ma, C., Schmid, H., Martins, A., Yvon, F. & Schutze, H. _Glo500: Scaling Multilingual Corpora and Language Models to 500 Languages_ in _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_ (Association for Computational Linguistics, 2023). [http://dx.doi.org/10.18653/v1/2023.acl-long.61](http://dx.doi.org/10.18653/v1/2023.acl-long.61).\n' +
+      '* [109] Nguyen, X.-P., Aljunied, S. M., Joty, S. & Bing, L. _Demerametzing LLMs for Low-Resource Languages by Leveraging their English Dominant Abilities with Linguistically-Diverse Prompts_ 2023. arXiv: 2306.11372 [cs.CL].\n' +
+      '* [110] Naous, T., Ryan, M. J., Ritter, A. & Xu, W. _Having Beer after Prayer? Measuring Cultural Bias in Large Language Models_ 2023. arXiv: 2305.14456 [cs.CL].\n' +
+      '* [111] Ramesh, K., Sitaram, S. & Choudhury, M. _Fairness in Language Models Beyond English: Gaps and Challenges_ 2023. arXiv: 2302.12578 [cs.CL].\n' +
+      '* [112] Hada, R., Gumma, V., de Wynter, A., Diddee, H., Ahmed, M., Choudhury, M., Bali, K. & Sitaram, S. _Are Large Language Model-based Evalutators the Solution to Scaling Up Multilingual Evaluation?_ 2023. arXiv: 2309.07462 [cs.CL].\n' +
+      '* [113] Quach, V., Fisch, A., Schuster, T., Yala, A., Sohn, J. H., Jaakkola, T. S. & Barzilay, R. _Conformal Language Modeling_ 2023. arXiv: 2306.10193 [cs.CL].\n' +
+      '* [114] Chen, J. & Mueller, J. _Quantifying Uncertainty in Answers from any Language Model and Enhancing their Trustworthiness_ 2023. arXiv: 2308.16175 [cs.CL].\n' +
+      '* [115] Huang, Y., Song, J., Wang, Z., Zhao, S., Chen, H., Juefei-Xu, F. & Ma, L. _Look Before You Leap: An Exploratory Study of Uncertainty Measurement for Large Language Models_ 2023. arXiv: 2307.10236 [cs.SE].\n' +
+      '* [116] Yang, Q., Ravikumar, S., Schmitt-Ulms, F., Lolla, S., Demir, E., Elistratov, I., Lavaee, A., Lolla, S., Ahmadi, E., Rus, D., Amini, A. & Perez, A. _Uncertainty-aware Language Modeling for Selective Question Answering_ 2023. arXiv: 2311.15451 [cs.CL].\n' +
+      '* [117] Lazaridou, A., Kuncoro, A., Gribovskaya, E., Agrawal, D., Liska, A., Terzi, T., Gimenez, M., de Masson d\'Autume, C., Kocisky, T., Ruder, S., _et al._ Mind the gap: Assessing temporal generalization in neural language models. _Advances in Neural Information Processing Systems_ **34,** 29348-29363 (2021).\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:26]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '**Question** & **Scale** & **Options** & **Assessed by** \\\\ \\hline \\hline \\multicolumn{4}{c}{**Clinical Communication Skills**} \\\\ \\hline To what extent did the doctor & 1 - Appears unystematic, unpractised, and unprofessional & \\\\ elicit the PRESENTING & 5-point scale & 5 - Elicits presenting compliant in a thorough, systematic, fluent and professional manner & Specialist \\\\ COMPLANIT? & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Appears unystematic, unpractised, and unprofessional & \\\\ elicit the SYSTEMS REVIEW? & 5-point scale & 5 - Elicits systems review in a thorough, systematic, fluent and professional manner & Specialist \\\\  & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Appears unystematic, unpractised, and unprofessional & \\\\ elicit the PAST MEDICAL & 5-point scale & 5 - Elicits past medical history in a thorough, systematic, fluent and professional manner & Specialist \\\\  & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Appears unystematic, unpractised, and unprofessional & \\\\ elicit the FAMILY HISTORY? & 5-point scale & 5 - Elicits family injury in a thorough, systematic, fluent and professional manner & Specialist \\\\  & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Appears unystematic, unpractised, and unprofessional & \\\\ elicit the MEDICATION HISTORY? & 5-point scale & 5 - Elicits medication history in a thorough, systematic, fluent and professional manner & Specialist \\\\  & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Glives inaccurate information & \\\\ explain relevant clinical & 5-point scale & 5 - Explains relevant clinical information in a accurate manner & Specialist \\\\  & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Glives jargon & \\\\ explain relevant clinical & 5-point scale & 5 - Explains relevant clinical information in a clear manner & Specialist \\\\ information CLEORY? & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Explains relevant clinical information in a poorly structured manner & \\\\ explain relevant clinical & 5-point scale & 5 - Explains relevant information in a structured manner & Specialist \\\\ information WITH STRUCTURE? & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Orinks important information & \\\\ explain relevant clinical & 5-point scale & 5 - Explains relevant clinical information in a comprehensive manner & Specialist \\\\ information COMPREHENS/VLT? & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline To what extent did the doctor & 1 - Explains relevant clinical information in an unprofessional manner & \\\\ explain relevant clinical & 5-point scale & 5 - Explains relevant clinical information in a professional manner & Specialist \\\\ information PROFESSIONALITY? & & **Camort rate / Does not apply / Doctor did not perform this** & \\\\ \\hline \\hline \\multicolumn{4}{c}{**Differential Diagnosis**} \\\\ \\hline To what extent did the doctor & & 1 - Poor differential diagnosis AND fails to consider the correct diagnosis & \\\\ construct a sensible & 5-point scale & 5 - Constructs a sensible differential diagnosis, including the correct diagnosis & Specialist \\\\  & & **Clinical Judgement** & \\\\ \\hline To what extent did the doctor & & & \\\\ select a comprehensive, sensible & 1 - Unformaliz with correct management plan AND selects inappropriate management & \\\\  & & 5 - Selects a comprehensive, sensible and appropriate management plan & Specialist \\\\  & & **PlAN?** & \\\\ \\hline \\multicolumn{4}{c}{**Managing Patient Concerns**} \\\\ \\hline To what extent did the doctor & & & \\\\ seek, detect, acknowledge and & 1 - Overtools patient’s concerns & Specialist \\& \\\\ attempt to address the patients & 5-point scale & 5 - Seeks, detects, acknowledges and attempts to address patient’s concerns & Patient Actor \\\\ concerns? & & & \\\\ To what extent did the doctor & & & \\\\ confirm the patient’s knowledge & 5-point scale & 1 - Does not check knowledge and understanding & Specialist \\& \\\\ and understanding? & & 5 - Conforms patient’s knowledge and understanding & Patient Actor \\\\ \\hline \\multicolumn{4}{c}{**Mantaining Patient Welfare**} \\\\ \\hline To what extent did the doctor & & & \\\\ maintain the patient’s welfare? & & & \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Practical Assessment of Clinical Examination Skills (PACES) rubric details.\n' +
+      '\n' +
+      '## Appendix A Appendix\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:29]\n' +
+      '\n' +
+      '### Example of Simulated Dialogue After Self-critique\n' +
+      '\n' +
+      '**Figure A.1 \\(|\\) Simulated Dialogue and Self-play Critique Example.** An example of AMIE modifying behavior based on in-context feedback provided during the inner-loop self-play, illustrating how this critique can impact the behavior of AMIE in the simulated dialogues. We demonstrate in Figure A.19 that this process on average results in improved simulated dialogue quality on a set of four PACES clinical criteria. Note that this is one preliminary example of a single round of iterative feedback and does not reflect the full simulated dialogue process. For example, in this round of feedback, the AMIE critique did not identify that management recommendations should primarily include an in-person evaluation by a physician to gauge severity and rule out more concerning causes or sequelae.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:31]\n' +
+      '\n' +
+      'Figure A.4: **Interface for Specialist Physician Evaluation.**\n' +
+      '\n' +
+      '### Example Consultation with OSCE Agents\n' +
+      '\n' +
+      'The following are two example consultations for the same scenario pack and patient actor from AMIE and PCP, respectively.\n' +
+      '\n' +
+      '#### Example AMIE Consultation\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochonditis\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjnana\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjnana\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochonditis\n' +
+      '\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochonditis\n' +
+      '\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjnana\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochonditis\n' +
+      '\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjnana\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochondritis\n' +
+      '\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjna\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochondritis\n' +
+      '\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s Top 10 DDx:**\n' +
+      '\n' +
+      '1. Unstable Anjna\n' +
+      '2. Acute Myocardial Infarction\n' +
+      '3. Stable Anjnana\n' +
+      '4. Gastroesophageal Reflux Disease (GERD)\n' +
+      '\n' +
+      '5. Atypical Chest Pain\n' +
+      '\n' +
+      '6. Costochondritis\n' +
+      '\n' +
+      '7. Peptic Ulicer Disease\n' +
+      '\n' +
+      '8. Gallbladder Disease (biliary colic)\n' +
+      '9. Panic AttackArneiety\n' +
+      '\n' +
+      '10. Pulmonary Embolism\n' +
+      '\n' +
+      '**AMIE\'s\n' +
+      '\n' +
+      '### Example PCP Consultation\n' +
+      '\n' +
+      '**Figure A.6 \\(|\\) PCP example consultation.** Example of a patient actor\'s conversation with a PCP during the OSCE study.\n' +
+      '\n' +
+      '### DDx Top-k Accuracy by Degree of Matching\n' +
+      '\n' +
+      'In our OSCE study, the specialist was asked the following question:\n' +
+      '\n' +
+      '**Question**: How close did the doctor\'s differential diagnosis (DDx) come to including the PROBABLE DIAGNOSIS from the answer key?\n' +
+      '\n' +
+      '* **(Unrelated)** Nothing in the DDx is related to the probable diagnosis.\n' +
+      '* **(Somewhat Related)** DDx contains something that is related, but unlikely to be helpful in determining the probable diagnosis.\n' +
+      '* **(Relevant)** DDx contains something that is closely related and might have been helpful in determining the probable diagnosis.\n' +
+      '* **(Extremely Relevant)** DDx contains something that is very close, but not an exact match to the probable diagnosis.\n' +
+      '* **(Exact Match)** DDx includes the probable diagnosis.\n' +
+      '\n' +
+      'Here we present an ablation analysis for varying degrees of matching to the ground truth where for each differential, we only considered a diagnosis a match if the specialist indicated in the answer to this question that the match was at least as close as the specified degree of matching. Note that all other specialist-rated DDx evaluations in this paper used the "Relevant" threshold when computing accuracy. The differences between AMIE and PCPs in DDx accuracy were statistically significant for all values of k at the matching levels "Relevant", "Extremely Relevant", and "Exact Match".\n' +
+      '\n' +
+      'Figure A.7: **Specialist rated DDx accuracy by the degree of matching.** (**a**) Specialist rated DDx top-10 accuracy for consultations conducted by AMIE. (**b**) Specialist rated DDx top-10 accuracy for consultations conducted by a PCP. For the “Relevant”, “Extremely Relevant”, and “Exact Match” levels, differences between AMIE and PCP DDx accuracy are statistically significant (bootstrap with n=10,000 and FDR correction) for all k. Differences at the “Somewhat Related” level are not statistically significant.\n' +
+      '\n' +
+      '### DDx Top-k Accuracy by Specialty\n' +
+      '\n' +
+      'Figure A.8 shows the DDx accuracy achieved by AMIE and PCPs for each specialty based on specialist ratings. Specifically, we observed that AMIE\'s performance matched or surpassed PCPs performance for all specialties.\n' +
+      '\n' +
+      'Figure A.8: **Specialist rated DDx accuracy by scenario specialty.** Top 1/3/5/10 accuracy for scenarios of each specialty. Accuracies are based on the specialist ratings for AMIE and PCP differential diagnoses with respect to the ground truth. Number of dialogues per OSCE agent: Cardiology (29), Gastroenterology (31), Internal Medicine (14), Neurology (30), Respiratory (30), OBGYN / Urology (15).\n' +
+      '\n' +
+      '### Auto-evaluation on DDx\n' +
+      '\n' +
+      'Here we report the top-k DDx accuracy as computed by the auto-evaluation method. For each DDx in the DDx list generated by AMIE and PCPs, we used Med-PaLM 2 to determine whether the ground truth diagnosis appears within the top-k positions of the differential diagnosis list. Given a prediction and label, the auto-evaluator computes whether they match by prompting Med-PaLM 2 with the following question:\n' +
+      '\n' +
+      '**DDx Auto-evaluation Prompt**\n' +
+      '\n' +
+      'Is our predicted diagnosis correct (Y/N)? It is okay if the predicted diagnosis is more specific/detailed.\n' +
+      '\n' +
+      'Predicted diagnosis: prediction, True diagnosis: label\n' +
+      '\n' +
+      'Answer [Y/N]:\n' +
+      '\n' +
+      '#### a.7.1 Reproducing DDx Accuracy via Auto-evaluation\n' +
+      '\n' +
+      'The overall performance trends obtained through the auto-evaluator align well with specialist assessments in Figure 3 despite marginal differences in the computed accuracy values, as shown in Figure A.9. These results demonstrate that the auto-evaluator is a valid surrogate for the specialist raters.\n' +
+      '\n' +
+      'Figure A.9: **Auto-evaluation rated DDx accuracy on all cases.** (**a**) Top-k auto-evaluation rating of AMIE and PCP with respect to the ground truth. Significant (with FDR correction) for \\(k>2\\). (**b**) Top-k auto-evaluation rating of AMIE and PCP with respect to the accepted differential. Significant (with FDR correction) for \\(k>4\\).\n' +
+      '\n' +
+      '#### A.7.2 AMIE DDx Accuracy on AMIE and PCP Consultations\n' +
+      '\n' +
+      'We compared AMIE\'s diagnosis accuracy based on its own consultations with its accuracy generated from corresponding PCP consultations, using the DDx auto-evaluator. Results in Figure A.10 showed that the diagnostic quality remained consistent regardless of whether AMIE processed information from its own dialogue or from the PCP\'s conversation.\n' +
+      '\n' +
+      'Figure A.10 \\(|\\)**Auto-evaluation rated DDx accuracy for AMIE-produced differential diagnoses from the PCP’s and AMIE\'s consultations.** AMIE was asked to create a DDx from both the PCP’s and AMIE’s consultations. (**a**) Top-k auto-evaluation rating of AMIE DDx on AMIE and PCP consultations with respect to the ground truth. No differences are statistically significant. (**b**) Top-k auto-evaluation rating of AMIE DDx on AMIE and PCP consultations with respect to the accepted differential. No differences are statistically significant.\n' +
+      '\n' +
+      '### A.7.3 DDx Accuracy as a Function of Dialogue Turns\n' +
+      '\n' +
+      '**Distribution of words and turns.** Figure A.11 shows the distributions of words and turns for the OSCE conversations. Because the number of patient actor words and turns is consistent between groups, neither agent has an unfair advantage in terms of the amount of information used to make a diagnosis. However, it is important to note that AMIE is far more verbose in its responses which may have influenced the qualitative ratings from specialists.\n' +
+      '\n' +
+      '**Accuracy by number of turns.** Here we plotted the auto-evaluation of AMIE-generated differential diagnoses as a function of number of turns. We truncated conversations to the first \\(T\\) turns, and then asked AMIE to produce a DDx with this truncated conversation. For both the AMIE and PCP conversations, we observed that AMIE\'s average diagnostic accuracy began to plateau within 10 turns, with additional information gathering having diminishing returns on the diagnostic performance as shown in Figure A.12.\n' +
+      '\n' +
+      '**Figure A.12 \\(|\\) Auto-evaluation rated DDx (top-3) accuracy as a function of consultation turns provided to the model. (a) Top-3 auto-evaluation DDx accuracy as a function of the number of turns for the AMIE DDx on AMIE and PCP consultations with respect to the ground truth. (b) Top-3 auto-evaluation DDx accuracy as a function of the number of turns for the AMIE DDx on AMIE and PCP consultations with respect to the the accepted differential. No differences are statistically significant.**\n' +
+      '\n' +
+      '### DDx Accuracy by Location\n' +
+      '\n' +
+      '**Accuracy by Location.** We compared the specialist ratings for the 67 scenarios conducted in Canada and the 82 scenarios conducted in India.\n' +
+      '\n' +
+      '**Shared Scenarios.** We repeated 40 of the scenarios at the other location, meaning if it was originally run in Canada, we then ran it in India and vice-versa. This included all of the UK scenarios and 26 of the India scenarios. Because these conversations did not have specialist ratings, we instead leveraged auto-evaluation to compare the produced differential diagnoses and ablate the effect of the OSCE location.\n' +
+      '\n' +
+      '**Results.** We observed a higher average diagnostic performance for AMIE in Canada than in India (see Figure A.13). However, when comparing scenarios performed at both study locations, we observed that AMIE and PCP performance remained consistent regardless of the study location (see Figure A.14), suggesting that the observed performance variations are likely not due to the patient actor or clinician rater differences, but instead might be attributed to inherent differences in the difficulty levels of scenarios in each location.\n' +
+      '\n' +
+      'Figure A.13: **Specialist rated DDx accuracy by location. (a)** Specialist DDx rating of AMIE and PCP with respect to the ground truth for the 67 cases conducted in Canada. Accuracies at all k positions are significant with FDR correction. (b) Specialist DDx rating of AMIE and PCP with respect to the ground truth for the 82 cases conducted in India. While the trends are the same as in Canada, the differences between AMIE and PCP are not statistically significant with FDR correction.\n' +
+      '\n' +
+      'Figure A.14: **Auto-evaluation rated DDx accuracy for scenarios conducted at both testing locations. (a)** Auto-evaluation rated top-k DDx performance of AMIE on a set of 40 scenarios conducted in both locations. (b) Auto-evaluation rated top-k DDx performance of the PCPs on a set of 40 scenarios conducted in both locations.\n' +
+      '\n' +
+      '### Model-based Auto-evaluation of Qualitative Criteria\n' +
+      '\n' +
+      'In order to accurately emulate the ratings of specialists on the clinical criteria in our OSCE evaluation framework, we developed a model-based auto-evaluation procedure leveraging the AMIE model to score dialogues from 1 to 5 based on how well they exemplified those qualitative criteria. We initially focused on a subset of four clinical axes from the PACES criteria (see Table A.2), however, this procedure can be easily extended to other ratings.\n' +
+      '\n' +
+      'Using the 298 dialogues produced by AMIE and PCPs in this study, we corroborated the results of the specialist ratings on these 4 criteria using the auto-evaluation procedure. We validated that the auto-evaluation rankings were well aligned with these specialist ratings (see Figures A.17 and A.18). Additionally, we applied it to the simulated dialogues generated via the inner-loop self-play procedure to test whether this iterative process resulted in measurable improvements in dialogue quality (see Figure A.19).\n' +
+      '\n' +
+      '**Self-CoT Procedure for Auto-Evaluation of Clinical Criteria.** The auto-evaluation procedure we employed was a two-step process in which we prompted AMIE itself to rate dialogues on the chosen subset of the PACES criteria (see Table A.2).\n' +
+      '\n' +
+      '1. First, we prompted AMIE to summarize good and bad aspects of several dialogues and provide an explanation of the provided human rating between 1 and 5 (see Figure A.15).\n' +
+      '2. Next, we used these self-generated explanations alongside their respective dialogues as examples in a 5-shot prompt to evaluate and rate a new dialogue. This few-shot prompt included one example for each point on the 5-point rating scale (see Figure A.16).\n' +
+      '\n' +
+      'In both prompts, we included the rating scale and expert-derived examples of good or bad behaviour for a particular criterion, matching those shown in Table A.2. We referred to this prompting method as self-CoT (Chain-of-Thoughts) [1] as the plausible reasoning for the human ratings are derived from the model itself.\n' +
+      '\n' +
+      '**Rank-order Agreement.** We evaluated our auto-evaluation method by quantifying its agreement with the specialist rankings of the OSCE dialogues. We limited our analysis to the 149 dialogue pairs in the study. Thus, each pair consisted of a AMIE conversation and a PCP conversation with the same patient actor, and rated by the same specialist. For a pair of two dialogues, the three possibilities were: the first one was rated better than the second one, they were equally rated, or the first one was rated worse than the second one. We defined the rank-order agreement as the proportion of dialogue pairs for which the specialist ranking was preserved by the auto-evaluation ratings. For example, we counted it as correct when our auto-evaluation rated AMIE\'s dialogue as better than the PCP\'s dialogue if specialists also rated AMIE\'s dialogue as better, regardless of the exact scores each method assigned.\n' +
+      '\n' +
+      '**Auto-evaluation Prompting Strategies.** Using the rank-order agreement metric, we ablated the effect of the two-step prompting and compared it to other methods such as the five-shot prompting (i.e. dropping step 1), shuffled five-shot self-CoT prompting where the order of support examples was randomised each time, and 0-shot prompting using only the rating scale explanation itself (see Figure A.17). All methods outperformed the chance level, with the two-step process generally outperforming other methods, though this difference was marginal. Shuffling the examples in the self-CoT prompt made no difference on average.\n' +
+      '\n' +
+      '**Benchmarking Auto-evaluation.** While auto-evaluation was significantly better than random guessing at aligning with specialist preferences, it was unclear if the resulting performance was sufficient. To test this, we had 139 dialogue pairs each rated by a second specialist, and we computed the rank-order agreement of the two specialists on this subset (see figure A.18). We observed that auto-evaluation was about as accurate as the alternative specialists in predicting the first specialist\'s rank-order, suggesting that it is useful to leverage auto-evaluation for these criteria.\n' +
+      '\n' +
+      '**Evaluating Self-play Dialogues.** We applied our auto-evaluation procedure to 1,142 dialogues (derived from common conditions) before and after being refined through the self-play critique. We demonstrated that, on average, the refined dialogues after an iteration of critique/revision were rated higher than the original baseline dialogues across all criteria A.19.\n' +
+      '\n' +
+      'Figure A.15 **Prompt for the explanation generation given an dialogue and the human rating.** AMIE was prompted to summarize good and bad aspects of a particular dialogue and provide an explanation of the given human rating between 1 and 5.\n' +
+      '\n' +
+      'Figure A.15 **Prompt for Explanation Generation for Dialogue and Human Rating**\n' +
+      '\n' +
+      'Figure A.16: **Prompt for the auto-evaluation of qualitative criteria.** We constructed few-shot prompt with self-generated explanations alongside their respective dialogues as exemplars to evaluate and rate a new dialogue. This few-shot prompt included one example for each point on the 5-point rating scale.\n' +
+      '\n' +
+      'Figure A.17: Rank-order agreement to specialist ratings of all 149 dialogue pairs, comparing various auto-evaluation prompting techniques. We choose to leverage the self-CoT technique for the auto-evaluation of clinical criteria.\n' +
+      '\n' +
+      'Figure A.18: Rank-order agreement to specialist ratings of 139 dialogue pairs (excluding cases without multiple specialist ratings) for alternative specialists compared to the self-CoT auto-evaluation technique. Auto-evaluation agreement to the first specialist is comparable to inter-specialist agreement. The black dashed line shows the rank-order agreement one would get with a random ranking of the AMIE and PCP dialogues, while the green dashed line shows the rank-order agreement with a strategy of randomly guessing according to the distribution of specialist preferences for each criteria.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:45]\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1] Wei, J., Wang, X., Schuurmans, D., Bosma, M., Xia, F., Chi, E., Le, Q. V., Zhou, D., _et al._ Chain-of-thought prompting elicits reasoning in large language models. _Advances in Neural Information Processing Systems_**35**, 24824-24837 (2022).\n' +
+      '* [2] Google. _PaLM 2 Technical Report_[https://ai.google/static/documents/palm2techreport.pdf](https://ai.google/static/documents/palm2techreport.pdf). 2023.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
