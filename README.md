@@ -29,6 +29,7 @@
 | 2312.05934 | Fine-Tuning or Retrieval? Comparing Knowledge Injection in LLMs | [arXiv](https://arxiv.org/abs/2312.05934) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2312.05934) |
 | 2311.12023v2 | LQ-LoRA Low-rank Plus Quantized Matrix Decomposition for Efficient Language Model Finetuning | [arXiv](https://arxiv.org/abs/2311.12023v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.12023v2) |
 | 2310.11511 | Self-RAG Learning to Retrieve Generate and Critique through Self-Reflection | [arXiv](https://arxiv.org/abs/2310.11511) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.11511) |
+| 2310.01889 | Ring Attention with Blockwise Transformers for Near-Infinite Context | [arXiv](https://arxiv.org/abs/2310.01889) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.01889) |
 | 2309.12288 | The Reversal Curse LLMs trained on A is B fail to learn B is A | [arXiv](https://arxiv.org/abs/2309.12288) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2309.12288) |
 | 2304.08177v3 | Efficient and Effective Text Encoding for Chinese LLaMA and Alpaca | [arXiv](https://arxiv.org/abs/2304.08177v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2304.08177v3) |
 | 2110.03215 | Towards Continual Knowledge Learning of Language Models | [arXiv](https://arxiv.org/abs/2110.03215) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2110.03215) |
