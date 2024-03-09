@@ -1,0 +1,626 @@
+# 공통 7B 언어 모델 이미 강력한 수학 능력을 보유
+
+천리\({}^{1,4}\), 위치왕\({}^{2,4}\), 징청후\({}^{3,4}\), 옌순웨이\({}^{3,4}\)
+
+**내닝정\({}^{1}\), 한후\({}^{4}\), 정장\({}^{4}\), 후원펑\({}^{4}\)**
+
+중국 시안자오통대학교 과학기술대학
+
+싱화대 \({}^{4}\)Microsoft Research Asia
+
+@stu.xjtu.edu.cn (v-weiqiwang, t-jingchu, t-yixuanwei, zhez, houwen.peng)@microsoft.com nnzheng@xjtu.edu.cn ancientmooner@gmail.com
+
+프로젝트 리더 첸, 웨이치, 징청, 이수안은 MSRA 인턴이야 GitHub: Xwin-Math 이 리포지토리는 계속 업데이트됩니다.
+
+###### Abstract
+
+수학 역량은 이전에는 공통 언어 모델에서 매우 큰 규모로만 등장하거나 광범위한 수학 관련 사전 훈련이 필요한 것으로 여겨졌다. 본 논문은 일반적인 사전 훈련을 가진 LLaMA-2 7B 모델이 256개의 랜덤 세대에서 최상의 응답을 선택할 때 GSM8K 및 MATH 벤치마크에서 각각 97.7% 및 72.0%의 인상적인 정확도로 입증된 바와 같이 이미 강력한 수학적 능력을 나타냄을 보여준다. 현재 기본 모델의 주요 문제는 고유한 수학적 능력을 일관되게 이끌어내기 어렵다는 것이다. 특히 첫 번째 답변의 정확도는 GSM8K 및 MATH 벤치마크에서 각각 49.5% 및 7.9%로 떨어진다. 우리는 단순히 SFT 데이터를 확장하는 것이 정답 생성의 신뢰성을 크게 향상시킬 수 있음을 발견했다. 그러나 광범위한 확장 가능성은 공개적으로 사용할 수 있는 수학 문제의 부족으로 인해 제한된다. 이러한 한계를 극복하기 위해 합성 데이터를 사용했는데, 이는 실제 데이터만큼 효과적임을 입증하고 약 100만 개의 샘플로 확장할 때 명확한 포화도를 나타내지 않는다. 이 간단한 접근법은 LLaMA-2 7B 모델을 사용하여 GSM8K에서 82.6%, MATH에서 40.6%의 정확도를 달성하여 이전 모델을 각각 14.2%, 20.8% 능가한다. 또한 다양한 추론 복잡성과 오류 유형에 걸친 확장 행동에 대한 통찰력을 제공합니다.
+
+## 1 Introduction
+
+수학적 역량은 오랫동안 매우 도전적인 것으로 간주되어 공통 언어 모델에서 매우 큰 규모로만 나타나는 것으로 생각된다. 예를 들어, (Wei et al., 2022, 2020)의 연구에 따르면 500억 개의 매개변수를 초과하는 크기를 가진 모델만이 수학 문제에 대한 사고 연쇄 처리로부터 의미 있는 정확도를 얻거나 이익을 얻을 수 있다. 더 작은 언어 모델에 수학적 능력을 갖추기 위한 전략은 수천억 개의 수학 관련 사전 훈련 데이터에 대해 훈련된 수학 관련 기초 모델을 생성하는 것을 포함한다(Lewkowycz et al., 2022; Azerbayev et al., 2023). 그러나, 그러한 모델들의 정확도는 여전히 완만하다; 예를 들어, Lemma-7B(Azerbayev et al., 2023)는 GSM8K 데이터세트(Cobbe et al., 2021)에서만 36.4%를 달성하고 MATH 데이터세트(Hendrycks et al., 2021)에서는 18.0%를 달성한다.
+
+본 논문에서는 LLaMA-2 7B 모델(Touvron et al., 2023)과 같이 크기가 작은 일반적인 언어 모델이 수학 관련 데이터에 대한 구체적인 사전 훈련 없이 이미 강력한 수학적 능력을 가지고 있음을 보여준다. 놀랍게도, 우리는 단지 수천 개의 수학 문제들에 대한 감독된 미세 조정으로 (SFT 단계가 언급된 바와 같이 능력을 향상시키지 않는다는 점에 주목함)
+
+그림 1: 주황색 별표지는 LLaMA-2 7B 모델의 256개의 무작위 세대에서 최상의 반응을 선택하여 달성한 정확도를 나타낸다. MATH (왼쪽) 및 GSM8K (오른쪽) 벤치마크(각각 72.0% 및 97.7%)에 대한 높은 정확도는 LLaMA-2 7B가 정답 생성의 안정성이 향상될 수 있지만 이미 강력한 수학적 능력을 가지고 있음을 시사한다. 본 논문은 합성 SFT 데이터를 스케일링함으로써 곡선에서 알 수 있듯이 안정성이 크게 향상될 수 있음을 보여준다. SFT 데이터의 이러한 간단한 스케일링을 통해 상위 성능 모델은 MATH 벤치마크에서 초기 GPT-4 모델을 10.3% 초과했다.
+
+(Bai et al., 2022; Ouyang et al., 2022)) 이 모델은 그림 1의 주황색 별 표시에서 알 수 있듯이 256개의 무작위 세대에서 최상의 답을 선택할 때 GSM8K 질문의 97.7%와 MATH 질문의 72.0%를 올바르게 해결할 수 있다. 정확도가 GSM8K에서 92.0%, MATH 1에서 42.5%를 달성한 GPT-4 모델에 대해 보고된 것보다 훨씬 우수하다는 점은 주목할 만하다. 따라서 LLaMA-2 7B 모델이 실제로 강력한 수학적 능력을 개발했다는 결론을 내렸다. 가장 큰 문제는 대부분의 세대가 틀리기 때문에 정답이 파헤쳐질 것이라는 보장이 없다는 점이다. 실제로 질문당 하나의 무작위 생성만 고려하면 GSM8K에서 49.5%, MATH에서 7.9%로 정확도가 떨어진다. 우리는 이것을 불안정 문제라고 부른다.
+
+각주 1: 정확도 번호들은 GPT-4 기술 보고서(OpenAI, 2023b)에 보고된다. GPT-4 모델은 지속적으로 개선되고 있다. 최신 GPT-4 터보(1106) API는 GSM8K에서 94.8%, MATH에서 64.5%로 정확도를 높였다. 그러나 256세대 중 최고를 사용하는 LLaMA-2 7B 모델은 여전히 최신 GPT-4 모델을 능가한다.
+
+불안정 문제를 해결하기 위해, 먼저 기하급수적으로 증가하는 감독 미세 조정(supervised fine-tuning, SFT) 데이터를 사용하여 선형 또는 초 선형에서 정확도가 거의 향상됨을 관찰한다. 더욱이, 우리는 (표 1에 나타낸 바와 같이) 이용 가능한 모든 GSM8K 및 MATH 트레이닝 데이터를 활용할 때 정확도가 안정기에 도달하기에는 거리가 멀다는 것에 주목한다. 이 관찰은 우리가 SFT 데이터를 더 확장하도록 권장한다. 그러나 이러한 지속적인 스케일링을 지원하기 위해 공개적으로 액세스할 수 있는 실제 데이터가 부족하기 때문에 우리는 도전에 직면해 있다.
+
+이러한 한계를 극복하기 위해 우리는 권위 있는 언어 모델인 GPT-4 Turbo를 사용하여 합성 데이터를 사용하여 합성 수학 문제를 생성한다. 우리는 GPT-4 Turbo가 선호도 질문을 기반으로 완전히 새로운 질문을 만들고 간단한 검증자(GPT-4 Turbo 기반)를 적용하도록 유도하는 간단한 "새로운" 생성 전략이 매우 효과적이라는 것을 발견했다. 구체적으로, 표 1에 나타난 바와 같이, 합성적으로 생성된 수학 질문을 사용하면 실제 질문과 거의 동등한 정확도를 달성할 수 있어 스케일링 목적을 위한 합성 SFT 수학 질문의 잠재력을 강조한다.
+
+합성 데이터를 활용하면 SFT 데이터를 GSM8K에서 7.5K에서 960K로, MATH에서 7.5K에서 480K로 크게 확장할 수 있다. 이 데이터 스케일링은 그림 1에 그려진 것처럼 거의 완벽한 스케일링 동작을 보여준다. 구체적으로, SFT 데이터를 단순히 스케일링함으로써, 우리의 모델은 표준 LLaMA-2 7B 기본 모델(각각 82.6% 및 40.6% 달성)2를 사용하여 GSM8K 및 MATH에서 각각 80% 및 40% 정확도를 초과하는 최초의 모델이 되었다.
+
+각주 2: 동시적으로 DeepSeek-MATH-7B(Shao et al., 2024)도 80%의 정확도를 능가한다. 그러나, 그들의 접근법은 수학 관련 말뭉치와 정교한 RL 알고리즘에 대해 광범위하게 사전 훈련된 훨씬 더 강력한 기본 모델에 의존한다. 우리의 결과는 그들의 결과와 보완적이다.
+
+간단한 합성 SFT 데이터는 GSM8K에서 90.6%, MATH에서 52.8%를 달성하는 LLaMA-2 7OB와 같은 더 강력한 기본 모델에서도 효과적임을 입증한다. 우리가 아는 한, 이것은 GSM8K에서 90% 정확도를 초과하는 최초의 오픈 소스 모델이다. 또한 MATH 벤치마크에서 GPT-4(즉, GPT-4-0314)를 능가한 최초의 오픈 소스 모델이며 간단한 합성 스케일링 방법의 효능을 보여준다.
+
+또한 SFT 데이터의 규모가 증가함에 따라 256개의 시도를 사용할 때 모델의 정확도가 안정되는 경향이 있지만 1개의 응답을 사용하면 현저한 증가가 있다. 이는 모형의 능력 상한이 비교적 일정하게 유지되지만, 성과 이득은 주로 정답 생성의 안정성이 향상되었기 때문임을 나타낸다. 2) 수학 문제 해결의 정확도는 서로 다른 SFT 데이터 양을 가진 연쇄 사고(CoT) 단계 수에 대한 멱법칙에 따른다. 확장된 SFT 데이터 세트는 각 추론 단계의 신뢰성을 향상시킨다. 리샘플링을 통해 더 긴 CoT 단계를 가진 훈련 샘플의 비율을 증가시키면 어려운 문제에 대한 모델의 정확도를 크게 향상시킬 수 있다. 3) 스케일링 과정에서 오류 유형을 분석한 결과 추론 오류에 비해 계산 오류가 더 쉽게 완화되는 것으로 나타났다.
+
+## 2 언어 모델의 수학 능력 검사
+
+메트릭스 언어 모델의 수학 능력을 조사하기 위해 두 가지 메트릭스를 사용한다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c} \hline \hline Data size & GSM8K-real & GSM8K-syn & MATH-real & MATH-syn \\ \hline
+0.94K & 26.7 & 25.9 & 4.2 & 3.9 \\
+1.88K & 32.8 & 31.9 & 5.6 & 4.9 \\
+3.75K & 43.3 & 42.2 & 6.6 & 6.0 \\
+7.50K & 50.2 & 49.5 & 8.4 & 7.9 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: SFT 데이터 스케일링과 실제 수학 문제 대 합성 수학 문제 비교. 그것은 합성 수학 문제가 실제 문제만큼 효과적이라는 것을 보여준다.
+
+첫 번째는 Pass@N 메트릭
+
+\[\text{Pass@N}=\underset{\text{Problems}}{\mathbb{E}}\left[\min(c,1)\right], \tag{1}\]
+
+여기서, \(c\)는 \(N\) 응답 중 정답의 수를 나타낸다. 이 메트릭은 \(N\) 랜덤 세대에서 하나 이상의 정답이 생성되면 문제를 해결할 것으로 간주한다. 우리는 수학 문제를 풀 때 모델의 잠재력이나 능력을 반영하기 위해 이 메트릭을 사용한다. 우리는 \(N\) 세대의 다양성을 향상시키기 위해 생성 프로세스의 온도를 0.73으로 설정했다.
+
+각주 3: 대부분의 수학 모델이 온도를 0으로 설정한 탐욕적 생성 전략을 활용한다는 점에 주목할 필요가 있다. 그러나 이 차이의 영향은 미미하다.
+
+두 번째는 PassRatio@N 메트릭
+
+\[\text{PassRatio@N}=\underset{\text{Problems}}{\mathbb{E}}\left[\frac{c}{N} \right], \tag{2}\]
+
+이 값은 \(N\)에서 생성된 정답의 백분율을 측정합니다. 이 메트릭은 Pass@1과 다소 동일하지만 분산이 감소합니다.
+
+이 두 메트릭을 기반으로 그림 1과 같이 GSM8K 및 MATH 벤치마크4에서 LLaMA-2 모델의 성능을 조사한다. 명령 후속 설정에서 이 두 벤치마크에 대한 모델을 적응시키기 위해 제한된 양의 SFT 데이터(즉, 7.5K)로 훈련된 SFT 버전을 사용한다. Bai 등(2022)에서 입증된 바와 같이; Ouyang 등(2022)에서 입증된 바와 같이, SFT 단계는 능력을 향상시키지 않는다(그리고 심지어 "정렬 세금"의 맥락에서 언급된 바와 같이 감소로 이어질 수 있다). 따라서 SFT 버전을 사용하면 모델의 수학적 능력을 공정하게 평가할 수 있다.
+
+각주 4: Lightman et al. (2023)에 따라, 우리는 실험 효율성을 위해 MATH 벤치마크에서 500개의 테스트 샘플의 하위 집합을 활용한다.
+
+먼저 두 벤치마크에서 LLaMA-2 7B 모델에 대한 Pass@256 메트릭이 GSM8K에서 97.7%, MATH에서 72.0%로 현저하게 높다는 것을 관찰한다. 이는 LLaMA-2 7B 모델이 수학적 문제를 해결할 수 있는 강력한 능력을 가지고 있음을 시사한다.
+
+그런 다음 PassRatio@256이 GSM8K에서 48.2%, MATH에서 7.9%로 Pass@256보다 현저히 낮다는 것을 알 수 있다. 이것은 대부분의 수학 문제에 대한 정답이 256개의 무작위 세대 내에 존재하지만, 정답이 일관되게 추출될 것이라는 보장이 없음을 시사하며, 이는 우리가 "불안정 문제"라고 부르는 현상이다.
+
+다음에서는 _불안정 문제_ 를 크게 줄이기 위한 간단한 접근 방식을 제시합니다.
+
+## 3 합성 수학 질문을 사용하여 SFT 데이터 크기 조정
+
+이 절에서는 먼저 제한된 실제 SFT 데이터를 확장하면 불안정 문제를 크게 완화할 수 있음을 보여준다. 또한 전체 사용 가능한 GSM8K 및 MATH 훈련 데이터를 사용할 때 정확도가 아직 안정되지 않았음을 관찰한다. 우리는 합성 수학 질문을 사용하여 SFT 데이터를 추가로 확장하는 것을 고려한다. 이를 위해 GPT-4 터보 API를 이용한 합성 데이터 생성 방법을 소개한다. 합성 데이터는 실제 수학 문제만큼 효과적인 것으로 입증됩니다. 결과적으로, 합성 SFT 데이터를 GSM8K에서 960K, MATH에서 480K로 과감하게 스케일링하여 거의 완벽한 스케일링 동작을 초래하고 최첨단 정확도에 도달한다.
+
+실제 수학 질문을 사용한 스케일링 우리는 전체 GSM8K 및 MATH 훈련 세트에 걸쳐 실제 수학 질문의 스케일링 동작을 조사하는 것으로 시작한다. 표 1에 표시된 바와 같이, 우리는 포화 징후 없이 GSM8K에서 26.7%에서 50.2%로, MATH에서 4.2%에서 8.4%로 증가하는 일관된 정확도 개선을 관찰했다.
+
+합성 SFT 데이터 생성 실제 데이터가 소진되었기 때문에 합성 생성된 수학 질문을 사용하여 SFT 데이터를 추가로 확장하는 것을 고려한다.
+
+GPT-4 터보 API의 도움을 받아 간단한 3단계 접근 방식을 소개합니다.
+
+* 1단계. 새 수학 질문을 생성합니다. GPT-4 터보 API에 참조 수학 질문을 출발점으로 하여 새로운 질문을 생성하도록 요청한다. 새로운 질문의 타당성을 높이기 위해, 우리는 세 가지 규칙을 프롬프트에 통합한다: 첫째, 새로운 질문은 상식에 복종해야 하고, 둘째, 원래 질문과 독립적으로 해결할 수 있어야 하며, 셋째, 어떤 답변 응답도 포함하지 않아야 한다. 또한 다양한 대상 데이터 세트에 맞춘 질문 및 답변에 대한 구체적인 포맷팅 요구 사항을 설정했습니다.
+* 2단계. 질문을 확인합니다. 시도된 솔루션을 통해 검증 및 정제하여 생성된 질문의 품질을 더욱 향상시킵니다. 해결 및 검증 단계를 단일 프롬프트에 통합함으로써 이 접근법이 다양한 벤치마크에 걸쳐 질문의 유효성을 일관되게 향상시킨다는 것을 발견했다.
+* 3단계. CoT(연쇄 사상) 답변을 생성합니다. 우리는 GPT-4 Turbo에게 새로 생성된 각 질문에 대한 CoT(Chain-of-thought) 답변 응답을 생성하도록 요청한다.
+
+자세한 프롬프트 디자인은 부록 A에 나와 있다.
+
+합성 SFT 데이터 대 실제 데이터 비교 합성 생성된 수학 질문의 품질을 평가하기 위해 표 1에 자세히 설명된 대로 LLaMA-2 7B 모델을 사용하여 GSM8K 및 MATH 훈련 세트의 실제 질문에 대한 효과를 평가한다. 결과는 합성 수학 질문이 실제 질문만큼 효과적임을 나타낸다.
+
+우리는 또한 이전 연구 Xu et al. (2023); Yu et al. (2023); An et al. (2023)에서 제안된 다양한 다른 합성 방법을 탐구했다. 이러한 방법은 그림 6과 같이 우리의 접근법보다 약간 낮지만 효과적인 것으로 입증된다.
+
+합성 접근법의 효율성을 고려하여 약 백만 개의 SFT 수학 데이터로 확장하여 GSM8K 및 MATH 문제 모두에 대한 SFT 데이터의 규모를 각각 960K 및 480K로 실질적으로 증가시킨다. 그림 1은 LLaMA-2 시리즈의 다양한 크기를 활용한 주요 결과를 제시하고 있다. 간단한 스케일링 전략은 최첨단 정확도를 제공합니다.
+
+정확도가 아직 정점에 도달하지 못했다는 점도 주목할 필요가 있다. 추가적인 스케일링의 효과에 대한 탐색은 향후 연구로 남겨두기로 한다.
+
+## 4 Experiments
+
+### 데이터 세트 및 평가
+
+제안된 방법의 효율성을 평가하기 위해 5개의 벤치마크에 대한 실험을 수행하였다.
+
+**GSM8K**Cobbe 등(2021). 이것은 수학 지식이 주로 초등학교 수준을 다루는 고품질 언어학적으로 다양한 수학 데이터 세트이다. 여기에는 7,473개의 훈련 예제와 1,319개의 테스트 케이스가 포함됩니다. 이 작업에서는 훈련 세트를 주어진 질문으로 사용하여 새로운 합성 데이터를 생성한다.
+
+**MATH**Hendrycks 등(2021). 이 데이터 세트는 높은 수준의 추론 능력과 수학적 지식이 필요한 경쟁 수준의 수학 문제에 초점을 맞춘다. 7,500개의 훈련 사례와 5,000개의 테스트 케이스로 구성되어 있습니다. 우리는 합성 데이터를 생성하기 위해 훈련 예를 사용한다.
+
+**SVAMP**Patel 등(2021). 이 데이터 세트는 초등 수준의 수학 문제로 구성된다. 1,000개의 테스트 케이스를 모두 사용하여 모델의 교차 데이터 세트 성능을 평가합니다.
+
+**ASDiv**Miao 등(2021). 이 데이터 세트에는 다양한 언어 패턴과 질문 유형이 있는 수학 문제 세트가 포함되어 있습니다. 우리는 2,305개 문제의 테스트 세트를 평가 벤치마크로 채택한다.
+
+헝가리 국립 고등학교 시험 이 평가 벤치마크는 수학 모델의 영역 외 능력을 평가하기 위해 설계된 Grok-1(xAI, 2023)에 의해 처음 도입된다. 33개의 도전적인 문제들로 구성되어 있습니다.
+
+헝가리 국립 고등학교 시험 데이터 세트의 최종 답변은 인간에 의해 주석이 달린 반면, 다른 벤치마크는 이전 작업인 Luo 등(2023); Gou 등(2023)과 유사하게 자동 스크립트를 사용하여 라벨링된다는 점에 주목할 필요가 있다.
+
+### Implementation Details
+
+데이터 합성에서는 GPT-4 Turbo API를 활용하여 질의응답 생성을 위해 온도를 1.0으로 설정한다.
+
+감독된 미세 조정을 위해 총 3회의 훈련에 걸쳐 코사인 학습률 일정이 있는 Adam 최적화기를 사용한다. 최대 학습률은 2e-5(미스트랄-7b 모델의 경우 2e-6 제외)로 설정되며 4% 선형 웜업이 있다. 최대 토큰 길이는 2048로 설정되고, Vicuna-v1.1 Zheng et al.(2023) 시스템 프롬프트가 사용된다. 모든 실험은 8\(\times\)Nvidia H100 GPU에서 수행되었다. 70B 모델과 960K 데이터 포인트를 포함하는 가장 자원 집약적인 실험은 1900H100 GPU 시간이 걸린다.
+
+평가를 위해 SFT에서 사용된 프롬프트와 동일한 프롬프트를 사용하고 최대 시퀀스 길이를 2048로 설정한다. vLLM Kwon et al. (2023)은 답변 생성에 사용된다.
+
+### 주요 결과 및 최신 모델과의 비교
+
+이 비교에서 우리는 도메인 내 벤치마크인 GSM8K/MATH와 헝가리 국립 고등학교 시험과 같은 도메인 외 벤치마크를 모두 조사한다. 각 벤치마크의 도메인 내 평가를 위해 각 훈련 샘플에서 합성된 데이터를 활용한다. GSM8K의 경우 960K 합성 데이터가 사용되는 반면 MATH의 경우 480K 합성 데이터가 사용된다. 도메인 외 평가를 위해 GSM8K, MATH 또는 두 합성 세트의 혼합을 사용하여 훈련된 모델을 테스트한다.
+
+기본 모델의 경우 제안된 접근 방식의 일반성을 평가하기 위해 LLaMA-2 7B/13B/70B/Mistral-7B와 같은 공통 언어 모델과 Llemma-7B와 같은 수학 특정 모델을 모두 고려한다.
+
+도메인 내 결과표 2는 제안된 접근 방식을 최첨단 오픈 소스 및 폐쇄 소스 모델과 비교한다. 모든 기본 모델에 걸쳐, 우리의 방법은 동일한 사전 훈련된 기본 모델을 사용하는 이전의 최상의 접근법들보다 상당히 우수하다.
+
+LLaMA-2-7B에서 우리의 접근법은 GSM8K(MuggleMath-7B(Li 등, 2023))에서 절대적으로 +14.2, MATH(MetaMath-7B(Yu 등, 2023))에서 각각 +20.8만큼 이전 최고를 초과한다. 심지어 WizardMath-70B(Luo et al., 2023)(82.6 대 81.6 on GSM8K)와 같은 수학 능력 전용의 여러 최신 70B 모델을 능가한다. LLaMA-2-13B에서, 개선은 GSM8K(MuggleMath-13B(Li 등, 2023)와 비교하여)에서 +14.1이고 MATH(MetaMath-13B(Yu 등, 2023)와 비교하여)에서 +22.5이다. LLaMA-2-70B에서 이득은 GSM8K(LEMA-LLaMA-2-70B(An et al., 2023))에서 +7.1이고 MATH(MetaMath-70B(Yu et al., 2023))에서 +26.2이다.
+
+더 강한 공통 언어 모델, 즉, 미스트랄-7B에서, 개선은 GSM8K에서 +6.0이고 MATH에서 +10.7이다(WizardMath-7B-v1.1(Luo 등, 2023)) 각각 비교된다.
+
+Llemma-7B와 같은 수학 특정 기본 모델에서 이득은 GSM8K에서 +15.0이고 MATH에서 +17.2이다(MetaMath-Llemma-7B(Luo 등, 2023))
+
+또한 LLaMA-2-70B 모델은 GSM8K 및 MATH에서 GPT-4의 초기 버전과 경쟁 정확도를 달성한다는 점도 주목할 만하다. 알고 있는 범위 내에서는, 이것은 MATH에서 GPT-4-0314를 능가한 최초의 LLaMA 기반 모델이다.
+
+이러한 결과는 합성 수학 SFT 데이터의 스케일링의 유효성과 광범위한 적용 가능성을 보여준다.
+
+도메인 외 결과 GSM8K, MATH 또는 두 개의 합성 세트를 혼합하여 훈련된 모델을 도메인 외 벤치마크인 헝가리 국립 고등학교 시험 테스트에서 (xAI, 2023)의 실습에 따라 테스트한다.
+
+결과를 표 3에 나타낸다. 혼합 데이터(240K MATH 합성 데이터 + 240K GSM8K 합성 데이터)에 대해 훈련된 모델은 GPT-4 바로 뒤, 다른 모델보다 훨씬 나은 2위로 순위가 매겨졌다. 또한, 부록 B에서 GSM8K와 헝가리 국가고교 시험 점수 사이의 상관 관계를 플롯한다. 결과는 우리의 모델에 유의미한 벤치마크 과적합이 없음을 보여준다.
+
+피겨 도 2(Left)는 모델의 결과를 제시함
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline Model & GSM8K & MATH \\ \hline \hline \multicolumn{3}{c}{_Closed-source models_} \\ GPT-4 Turbo (1106) & 94.8 & 64.5 \\ GPT-4-0314 & 94.7 & 52.6 \\ GPT-4 (Achiam et al., 2023) & 92.0 & 42.5 \\ Claude-2 (Anthropic, 2023) & 88.0 & - \\ GPT-3.5-Turbo (OpenAI, 2023a) & 80.8 & 34.1 \\ \hline \multicolumn{3}{c}{_Open-source models LLaMA-2-7B_} \\ WizardMath-7B (Luo et al., 2023) & 54.9 & 10.7 \\ MuggleMath-7B (Li et al., 2023) & 68.4 & - \\ MetaMath-7B (Yu et al., 2023) & 66.5 & 19.8 \\ LEMA-LLaMA-2-7B (An et al., 2023) & 54.1 & 9.4 \\ \hline \multicolumn{3}{c}{_Open-source models Mistral-7B_} \\ WizardMath-7B-v1.1 (Luo et al., 2023) & 83.2 & 33.0 \\ MetaMath-Mistral-7B (Yu et al., 2023) & 77.4 & 28.2 \\ \hline \multicolumn{3}{c}{_Open-source models Lema-7B_} \\ MetaMath-Llemma-7B (Yu et al., 2023) & 69.2 & 30.0 \\ \hline \multicolumn{3}{c}{_Open-source models LLaMA-2-13B_} \\ WizardMath-13B (Luo et al., 2023) & 63.9 & 14.0 \\ MuggleMath-13B (Li et al., 2023) & 74.0 & - \\ MetaMath-13B (Yu et al., 2023) & 72.3 & 22.4 \\ LEMA-LLaMA-2-13B (An et al., 2023) & 65.7 & 12.6 \\ \hline \multicolumn{3}{c}{_Open-source models LLaMA-2-70B_} \\ WizardMath-70B (Luo et al., 2023) & 81.6 & 22.7 \\ MuggleMath-70B (Li et al., 2023) & 82.3 & - \\ MetaMath-70B (Yu et al., 2023) & 82.3 & 26.6 \\ LEMA-LLaMA-2-70B (An et al., 2023) & 83.5 & 25.0 \\ \hline \multicolumn{3}{c}{_Xuin-Math-70B (ours)_} & **90.6** & **52.8** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 다양한 LLM의 수학 추론 성능.
+
+\begin{table}
+\begin{tabular}{l|c} \hline \hline Model & Test Score (\%) \\ \hline GPT-4 (Achiam et al., 2023) & 68 \\ Grok-1 (xAI, 2023) & 59 \\ Claude-2 (Anthropic, 2023) & 55 \\ GPT-3.5 Turbo (OpenAI, 2023a) & 41 \\ DeepSeek-LLM-67B-Chat (Bi et al., 2024) & 58 \\ \hline Xwin-Math-70B (480K GSM8K) & 22 \\ Xwin-Math-70B (120K MATH) & 51 \\ Xwin-Math-70B (480K MATH) & 59 \\ Xwin-Math-70B (480K Mix) & 65 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 다양한 LLM의 헝가리 국가고교 시험 결과.
+
+trained on GSM8K synthetic data, while Figure. 2(Middle)는 MATH로 학습된 모델의 결과를 제시한다. 우리는 GSM8K 또는 MATH 합성 데이터로 학습된 모델에서 데이터의 양이 증가함에 따라 다른 벤치마크의 정확도도 향상됨을 발견한다. 또한 GSM8K 및 MATH 모델에 대해 일반화 행동이 다르다는 점에 주목한다: 1) SVAMP 및 ASDiv는 MATH 모델보다 GSM8K 모델에서 더 많은 이점을 얻는다. 2) MATH 모델들이 GSM8K 벤치마크들에서 비교적 잘 수행되는 반면, GSM8K 모델들은 MATH 벤치마크들에서 상당히 더 나쁜 성능을 수행한다.
+
+피겨 도 2(오른쪽)는 GSM8K와 MATH를 1:1 비율로 혼합하여 사용한 모델의 결과를 나타낸다. 이러한 모델은 도메인 내 및 도메인 외 벤치마크 모두에서 균형 잡힌 스케일링 동작을 나타낸다.
+
+### 성능 향상 뒤에 발생 하는 일?
+
+**Pass@256 _v.s_ PassRatio@256 성능 개선 이면의 이해를 심화 하기 위해 다른 데이터 크기에서 Pass@N 메트릭 및 PassRatio@N 메트릭을 추적 했습니다. 결과는 그림 3에 나와 있다. 매우 제한된 합성 데이터(_e.g._7.5K 샘플)로, Xwin-Math-70B 모델은 이미 매우 높은 Pass@256을 가지며, 이는 다수의 시도를 통해 정답을 생성하는 강력한 능력을 나타낸다. 한편 Pass@256 메트릭은 사용된 데이터의 양이 증가함에 따라 약간만 변경되었다. 이와는 대조적으로, 정답 생성의 안정성을 반영하는 PassRatio@256은 합성 데이터의 양에 따라 크게 증가하며, 그 성장 추세는 Pass@1과 유사하다. 이러한 결과는 성능 개선이 주로 질문에 대한 답변 능력이 강하기보다는 답변 생성의 안정성이 우수하기 때문이라는 가설을 확인시켜준다.
+
+**추정된 단일 단계 추론 정확도** 추론에 CoT(Chain-of-Think)가 채택되기 때문에 수학적 문제에 대한 답변 프로세스는 다단계 추론 프로세스에 의해 완료됩니다. 따라서 최종 정답 정확도의 증가는 단단계 추론 정확도의 향상으로 해석될 수 있다고 가정한다. 이러한 가정에 기초하여, CoT에서 \(s\) 추론 단계에 의해 하나의 질문이 이론적으로 답변될 수 있다면, 최종 답변 정확도는 단일 단계 추론 정확도의 멱함수에 의해 근사화될 수 있다:
+
+\[\text{Acc}_{\text{final}}=\text{Acc}_{\text{step}}^{s} \tag{3}\]
+
+이 식에 의해 최종 답안 정확도로부터 스텝 정확도를 추정할 수 있다. 우리는 GSM8K에서 실험을 했다. 시험의 각 문항에 대해
+
+그림 3: GSM8K 및 MATH 벤치마크에서 데이터 크기가 증가하는 Pass@256 및 PassRatio@256 곡선.
+
+그림 2: 단일 데이터 세트 또는 혼합 데이터 세트를 사용하여 SFT 데이터 규모의 증가를 비교합니다.
+
+세트, 256개의 응답을 생성하고 GSM8k 테스트 세트의 CoT 주석의 단계 수를 이론적 CoT 단계로 사용했다. CoT 추론 단계 수와 평균 최종 답변 정확도 사이의 관계를 보여주기 위해 곡선을 그리고 식에 기초하여 적합 곡선을 보여준다. 3. 합성 데이터가 다른 Xwin-Math-7B 모델을 테스트하고 그 결과는 그림 4에 나와 있다. 실선은 7개의 모든 점을 사용하여 적합되고 표 4는 모든 데이터 포인트를 사용하여 데이터의 양을 달리할 때 추정된 단일 단계 정확도를 보여주며, 단일 단계 정확도는 더 많은 데이터로 크게 향상됨을 알 수 있다.
+
+그러나 방정식을 기반으로 적합할 때. 3부터 처음 4개의 점까지 점선에서 볼 수 있듯이 후자의 3개의 점이 곡선 아래에 상당히 낮다는 것을 발견했다. 우리는 이 현상이 학습 데이터에서 더 복잡한 문제의 비율이 작은 것과 관련이 있을 수 있다고 믿는다. 따라서 우리는 CoT 솔루션의 문장 수에 따라 960K 합성 데이터를 재샘플링했다. 도 4(오른쪽)에서 알 수 있는 바와 같이, 복잡한 문제의 비율을 증가시키면, 더 간단한 문제에 대한 정확도는 사실상 변하지 않고 유지되지만, 더 복잡한 문제에 대한 정확도는 상당히 개선될 수 있다. 또한, 데이터 리샘플링의 활용은 모델의 PassRatio@256을 71.1에서 72.8로 증가시킬 수 있다. 이 실험 결과는 수학적 추론 작업을 위한 데이터 선택에 대한 새로운 통찰력을 제공한다.
+
+또한 GPT-4 Turbo를 사용하여 우리 답변의 첫 번째 단계가 잘못된 위치를 찾고 각 답변의 총 단계 수로 해당 위치를 정규화했다. 추정된 단일 단계 정확도가 높을수록 정규화의 첫 번째 오류 위치는 연기된다.
+
+**수치 계산의 정확도 향상은 논리적 추론보다 더 중요함** 합성 데이터가 증가함에 따라 모델의 성능이 점차 향상됩니다. 더 깊은 이해를 위해 GSM8K에서 서로 다른 유형의 오류에 대한 오류 비율을 분석한다. 우리는 오류를 추론 오류와 계산 오류 두 가지 유형으로 분류했다. 추론 오류는 주로 조건 상실 및 개념 혼란과 같은 문제를 포괄하는 반면, 계산 오류는 정량적 관계에 대한 잘못된 분석 및 수치 계산 오류를 포함한다. 그림 5에 예시된 실험 결과에 기초하여, 우리는 계산 에러의 퍼센트가 점진적으로 감소하는 것을 관찰하며, 이는 GSM8K가 추론 에러보다 더 빠른 속도로 계산 에러를 정정하고 있음을 시사한다.
+
+### 다른 데이터 합성 방법과의 데이터 합성 스키마 비교에 대한 삭제
+
+우리는 우리의 접근법을 다음과 같은 일반적인 사용 데이터 합성 방법과 비교했다.
+
+_제약 조건 추가_ 다른 질문을 변경하지 않고 원래 질문에 한 가지 더 제한하는 것은 위저드수학 및 머글수학에서 사용됩니다.
+
+_숫자 변경__ 문맥을 그대로 유지하면서 문제에 나타나는 숫자를 변경합니다. 그것은 머글수학에서 사용된다.
+
+_배경 변경__ 배경을 변경하는 중
+
+\begin{table}
+\begin{tabular}{l|c|c} \hline \hline Data size & Estimated Acc\({}_{\text{aug}}\) & Normalized first error position \\ \hline
+7.5K & 78.9 & 67.1 \\
+120K & 89.7 & 83.9 \\
+960K & 94.2 & 90.9 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: GSM8K 벤치마크에서 Xwin-Math-7B에서 GPT-4 Turbo에 의해 추정된 단일 단계 추론 정확도와 평균 정규화된 첫 번째 오류 위치.
+
+도 4: 좌측: GSM8K 상의 평균 정확도와 데이터가 증가하는 주석이 달린 CoT 단계들의 수 사이의 관계. 실선은 7개의 점 모두를 사용하여 적합되고 점선은 처음 4개의 점을 사용하여 적합됩니다. 오른쪽: 훈련 데이터의 CoT lengeh를 증가시키기 위해 리샘플링을 사용할 때 평균 정확도의 변화.
+
+그림 5: 자료 중 계산과 추론 오류 비율의 변화가 증가하였다.
+
+다른 사람들을 동일하게 유지하면서 질문.
+
+_숫자와 배경 변경의 조합_ 숫자와 배경을 모두 바꾸는 하이브리드 접근법입니다.
+
+_MetaMath Approach._ 메타수학에서 제안된 합성 방법은 답변 증가, 재구문 질문, 자기 검증 질문 및 FOBAR 질문을 포함한다. 실험에서는 메타매스의 구현을 따르지만 공개된 질문을 사용하여 응답 데이터를 생성하기 위해 GPT-3.5 Turbo 대신 GPT-4 Turbo를 사용한다.
+
+그림 6의 실험 결과는 데이터 크기가 _예._, 7.5k 및 30k 샘플로 상대적으로 작을 때 서로 다른 방법 간의 성능 차이는 무시할 수 있음을 보여준다. 그러나, 데이터 크기가 증가함에 따라 본 논문에서 제안하는 방법과 제약 조건을 추가한 방법은 더 강한 성능을 보인다. 이는 데이터 크기가 증가함에 따라 데이터 합성 전략의 선택이 더욱 중요해지고, 일부 방법은 데이터를 보다 효율적으로 스케일링하여 성능을 향상시킬 수 있음을 시사한다.
+
+**질문 검증의 효과** 질문 검증은 생성 품질을 더욱 향상시키는 데 사용됩니다. 실험에서 MATH 벤치마크에서 성능을 향상시킬 수 있음을 발견했으며 결과는 표 5에 나와 있지만 GSM8K 데이터 세트에는 큰 영향을 미치지 않는다.
+
+## 5 관련 작업
+
+Large Language ModelsLarge Language models Brown et al. (2020); Achiam et al. (2023); Touvron et al. (2023, 2023)은 광범위한 작업에서 인상적인 성능으로 상당한 성과를 거두었습니다. 현재 GPT Brown 등(2020)으로 대표되는 폐쇄 소스 대형 언어 모델은 Achiam 등(2023), Gemini Team 등(2023), Groke(xAI, 2023), Claude-2(Anthropic, 2023) 등이 성능 면에서 가장 진보된 모델이다. 그러나 LLaMA Touvron et al. (2023), LLaMA-2 Touvron et al. (2023), Mixtral Jiang et al. (2024)로 대표되는 오픈 소스 모델도 빠르게 진행되었으며 일부 작업에서 클로즈드 소스 모델과 경쟁적인 성능을 보였다. 본 연구는 오픈 소스 LLM을 합성 데이터로 미세 조정함으로써 수학적 작업에 대한 LLM 성능을 향상시키는 것을 목표로 한다.
+
+수학적 능력사슬을 개선하기 위한 추론 프레임워크 Wei et al. (2022)는 LLMs가 특정한 프롬프트에 의해 다단계 추론을 수행하도록 장려하고 추론 성능을 향상시킬 수 있다. 이 작업을 기반으로 Fu 등(2022), Zhang 등(2022), Kojima 등(2022)의 추가 개선을 제안하는 후속 작업이 많다. 위의 작업은 주로 모델을 미세 조정하지 않고 더 나은 신속한 설계 또는 추론 전략을 통해 성능을 개선하는 방법에 초점을 맞춘 반면, 우리의 작업은 모델 자체를 개선하는 방법에 초점을 맞추고 있으므로 이러한 접근법은 우리와 보완적이다.
+
+Fine-tuned LLM for MathAnother sort of works Lightman et al. (2023); Luo et al. (2023); Azerbayev et al. (2023); Yue et al. (2023); Yu et al. (2023); An et al. (2023); Li et al. (2023); Gou et al. (2023)는 모델을 수학적 데이터에 훈련시킴으로써 직접 성능을 개선하려고 한다. 직접적인 방법은 모델을 개선하기 위해 미세 조정을 사용하는 것입니다. 널리 사용되는 방법 중 하나는 합성 데이터를 사용하는 것인데, 이는 우리의 접근법에 매우 가깝다: MetaMath Yu et al. (2023)은 데이터를 늘리기 위해 부트스트랩 질문을 제시한다. LeMA An et al.(2023)은 GPT-4를 보정기로 사용하여 실수 보정 데이터 쌍을 수집한다. 그리고 MuggleMath Li et al.(2023)은 GPT-4를 일련의 미리 정의된 연산과 통합함으로써 GSM8K 데이터세트를 증가시킨다. 이러한 합성 데이터 기반 노력에 비해, 우리의 데이터 합성 방법은 사전 및 제약을 덜 도입하기 때문에 훨씬 간단하고 확장 가능하다.
+
+최근 SFT 데이터 스케일링은 감독된 미세 조정을 위한 데이터 스케일에 초점을 맞추고 있다. 예를 들어 LIMA Zhou et al. (2023)은 1,000개의 고품질로 미세 조정한다고 언급한다.
+
+\begin{table}
+\begin{tabular}{l|c} \hline \hline Model & Pass@1 (\%) \\ \hline Xwin-Math-70B (7.5K data) & 28.9 \\ Xwin-Math-70B (7.5K data) w/o verification & 28.1 (-0.8) \\ Xwin-Math-70B (30K data) & 37.6 \\ Xwin-Math-70B (30K data) w/o verification & 36.6 (-1.0) \\ \hline \hline \end{tabular}
+\end{table}
+표 5: MATH에 대한 질문 검증의 절제.
+
+그림 6: 서로 다른 합성 방법의 GSM8K 및 MATH 성능.
+
+지시는 다양한 일반적인 작업에서 인상적인 결과를 얻을 수 있습니다. 다른 연구들은 수학 및 코딩 과제 Dong et al.(2023)에서 데이터 크기에 따른 성능 척도를 제시하고 있다. 최근 작업 Bi 등(2024)은 심지어 최고 성능을 얻기 위해 미세 조정을 지시하기 위해 150만 개의 데이터를 사용한다. 그러나 이러한 스케일링 효과의 본질적인 이유는 철저히 조사되지 않았다.
+
+## 6 Conclusion
+
+이 연구는 LLaMA-2 7B와 같은 일반적인 7B 언어 모델이 이미 강력한 수학적 능력을 보여 고급 수학적 추론이 더 크고 광범위하게 사전 훈련된 모델에 배타적이라는 이전의 믿음에 도전한다는 것을 보여준다. SFT 데이터를 크게 확장하여 모델의 수학적 문제 해결 능력의 안정성을 현저히 향상시켰습니다. 우리의 방법론은 Xwin-Math 모델이 더 큰 모델에 필적하는 성능 수준에 도달할 수 있도록 했으며 어떤 경우에는 더 큰 모델에 필적하는 성능 수준에 도달할 수 있도록 했다. 분석 결과, 단일 단계 추론의 정확도 향상은 주로 단일 단계 추론의 정확도 향상에 기인하며, 학습 데이터의 추가 리샘플링은 더 어려운 질문의 정확도를 향상시킬 수 있음을 나타낸다. 또한, 논리적 추론 오류와 달리 계산 오류가 더 많이 감소함을 볼 수 있다. 우리의 연구는 대규모 언어 모델의 수학적 능력에 대한 귀중한 통찰력을 제공한다.
+
+## Acknowledgments
+
+천리와 난닝정은 보조금 62088102호에 따라 NSFC의 일부 지원을 받았다. 이 작업에 대한 귀중한 조언에 대해 시안 자오통 대학교 IAIR의 선가난 안에게 감사한다.
+
+## References
+
+* Achiam 등(2023) Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. 2023. Gpt-4 technical report. _ arXiv preprint arXiv:2303.08774_.
+* An et al. (2023) Shenganan An, Zexiong Ma, Zeqi Lin, Nanning Zheng, Jian-Guang Lou, and Weizhu Chen. 2023. 실수로부터 배우는 것이 더 나은 이성을 갖게 합니다. _ arXiv preprint arXiv:2310.20689_.
+* Anthropic(2023) Anthropic. 2023. 모델 카드 및 클로드 모델에 대한 평가.
+* Azerbayev et al. (2023) Zhangir Azerbayev, Hailey Schoelkopf, Keiran Paster, Marco Dos Santos, Stephen McAleer, Albert Q Jiang, Jia Deng, Stella Biderman, and Sean Welleck. 2023. Llemma: 수학을 위한 개방형 언어 모델. _ arXiv preprint arXiv:2310.10631_.
+* Bai 등(2022) Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, Nicholas Joseph, Saurav Kadavath, Jackson Kernion, Tom Conerly, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Danny Hernandez, Tristan Hume, Scott Johnston, Shauna Kravec, Liane Lovitt, Neel Nanda, Catherine Olsson, Dario Amodei, Tom Brown, Jack Clark, Sam McCandlish, Chris Olah, Ben Mann, and Jared Kaplan. 2022. 인간 피드백으로부터 강화 학습으로 유용하고 무해한 어시스턴트를 훈련한다.
+* Bi 등 (2024) Xiao Bi, Deli Chen, Guanting Chen, Shanhuang Chen, Damai Dai, Chengqi Deng, Honghui Ding, Kai Dong, Qiushi Du, Zhe Fu, et al. 2024. Deepseek llm: Scaling open-source language models with longtermism. _ arXiv preprint arXiv:2401.02954_.
+* Brown 등(2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. 2020. Language models is few-shot learners. _ Advances in neural information processing systems_, 33:1877-1901.
+* Cobbe 등(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. 2021. Training verifiers to solve math word problems. _ arXiv preprint arXiv:2110.14168_.
+* Dong et al. (2023) 관팅동, 홍이위안, 케밍루, 청펑리, 밍펑쉐, 다이헝 류, 웨이왕, 정위안, 창주, 및 징렌주. 2023. 대규모 언어 모델의 능력이 감독된 미세 조정 데이터 구성에 의해 영향을 받는 방법 _ arXiv preprint arXiv:2310.05492_.
+* Fu et al.(2022) Yao Fu, Hao Peng, Ashish Sabharwal, Peter Clark, and Tushar Khot. 2022. Complexity-based prompting for multi-step reasoning. _ arXiv preprint arXiv:2210.00720_.
+* Fu et al.(2022)Zhibin Gou, Zhihong Shao, Yeyun Gong, Yujiu Yang, Minlie Huang, Nan Duan, Weizhu Chen, et al. 2023. Tora: A tool-integrated reasoning agent for mathematical problem solving _ arXiv preprint arXiv:2309.17452_.
+* Hendrycks 등(2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021. 수학 데이터 세트를 사용하여 수학적 문제 해결을 측정합니다. _ arXiv preprint arXiv:2103.03874_.
+* Jiang 등(2024) Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. 2024. Mixtral of experts _ arXiv preprint arXiv:2401.04088_.
+* Kojima et al.(2022) Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. 2022. Large language models is zero-shot 추론기. _ Advances in neural information processing systems_, 35:22199-22213.
+* Kwon et al. (2023) 우석 권, 주한 리, 시위안 장, 영성, 리안민 정, 코디 하오 유, 조셉 E. 곤잘레스, 하오 장, 및 이온 스토이카. 2023. 페이지 주의 집중을 제공하는 대용량 언어 모델에 대한 효율적인 메모리 관리. [운영 체제 원리에 관한 ACM SIGOPS 29회 심포지엄 진행]에서.
+* Lewkowycz et al. (2022) Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, Yuhuai Wu, Behnam Neyshabur, Guy Gur-Ari, and Vedant Misra. 2022. 언어 모델로 정량적 추론 문제를 해결합니다.
+* Li et al. (2023) Chengpeng Li, Zheng Yuan, 관팅동, Keming Lu, Jiancan Wu, Chuanqi Tan, Xiang Wang, and Chang Zhou. 2023. 쿼리 및 응답 확대는 영역 외 수학 추론 일반화에 도움이 되지 않습니다. _ arXiv preprint arXiv:2310.05506_.
+* Lightman et al. (2023) Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 2023. 단계별로 검증해보겠습니다. _ arXiv preprint arXiv:2305.20050_.
+* Luo et al. (2023) Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jianguang Lou, Chongyang Tao, Xiubo Geng, Qingwei Lin, Shifeng Chen, and Dongmei Zhang. 2023. 마법사 수학: 강화된 evol-instruct를 통해 대규모 언어 모델에 대한 수학적 추론을 강화합니다. _ arXiv preprint arXiv:2308.09583_.
+* Miao et al.(2021) Shen-Yun Miao, Chao-Chun Liang, and Keh-Yih Su. 2021. 영어 수학 단어 문제 풀이기를 평가하고 개발하기 위한 다양한 코퍼스. _ arXiv preprint arXiv:2106.15772_.
+* OpenAI (2023a) OpenAI. 2023a. Gpt-3.5 터보 미세 조정 및 api 업데이트.
+* OpenAI (2023b) OpenAI. 2023b. GPT-4 기술 보고서입니다. _ CoRR_, abs/2303.08774.
+* Ouyang et al.(2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. 웨인라이트, 파멜라 미슈킨, 종장, 산디니 아가르왈, 카타리나 슬라마, 알렉스 레이, 존 슐만, 제이콥 힐튼, 프레이저 켈튼, 루크 밀러, 매디 시멘스, 아만다 아스켈, 피터 웰린더, 폴 크리스티아누, 얀 라이케, 라이언 로우. 2022. 인간 피드백으로 지침을 따르도록 언어 모델을 훈련합니다.
+* Patel 등 (2021) Arkil Patel, Satwik Bhattacharya, and Navin Goyal. 2021. nlp 모델이 정말 간단한 수학 단어 문제를 해결할 수 있을까요? _ arXiv preprint arXiv:2103.07191_.
+* Shao et al.(2024) Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Mingchuan Zhang, Y. K. Li, Y. 우, 다야 궈 2024. Deepseekmath: Pushing the limit of mathematical reasoning in open language models.
+* Team et al. (2023) Gemini Team, Rohan Anil, Sebastian Borgeaud, Yonghui Wu, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, et al. 2023. Gemini: a family of highly capable multimodal models. _ arXiv preprint arXiv:2312.11805_.
+* Touvron 등(2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. 2023a. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ arXiv preprint arXiv:2302.13971_.
+* Touvron 등(2023b)Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. 2023b. 라마 2: 오픈 파운데이션과 미세 조정된 채팅 모델입니다. _ arXiv preprint arXiv:2307.09288_.
+* Wei et al.(2022a) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. 2022a. 대형 언어 모델의 출현 능력.
+* Wei et al.(2022b) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022b. 사고 연쇄 프롬프트는 대규모 언어 모델에서 추론을 유도합니다. _ Advances in Neural Information Processing Systems_, 35:24824-24837.
+* AAI(2023) xAI. 2023. Grok-1.
+* Xu et al. (2023) Can Xu, Qingfeng Sun, Kai Zheng, Xiubo Geng, Pu Zhao, Jiazhan Feng, Chongyang Tao, and Daxin Jiang. 2023. 마법사: 큰 언어 모델이 복잡한 지침을 따르도록 권한을 부여합니다. _ arXiv preprint arXiv:2304.12244_.
+* Yu et al. (2023) Longhui Yu, Weisen Jang, Han Shi, Jincheng Yu, Zhengying Liu, Yu Zhang, James T Kwok, Zhenguo Li, Adrian Weller, and Weiyang Liu. 2023. 메타매스: 대용량 언어 모델에 대한 자신의 수학적 질문을 부트스트랩합니다. _ arXiv preprint arXiv:2309.12284_.
+* Yue 등(2023) Xiang Yue, Xingwei Qu, Ge Zhang, Yao Fu, Wenhao Huang, Huan Sun, Yu Su, and Wenhu Chen. 2023. 매머드: 하이브리드 명령어 튜닝을 통해 수학 일반론 모델을 구축합니다. _ arXiv preprint arXiv:2309.05653_.
+* Zhang et al.(2022) Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex Smola. 2022. 대규모 언어 모델에서의 자동 사고 연쇄 프롬프트. _ arXiv preprint arXiv:2210.03493_.
+* Zheng et al. (2023) Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhang, Zhango Wu, Yonghao Zhang, Zi Lin, Zhuohan Li, Dacheng Li, Eric. P Xing, Hao Zhang, Joseph E. Gonzalez, Ion Stoica. 2023. mtbench와 챗봇 아레나로 판단합니다.
+* Zhou 등(2023) Chunting Zhou, Pengfei Liu, Puxin Xu, Srini Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, et al. 2023. Lima: Less is more for alignment _ arXiv preprint arXiv:2305.11206_.
+
+GSM8K에서의 합성 Prompt
+
+[title=A1] Preprint: **질문 생성**
+
+수학 전문 교사로 활동해 주시기 바랍니다.
+
+여러분의 목표는 학생들이 수학을 배울 수 있도록 양질의 수학 단어 문제를 만드는 것입니다.
+
+수학 문제가 주어집니다. 주어진 질문과 다음 지침에 따라 새 질문을 작성하십시오.
+
+목표를 달성하기 위해, 여러분은 세 가지 직업을 가지고 있습니다.
+
+# 주어진 질문에 따라 유사하지만 새로운 질문을 생성하십시오.
+
+# 모든 원칙을 준수하는지 알아보기 위해 문제를 단계별로 풀어서 확인합니다.
+
+# 검사 코멘트에 따라 만든 질문을 수정 하 여 고품질인지 확인 합니다.
+
+당신은 이것을 하기 위한 다섯 가지 원칙이 있습니다.
+
+새 질문이 한 가지만 묻고, 합리적이고, 주어진 질문에 기초하고, 숫자(플로트 또는 정수)로만 답할 수 있는지 확인합니다. 예를 들어, 'A, B, C의 양은 얼마인가?'라고 묻지 마세요.
+
+새로운 질문이 삶의 상식과 일치하는지 확인하십시오. 예를 들어, 누군가가 가지고 있거나 지불하는 금액은 양수여야 하며, 사람의 수는 정수여야 한다.
+
+학생이 주어진 질문 없이 새 질문에 답할 수 있는지 확인합니다. 주어진 질문에서 일부 숫자, 조건 또는 배경을 사용하려면 새 질문에서 정보가 누락되지 않도록 다시 설명하십시오.
+
+# 질문에 솔루션을 포함하지 마십시오.
+
+생성된 질문이 이미 확인 시 이러한 원칙을 따르는 경우. 수정 없이 보관하기만 하면 됩니다.
+
+주어진 질문: 주어진 질문
+
+출력은 다음 형식이어야 합니다.
+
+창조된 질문: <당신의 창조된 질문>
+
+VERIFICATION AND MODIFICATION: <질문을 단계별로 풀고 모든 원칙에 따르도록 수정>
+
+최종 창작 질문: <최종 창작 질문>
+
+[title=A1] Preprint: **질문 생성**
+
+수학 전문 교사로 활동해 주시기 바랍니다.
+
+당신의 목표는 수학 단어 문제를 정확하게 푸는 것이다.
+
+목표를 달성하기 위해 두 가지 직업을 가지고 있습니다.
+
+# 주어진 질문에 대한 자세한 솔루션을 작성합니다.
+
+# 이 질문에 대한 최종 답변을 작성합니다.
+
+당신은 이것을 하기 위한 두 가지 원칙이 있습니다.
+
+# 솔루션이 단계별인지 확인합니다.
+
+# 최종 답변이 숫자(플로트 또는 정수)인지 확인합니다.
+
+주어진 질문: 주어진 질문
+
+출력은 다음 형식이어야 합니다.
+
+ SOLUTION: <주어진 질문에 대한 당신의 상세한 해결책>
+
+최종 답변: <정수 또는 부동수만 있는 질문에 대한 최종 답변>
+
+[title=A1] Preprint: **질문 생성**
+
+수학 전문 교사로 활동해 주시기 바랍니다.
+
+여러분의 목표는 학생들이 수학을 배울 수 있도록 양질의 수학 단어 문제를 만드는 것입니다.
+
+수학 문제가 주어집니다. 주어진 질문과 다음 지침에 따라 새 질문을 작성하십시오.
+
+목표를 달성하기 위해, 당신은 한 가지 직업을 가지고 있다.
+
+# 주어진 질문에 따라 유사하지만 새로운 질문을 생성하십시오.
+
+이걸 하려면 네 가지 원칙이 있어야 해
+
+새 질문이 한 가지만 묻고, 합리적이고, 주어진 질문에 기초하고, 숫자(플로트 또는 정수)로만 답할 수 있는지 확인합니다. 예를 들어, 'A, B, C의 양은 얼마인가?'라고 묻지 마세요.
+
+새로운 질문이 삶의 상식과 일치하는지 확인하십시오. 예를 들어, 누군가가 가지고 있거나 지불하는 금액은 양수여야 하며, 사람의 수는 정수여야 한다.
+
+학생이 주어진 질문 없이 새 질문에 답할 수 있는지 확인합니다. 주어진 질문에서 일부 숫자, 조건 또는 배경을 사용하려면 새 질문에서 정보가 누락되지 않도록 다시 설명하십시오.
+
+# 질문에 솔루션을 포함하지 마십시오.
+
+생성된 질문이 이미 확인 시 이러한 원칙을 따르는 경우. 수정 없이 보관하기만 하면 됩니다.
+
+주어진 질문: 주어진 질문
+
+출력은 다음 형식이어야 합니다.
+
+창조된 질문: <당신의 창조된 질문> 추가 결과
+
+그림 7: 이 두 벤치마크에 대한 Xwin-Math의 집계 성능은 GPT-4에 이어 두 번째이며, 이는 우리 모델의 강력한 일반화 기능을 보여준다.
+
+\begin{table}
+\begin{tabular}{l|c|c|c|c|c|c} \hline \hline Dataset & \(L_{\text{test-regen}}\) & \(L_{\text{test-ref}}\) & \(L_{\text{train}}\) & \(L_{\text{train-regen}}\) & \(\Delta_{1}\) & \(\Delta_{2}\) \\ \hline GSM8K & 0.52 & 0.50 & 0.11 & 0.33 & 0.02 & 0.19 \\ MATH & 0.59 & 0.58 & 0.23 & 0.39 & 0.01 & 0.20 \\ \hline \hline \end{tabular}
+\end{table}
+표 6: 데이터 생성 중 벤치마크 데이터 유출을 검증하기 위해 우리는 1) 모든 합성 데이터에서 256개의 샘플을 가진 작은 부분 집합인 훈련 부분 집합; 2) 훈련 부분 집합의 원래 질문을 유지하고 GPT-4 Turbo를 사용하여 답변을 다시 작성하는 재생성 훈련 부분 집합; 3) 평가 메트릭의 질문을 변경하지 않고 GPT-4 Turbo를 사용하여 답변을 다시 작성하는 재생성 테스트 집합; 4) GPT-4 Turbo를 통해 새로운 질문과 답변을 생성하기 위해 테스트 집합을 시드로 사용하는 참조 테스트 집합에 대한 LM 손실을 비교한다. 또한 Skywork를 참조하여 두 가지 주요 메트릭인 \(\Delta_{1}=L_{\text{test-regen}}-L_{\text{test-ref}},\Delta_{2}=L_{\text{test- regen}}-L_{\text{train-regen}}}\)을 보고한다. 두 벤치마크에서 \(\Delta_{1}\)은 0에 가깝고 \(\Delta_{2}\)는 0보다 훨씬 크므로 데이터 합성 과정에서 누출이 없다고 판단한다.
+
+합성자료에 대한 사례연구
+
+### GSM8K
+
+Original Question
+
+랜디는 그의 농장에 60그루의 망고 나무를 가지고 있다. 그는 또한 망고 나무의 절반에도 못 미치는 코코넛 나무를 5그루 가지고 있다. 랜디는 농장에 나무가 몇 그루나 있어?
+
+충분한 질문 w/o 검증
+
+마리아는 과수원에 80그루의 사과나무를 가지고 있다. 그녀는 또한 사과 나무의 3분의 4보다 적은 벚나무를 가지고 있다. 마리아는 과수원에 나무가 몇 그루나 있어?
+
+충분한 질문 w/o 검증
+
+마리아는 사과나무가 80그루야
+
+벚나무는 사과나무보다 3분의 4도 안 돼요 사과 나무의 3분의 1은 80/3로 약 26.67이다.
+
+- 그것보다 4개 적은 것은 약 22.67일 것입니다. 그러나 우리는 나무의 일부를 가질 수 없기 때문에 가장 가까운 정수인 27로 반올림합니다.
+
+- 수정된 질문은 소수점 없이 벚나무 수를 물어봐야 합니다. 그래서 우리는 그 결과로 정수를 갖도록 질문을 조정한다.
+
+- 80은 3으로 나눌 수 없으므로 벚나무 전체를 얻기 위해서는 3으로 나눌 수 있도록 숫자를 바꿀 수 있다. 80이 아닌 81개의 사과나무를 사용하자.
+
+검증을 통한 충분한 질문
+
+마리아는 과수원에 81그루의 사과나무를 가지고 있다. 그녀는 또한 사과 나무의 3분의 4보다 적은 벚나무를 가지고 있다. 마리아는 과수원에 나무가 몇 그루나 있어?
+
+충분한 솔루션과 최종 답변
+
+먼저, 마리아가 가지고 있는 벚나무 수를 알아봅시다. 우리는 그녀가 사과 나무의 3분의 4보다 적은 벚나무를 가지고 있다고 들었다.
+
+마리아는 81개의 사과나무를 가지고 있으니, 그 숫자의 1/3을 찾아보자.
+
+81개의 사과나무 중 1/3 = 81개의 사과나무/3 = 27개의 사과나무.
+
+이제, 벚나무에서 이 양보다 4가 더 적기 때문에, 우리는 벚나무의 수를 찾기 위해 27에서 4를 뺍니다:
+
+벚나무 27그루 - 4=벚나무 23그루.
+
+마리아가 과수원에 가지고 있는 총 나무의 수를 찾기 위해, 우리는 사과 나무의 수를 벚나무 수에 추가한다:
+
+사과나무 81그루 + 벚나무 23그루 = 104그루입니다.
+
+답은 [104]입니다.
+
+### Math
+
+**Original Question**
+
+\(\log_{10}28471\) 값은 연속 정수 \(a\)와 \(b\) 사이에 있다. \(a+b\)를 찾습니다.
+
+**합성 질문 w/o 검증**
+
+\(\log_{2}16384\) 값은 연속 정수 \(x\)와 \(y\) 사이에 있다. \(x+y\)를 찾습니다.
+
+**V Verification Comment**
+
+질문이 풀릴 수 있도록 하기 위해 주어진 로그가 평가될 수 있고 연속된 두 정수 사이에 속할 수 있는지 확인해야 한다.
+
+1. \(16384\)와 동일한 \(2^{n}\)의 값을 식별합니다.
+
+2. \(16384\)가 \(2\)의 거듭제곱이면 \(\log_{2}16384\)는 정수입니다.
+
+3. 결과가 정수인지 확인하고 그 주위의 연속된 정수를 찾습니다.
+
+확인해 보자
+
+\(2^{0}=1\), \(2^{1}=2\), \(2^{2}=4\), \(2^{3}=8\), \(2^{4}=16\)
+
+...
+
+\(2^{14}=16384\)
+
+So, \(\log_{2}16384=14\).
+
+14 주위의 연속적인 정수는 (13 및 14) 또는 (14 및 15)이다.
+
+로그는 정확한 정수를 주기 때문에, 우리는 질문을 유효하게 만들기 위해 2의 정확한 거듭제곱이 아닌 수를 사용하도록 그것을 수정할 것이다.
+
+**MODIFIED Created QUESTION**:
+
+\(\log_{2}10000\) 값은 연속 정수 \(m\)와 \(n\) 사이에 있습니다. \(m+n\)을 찾습니다.
+
+자, 수정된 질문을 확인해 봅시다.
+
+1. 10000은 2의 거듭제곱이 아니므로 \(\log_{2}10000\)는 정수가 아닐 것이다.
+
+2. 이 로그 값이 있는 두 개의 연속 정수를 찾는 것이 목표이다.
+
+3. \(2^{13}=8192\)와 \(2^{14}=16384\), \(\log_{2}10000\)이 13에서 14 사이임을 알고 있습니다.
+
+\(\log_{2}10000\) 주위의 연속적인 정수는 13과 14이다.
+
+**검증을 통한 합성 질문**
+
+\(\log_{2}10000\) 값은 연속 정수 \(m\)와 \(n\) 사이에 있습니다. \(m+n\)을 찾습니다.
+
+**합성 솔루션 및 최종 정답**
+
+\(\log_{2}10000\)가 놓여 있는 연속적인 정수를 찾기 위해서는 \(2\)의 거듭제곱이 바로 \(10000\)보다 작은 것과 큰 것을 찾아야 한다.
+
+먼저, \(10000\)보다 작은 \(2\)의 가장 큰 거듭제곱을 구해보자. \(2^{1},2^{2},\ldots\) 등으로 시작하여 다음을 찾는다:
+
+\(2^{10}=1024\), \(2^{11}=2048\), \(2^{12}=4096\), \(2^{13}=8192\), \(2^{14}=16384\)
+
+여기서 \(2^{13}<10000<2^{14}\)는 \(\log_{2}10000\)이 \(13\)보다 크지만 \(14\)보다 작음을 의미한다.
+
+따라서 \(\log_{2}10000\)가 놓여 있는 연속 정수 \(m\)와 \(n\)는 \(m=13\)와 \(n=14\)이다.
+
+이제 우리는 필요한 합을 찾기 위해 이 두 정수를 더할 것이다:
+
+\(m+n=13+14=27\).
+
+답은 [27]모형반응의 사례연구
+
+### GSM8K
+
+질문과 진실 해결
+
+**질문:** 보물 사냥꾼이 보석이 가득 찬 매장된 보물 상자를 발견했습니다. 다이아몬드는 175개로 다이아몬드보다 루비가 35개 적었고, 루비보다 에메랄드 수가 2배 많았다. 가슴에 보석이 몇 개나 있었어?
+
+**해결 방법:** 보물 상자에 175 - 35 = 140개의 루비가 있었습니다. 보물 상자에는 140 x 2 = 280개의 에메랄드가 있었다. 그래서 보물상자에 있는 보석의 총 개수는 175 + 140 + 280 = [595]이다.
+
+**응답 - Xothing-Xothing-75 (755 (400))** 회색 사망
+
+먼저, 루비의 수를 알아봅시다. 다이아몬드보다 루비가 35개 적다고 들었습니다. 다이아몬드가 175개이기 때문에 우리는 루비의 수를 다음과 같이 계산할 수 있다:
+
+루비 수 = 다이아몬드 수 - 35 = 175 - 35 = 140
+
+다음으로 에메랄드의 수를 알아봐야 합니다. 우리는 루비보다 에메랄드의 수가 두 배라고 들었다. 그래서 우리는 다음과 같이 에메랄드의 수를 계산할 수 있다:
+
+에메랄드 수 = 2 x 루비 수 = 2 x 140 = 280
+
+이제 우리는 다이아몬드, 루비, 에메랄드의 수를 합하여 보석의 총 수를 구할 수 있다:
+
+총 보석 수 = 다이아몬드 수 + 루비 수 + 에메랄드 수 = 175 + 140 + 280 = 605입니다.
+
+답은 다음과 같습니다. [605]**잘못된**잘못된 계산
+
+**응답 - Xothing-Xothing-75 (755 (400))** 온도의 샘플 하나 = 0.7
+
+가슴에 있는 보석의 종류별 개수를 단계별로 찾아보자.
+
+첫째, 다이아몬드의 수가 주어집니다.
+
+다이아몬드의 수 = 175
+
+다음으로, 우리는 다이아몬드보다 루비가 35개 더 적다고 들었다. 루비의 수를 구하기 위해, 우리는 다이아몬드의 수에서 35를 뺍니다:
+
+루비 수 = 다이아몬드 수 - 35 = 175 - 35 = 140
+
+그리고 나서, 우리는 루비보다 에메랄드의 수가 두 배라고 들었다. 에메랄드의 수를 구하기 위해 우리는 루비의 수에 2를 곱한다.
+
+에메랄드 수 = 2 * 루비 수 = 2 * 140 = 280
+
+이제 다이아몬드, 루비, 에메랄드의 수를 합해서 가슴에 있는 보석의 총 수를 찾아보자.
+
+총 보석 수 = 다이아몬드 수 + 루비 수 + 에메랄드 수 = 175 + 140 + 280 = 595
+
+답은 다음과 같습니다. [595]**정답입니다.
+
+**응답 - Xothing-Xothing-75 (755 (400))** 온도의 샘플 하나 = 0.7
+
+문제에서 주어진 정보를 단계별로 정리해보자.
+
+1. 우리는 175개의 다이아몬드가 있다는 것을 알고 있다.
+
+2. 다이아몬드보다 루비가 35개 적다. 다이아몬드가 175개이기 때문에 우리는 175개에서 35개를 빼서 루비의 수를 계산할 수 있다.
+
+루비 수 = 다이아몬드 수 - 35 = 175 - 35 = 140
+
+3. 루비보다 에메랄드 수가 두 배나 많다. 우리는 루비의 수에 2를 곱하면 에메랄드의 수를 구할 수 있다.
+
+에메랄드 수 = 2 x 루비 수 = 2 x 140 = 280
+
+이제 가슴에 있는 보석의 총 수를 찾기 위해 다이아몬드, 루비, 에메랄드의 수를 함께 더한다.
+
+총 보석 수 = 다이아몬드 수 + 루비 수 + 에메랄드 수 = 175 + 140 + 280 = 595
+
+답은 다음과 같습니다. [595]**정답입니다.
+
+### MATH
+
+**질문 및 지상 진실 솔루션**
+
+**질문:** \(f(x)=\frac{3x-2}{x-2}\)이면, \(f(-2)+f(-1)+f(0)\)의 값은? 당신의 답을 공통분수로 표현하라.
+
+**Solution:**\(f(-2)+f(-1)+f(0)=\frac{3(-2)-2}{-2-2}+\frac{3(-1)-2}{-1-2}+\frac{3(0)-2}{0-2}= \frac{-8}{-4}+\frac{-5}{-3}+\frac{-2}{-2}=2+\frac{5}{3}+1=\framebox{\frac{14}{3}}\)
+
+**Response-X/Win-X/H (7-S-X/H) Greedy Decatio**
+
+\(f(-2)+f(-1)+f(0)\)의 값을 구하려면 이 세 값 \(x\)에서 함수 \(f(x)\)을 평가해야 한다.
+
+먼저 \(f(-2)\): \(f(x)=\frac{3x-2}{x-2}\) \(x=-2\): \(f(-2)=\frac{3(-2)-2}{-2-2}=\frac{-6-2}{-4}=\frac{-8}{-4}\)를 찾아보자.
+
+이제 \(f(-1)\): \(x=-1\): \(f(-1)=\frac{3(-1)-2}{-1-2}=\frac{-3-2}{-3}=\frac{-5}{-3}\)
+
+마지막으로 \(f(0)\): \(x=0\): \(f(0)=\frac{3(0)-2}{0-2}=\frac{-2}{-2}=1\)을 찾아보자.
+
+이제 우리는 \(f(-2)+f(-1)+f(0)=\frac{-8}{-4}+\frac{-5}{-3}+1\)의 합을 구할 수 있다.
+
+이러한 분수를 더하기 위해서는 세 분모(-4, -2, -3)의 최소공배수(LCM)인 공통분모를 찾아야 한다. 이 분모의 LCM은 -12입니다.
+
+이제 우리는 각 분수를 공통 분모로 다시 쓸 수 있다.
+
+\(\frac{-8}{-4}=\frac{4}{3}\), \(\frac{-5}{-3}=\frac{5}{3}\), \(1=\frac{12}{12}\)
+
+**Noneasonable**
+
+이제 분수를 추가할 수 있습니다. \(\frac{4}{3}+\frac{5}{3}+\frac{12}{12}=\frac{4+5+12}{3}=\frac{19}{3}\).
+
+답은 다음과 같습니다. \(\framebox{\frac{19}{3}}}\)**잘못된**잘못된 계산**
+
+**Response-X/Win-X/H (7-S-X/H) 온도로부터의 하나의 샘플=0.7**
+
+\(f(-2)+f(-1)+f(0)\)의 값을 구하려면 먼저 x의 특정 값에서 각 함수를 평가해야 한다.
+
+\(f(-2)\)에 대해: \(f(x)=\frac{3x-2}{x-2}\) \(x=-2\)를 방정식에 대입하여: \(f(-2)=\frac{3(-2)-2}{-2-2}=\frac{-6-2}{-4}=\frac{-8}{-4}=2\)
+
+\(f(-1)\)에 대해: \(f(x)=\frac{3x-2}{x-2}\) \(x=-1\)를 방정식에 대입한다: \(f(-1)=\frac{3(-1)-2}{-1-2}=\frac{-3-2}{-3}=\frac{-5}{-3}=\frac{5}{3}\)
+
+\(f(0)\)에 대해: \(f(x)=\frac{3x-2}{x-2}\) \(x=0\)를 방정식에 대입하여: \(f(0)=\frac{3(0)-2}{0-2}=\frac{-2}{-2}=1\)
+
+이제 \(f(-2)\), \(f(-1)\), \(f(0)\): \(f(-2)+f(-1)+f(0)=2+\frac{5}{3}+1=\frac{14}{3}\)의 값을 더할 수 있다.
+
+답은 다음과 같습니다. \(\framebox{\frac{14}{3}}}\)**Correct**
+
+**Response-X/Win-X/H (7-S-X/H) Greedy Decatio**
+
+\(f(-2)+f(-1)+f(0)\)의 값을 구하기 위해서는 주어진 각 점에서 함수 \(f(x)\)을 구한 후 그 결과를 합산해야 한다.
+
+먼저 \(f(-2)\): \(f(-2)=\frac{3(-2)-2}{(-2)-2}=\frac{-6-2}{-2-2}=\frac{-8}{-4}=2\)
+
+다음으로, \(f(-1)\ : \(f(-1)=\frac{3(-1)-2}{(-1)-2}=\frac{-3-2}{-1-2}=\frac{-5}{-3}=\frac{-5}{-3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\frac{3}=\
