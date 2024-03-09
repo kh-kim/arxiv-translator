@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '마스킹 사고: 언어 모델의 수학적 추론 학습을 향상시킬 수 있는 부분 추론 단계 단순 마스킹\n' +
+      '\n' +
+      '창유천\\({}^{1}\\), Xiting Wang\\({}^{1}\\), Ting-En Lin\\({}^{2}\\), Ang Lv\\({}^{1}\\)\n' +
+      '\n' +
+      '**유천우({}^{2}\\)**, **신가오({}^{3}\\)**, **지롱원\\({}^{1}\\)**, **희옌\\({}^{1}\\)** 및 **용빈리\\({}^{2}\\)**\n' +
+      '\n' +
+      '중국 인민대학교 인공지능학부\n' +
+      '\n' +
+      '\\({}^{2}\\)Alibaba Group\n' +
+      '\n' +
+      '한국과학기술연구원 전산생명과학연구센터\n' +
+      '\n' +
+      '{chen.changyu, xitingwang, anglv,jrwen,ruiyan}@ruc.edu.cn\n' +
+      '\n' +
+      '{ting-en.lte, shengxiu.wyc, shuide.lyb}@alibaba-inc.com\n' +
+      '\n' +
+      ' 특파원 작가들\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '추론 작업에서 사소한 오류라도 부정확한 결과로 캐스케이드될 수 있으며, 이는 그러한 도메인에서 대규모 언어 모델의 최적이 아닌 성능으로 이어진다. 이전 미세 조정 접근법은 높은 비용이 들지만 인간 라벨링, 더 큰 모델 또는 자체 샘플링에서 보다 정확한 감독 신호를 활용하여 이를 완화하려고 했다. 반대로, 입력에 섭동을 도입하는 대신 외부 리소스를 피하는 방법을 개발한다. 우리의 훈련 접근법은 사고의 사슬 내에서 특정 토큰을 무작위로 마스킹하는데, 이는 추론 작업에 특히 효과적인 것으로 밝혀진 기술이다. GSM8K를 사용한 미세 조정에 적용했을 때, 이 방법은 수정된 몇 개의 코드와 추가 라벨링 노력 없이 표준 감독 미세 조정보다 정확도가 5% 향상되었다. 더 나아가, 기존의 방법들과 보완적이다. 관련 데이터 증강 방법과 통합하면 두 개의 기본 모델뿐만 아니라 다양한 품질과 크기의 5개 데이터 세트에 걸쳐 GSM8K 정확도가 평균 3% 개선되고 MATH 정확도가 1% 개선된다. 사례 연구와 정량적 분석을 통해 이러한 개선의 이면에 있는 메커니즘을 추가로 조사하며, 이는 우리의 접근법이 장거리 의존성, 특히 질문과 관련된 의존성을 포착하는 모델에 대한 우수한 지원을 제공할 수 있음을 시사한다. 이러한 향상은 질문과 이전 단계에서 전제에 대한 이해를 심화시킬 수 있다. 우리 코드는 Github.1에서 사용할 수 있습니다.\n' +
+      '\n' +
+      '각주 1: [https://github.com/AlibabaResearch/DAMO-ConvAI](https://github.com/AlibabaResearch/DAMO-ConvAI) 및 [https://github.com/ChangyuChen347/MaskedThought](https://github.com/ChangyuChen347/MaskedThought)입니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '대규모 언어 모델들(LLM)이 다양한 태스크들에 걸쳐 달성된 상당한 진보에도 불구하고, 이들은 다단계 추론 문제들과의 어려움들을 계속 직면한다(Lightman et al., 2023; Huang et al., 2023; Shi et al., 2023; Chen et al., 2024). 추론의 일차적인 도전은 사소한 오류라도 전체 해결 프로세스를 방해할 수 있다는 사실로부터 발생한다(Lightman et al., 2023). 이 문제는 종종 그러한 오류로 이어지는 환각으로 고통받는 최신 모델에서 복합된다(황 등, 2023). GPT-3에 의해 수행된 수학적 추론 과제에서 오류 패턴을 분석한 결과, 50% 이상의 오류가 문제에 대한 오해 또는 일관성 없는 추론 단계에서 비롯된 것으로 나타났다(Wei et al., 2022).\n' +
+      '\n' +
+      '추론 능력을 향상시키기 위해, 대부분의 트레이닝 방법들은 값비싼 수단들, 이를테면 인간 주석(Liao et al., 2024), 더 큰 모델들의 생성(Yu et al., 2023; Luo et al., 2023; Liu et al., 2023; Yue et al., 2023), 또는 자기 샘플링(Yuan et al., 2023; Singh et al., 2023; Wang et al., 2023; Zelikman et al., 2022)을 통해 획득되는 감독된 신호들을 획득하는 것에 초점을 맞춘다. 이러한 방법들은 추론 과정을 정확하게 설명함으로써 특정 궤적을 향해 학습을 지시하기 위해 이러한 신호들에 의존한다. 대조적으로, 우리의 방법은 완전히 다른 접근법이 동등하게 효과적임을 보여준다. 생성 과정을 지시하기 위해 더 정확한 지침을 필요로 하는 대신, 본 기법은 랜덤 노이즈를 입력에 도입함으로써 유사한 결과를 달성한다. 일반적으로 정확한 이해가 필요하다고 여겨지는 추론 작업의 경우, 추론 단계에 노이즈를 통합하는 방법이 놀랍도록 효과적이라는 것을 발견했으며, 이는 모델이 노이즈 제거 프로세스를 통해 성능을 향상시켰을 수 있음을 나타낸다. 우리의 접근법은 단순성과 효과성이 두드러지며, 더 복잡하고 자원 집약적인 방법에 대한 실현 가능한 대안을 제공한다.\n' +
+      '\n' +
+      '우리의 공헌을 요약하면 다음과 같다:\n' +
+      '\n' +
+      '첫째, 언어 모델 추론을 개선하기 위한 간단하고 효과적인 Masked thought Fine-Tuning (MFT) 방법을 제안한다. 우리의 방법의 구현은 간단하다: 그것은 생각의 사슬에서 특정 토큰을 [마스크]로 대체하기만 하면 된다. 이는 표준 감독 미세 조정(SFT)과 동일한 절차를 유지하면서 수행된다. 이러한 사소한 수정만으로 Llama-2-7B [13]를 사용하여 GSM8K 데이터 세트를 미세 조정할 때 정확도의 5% 증가를 달성할 수 있으며, 이는 보다 복잡한 데이터 생성 파이프라인을 사용하여 얻은 결과와 유사한 결과를 산출한다(Tab.2 참조). 더욱이, 이 방법은 우수한 범용성을 나타내고 다른 데이터 증강 기술을 잘 보완하여 끊김 없는 통합을 가능하게 한다. 실험을 통해 SFT를 Masked Thought 전략으로 대체함으로써 GSM8K 데이터 세트에서 평균 3%, MATH 데이터 세트에서 5개의 다른 수학 데이터 세트와 2개의 모델(Tab.1 참조)에서 1%의 정확도를 향상시킬 수 있음을 보여주었다. 더욱이, MFT는 SFT보다 더 높은 샘플 효율을 입증한다(도 2 참조).\n' +
+      '\n' +
+      '둘째, 정규화의 관점에서 우리의 방법을 분석하고 효과적인 정규화를 위한 두 가지 지침 원칙을 소개한다. 구체적으로, 본 논문에서 제안하는 방법과 일반적으로 사용되는 많은 정규화 방법들이 특수한 경우에 적용되는 잡음 주입 프레임워크를 제안한다. 이러한 기술은 오버피팅을 완화하기 위해 다양한 형태의 노이즈를 도입하는데, 예를 들어 임베딩[10]의 각 차원에 드롭아웃을 적용하거나 동의어 치환[11]을 채용한다. 그런 다음 비교 분석을 수행하고 이러한 정규화 방법이 MFT 프레임워크가 없을 때 감소된 효과를 나타낸다는 것을 발견했다(탭 3 참조). 실험에 기초하여, 우리는 효과적인 정규화를 위한 두 가지 지침 원칙을 제안한다: (1) 추론 경로에서 토큰의 일부는 노이즈 추가 없이 유지되어야 한다; (2) 노이즈가 추가되는 위치의 경우, 이러한 위치가 가능한 한 덜 의미론을 유지하도록 하는 것이 중요하다.\n' +
+      '\n' +
+      '셋째, 학습 종속성에 미치는 영향을 밝힘으로써 이 방법의 효과에 대한 근본적인 이유를 탐구한다. 정량적 분석과 사례 연구를 모두 수행하여 이 방법이 초기 수학적 질문과 초기 단계에 대한 향상된 의존성을 입증한다는 것을 관찰했다. 이것은 가능한 이유를 제시한다: 모델 자체가 최근 단계에서 생성한 지역 정보에만 의존하지 않고, 시퀀스가 확장됨에 따라 환각 또는 오도 가능성을 높일 수 있는 대신, 우리의 방법은 문제 진술 및 이전 단계에서 더 많은 정보를 활용한다. 이러한 출처는 더 신뢰할 수 있고 오류가 발생하기 쉽습니다. 결과적으로, 이 전략은 문제와 추론의 불일치를 오해할 위험을 줄일 수 있다( Secs. 2.2와 3.4 참조).\n' +
+      '\n' +
+      '## 2 Methodology\n' +
+      '\n' +
+      '### Masked thought Fine-Tuning\n' +
+      '\n' +
+      '마스크드 사상 파인튜닝으로 명명된 우리의 접근법은 SFT의 우산에 속한다. 표준 SFT 구현의 단순성을 유지합니다. 다른 정규화 방법과의 비교를 용이하게 하기 위해, 우리는 토큰 노이즈 주입의 일반적인 프레임워크를 제시한다. 이 프레임워크는 소개된 소음의 위치와 유형을 모두 고려한다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{MFT} =-\\sum_{t=1}^{T}\\log p(w_{t}^{gt}|w_{1:t-1}^{s}) \\tag{1}\\] \\[w_{i}^{s} =\\begin{cases}f(w_{i}^{gt},n_{i}),&\\text{if }M_{i}=1\\\\ w_{i}^{gt},&\\text{otherwise}\\end{cases}\\] \\[n_{i} \\sim\\text{token noisy distribution }\\mathcal{N}\\]\n' +
+      '\n' +
+      '(M_{i}\\sim\\)Bernoulli\\((p)\\) for each target/source token \\(w_{i}^{gt}\\) (1)\n' +
+      '\n' +
+      'SFT와 유사하게, 우리의 방법은 변하지 않은 \\(w^{gt}\\)( \\(q\\)에 질문하는 그라운드 트루스 솔로)를 레이블로 사용한다. 그 구별은 입력에 잡음 \\(n_{i}\\)을 도입하는 것에 있다. \\(f\\)의 구현은 토큰 노이즈 분포 \\(\\mathcal{N}\\)의 선택에 따라 달라진다(표 3 참조).\n' +
+      '\n' +
+      '이 프레임워크는 일반적으로 사용되는 많은 정규화 방법과 호환된다. 예를 들어, 대상 및 소스 모두에서 모든 입력 토큰의 벡터에 연속 노이즈를 추가하는 [15]에서, \\(n_{i}\\)는 \\(-\\frac{\\alpha}{c}\\)에서 \\(\\frac{\\alpha}{c}\\)까지의 균일한 분포를 따르고, \\(M_{i}\\)는 1로 설정된다. 다른 접근법, 스케줄링 샘플링에서, 모델은 확률 \\(p\\)을 갖는 입력으로서 이전 시간 단계로부터의 자체 예측을 수신하고, 여기서 \\(n_{i}\\)는 예측된 토큰을 나타내고, \\(M_{i}\\)는 매개변수 \\(p\\)[12]를 갖는 베르누이 분포를 따른다.\n' +
+      '\n' +
+      '본 연구에서는 \\(n_{i}\\)와 \\(M_{i}\\)의 선택이 추론 성능에 미치는 영향을 파악하기 위해 비교 분석(Tab. 3)을 수행하였다. 결과는 이 프레임워크가 (1) \\(M_{i}\\)이 목표 시퀀스 내에서 베르누이 분포를 따라야 하는 한 효과적이며, 사고의 사슬에 있는 토큰의 하위 집합만이 잡음에 노출되고 (2) \\(n_{i}\\)이 잡음의 위치에서 원래의 의미 정보를 제거할 수 있음을 보여준다. 우리는 동의어 치환과 같은 일부 의미론을 유지하는 방법이 덜 효과적임을 발견한다.\n' +
+      '\n' +
+      '이러한 관찰에 기초하여, 우리는 주로 [마스크]를 \\(n_{i}\\)로 활용하는데, 이는 해당 위치에서 의미들을 효과적으로 제거할 수 있고, 또한 구현이 용이하기 때문이다. 또한, 앞서 언급한 연속 잡음 Uniform\\((-\\frac{\\alpha}{c},\\frac{\\alpha}{c})\\)에 대해 예외적으로 큰 \\(\\alpha\\)를 사용하거나 원래 토큰을 어휘에서 균일하게 샘플링된 다른 토큰으로 대체하는 경우에도 유사한 효과를 얻을 수 있음을 보인다.\n' +
+      '\n' +
+      '### MFT 정규화를 통한 종속성 학습 향상\n' +
+      '\n' +
+      '**관찰.** MFT의 효과에 대한 근본적인 이유를 이해하기 위해 자세한 분석을 수행하고 모델이 더 긴 거리 종속성으로 이동하는 경향이 있음을 발견하며, 특히 그림 1과 같이 질문에 대한 종속성을 강화합니다. 구체적으로, 시퀀스의 숫자 토큰 쌍에 대해 반복하고 첫 번째 토큰을 방해하여 두 번째 토큰이 변경되는지 확인하여 종속성 Schwab 및 Karlen(2019)을 나타냅니다. 예시된 바와 같이, 도 1(a)는 사고 사슬 내에서 두 토큰 간의 종속성을 비교하여 SFT가 짧은 거리에 더 큰 종속성을 갖는 반면 MFT는 더 긴 거리 종속성으로 이동함을 보여준다. 를 포함할 수 있다. 도 1의 (b)에서, 우리는 MFT가 SFT에 비해 질문의 모든 종속성을 향상시킨다는 것을 관찰하면서 질문의 방해가 사고 사슬에 미치는 영향을 조사한다. 그런 다음 부록 D에서 다른 모델 및 데이터 세트의 이러한 패턴을 확인하고 체인 내에서 근거리 종속성의 감소 추세를 관찰한다. 이러한 감소의 정도는 다양한 데이터 세트 간에 다르다. 명확한 패턴은 질문에 대한 의존도가 지속적으로 증가한다는 것이다.\n' +
+      '\n' +
+      '**거리 편향** 모델은 이전 단계에 주석이 올바르게 달린 지상 진실 데이터의 패턴에서 이러한 거리 편향을 학습하여 모델이 가까운 생각과 계산에서 유용한 정보를 추출할 수 있으며 때로는 원래 질문 설명을 간과할 수도 있습니다. 그러나 추론하는 동안 정확하게 검증된 그라운드 트루스에서 벗어나 스스로 단계를 생성합니다. 각각의 새로운 단계에 따라, 에러의 가능성이 증가한다. 명백한 실수가 없더라도 질문 세부 사항을 부적절하게 변경하거나 누락하면 후속 추론을 오도할 수 있다. 이 위험은 해당 모델이 질문을 무시한 채 인근 토큰에 과도하게 초점을 맞출 때 높아져 오류 확률이 높아진다. 이러한 현상은 추론 중에 안전한 추론이 보장되지 않는 노출 편향 Bengio 등(2015)이라고도 할 수 있다.\n' +
+      '\n' +
+      '**종속성 정규화** MFT는 이러한 종속성 문제를 해결하는 데 유용합니다. 단계적 추론 동안 중간 단계는 이전 단계와 질문의 여러 전제를 활용하여 의존성의 방향성 비순환 그래프를 형성할 수 있다. 인간의 행동을 위해서는 수학적 문제를 해결하는 과정에서 문제에 주어진 초기 조건과 이전 단계에서 자주 얻은 많은 결과를 모두 참조해야 한다. 트랜스포머는 모든 토큰 쌍 간의 완전한 연결을 허용하여 이러한 종속성의 데이터 기반 학습을 가능하게 하지만, 패턴 매칭 Liu 등(2022); Khona 등(2024); Dziri 등(2023)을 통해 바로가기를 학습할 위험이 있다. MFT는 완전히 연결된 그래프를 랜덤하게 프루닝합니다.\n' +
+      '\n' +
+      '그림 1: MFT가 SFT보다 장거리 의존성이 높다는 것을 알 수 있다. 더 높은 막대는 해당 거리에서 더 큰 의존성을 나타낸다. 구체적으로. 우리는 주어진 수열 내에서 두 개의 숫자 토큰의 상호 의존성을 조사한다. GSM8K 데이터 세트에서 훈련된 Llama-2-7b 모델을 사용하여 SFT와 방법을 모두 사용하여 실험을 수행한다.\n' +
+      '\n' +
+      '잠재적인 바로 가기를 마스킹하기 위한 트레이닝 동안, 모델이 질문들로부터의 정보 및 더 이른, 덜 오류가 발생하기 쉬운 단계들과 같은 더 강력한 피처들에 대한 더 많은 연결들을 구축하도록 장려한다. 우리는 수학적 질문이 오류가 없다고 가정하고 가면을 벗은 상태를 유지하여 제공된 전제를 활용하면서 모델이 질문을 이해하도록 촉구한다. 경험적 증거는 질문의 부분을 마스킹하는 것이 성능을 향상시키지 않는다는 것을 보여준다. 그러나 우리는 질문을 가리지 않더라도 MFT가 여전히 질문의 소음을 잘 처리할 수 있음을 발견한다(탭 5 참조). 모델의 마스킹되지 않은 전제에 대한 탐색과 친숙한 전제에 대한 활용의 균형을 맞추기 위해 안정성을 위해 여러 시대에 걸쳐 보수적인 선형 준비 운동 전략을 사용한다. 이는 모델이 먼저 보다 완전한 컨텍스트를 볼 수 있게 하고, 이어서 마스킹이 점진적으로 증가하여 트레이닝 동안 손실 값의 안정성을 보장할 수 있게 한다.\n' +
+      '\n' +
+      '## 3 Experiments\n' +
+      '\n' +
+      '### Dataset\n' +
+      '\n' +
+      '**훈련 데이터 세트** 주요 실험에서 다양한 난이도와 데이터 품질의 수학 문제를 다루는 5개의 훈련 데이터 세트를 활용했습니다.\n' +
+      '\n' +
+      'GSM8K: 이 데이터 세트는 7,500개의 수동으로 주석이 달린 초등학교 수학 문제 Cobbe 등(2021)을 포함한다.\n' +
+      '\n' +
+      'MATH: 이 데이터 세트에는 고등학교의 7,500개의 수학 경쟁 문제가 포함되어 있으며, 이는 GSM8K Hendrycks 등(2021)의 문제보다 더 어렵다.\n' +
+      '\n' +
+      'GSM8K-RFT Yuan et al. (2023)은 원본 데이터 세트에 대해 훈련된 SFT 모델을 활용하여 GSM8K에서 각 쿼리에 대한 추가 추론 경로를 생성한다. 프로세스는 오답으로 이어지는 그러한 추론 경로들을 필터링하는 단계를 더 포함한다. GSM8K-RFT-X는 이러한 추론 경로의 출처를 구별한다. GSM8K-RFT-100 소스 SFT 모델 자체에서 각 쿼리에 대해 100개의 응답을 샘플링하는 반면 GSM8K-RFT-U33은 다양한 크기의 여러 모델의 추론 경로를 통합하여 더 큰 데이터 세트를 생성한다.\n' +
+      '\n' +
+      'MetaMath: Yu et al. (2023)에 따르면, GPT-3.5-Turbo는 MATH 및 GSM8K 데이터 세트 모두에서 질의 및 응답을 재구문화하고 역공학 문제를 도입하기 위해 사용된다.\n' +
+      '\n' +
+      'MAMmnoTH Yue 등(2023)은 GSM8K, MATH, AQUA Ling 등(2017) 및 Camel-Math Li 등(2023)을 포함하지만 이에 제한되지 않는 다양한 수학 문제 데이터 세트를 통합하는 MathInstruct라는 데이터를 소개한다. 또한 GPT-4를 활용하여 Chen et al.(2022)과 Chain-of-Think(COT) 방법을 통해 새로운 추론 경로를 생성한다.\n' +
+      '\n' +
+      '**평가 데이터 세트.** 이러한 데이터 세트는 주로 GSM8K 및 MATH의 훈련 세트에서 증강되며 해당 테스트 세트에서 테스트합니다. GSM8K 데이터 세트는 테스트를 위해 1,319개의 항목을 따로 두는 반면 MATH 데이터 세트는 테스트 세트로 5,000개의 항목을 예약한다. 우리는 Yue et al. (2023); Yu et al. (2023)에 의해 채택된 스크립트에 따라 예측된 추론 경로에서 특정 템플릿(예를 들어, "답은")에 의해 최종 답변을 추출한다. 그 후, 우리는 예측한 답과 사실의 답의 비율을 정확도로 계산한다.\n' +
+      '\n' +
+      '### Main Results\n' +
+      '\n' +
+      '**SFT와 비교한 개선 사항** 탭에 표시된 결과입니다. 도 1은 증강 데이터가 사용되었는지 여부에 관계없이 우리의 접근법이 성능을 개선한다는 것을 보여주며, 다양한 품질의 데이터 세트와 두 가지 다른 기본 모델에서 효과를 입증한다. 특히, 이러한 향상은 데이터에서 이용 가능한 유용한 신호가 제한될 수 있는 더 단순하거나 더 작은 데이터 세트에서 가장 중요하다. 우리의 접근법은 프로그램 사상 데이터를 통합하는 MAMnoTH 데이터 세트의 성능 향상을 보여준다. 이것은 우리의 방법이 여전히 효과적이며 프로그래밍 작업의 포함에 의해 부정적인 영향을 받지 않는다는 것을 시사한다.\n' +
+      '\n' +
+      '**샘플 효율성.** 그림 2는 소비된 동일한 수의 훈련 샘플 내에서 MFT가 SFT보다 더 나은 성능을 산출한다는 것을 보여줍니다. 그러나 이것이 우리의 접근법이 요구하는 것을 의미하지는 않는다.\n' +
+      '\n' +
+      '그림 2: 미스트랄-7B 및 MAMnoTH의 데이터세트로 훈련할 때 GSM8K에 대한 정확도. MFT는 더 높은 표본 효율성을 보여준다.\n' +
+      '\n' +
+      '수렴하는 더 짧은 단계. 반대로, 본 논문에서 제안하는 방법은 더 높은 수렴 값에 도달하기 위해 추가적인 단계를 필요로 한다. 이는 마스킹을 통한 탐색으로 인해 제한된 데이터 세트에서 지속적으로 새로운 정보를 수집할 수 있기 때문일 수 있다. 반대로, SFT에 대한 훈련 에폭의 확장은 우수한 결과를 산출하지 않고 변동성을 도입한다. 구현 세부 사항에서 MFT가 Tab. 8에 자세히 설명된 결과의 수렴을 보장하기 위해 확장된 수의 에폭에 대해 훈련할 수 있도록 한다.\n' +
+      '\n' +
+      '**마스크 비율 및 예약** 그림. 도 3에서, 우리는 MFT: 마스크 비율과 워밍업 지속 시간에서 두 가지 주요 하이퍼파라미터의 영향을 조사한다. 분석 결과, 워밍업 기간을 포함하는 것이 큰 마스크 비율에 대한 최종 성능 향상에 기여하는 반면, 워밍업을 포함하지 않는 작은 마스크 비율도 작동한다는 것을 보여준다. GSM8K 데이터 세트 내에서 다양한 마스크 비율은 밀도 공식이 없기 때문에 최소한의 감도를 나타낸다. 결과적으로 이 데이터 세트는 상대적으로 더 높은 마스크 비율을 허용한다. 1차 실험에서는 이 비율을 0.4로 설정했다. 그러나 MATH와 같이 더 복잡한 공식을 가진 데이터 세트의 경우 일반적으로 0.1 또는 0.2의 더 작은 마스크 비율을 선택한다. 웜업 기간의 경우 이 하이퍼파라미터의 과도한 조정 없이 보존 기간을 채택한다. 일반적으로 준비 운동을 위해 전체 훈련 단계의 약 3분의 2를 할당한다.\n' +
+      '\n' +
+      '**Self-Sampling과의 비교** RFT는 SFT 모델 자체에서 샘플링한 추론 경로를 수집하고 오답이 포함된 경로를 필터링합니다. Tab에서의 우리의 실험. 2 demonstrate that our method performs comparably to the explicit generation of reasoning paths, with even\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c} \\hline \\hline\n' +
+      '\n' +
+      '도 3: GSM8K로 Llama2-7B에 대한 트레이닝시 마스크 비율의 영향. 우리는 웜업이 없는 고정된 마스크 비율과 0부터 시작하는 마스크 비율의 선형 웜업의 두 가지 설정의 MFT를 비교한다.\n' +
+      '\n' +
+      '두 접근법이 동시에 적용될 때 더 나은 결과. 이 비교 가능한 성능의 한 가지 주요 요인은 RFT가 광범위하게 샘플링되지 않지만 추론 경로의 중요한 단계는 지상 진리와 크게 변하지 않는다는 것일 수 있다. 샘플링된 새로운 경로들의 주요 차이점은, 로컬 변수들 사이에서 관찰된 새로운 연결들을 크게 증가시키지 않으면서, 비교적 작은 의미론적 분산들에 있다(Prystawski et al., 2023). 가면 추론 경로를 사용하여 유사한 효과를 얻을 수 있으며 중간 단계를 삭제하여 새로운 건너뛰기 연결을 샘플링한다. 반면, 노출 편향의 관점에서 비교해보면, RL의 자기 샘플링은 오류가 발생하기 쉬운 추론 분포에 대한 세심한 감독을 제공하는 반면, MFT는 모델이 그라운드 트루스에 존재하는 편향을 직접 학습하는 것을 방지하는 것을 목표로 한다. 부록 B의 RL 및 RFT에 대한 추가 소개를 제공합니다.\n' +
+      '\n' +
+      '성능에도 불구하고, 훈련 효율성을 위해, 본 모델은 10개의 에폭에 대해 7K 데이터에 대해 훈련되는 반면, RFT-100은 유사한 결과를 얻기 위해 3개의 에폭에 대해 46K 데이터에 대한 훈련이 필요하다. 특히, 본 논문에서 제안한 방법은 추가적인 컴퓨터 컴퓨팅 자원을 필요로 하지 않고도 유사한 성능을 얻을 수 있다.\n' +
+      '\n' +
+      '### 다른 정규화 기술과의 비교\n' +
+      '\n' +
+      '대체 접근법이 유사한 결과를 얻을 수 있는지에 대한 질문이 있다. 따라서 우리는 소음을 도입하기 위한 다양한 기술을 조사하고 그 효과를 경험적으로 평가한다. 본 논문에서는 NEFTune, Dropout, Scheduled Sampling, MaskedLM(우리의 1차 구현)에 의해 소개된 노이즈 유형뿐만 아니라 서로 다른 위치에 노이즈를 추가하는 효과를 탐색한다. 이러한 방법에 대한 자세한 설명은 부록 K에 나와 있다.\n' +
+      '\n' +
+      '**결과.** 실험을 통해 다음과 같은 통찰력을 얻을 수 있습니다. 1. 잡음의 배치 측면에서 목표에서 부분 추론 단계를 마스킹하는 것이 모든 토큰에 잡음이 도입되는 것과 비교할 때 또는 질문 내에서 특정하게 잡음이 도입되는 것과 비교할 때 최상의 성능을 제공한다는 것을 발견합니다. 2. 원래 의미론을 제거하기 위해 더 큰 잡음이 도입되는 것이 유리하다는 것을 관찰합니다. 구체적으로, Scheduled Sampling의 경우 \\(\\tau=100\\), NEFTune의 경우 \\(a=1000\\)를 설정하면 모델의 성능이 향상된다. 이와는 대조적으로, Scheduled Sampling에서 유의어를 \\(\\tau=1,2\\)로 대체하는 전략은 무작위 대체의 효과를 능가하지 못한다.\n' +
+      '\n' +
+      '모델이 \\(r=1\\)을 사용하여 MaskedLM으로 훈련되면 모델은 현재 컨텍스트와 관련이 없는 랜덤 토큰을 만나 [마스크]의 역할과 유사한 이러한 토큰의 의미를 무시합니다. Tab의 실험에서. 3. \\(r=1\\)은 \\(m=1\\)보다 약간 높은 결과를 얻었다. \\(r=1\\)은 \\(m=1\\)에 비해 더 높은 수준의 무작위성을 보여주지만 과적합을 더 잘 완화할 수 있는 잠재력을 가지고 있다. 그러나 평균적으로 \\(r=1\\)과 \\(m=1\\)의 차이는 더 큰 데이터 세트에 대해 미미하다. GSM8K-7K에 대해 \\(r=1\\)을 사용하는 것을 제외하고, 탭의 다른 데이터 세트에 대해 \\(m=1\\)을 사용하는 것이 기본이다. 1. 또한 입력 마스킹뿐만 아니라 각 변압기 층 내의 마스킹된 위치에 주의 마스킹이 추가되는 영향을 조사한다. 우리는 입력 마스킹만을 사용하는 것과 그 효과가 동등하다는 것을 발견했다.\n' +
+      '\n' +
+      '또한, MFT에서 노이즈가 없는 토큰에 대한 손실만을 계산하는 경우에도,\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c} \\hline \\hline\n' +
+      '**Base Model** & **Training Dataset** & **Data Size** & **Augmention Source** & **Method** & **GSM8K** \\\\ \\hline \\multirow{4}{*}{Llama2-7B} & GSM8K & 7K & - & \\begin{tabular}{c} SFT \\\\ MFT \\\\ \\end{tabular} & 41.6 \\\\  & GSM8K-RFT-100 & 46K & Llama2-7B & \\begin{tabular}{c} SFT \\\\ MFT \\\\ \\end{tabular} & 47.6 \\\\  & GSM8K & 7K & - & \\begin{tabular}{c} SFT \\\\ MFT \\\\ \\end{tabular} & 52.7 \\\\ \\cline{2-5}  & GSM8K-RFT-100 & 47K & Llama2-13B &\n' +
+      '\\begin{tabular}{c} SFT \\\\ MFT \\\\ \\end{tabular} & 55.2 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 자체 샘플링 기술, 즉 RFT와 비교하여 우리의 방법은 추가 데이터를 포함하지 않더라도 RFT 강화 데이터를 활용하여 얻은 결과와 유사한 결과를 달성한다. 더욱이, MFT가 증강된 RFT 데이터에 적용될 때 유효성이 현저하게 증폭된다.\n' +
+      '\n' +
+      '성능은 표준 SFT(45.0, +3.4)를 여전히 능가합니다. 그럼에도 불구하고 모든 토큰에 대한 손실 계산(47.1, +5.5)에 비해 낮은 성능을 보인다. 마스킹된 포지션들에 대한 다음 토큰들을 예측하는 것은 마스킹되지 않은 포지션들에 대한 것보다 더 큰 도전을 제기하는데, 이들은 로컬 정보를 수집할 인접한 마스킹되지 않은 토큰들이 부족하기 때문이다. 이러한 증가된 복잡성은 궁극적으로 성능을 향상시킨다.\n' +
+      '\n' +
+      '### 언어 모델링에 대한 MFT 영향 조사\n' +
+      '\n' +
+      '**사례 연구.** 그림 1에 표시된 통계 결과를 보완하기 위해 MFT에서 도입한 토큰 종속성의 영향을 입증하기 위한 사례 연구를 추가로 수행합니다. 그림 4에서 \\(0\\)과 \\(9\\) 사이의 맥락 내에서 한 자릿수를 변경하여 후속 단계의 예측에 영향을 미치는지 확인한다. 모델이 \\(16-3\\)을 일관되게 예측한다면 이는 모델의 예측이 숫자 변화에 영향을 받지 않고 오히려 질문과 이전 단계에서 제공된 정보에 의존한다는 것을 나타내며 "3"이라는 단어는 주황색으로 강조된다. 반대로 모델의 예측이 \\(16-n\\)로 이동하면 즉시 인접 토큰에 대한 의존성을 암시하여 거리 바로 가기에 대한 의존성을 시사한다. 표 4에 요약된 \\(16-3\\) 예측의 빈도는 MFT가 보다 근시안적인 관점을 채택하는 경향이 있는 SFT 접근법과 달리 주로 질문 내에서 토큰을 활용한다는 것을 보여준다.\n' +
+      '\n' +
+      '반대로, 그림 1과 같이 질문 내에서 전제를 수정한다. 5에서 \\(16-n\\)의 예측은 상충되는 전제에 직면할 때 모델이 질문을 우선시한다는 것을 나타낸다. 문제의 변경 결과는 MFT가 질문을 해석하는 데 탁월한 반면 SFT는 질문 내의 변화를 무시하는 경향이 있음을 보여준다.\n' +
+      '\n' +
+      '**Distractors를 처리 합니다.* * 일부 이전 연구에서도 관련 없는 질문 삽입과 같은 질문에 일부 방해를 추가 하는 것으로 나타났습니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline Method & **Is 16-3 (Fig. 4)** & **Is 16-n (Fig. 5)** \\\\ \\hline SFT & 0.1 & 0.1 \\\\ MFT(\\(m\\)=0,\\(r\\)=1) & 1 & 0.4 \\\\ MFT(\\(m\\)=1,\\(r\\)=0) & 0.4 & 0.2 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 변경 후의 모델 예측의 결과. n을 0-9로 변경할 때 16-3 또는 16-n을 예측하는 모델의 비율을 제공한다. 더 큰 숫자는 가까운 전제에 덜 민감하고 질문에 더 강한 의존성을 나타낸다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c} \\hline \\hline\n' +
+      '**Sequence Noise Distribution** & **Method** & **Token Noise Distribution \\(\\mathcal{N}\\)** & **Hyperparameter** & **GSMRK** \\\\ \\hline - & SFT & - & - & 41.6 \\\\ \\hline \\multirow{4}{*}{\\(M_{i}=1\\) for each token \\(i\\)} & \\multirow{4}{*}{Dropout} & \\(emh_{i}=emh_{i}\\odot D_{i}\\), & \\(D_{i}\\sim\\text{Bernoulli}(i)\\) & \\(q\\)=0.1 & 40.3 \\\\  & & & \\(q\\)=0.5 & 39.4 \\\\  & & & \\(q\\)=0.9 & 32.9 \\\\ \\cline{2-5}  & \\multirow{4}{*}{NEFTime} & \\(emh_{i}\\) + Uniform\\((-\\frac{q}{2},\\frac{q}{2})\\) & \\(\\alpha\\)=1 & 40.6 \\\\  & & & \\(\\alpha\\)=5 & 41.3 \\\\  & & & \\(\\alpha\\)=100 & 1.8 \\\\ \\hline \\multirow{4}{*}{\\(M_{i}=1\\) for each target token \\(i\\)} & \\multirow{4}{*}{Dropout} & \\(emh_{i}=emh_{i}\\odot D_{i}\\), & \\(D_{i}\\sim\\text{Bernoulli}(i)\\) & \\(q\\)=0.1 & 39.9 \\\\  & & & \\(q\\)=0.5 & 43.1 \\\\ \\cline{1-1}  & & & \\(q\\)=0.9 & 40.4 \\\\ \\hline \\multirow{4}{*}{\\(M_{i}\\sim\\text{Bernoulli}(p)\\) for each source token \\(i\\),} & \\multirow{4}{*}{Dropout} & \\(emh_{i}=emh_{i}\\odot D_{i}\\), & \\(D_{i}\\sim\\text{Bernoulli}(i)\\) & \\(q\\)=1,\\(p\\)=0.2 & 36.3 \\\\  & & & \\(q\\)=1,\\(p\\)=0.6 & 30.6 \\\\ \\hline \\multirow{4}{*}{\\(M_{i}\\sim\\text{Bernoulli}(p)\\) where \\(0<p<1\\)} & \\multirow{4}{*}{NEFTime} & \\(emh_{i}\\) + Uniform\\((-\\frac{q}{2},\\frac{q}{2})\\) & \\(\\alpha\\)=100 & 42.0 \\\\  & & & \\(q\\)=1,\\(000\\) & **47.2** \\\\ \\cline{2-5}  & \\multirow{4}{*}{Dropout} & \\(emh_{i}=emh_{i}\\odot D_{i}\\), & \\(D_{i}\\sim\\text{Bernoulli}(i)\\) & \\(q\\)=0.95 & 42.9 \\\\  & & & & \\(q\\)=1,\\(000\\) & **46.5** \\\\ \\cline{1-1} \\cline{2-5}  & \\multirow{4}{*}{Scheduled Sampling} & \\multirow{4}{*}{\\(seq_{i}=\\text{sample}(\\text{softmax}\\frac{\\text{std}\\cdot\\text{std}\\cdot \\text{std}\\cdot\\text{std}\\cdot\\text{std}\\cdot\\text{std}\\cdot\\text{std}\\cdot \\text{std}\\cdot\\text{stdcontext [22] or changing the order of premises within the question [3], can decrease the reasoning ability of large language models. We test on the GSM-IC [22] dataset which inserts some irrelevant distractor sentences into the original questions in GSM8K. From the results in Tab. 5, it can be seen that although MFT and RFT are roughly comparable on the original dataset, MFT shows a greater improvement on the GSM-IC dataset. This suggests that there are differences in the mechanisms by which these two methods improve performance and indicates that MFT can effectively locate useful premises within the disturbed questions, even though MFT does not mask the questions during training.\n' +
+      '\n' +
+      '**거짓 양성 분석** 이러한 실험의 전제가 인위적으로 방해를 받았음에도 불구하고 MFT가 이웃 기능의 사용 감소로 인해 거짓 양성을 생성할 수 있는지 알고 싶습니다. 이 문맥에서의 오탐은 중간 단계들이 부정확하지만 최종 결과가 정확하게 예측되는 인스턴스들을 지칭한다. 이 분석은 GPT-4를 사용하여 수행되며, 이는 지정된 데이터 세트에서 92%의 정확도를 달성한다. 표 6에 자세히 설명된 바와 같이 결과는 MFT가 거짓 양성의 발생을 크게 증가시키지 않는다는 것을 나타낸다. 모델의 자기회귀 예측 과정은 최종 해답의 정확도를 향상시킬 뿐만 아니라 중간 단계의 정확성을 보존한다. 우리는 GPT-4의 프롬프트와 부록 F에서 허위 사례를 제공한다.\n' +
+      '\n' +
+      '**데이터 집합이 학습 종속성에 미치는 영향** 여러 데이터 집합이 MFT 기술의 효과성에 미치는 영향을 조사 합니다. 특히 어떤 유형의 데이터가 MFT에 가장 적합한지 조사 합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '**Method** & **\\# False Positive** & **\\# Correct** & **Step-wise Accuracy** & **Avg. Steps** \\\\ \\hline SFT & 2 & 70 & 0.516 & 3.36 \\\\ MFT (m=0,r=1) & 3 & 75 & 0.540 & 3.2 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: GPT-4를 사용하여 답을 단계로 나누고 200개의 표본에서 중간 단계의 정확성을 판단한다. False Positive는 예측된 답은 정확하지만 올바른 단계는 전체 단계보다 작음을 의미합니다.\n' +
+      '\n' +
+      '그림 4: 이 문제의 첫 번째 단계는 16 - 3 = 13으로 올바르게 해결되어야 한다. 우리는 접두사를 "16 알/일 - n 알/일"로 변경하여 3을 n으로 변경하는 것이 SFT와 MFT의 반응에 미치는 영향을 관찰한다. 우리는 n=1의 예를 제시한다. 주황색 부분은 현재 단계의 예측을 뒷받침하는 다른 전제이다.\n' +
+      '\n' +
+      '그림 5: "3"이라는 단어를 "5"로 바꾸는 것의 영향을 조사하기 위해 질문의 전제를 변경한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|l l l l|} \\hline \\hline\n' +
+      '**Base Model** & **Method** & **GSM8K** & **GSM-IC** \\\\ \\hline \\multirow{3}{*}{Llama2-7B} & SFT & 41.6 & 48.0 \\\\  & RFT-100 & **47.6 (+6.0)** & 52.2 (+4.2) \\\\  & MFT & 47.1 (+5.5) & **59.2 (+11.2)** \\\\ \\hline \\multirow{3}{*}{Llama2-13B} & SFT & 52.7 & 58.8 \\\\  & RFT-100 & 55.2 (+2.5) & 63.3 (+4.5) \\\\ \\cline{1-1}  & MFT & **56.2 (+3.5)** & **69.1 (+10.3)** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: 문항의 산만성에 대처하는 능력을 비교하기 위해 GSM-IC(Grade-School Math with Irrelevant Context) [22]에 대한 검사를 실시한다. 이 결과는 MFT가 질문에서 더 유용한 전제를 활용하여 방해 요인을 더 효과적으로 제거할 수 있음을 보여준다.\n' +
+      '\n' +
+      '그림 6: 종속성에 대한 데이터 세트의 영향을 조사하기 위해 두 데이터 세트에 걸쳐 실험을 수행한다. 왼쪽, 라마-GSM8K 라마 알파카 알파카에 대한 교육은 GSM8K와 달리 종속성을 강화하지 않는다.\n' +
+      '\n' +
+      '우리의 실험은 수학적 추론 내용이 최소화된 일반적인 명령어 집합인 Alpaca 데이터셋(Taori et al., 2023)에 초점을 맞춘다. 결과는 Alpaca와 GSM8K 데이터 세트 간의 상당한 차이를 보여준다. Alpaca 데이터 세트를 사용하여 MFT를 사용한 훈련은 종속 관계를 변경하지 않아 가설을 검증한다. MFT는 데이터 내에서 장거리 종속성을 학습하는 모델의 능력을 향상시킵니다. 데이터에 이러한 종속성이 없으면 MFT가 덜 효과적입니다. 또한, 우리는 MFT가 모델의 일반적인 대화 능력에 해로운 영향을 미칠 수 있는지 여부를 평가한다. 부록 H에 제시된 결과에 따르면, MFT와 SFT를 모두 사용한 Alpaca-eval(Li 등, 2023)의 점수는 비슷했다.\n' +
+      '\n' +
+      '오류 분석.또한 오류 유형을 분석하여 MFT가 최종 결과에 미치는 영향을 파악하기 위해 정량적 오류 분석을 수행한다. 오류 유형은 계산기 오류(CE), 한 단계 누락 오류(OSME), 의미 이해 오류(SUE) 및 비동기 단계 오류(ISE)이다. CE와 OSME는 한 단계로 해결할 수 있는 사소한 오류이고 SUE와 ISE는 Wei et al.(2022)에서 정의한 바와 같이 실질적인 수정이 필요한 질문이나 이전 단계를 오해한 오류이다. 부록 J에서 이러한 오류 유형에 대한 자세한 내용을 참조하십시오. 판정의 대리인으로 GPT-4를 사용합니다. 탭. 도 7은 MFT가 SUE 및 ISE 에러가 더 적다는 것을 입증한다. 이는 모형의 질문 의존도를 높여 얻은 이익 때문일 수 있다. 또한, 모델은 SFT에 비해 OSME 및 CE의 증가를 경험한다. 증가된 비율은 문제 이해의 주요 오류를 해결한 후 발생하는 사소한 오류일 수 있다.\n' +
+      '\n' +
+      '## 4 Conclusion\n' +
+      '\n' +
+      '미세 조정 시 정규화 기법으로 Masked thought Fine-Tuning을 제안한다. 우리의 연구 결과는 MFT가 추론 성능을 향상시킬 뿐만 아니라 모델의 장거리 종속성을 포착하는 능력을 향상시킨다는 것을 나타낸다. 추론 과제에 대한 규칙화 전략과 언어 의존성과 추론 능력 사이의 상호 작용에 대한 추가 탐색에 대한 향후 연구의 길을 열어줄 수 있다.\n' +
+      '\n' +
+      '## Limitations\n' +
+      '\n' +
+      '관찰된 성능 향상의 근본 원인에 대한 논의는 주로 경험적 실험에서 비롯된다. 우리는 주목할 만한 현상, 즉 의존성의 전이에 근거한 설명을 제공한다. 그러나 종속 전이만이 모델 성능을 향상시키는 유일한 요인임을 입증하지 못했으며 여전히 다른 영향 요인이 있을 수 있다. 이는 전략의 성공 배경에 대한 실증적, 이론적 연구가 더 필요함을 시사한다.\n' +
+      '\n' +
+      '이 방법은 추론 데이터에 효과적이지만, 다중 단계 추론이 부족한 일반적인 명령어 튜닝 데이터 세트에는 큰 영향을 미치지 않는다. 우리는 이 접근법에 가장 적합한 데이터 유형을 결정하기 위해 정량적 메트릭을 포함하는 방법을 제안하지 않고 지금까지 정성적 설명만 제공했다.\n' +
+      '\n' +
+      '실험은 서로 다른 데이터 세트가 수용할 수 있는 마스크 비율이 완전히 동일하지 않을 수 있음을 나타낸다. 혼합 데이터의 경우, 본 논문은 아직 서로 다른 데이터 세트에 마스크 비율을 적응적으로 맞추기 위한 전략을 탐구하지 않았다. 또한 혼합 추론 데이터와 일반적인 명령어 튜닝 데이터에 적용할 때 이 접근 방식이 일반적인 능력에 영향을 미치는지 또는 관찰된 추론 향상을 감소시키는지 아직 조사하지 않았다.\n' +
+      '\n' +
+      '## Acknowledgments\n' +
+      '\n' +
+      '이 작업은 알리바바 혁신 연구 프로그램을 통해 알리바바 그룹의 지원을 받았다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Achiam et al. (2023) Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. 2023. Gpt-4 기술 보고서. arXiv preprint arXiv:2303.08774. 인용: SS1.\n' +
+      '* An et al. (2023)Shengnan An, Zexiong Ma, Zeqi Lin, Nanning Zheng, Jian-Guang Lou, and Weizhu Chen. 2023. 실수로부터 배우는 것이 더 나은 이성을 갖게 한다. ArXivabs/2310.20689. 인용: SS1.\n' +
+      '* Z. 아제르바예프, H. 쇤코프, K. M. D. 산토스 McAleer, A. Q. Jiang\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l} \\hline \\hline\n' +
+      '**Method** & **OSME** & **ISE \\& SUE** & **CE** & **Total Errors** \\\\ \\hline SFT & 15.6\\% & 78.0\\% & 6.0\\% & 173 \\\\ RFT-100 & 11.9\\% & 77.4\\% & 10.6\\% & 151 \\\\ MFT & 15.2\\% & 74.8\\% & 9.9\\% & 151 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 7: 테스트 세트에서 무작위로 선택된 300개의 샘플을 기반으로 하는 다양한 방법에 걸친 다양한 오류 유형의 비율이다.\n' +
+      '\n' +
+      '지아 덩, 스텔라 바이더만 숀 웰렉 2023. Llemma: 수학을 위한 개방형 언어 모델. _ arXiv preprint arXiv:2310.10631_.\n' +
+      '*바오 등(2020) 항보바오, 리동, 후루웨이, 원후이왕, 난양, 샤오동류, 유왕, 송하오파오, 지안펑가오, 명주, 및 샤오-우엔혼. 2020. Unilmv2: 통일된 언어 모델 사전 훈련을 위한 의사 마스킹 언어 모델. "머신 러닝에 관한 국제 회의"에서.\n' +
+      '* Bengio 등(2015) Samy Bengio, Oriol Vinyals, Navdeep Jaitly, and Noam Shazeer. 2015. 순환 신경망을 사용한 시퀀스 예측을 위한 스케줄링된 샘플링. _ 신경 정보 처리 시스템_, 28의 진보.\n' +
+      '* Besta 등(2023) Maciej Besta, Nils Blach, Ales Kubicek, Robert Gerstenberger, Lukas Gianinazzi, Joanna Gajda, Tomasz Lehmann, Michal Podstawski, Hubert Niewiadomski, Piotr Nyczyk, et al. 2023. Graph of thoughts: Solving elaborate problems with large language models. _ arXiv preprint arXiv:2308.09687_.\n' +
+      '* Chen et al.(2023a) Changyu Chen, Xiting Wang, Yiqiao Jin, Victor Ye Dong, Li Dong, Jie Cao, Yi Liu, and Rui Yan. 2023a. 최적화된 텍스트 생성을 위한 세미오프라인 강화 학습 _ arXiv preprint arXiv:2306.09712_.\n' +
+      '* Chen et al.(2023b) Jiaoo Chen, Derek Tam, Colin Raffel, Mohit Bansal, and Diyi Yang. 2023b. nlp에서 제한된 데이터 학습을 위한 데이터 증강에 대한 경험적 조사 _ 계산 언어학 협회의 트랜잭션_, 11:191-211.\n' +
+      '* Chen et al.(2022) Wenhu Chen, Xueguang Ma, Xinyi Wang, and William W Cohen. 2022. Program of thoughts prompting: Disentangling computation from reasoning for numerical reasoning tasks. _ arXiv preprint arXiv:2211.12588_.\n' +
+      '* Chen et al.(2024) Xinyun Chen, Ryan A Chi, Xuezhi Wang, and Denny Zhou. 2024. 대형 언어 모델을 사용한 추론에서 전제 순서가 중요합니다. _ arXiv preprint arXiv:2402.08939_.\n' +
+      '*Cheng et al.(2018) Yong Cheng, Zhaopeng Tu, Fandong Meng, Junjie Zhai, and Yang Liu. 2018. 강력한 신경망 기계 번역을 위해. _ ArXiv_, abs/1805.06130.\n' +
+      '* Cobbe 등(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. 2021. Training verifiers to solve math word problems. _ arXiv preprint arXiv:2110.14168_.\n' +
+      '* Devlin 등(2019) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. Bert: 언어 이해를 위한 딥 양방향 트랜스포머의 사전 훈련. 계산 언어학 협회의 북미 장에서.\n' +
+      '* Dziri 등(2023) Nouha Dziri, Ximing Lu, Melanie Sclar, Xiang Lorraine Li, Liwei Jian, Bill Yuchen Lin, Peter West, Chandra Bhagavatula, Ronan Le Bras, Jena D. Hwang, Soumya Sanyal, Sean Welleck, Xiang Ren, Allyson Ettinger, Zaid Harchaoui, and Yejin Choi. 2023. 믿음과 운명: 구성성에 대한 변압기의 한계. _ ArXiv_, abs/2305.18654.\n' +
+      '* Fadaee et al.(2017) Marzieh Fadaee, Arianna Bisazza, and Christof Monz. 2017. Data Augmentation for low-resource neural machine translation. _ arXiv preprint arXiv:1705.00440_.\n' +
+      '* Fu et al.(2022) Yao Fu, Hao Peng, Ashish Sabharwal, Peter Clark, and Tushar Khot. 2022. Complexity-based prompting for multi-step reasoning. _ arXiv preprint arXiv:2210.00720_.\n' +
+      '* Gal and Ghahramani (2015) Yarin Gal and Zoubin Ghahramani. 2015. A theoretically grounded application of dropout in recurrent neural networks. 《신경 정보 처리 시스템》에서\n' +
+      '* Gou et al.(2023) Zhibin Gou, Zhihong Shao, Yeyun Gong, Yelong Shen, Yujiu Yang, Minlie Huang, Nan Duan, and Weizhu Chen. 2023. 토라: 수학적 문제 해결을 위한 도구 통합 추론 에이전트 _ ArXiv_, abs/2309.17452.\n' +
+      '* Guo et al.(2020a) Demi Guo, Yoon Kim, and Alexander M Rush. 2020a. 서열 수준 혼합 샘플 데이터 증강입니다. _ arXiv preprint arXiv:2011.09039_.\n' +
+      '* Guo et al.(2020b) Demi Guo, Yoon Kim, and Alexander M. 러쉬 2020b. 서열 수준 혼합 샘플 데이터 증강. "자연어 처리의 경험적 방법에 대한 회의"에서.\n' +
+      '* Hendrycks 등(2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 2021. 수학 데이터 세트를 사용하여 수학적 문제 해결을 측정합니다. _ arXiv preprint arXiv:2103.03874_.\n' +
+      '*황 등(2023a) Jie Huang, Xinyun Chen, Swaroop Mishra, Huaixiu Steven Zheng, Adams Wei Yu, Xinying Song, and Denny Zhou. 2023a. 대규모 언어 모델은 아직 스스로 추론을 수정할 수 없습니다. _ arXiv preprint arXiv:2310.01798_.\n' +
+      '*황 등(2023b) Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Changlong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, and Ting Liu. 2023b. 큰 언어 모델의 환각에 대한 조사: 원칙, 분류법, 도전 및 열린 질문.\n' +
+      '* Jain 등(2023) Neel Jain, Ping Yeh Chiang, Yuxin Wen, John Kirchenbauer, Hong-Min Chu, Gowthami Sompealli, Brian R. 바톨드슨, 바브야 카일쿠라, 아비 슈바르츠실트, 아니루다 사하, 마이카 골드블럼, 조나스 게이핑, 톰 골드스타인. 2023. Neftune: 노이즈 임베딩은 명령어 미세조정을 개선한다.\n' +
+      '* Jiang 등(2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. 2023. Mistral 7b. _ arXiv preprint arXiv:2310.06825_.\n' +
+      '* Liu et al. (2020)Chris Kedzie and Kathleen McKeown. 2019. A good sample is difficult to find: Noise injection sampling and self-training for neural language generation models. "자연어 생성에 관한 국제 회의"에서.\n' +
+      '* Khona 등(2024) Mikail Khona, Maya Okawa, Jan Hula, Rahul Ramesh, Kento Nishi, Robert Dick, Ekdeep Singh Lubana, and Hidenori Tanaka. 2024. 트랜스포머에서의 단계적 추론의 이해를 위해: 합성 그래프 내비게이션 모델. _ arXiv preprint arXiv:2402.07757_.\n' +
+      '* Kojima et al.(2022) Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. 2022. Large language models is zero-shot 추론기. _ Advances in neural information processing systems_, 35:22199-22213.\n' +
+      '* Lample et al.(2017) Guillaume Lample, Alexis Conneau, Ludovic Denoyer, and Marc\'Aurelio Ranzato. 2017. Unsupervised machine translation using monolingual corpora only. _ arXiv preprint arXiv:1711.00043_.\n' +
+      '* Li 등(2023a) Guohao Li, Hasan Abed Al Kader Hammoud, Hani Itani, Dmitrii Khizbullin, and Bernard Ghanem. 2023a. 낙타: 대규모 언어 모델 사회에 대한 "마음" 탐구를 위한 의사소통 에이전트입니다. _ arXiv preprint arXiv:2303.17760_.\n' +
+      '* Li 등(2023b) Xuechen Li, Tianyi Zhang, Yann Dubois, Rohan Taori, Ishaan Gulrajani, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 2023b. Alpacaeval: 명령어 후속 모델의 자동 평가자. [https://github.com/tatsu-lab/alpaca_eval] (https://github.com/tatsu-lab/alpaca_eval).\n' +
+      '* Li et al.(2022) Yifei Li, Zeqi Lin, Shizhuo Zhang, Qiang Fu, B. Chen, Jian-Guang Lou, and Weizhu Chen. 2022. 단계 인식 검증기를 사용하여 언어 모델을 더 나은 추론자로 만듭니다. [계산 언어학 협회 연례 회의]에서\n' +
+      '* 재현 가능한 파이프라인입니다. _ ArXiv_, abs/2401.08190.\n' +
+      '* Lightman et al. (2023) Hunter Lightman, Vineet Kosaraju, Yura Burda, Harrison Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Illya Sutskever, and Karl Cobbe. 2023. 단계별로 검증해보겠습니다. _ ArXiv_, abs/2305.20050.\n' +
+      '* Ling 등(2017) Wang Ling, Dani Yogatama, Chris Dyer, and Phil Blunsom. 2017. Program induction by rationale generation: Learning to solve and explain of algebraic word problems. _ arXiv preprint arXiv:1705.04146_.\n' +
+      '* Liu et al.(2022) Bingbin Liu, Jordan T. 애시, 수르비 고엘 악샤이 크리쉬나무르시, 시릴 장 2022. Transformers learn shortcut to automata. _ ArXiv_, abs/2210.10749.\n' +
+      '* Liu et al.(2023) Bingbin Liu, Sebastien Bubeck, Ronen Eldan, Janardhan Kulkarni, Yuanzhi Li, Anh Nguyen, Rachel Ward, and Yi Zhang. 2023. Tinygsm: achieving\\(\\mathbf{>}\\) 80% on gsm8k with small language models. _ arXiv preprint arXiv:2312.09241_.\n' +
+      '* Luo et al. (2023) Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jianguang Lou, Chongyang Tao, Xiubo Geng, Qingwei Lin, Shifeng Chen, and Dongmei Zhang. 2023. 마법사 수학: 강화된 evol-instruct를 통해 대규모 언어 모델에 대한 수학적 추론을 강화합니다. _ arXiv preprint arXiv:2308.09583_.\n' +
+      '* Mihaylova and Martins (2019) Tsvetomila Mihaylova and Andre FT Martins. 2019. 변압기 샘플링 예약됨 _ arXiv preprint arXiv:1906.07651_.\n' +
+      '* Prystawski et al. (2023) Ben Prystawski, Michael Y. 리, 노아 D 굿맨 2023년, 왜 단계별로 생각해? 추론은 경험의 지역성에서 나온다. _ ArXiv_, abs/2304.03843.\n' +
+      '* Schulman 등(2017) John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. 근접 정책 최적화 알고리즘. _ arXiv preprint arXiv:1707.06347_.\n' +
+      '* Schwab and Karlen (2019) Patrick Schwab and Walter Karlen. 2019. CXPlain: Causal Explanations for Model Interpretation under Uncertainty. 신경 정보 처리 시스템(NeurIPS)의 발전에서.\n' +
+      '* Shi et al. (2023) Freda Shi, Xinyun Chen, Kanishka Misra, Nathan Scales, David Dohan, Ed H Chi, Nathanael Scharli, and Denny Zhou. 2023. 대용량 언어 모델은 관련 없는 문맥에 의해 쉽게 주의가 산만해질 수 있다. [Machine Learning에 대한 국제 회의]에서 31210-31227 페이지. PMLR.\n' +
+      '* Singh et al.(2023) Avi Singh, John D Co-Reyes, Rishabh Agarwal, Ankesh Anand, Piyush Patil, Peter J Liu, James Harrison, Jaochon Lee, Kelvin Xu, Aaron Parisi, et al. 2023. Beyond human data: Scaling self-training for problem-solving with language models. _ arXiv preprint arXiv:2312.06585_.\n' +
+      '* Sinha et al. (2022) Samarth Sinha, Ajay Mandlekar, and Animesh Garg. 2022. S4rl: 놀랍게도 로봇 공학에서 오프라인 강화 학습을 위한 간단한 자체 감독. 《로봇 학습에 관한 회의》의 907-917페이지 PMLR.\n' +
+      '* Srivastava 등(2014) Nitish Srivastava, Geoffrey E. Hinton, Alex Krizhevsky, Ilya Sutskever, and Ruslan Salakhutdinov. 2014. Dropout: 신경망이 과적합되는 것을 방지하는 간단한 방법입니다. _ J 마흐 배워요 Res._ , 15:1929-1958.\n' +
+      '* Su et al. (2022) Ming-Hsiang Su, Chin-Wei Lee, Chi-Lun Hsu, and Ruei-Cyuan Su. 2022. RoBERTa 기반 한의학 명칭 개체 인식 모델. "제34회 전산 언어 및 음성 처리 회의(ROCLING 2022)"에서 대만 타이베이 61-66쪽입니다. 컴퓨터 언어 및 중국어 처리 협회(ACLCLP)\n' +
+      '* Taori et al. (2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B Hashimoto. 2023. Stanford alpaca: instruction-Following lama model.\n' +
+      '\n' +
+      '휴고 투브론, 루이스 마틴, 케빈 스톤, 피터 알버트, 암자드 알마하이리, 야스민 바바에이, 니콜라이 바슐리코프, 수미야 바트라, 프라즈왈 바르가바, 슈루티 보살레, 등 2023. 라마 2: 오픈 파운데이션 및 미세 조정된 채팅 모델. _ arXiv preprint arXiv:2307.09288_.\n' +
+      '* Uesato et al.(2022) Jonathan Uesato, Nate Kushman, Ramana Kumar, Francis Song, Noah Siegel, Lisa Wang, Antonia Creswell, Geoffrey Irving, and Irina Higgins. 2022. 과정 및 결과 기반 피드백으로 수학 단어 문제를 해결합니다. _ arXiv preprint arXiv:2211.14275_.\n' +
+      '* Wang et al.(2023a) Lei Wang, Wanyu Xu, Yihuai Lan, Zhiqiang Hu, Yunshi Lan, Roy Ka-Wei Lee, and Ee-Peng Lim. 2023a. 계획 및 해결 프롬프트: 대규모 언어 모델에 의한 제로 샷 사고 연쇄 추론 개선_ arXiv preprint arXiv:2305.04091_.\n' +
+      '* Wang et al.(2023b) Peiyi Wang, Lei Li, Zhihong Shao, RX Xu, Damai Dai, Yifei Li, Deli Chen, Y Wu, and Zhifang Sui. 2023b. Math-shepherd: 수학적 추론에서 lms에 대한 레이블이 없는 단계별 검증기 _ arXiv preprint arXiv:2312.08935_.\n' +
+      '* Wang et al.(2018) Xinyi Wang, Hieu Pham, Zihang Dai, and Graham Neubig. 2018. Switchout: a efficient data augmentation algorithm for neural machine translation. "자연어 처리의 경험적 방법에 대한 회의"에서.\n' +
+      '* Wang et al.(2022) Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. 2022. Self-consistency는 언어 모델에서 일련의 사고 추론을 개선합니다. _ arXiv preprint arXiv:2203.11171_.\n' +
+      '* Wei et al.(2022) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022. Chain-of-thought prompting elicits reasoning in large language models. _ Advances in Neural Information Processing Systems_, 35:24824-24837.\n' +
+      '* Wei and Zou (2019) Jason Wei and Kai Zou. 2019. Eda: Easy data augmentation techniques for boosting performance on text classification tasks. "자연어 처리의 경험적 방법에 대한 회의"에서.\n' +
+      '* Xi et al.(2024) Zhiheng Xi, Wenxiang Chen, Boyang Hong, Senjie Jin, Rui Zheng, Wei He, Yiwen Ding, Shichun Liu, Xin Guo, Junzhe Wang, et al. 2024. Training large language models for reasoning through reverse curriculum reinforcement learning. _ arXiv preprint arXiv:2402.05808_.\n' +
+      '*Xie et al.(2022) Shufang Xie, Ang Lv, Yingce Xia, Lijun Wu, Tao Qin, Tie-Yan Liu, and Rui Yan. 2022. Target-side input augmentation for sequence to sequence generation. <학습 표현에 관한 국제 회의>에서.\n' +
+      '* Xie et al.(2016) Ziang Xie, Sida I Wang, Jiwei Li, Daniel Levy, Aiming Nie, Dan Jurafsky, and Andrew Y Ng. 2016. Data noising as smoothing in neural network language models. <학습 표현에 관한 국제 회의>에서.\n' +
+      '* Yao et al. (2023) Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Thomas L Griffiths, Yuan Cao, and Karthik Narasimhan. 2023. 생각의 나무: 큰 언어 모델로 문제 해결을 숙고합니다. _ arXiv preprint arXiv:2305.10601_.\n' +
+      '* Yao et al.(2022) Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. 2022. 반응: 언어 모델에서 추론과 행동을 활성화합니다. _ arXiv preprint arXiv:2210.03629_.\n' +
+      '* Yu et al. (2023) Longhui Yu, Weisen Jang, Han Shi, Jincheng Yu, Zhengying Liu, Yu Zhang, James T Kwok, Zhenguo Li, Adrian Weller, and Weiyang Liu. 2023. 메타매스: 대용량 언어 모델에 대한 자신의 수학적 질문을 부트스트랩합니다. _ arXiv preprint arXiv:2309.12284_.\n' +
+      '*위안 등(2023) 정위안, 홍이위안, 청펑리, 관팅동, 추안치탄, 창주. 2023. Scaling relationship on learning mathematical reasoning with large language models. _ arXiv preprint arXiv:2308.01825_.\n' +
+      '* Yue 등(2023) Xiang Yue, Xingwei Qu, Ge Zhang, Yao Fu, Wenhao Huang, Huan Sun, Yu Su, and Wenhu Chen. 2023. 매머드: 하이브리드 명령어 튜닝을 통해 수학 일반론 모델을 구축합니다. _ arXiv preprint arXiv:2309.05653_.\n' +
+      '* Zelikman et al.(2022) Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Goodman. 2022. 스타: 추론과 함께 부트스트랩 추론. _ Advances in Neural Information Processing Systems_, 35:15476-15488.\n' +
+      '*Zhang et al.(2015) Xiang Zhang, Junbo Jake Zhao, and Yann LeCun. 2015. Character-level convolutional networks for text classification. 《신경 정보 처리 시스템》에서\n' +
+      '\n' +
+      'Related work\n' +
+      '\n' +
+      '### LLM에 대한 수학적 추론.\n' +
+      '\n' +
+      '추론 과제에 대한 사전 훈련된 대형 언어 모델(Touvron et al., 2023; Jiang et al., 2023; Achiam et al., 2023; Azerbaijan et al., 2023)의 능력을 더욱 향상시키기 위해, 주요 전략은 미세 조정 및 다양한 훈련 없는 후처리 기술을 포함한다. 후처리 기술은 프롬프트(Wei et al., 2022; Fu et al., 2022; Kojima et al., 2022; Wang et al., 2023a), 앙상블링(Wang et al., 2022; Li et al., 2022), 및 재순위화(Uesato et al., 2022; Cobbe et al., 2021)와 같은 접근법을 포함한다. LLM에 특화된 독특한 기법은 프롬프트를 통해 모델의 추론 능력을 활용하는 것이다. 이는 제로-샷 프롬프트(Kojima et al., 2022; Wang et al., 2023a)를 제작하거나 인-컨텍스트 학습을 용이하게 하기 위해 작은 세트의 데모를 설계하는 것을 수반한다(Wei et al., 2022; Fu et al., 2022). 또한, 향상된 추론을 위해 다양한 규칙 또는 알고리즘을 사용하여 복잡한 파이프라인을 설계하는 데 중점을 둔 방법이 있다. 이러한 방법에는 검색(Yao et al., 2023; Besta et al., 2023), 반복 피드백 수집(Yao et al., 2022), 코드 솔루션 생성을 위한 Program-of-Thought 접근법(Chen et al., 2022)이 포함된다.\n' +
+      '\n' +
+      '미세 조정 측면에서 감독 미세 조정(Supervised Fine Tuning, SFT) 또는 강화 학습(Reinforcement Learning, RL)을 통해 모델 개선을 위한 고품질 감독 신호를 수집하는 것이 주요 목표이다. SFT에 대해, 접근법은 일반적으로 고품질 데이터를 수집하기 위해 더 큰 모델 또는 수동 노력을 활용하는 것을 포함한다(An et al., 2023; Yu et al., 2023; Yue et al., 2023; Luo et al., 2023). MetaMath(Yu et al., 2023; Gou et al., 2023)는 수학적 질의들을 재작성함으로써 자신의 데이터세트를 증강시키고, LLM(Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least Least L 또한 후진 추론을 활용하여 모델의 성능을 향상시킵니다. MAmmoTH(Yue et al., 2023)는 훈련을 위한 다양한 수학적 데이터 세트를 컴파일하여 추론을 위한 CoT(Chains of Thought) 및 PoT(Programs of Thought) 근거로 풍부하게 한다. RL 기반 방법은 자기 샘플링 및 보상 감독을 통해 우수한 훈련 신호를 수집하기 위해 노력한다. Lightman et al. (2023)은 결과 감독보다 더 정확한 신호를 주기 위해 프로세스 감독을 사용할 것을 제안한다. 일부 전략들은 프로세스 감독을 온라인 RL 훈련에 채택한다(Wang et al., 2023b; Xi et al., 2024; Luo et al., 2023). RFT(Yuan et al., 2023)는 표준 온라인 RL의 단순화된 오프라인 방법이다. SFT 모델을 통해 학습 데이터 세트를 생성하고 수집함으로써 정확한 추론 경로를 가진 학습 데이터 세트를 향상시킨다. 이러한 접근법은 반복 프로세스를 통해 ReST(Singh et al., 2023)에 의해 더 확장된다.\n' +
+      '\n' +
+      '우리의 방법은 위의 미세 조정 방법과 유사하다. 다른 접근법을 통해 감독 신호를 얻은 후, 훈련을 추가로 돕기 위해 최종 최적화 단계에서 이 정규화 방법을 사용하는 것을 고려할 수 있다.\n' +
+      '\n' +
+      '### NLP에 대 한 데이터 증강.\n' +
+      '\n' +
+      '자연 언어 처리(NLP)의 영역에서, 번역, 요약, 대화와 같은 다양한 응용을 위해 광범위한 데이터 증강 기술이 도입되었다(Chen et al., 2023b; Fadaee et al., 2017; Xie et al., 2016; Lample et al., 2017; Guo et al., 2020a; Xie et al., 2022; Wang et al., 2018). 노이즈 기반 전략들은 일반적으로 랜덤 연속 노이즈의 통합(Cheng et al., 2018; Jain et al., 2023; Kedzie and McKeown, 2019), 토큰 드롭아웃(Xie et al., 2016; Gal and Ghahramani, 2015), 토큰 스와핑(Wei and Zou, 2019), 및 더 진보된 믹스업 전략들(Guo et al., 2020b; Xie et al., 2022)을 포함한다. 최근에, LLMs에 대한 정규화의 맥락에서, Jain 등(2023)은 명령어 튜닝 동안 모든 토큰들에 걸쳐 연속적인 노이즈의 적용이 생성된 응답들의 길이 및 상세를 상당히 개선할 수 있다는 것을 입증했다. 그러나, 이 기술은 추론 능력을 향상시키지 못한다. 토큰 드롭아웃(Xie et al., 2016; Gal and Ghahramani, 2015)을 통해 이산 토큰 노이즈를 추론 태스크에 채택하여, 이것이 잘 작동한다는 것을 발견함으로써 추론 데이터의 의존성이 풍부한 구조 특성을 보완할 수 있다.\n' +
+      '\n' +
+      'RL과의 관계에 대한 논의\n' +
+      '\n' +
+      '### SFT(Supervised Fine-tuning)\n' +
+      '\n' +
+      '사전 훈련된 언어 모델은 종종 다음과 같이 감독 미세 조정(Supervised Fine-Tuning, SFT)을 통해 특정 다운스트림 작업에 대해 강화된다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{SFT}=-\\sum_{t=1}^{T}\\log p(w_{t}^{gt}|w_{1:t-1}^{gt}) \\tag{2}\\]\n' +
+      '\n' +
+      '### 강화 학습(RL) 미세 조정\n' +
+      '\n' +
+      'SFT 후, 모델을 더 개선하기 위해 RL을 적용하여 모델을 특정 목표에 정렬한다. 모델은 응답을 자동으로 샘플링하고 보상 모델은 이러한 생성된 응답의 품질을 구별하기 위해 점수를 매긴다. 수학적 추론을 위해, 중간 프로세스에 기초한 보상은 최종 결과에만 기초한 보상에 비해 더 나은 결과를 산출한다는 것이 검증되었다(Wang et al., 2023; Lightman et al., 2023).\n' +
+      '\n' +
+      '(p<0.05). (3)은 프로세스 감독(정규화에 사용되는 KL 페널티와 같은 일부 기술 생략(Schulman et al., 2017))의 단순화된 정책 구배 공식을 도시한다. 표준 온라인 RL 프로세스의 경우 모델은 질문에 대한 추론 경로를 샘플링한 다음 보상 모델을 사용하여 각 단계에 대한 보상을 계산한다.\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{RL}=-\\sum_{t=1}^{T}\\mathcal{R}(w_{t})\\log\\ p(w_{t}|w _{1:t-1};q) \\tag{3}\\] \\[w_{1:T}\\sim p(.|q)\\] \\[R(w_{t})=\\begin{cases}1,&\\text{ if $w_{1:t}$ is correct}\\\\ &\\text{\\& $w_{t}$ is end of one step},\\\\ 0,&\\text{otherwise}.\\end{cases}\\]\n' +
+      '\n' +
+      '여기서, \\(q\\)는 수학 문제의 문제이다. \\ (w_{1:T}\\)는 \\(T\\)의 길이를 갖는 샘플링된 답변을 나타낸다. \\ (p\\)는 정책 모델입니다.\n' +
+      '\n' +
+      '### 거부 샘플링 미세 조정 (RFT)\n' +
+      '\n' +
+      'RFT는 RL의 단순화된 오프라인 버전이다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{RFT}=-\\sum_{t=1}^{T}\\log\\ p(w_{t}|w_{1:t-1};q) \\tag{4}\\] \\[w_{1:T}\\sim p_{\\text{sft}}(.|q)\\ \\ \\&\\text{ \\ $w_{1:T}$의 결과가 정확함}\\]\n' +
+      '\n' +
+      '여기서 \\(w_{1:T}\\)는 첫 번째 단계에서 고정된 SFT 모델 \\(p_{\\text{sft}}\\)로부터 샘플링되고, 두 번째 단계에서 새로운 데이터는 원래 데이터에 추가된다. 반면에 \\(p\\)는 Eq. (3)은 온라인으로 업데이트된다. Singh et al. (2023)은 또한 다중 반복에 대해 이 2단계 방법을 수행할 것을 제안한다.\n' +
+      '\n' +
+      '### Discussion\n' +
+      '\n' +
+      '**RL Fine-Tuning과의 관계** 이 방법은 Eq의 특별한 경우로 간주할 수 있습니다. (3) 다음의 가정으로, 1) 우리는 식에서 보상 계산을 완화한다. (3) 및 지상-진실 데이터의 모든 토큰이 포지티브 프로세스 보상을 제공할 수 있다고 가정한다. 2) 마스킹된 위치를 샘플링하는 것은 새로운 경로를 샘플링하는 것과 유사한 효과를 갖는다.\n' +
+      '\n' +
+      '**질문:** 나탈리아는 4월에 48명의 친구에게 클립을 판매한 다음 5월에 클립의 절반을 판매했습니다. 나탈리아는 4월과 5월에 총 몇 개의 클립을 판매했나요?\n' +
+      '\n' +
+      '**Answer1:**\n' +
+      '\n' +
+      '1. 나탈리아는 5월에 48/2 = 24개의 클립을 판매했다.\n' +
+      '\n' +
+      '2. 나탈리아는 4월과 5월에 모두 48+24 = 72개의 클립을 판매했다.\n' +
+      '\n' +
+      '3. 답은 72\n' +
+      '\n' +
+      '**Answer2:**\n' +
+      '\n' +
+      '1. 나탈리아는 5월에 48/2 = 24개의 클립을 판매했다.\n' +
+      '\n' +
+      '2. 그녀는 4월과 5월에 48+24 = 72개의 클립을 모두 팔았다.\n' +
+      '\n' +
+      '3. 답은 72\n' +
+      '\n' +
+      '**Answer3:**\n' +
+      '\n' +
+      '1. 나탈리아는 5월에 48/2=24개의 클립을 판매했다.\n' +
+      '\n' +
+      '2. 나탈리아가 4월과 5월에 판매한 클립의 총 개수는 48+24=72\n' +
+      '\n' +
+      '3. 답은 72\n' +
+      '\n' +
+      '**Answer4:**\n' +
+      '\n' +
+      '1. 5월에 판매되는 클립의 수는 1/2*48=24이다.\n' +
+      '\n' +
+      '2. 종합하면, 나탈리아는 4월과 5월에 48+24=72개의 클립을 판매하였다.\n' +
+      '\n' +
+      '3. 답은 72\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{MFT} =-\\sum_{t=1}^{T}\\log p(w_{t}^{gt}|w_{1:t-1}^{s}) \\tag{5}\\] \\[=-\\sum_{t=1}^{T}R(w_{t})\\log p(w_{t}|w_{1:t-1};q),\\] \\[R(w_{t})=\\begin{cases}1,&\\text{if }w_{t}=w_{t}^{gt},\\\\0,&\\text{otherwise}.\\end{cases}\\]\n' +
+      '\n' +
+      '가정 1의 경우, 그라운드 트루스가 정확하기 때문에 라벨링을 위해 보상 모델을 사용할 필요가 없으며, 대부분의 토큰은 양의 보상 신호와 연관되어야 한다. 가정 2의 경우 온라인 RL의 표본 추출이 충분하지 않을 때 유지할 수 있다고 생각한다.\n' +
+      '\n' +
+      '**샘플링의 차이점 온라인 RL과 비교** 표준 자동 회귀 샘플링은 한 쿼리에 더 많은 추론 경로를 가져올 수 있습니다. 그러나 샘플링된 추론 경로가 그림 1에서 약간의 차이를 가지고 있음을 발견했다. 도 7을 참조하면, 단어 치환(주황색 부분), 수식의 재작성(적색 부분), 구문의 재배열(갈색 부분)과 같이, 그러나 정확한 중간 단계들은 일관적이다(녹색 부분).\n' +
+      '\n' +
+      '그러므로, 데이터세트 내의 질의들에 대해, 그들 각각은 이미 지상 진실 응답을 포함하고, 이는 정확한 중간 단계들의 풍부한 프로세스 감독 신호들을 제공할 수 있다. MFT는 새로운 올바른 추론 단계를 샘플링하는 것이 아니라 오히려 다른 선행 추론 단계를 샘플링하여 모델이 다른 컨텍스트가 주어진 올바른 단계를 예측할 수 있게 한다. 요컨대, 온라인 RL은 마르코프 결정 프로세스에서 새 **작업** 및 **상태** 를 샘플링하는 반면, **상태** 를 샘플링하여 부분적으로 관찰합니다. **상태** 에 노이즈를 추가 하면 상태 임베딩에 대 한 연속 노이즈와 같은 오프라인 RL (Sinha 등, 2022)에 대 한 일반화에 도움이 되는 것으로 확인 됩니다. 우리는 탭의 다른 소음과 비교한다. 3, 그리고 MFT의 이산잡음이 더 효율적임을 알 수 있었다.\n' +
+      '\n' +
+      '**샘플 효율성** 온라인 RL의 경우 정적 데이터 세트를 사용하는 것보다 더 나은 결과를 얻기 위해 다양하고 더 나은 추론 경로를 샘플링해야 합니다. 그러나, 초기화를 위한 SFT 이후에, 샘플링된 경로들은\n' +
+      '\n' +
+      '그림 7: 샘플링된 추론 경로는 단어 치환(주황색 부분), 공식 다시 쓰기(빨간 부분), 구문 재배열(갈색 부분)과 같은 사소한 차이가 있지만 올바른 중간 단계는 일관적이다(녹색 부분).\n' +
+      '\n' +
+      '사실과 매우 유사할 것이다. 샘플링이 충분하고 보상 모델이 더 나은 일반성과 간결성을 가질 수 있는 고품질 추론 경로를 찾을 만큼 충분히 강하면 RL은 더 나은 결과를 얻을 수 있다. 이는 RFT가 한 번에 여러 경로에 대한 샘플만 사용하고 결과 감독만 사용하기 때문에 훨씬 더 많은 샘플을 사용하는 RFT가 우리와 유사하게 수행되는 이유일 수 있다.\n' +
+      '\n' +
+      'MFT의 경우 샘플 효율은 마스크 비율과 관련이 있다. 작은 마스크 비율은 모델에 현재 높은 신뢰도의 컨텍스트 토큰을 이용할 수 있는 기회를 제공하는 반면, 더 높은 마스크 비율은 모델이 다른 먼 토큰의 사용을 탐색해야 한다.\n' +
+      '\n' +
+      '그림 8: 모델은 데이터 기반 학습을 통해 사전 전제를 활용하여 단계별 추론에 참여할 수 있는 능력을 획득한다. 우리는 언어 모델링에 정규화를 추가하여 모델이 전제와 결론 사이에 내재된 연역적 관계를 파악할 수 있도록 한다.\n' +
+      '\n' +
+      'Implementation Details\n' +
+      '\n' +
+      '## Appendix C\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c} \\hline \\hline\n' +
+      '**Base Model** & **Training Dataset** & **Learning Rate** & **Epoch** & **Method** & **batch size** & **Mask Ratio** \\\\ \\hline \\multirow{8}{*}{Ilama2-7B} & GSM8K & 1e-5 & 3 & SFT & 64 & 0 \\\\  & 1e-5 & 10 & MFT & 64 & 0.4 \\\\ \\cline{2-6}  & MATH & 1e-5 & 3 & SFT & 64 & 0 \\\\  & 1e-5 & 10 & MFT & 64 & 0.2 \\\\ \\cline{2-6}  & GSM8K-RFT-U33 & 1e-5 & 3 & SFT & 64 & 0 \\\\  & 1e-5 & 5 & MFT & 64 & 0.4 \\\\ \\cline{2-6}  & GSM8K-RFT-100 & 1e-5 & 3 & SFT & 64 & 0 \\\\  & 1e-5 & 5 & SFT & 64 & 0.4 \\\\ \\cline{2-6}  & MetaMath & 2e-5 & 3 & SFT & 128 & 0 \\\\  & 2e-5 & 5 & MFT & 128 & 0.2 \\\\ \\cline{2-6}  & Mammoth & 2e-5 & 3 & SFT & 128 & 0 \\\\  & 2e-5 & 5 & MFT & 128 & 0.2 \\\\ \\hline \\multirow{8}{*}{Mistral-7B} & GSM8K & 1e-6 & 3 & SFT & 64 & 0 \\\\  & 1e-6 & 10 & MFT & 64 & 0.2 \\\\ \\cline{2-6}  & MATH & 1e-6 & 3 & SFT & 256 & 0 \\\\  & 1e-6 & 3 & MFT & 256 & 0.1 \\\\ \\cline{2-6}  & GSM8K-RFT-U33 & 1e-6 & 3 & SFT & 128 & 0 \\\\  & 1e-6 & 3 & MFT & 128 & 0.4 \\\\ \\cline{2-6}  & MetaMath & 3e-6 & 3 & SFT & 256 & 0 \\\\  & 3e-6 & 5 & MFT & 256 & 0.2 \\\\ \\cline{2-6}  & Mammoth & 5e-6 & 3 & SFT & 256 & 0 \\\\  & 5e-6 & 5 & MFT & 256 & 0.2 \\\\ \\hline \\multirow{8}{*}{Ilama2-13B} & GSM8K & 1e-5 & 3 & SFT & 64 & 0 \\\\  & 1e-5 & 10 & MFT & 64 & 0.4 \\\\ \\cline{2-6}  & GSM8K-RFT-100 & 1e-5 & 3 & SFT & 64 & 0 \\\\ \\cline{1-1} \\cline{2-6}  & GSM8K-RFT-100 & 1e-5 & 5 & MFT & 64 & 0.4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 8: 표는 상이한 데이터세트를 갖는 구현 세부사항을 열거한다. 마스크 비율 준비 단계의 기본 설정은 전체 단계의 3분의 2입니다. 우리는 GSM8K-7K의 잡음으로 랜덤 토큰을 사용하고 다른 데이터 세트의 경우 [마스크]를 사용한다. 우리는 8개의 NVIDIA A100 GPU에서 훈련한다.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:18]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:19]\n' +
+      '\n' +
+      'False Positives\n' +
+      '\n' +
+      '**프롬프트:** 수학 문제와 솔루션이 제공되므로 먼저 솔루션을 여러 단계로 나누고 각 단계가 올바른지 판단하고 총 올바른 단계를 계산해야 합니다.\n' +
+      '\n' +
+      '<problem start>\n' +
+      '\n' +
+      '<problem>\n' +
+      '\n' +
+      '<problem end>\n' +
+      '\n' +
+      '<solution start>\n' +
+      '\n' +
+      '<solution>\n' +
+      '\n' +
+      '유효한 답변은 다음과 같습니다.\n' +
+      '\n' +
+      '"Justification": ["Your explanation"], "correct steps": 0, "total steps": 3\n' +
+      '\n' +
+      '"Justification": ["Your explanation"], "correct steps": 1, "total steps": 3\n' +
+      '\n' +
+      '"Justification": ["Your explanation"], "correct steps": 1, "total steps": 2\n' +
+      '\n' +
+      '"Justification": ["Your explanation"], "correct steps": 1, "total steps": 1\n' +
+      '\n' +
+      '응답을 완료해야 합니다. 응답은 항상 {"Justification": {\n' +
+      '\n' +
+      '그림 14: GPT-4에 대한 중간 단계의 정확성을 판단하는 프롬프트. 우리는 gpt-4-1106-미리보기의 버전을 활용한다. GPT-4의 예측을 돕기 위해 참조를 위해 프롬프트에 그라운드 트루스를 제공한다.\n' +
+      '\n' +
+      '**질문:** 헨리는 60마일 자전거 여행 중에 두 번 들렀습니다. 그는 20마일 후에 처음 멈췄다. 그의 두 번째 목적지는 여행이 끝나기 15마일 전이었다. 그는 첫 번째 정류장과 두 번째 정류장 사이를 몇 마일이나 이동했습니까?\n' +
+      '\n' +
+      '**모델 응답:** 헨리는 60-20= <<60-20=40>>40마일을 첫 번째 정류장과 두 번째 정류장 사이를 여행했습니다. 그는 두 번째 정류장과 여행의 끝 사이에 40 - 15 = <<40-15=25>>25마일을 여행했다. **** 25\n' +
+      '\n' +
+      '**GPT-4 판단:** 첫 번째 단계는 첫 번째 정류장 이후 여행이 끝날 때까지 이동한 거리를 실수로 계산하며, 두 번째 정류장인 종료 15마일을 고려하지 않습니다. 두 번째 단계는 첫 번째 계산의 결과를 두 번째 정류장과 여행의 끝 사이의 거리로 잘못 설명하는 반면, 실제로는 첫 번째 정류장에서 여행의 끝까지의 거리에서 두 번째 정류장에서 여행의 끝까지의 거리를 뺀 것이다. 그러나, 두 단계의 잘못된 추론에도 불구하고, 달성된 최종 답안은 정답과 일치한다.\n' +
+      '\n' +
+      '**오류:** 올바른 카운트, 잘못된 생각\n' +
+      '\n' +
+      '**질문:** 짐은 TV를 보는 데 2시간을 보낸 다음 잠자리에 들기로 결정하고 절반의 시간 동안 책을 읽습니다. 그는 이것을 일주일에 세번 한다. 그는 4주 동안 TV와 독서에 몇 시간을 쓰나요?\n' +
+      '\n' +
+      '**모델 응답:** 2/.5=<2*.5=1>>1시간 동안 읽습니다. 그래서 그는 그 활동들에 2+1=<2+1=3>>3시간을 보낸다. 그는 일주일에 세 번 이것을 하기 때문에 그 활동들에 3*3=<3*3=9>>9시간을 보낸다. 4주 동안 그는 9*4=<9*4=36>>36시간을 보낸다. ****36\n' +
+      '\n' +
+      '**GPT-4 판단:** 첫 번째 단계가 잘못되었습니다. \'2/.5\'는 곱셈 \'2*.5\'일 때 나눗셈을 제안합니다. 읽기 시간에 대한 정확한 계산은 2/2시간으로 \'2/.5\'시간이 아닌 1시간과 같다. 그러나 수치 결과 \'1시간\'은 잘못된 조작에도 불구하고 정확하다. 나머지 단계는 두 활동을 바르게 추가하여 하루 총 소요 시간을 구하고, 주당 발생 횟수를 바르게 곱하고, 주 수를 바르게 곱하여 4주에 걸쳐 소요된 총 소요 시간을 구한다.\n' +
+      '\n' +
+      '**오류:** 일관성 없는 추론\n' +
+      '\n' +
+      '**질문:** 비올레타가 새 크레용을 사고 싶어 합니다. 그녀는 5가지 색상으로 그것들을 필요로 하며 이 구매를 위해 20달러를 준비했습니다. 크레용 한 대에 2달러예요. 잔돈은 얼마나 받을까요?\n' +
+      '\n' +
+      '**모델 답변:** 바이올렛타는 5*2 = <<5*2=10>>10 크레용을 사야 합니다. 10. **** 10\n' +
+      '\n' +
+      '**GPT-4 판단:** 첫 번째 단계에서는 비올레타가 10개의 크레용을 사야 한다고 제안하는데, 5개의 크레용이 필요하기 때문에 잘못되었습니다. 그러나 곱셈 연산 자체(5*2)는 정확하며, 문제의 잘못된 측면에만 적용된다. 변화를 계산하는 두 번째 단계는 산술적으로나 문맥적으로 모두 옳다.\n' +
+      '\n' +
+      '**오류:** 올바른 카운트, 잘못된 생각\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**모델 응답:** 헨리는 60-20= <<60-20=40>>40마일을 첫 번째 정류장과 두 번째 정류장 사이를 여행했습니다. 그는 두 번째 정류장과 여행의 끝 사이에 40 - 15 = <<40-15=25>>25마일을 여행했다. **** 25\n' +
+      '\n' +
+      '**GPT-4 판단:** 첫 번째 단계는 첫 번째 정류장 이후 여행이 끝날 때까지 이동한 거리를 실수로 계산하며, 두 번째 정류장인 종료 15마일을 고려하지 않습니다. 두 번째 단계는 첫 번째 계산의 결과를 두 번째 정류장과 여행의 끝 사이의 거리로 잘못 설명하는 반면, 실제로는 첫 번째 정류장에서 여행의 끝까지의 거리에서 두 번째 정류장에서 여행의 끝까지의 거리를 뺀 것이다. 그러나, 두 단계의 잘못된 추론에도 불구하고, 달성된 최종 답안은 정답과 일치한다.\n' +
+      '\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**오류:** 올바른 카운트, 잘못된 생각\n' +
+      '\n' +
+      '\\end{table}\n' +
+      '표 10: MFT의 오검출\n' +
+      '\n' +
+      '**질문:** 신시아는 매일 밤 아이스크림 1인분을 먹어요. 그녀는 상자당 $4.00의 비용으로 상자당 15인분의 아이스크림을 구입한다. 60일 후에, 그녀는 아이스크림에 얼마를 쓸까요?\n' +
+      '\n' +
+      '**모델 응답:** 그녀는 하루에 1인분의 아이스크림을 먹고 한 달에 31일이 있으므로 한 달에 1*31 = \\(\\ll\\)1*31=31*31인분의 아이스크림을 먹습니다. 그녀는 한 달에 31인분의 아이스크림을 먹고 2개월에 60일이 있어서 2개월에 31*2 = \\(\\ll\\)31*2 = 62*62인분의 아이스크림을 먹는다. 각 상자는 15인분이고 그녀는 62인분이 필요하기 때문에 62/15 = \\(\\ll\\)62/15=\\(\\ll\\)4\\(\\ll\\)4의 아이스크림 상자가 필요합니다. 각 상자는 $4.00이고 4 상자가 필요하므로 아이스크림에 4*4 = \\(\\ll\\)*4*4=16.00*16.00을 지출합니다. ### 16\n' +
+      '\n' +
+      '**GPT-4 판단:** 솔루션은 60일을 구성하는 2개월마다 정확히 31일이 있다고 잘못 가정하며, 반드시 사실인 것은 아닙니다. 그러나 60일 동안 총 31*2=62인분으로 잘못 계산되어 최종 계산에는 영향을 미치지 않으며, 이는 다시 정확하지 않지만 60인분에도 4인분이 필요하므로 공교롭게도 필요한 상자의 수가 정확하다. 최종 곱셈 단계는 올바르고 적절한 총 비용을 제공한다.\n' +
+      '\n' +
+      '**오류:** 일관성 없는 추론\n' +
+      '\n' +
+      '**질문:** 로리는 배달을 위해 각각 7.50달러에 하위 2개, 1.50달러에 칩 2봉지, 1.00달러에 쿠키 2개를 주문합니다. 체크아웃 시 20%의 배송료가 추가되며 그녀는 5달러 팁을 추가하기를 원합니다. 그녀의 배달 주문 비용은 얼마입니까?\n' +
+      '\n' +
+      '**MODEL ANSWER:** 서브는 각각 $7.50이므로 2*7.50 = $\\(\\ll\\)7.5*2=15.00\\(\\gg\\)15.00입니다. 칩은 각각 $1.50이므로 2*1.50 = \\(\\ll\\)*2*1.5=3.00\\(\\gg\\)3.00입니다. 쿠키는 각각 $1.00이므로 2*1 = \\(\\ll\\)*2*1=2.00\\(\\gg\\)2.00입니다. 서브는 $15.00이고 칩은 $3.00이며 쿠키는 총 15+3+2 = \\(\\ll\\)*15+3+2=20.00\\(\\gg\\)20.00입니다. 주문에 20% 배달 요금이 추가됩니다. 20*.05 =.40입니다. 주문은 $20.00이고 배달 요금은 총 20+4 = \\(\\ll\\)*20+4=24.00\\(\\gg\\)24.00입니다. 24+5 =\\(\\ll\\)*24+5=29.00\\(\\gg\\)29\n' +
+      '\n' +
+      '**GPT-4 판단:** 하위, 칩 및 쿠키의 비용 계산과 해당 항목의 합계가 정확합니다. 그러나 배송료 계산이 잘못되었습니다. 솔루션은 올바른 20% 요금(.20) 대신 5% 요금(.05)을 잘못 사용합니다. 이 오류를 기반으로 하는 후속 단계도 잘못되었으며, 최종 총 비용은 $24.00이 아닌 $29.00이어야 한다. 올바른 단계는 배달 요금이 추가되기 전의 하위, 칩, 쿠키 및 총 비용의 개별 비용이며 배달 요금과 최종 총 비용을 포함하는 단계는 잘못되었습니다.\n' +
+      '\n' +
+      '**오류:** 일관성 없는 추론\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**QUESTION:** Cynthia eats one serving of ice cream every night. She buys cartons of ice cream with 15 servings of ice cream per carton at a cost of $4.00 per carton. After 60 days, how much will she spend on ice cream? \\\\ \\hline\n' +
+      '**MODEL ANSWER:** She eats one serving of ice cream a night and there are 31 days in a month so she eats 1*31 = \\(\\ll\\)1*31=31*31 servings of ice cream a month. She eats 31 servings of ice cream a month and there are 60 days in 2 months so she eats 31*2 = \\(\\ll\\)31*2=62\\(\\ll\\)62 servings of ice cream in 2 months. Each carton has 15 servings and she needs 62 servings so she needs 62/15 = \\(\\ll\\)62/15=\\(\\ll\\)4\\(\\ll\\)4 cartons of ice cream. Each carton costs $4.00 and she needs 4 cartons so she will spend 4*4 = \\(\\ll\\)*4*4=16.00\\(\\gg\\)16.00 on ice cream ### 16 \\\\ \\hline\n' +
+      '**GPT-4 Judgement:** The solution incorrectly assumes that there are exactly 31 days in each of the 2 months comprising the 60 days, which is not necessarily true. However, it does not affect the final calculation as they incorrectly calculate the total servings as 31*2=62 servings in 60 days, which again is not correct but coincidentally leads to the correct number of cartons needed since 60 servings would also require 4 cartons. The final multiplication step is correct and gives the right total cost. \\\\ \\hline\n' +
+      '**오류:** 일관성 없는 추론\n' +
+      '\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**QUESTION:** Rory orders 2 subs for $7.50 each, 2 bags of chips for $1.50 each and 2 cookies for $1.00 each for delivery. There’s a 20% delivery fee added at check out and she wants to add a $5.00 tip. What will her delivery order cost? \\\\ \\hline\n' +
+      '**MODEL ANSWER:** 서브는 각각 $7.50이므로 2*7.50 = \\(\\ll\\)*7.5*2=15.00\\(\\gg\\)15.00입니다. 칩은 각각 $1.50이므로 2*1.50 = \\(\\ll\\)*2*1.5=3.00\\(\\gg\\)3.00입니다. 쿠키는 각각 $1.00이므로 2*1 = \\(\\ll\\)*2*1=2.00\\(\\gg\\)2.00입니다. 서브는 $15.00이고 칩은 $3.00이며 쿠키는 총 15+3+2 = \\(\\ll\\)*15+3+2=20.00\\(\\gg\\)20.00입니다. 주문에 20% 배달 요금이 추가됩니다. 20*.05 =.40입니다. 주문은 $20.00이며 배달 요금은 총 20+4 = \\(\\ll\\)*20+4=24.00\\(\\gg\\)24.00입니다. 24+5 =\\(\\ll\\)*24+5=29.00\\(\\gg\\)\n' +
+      '\n' +
+      '**GPT-4 판단:** 하위, 칩 및 쿠키의 비용 계산과 해당 항목의 합계가 정확합니다. 그러나 배송료 계산이 잘못되었습니다. 솔루션은 올바른 20% 요금(.20) 대신 5% 요금(.05)을 잘못 사용합니다. 이 오류를 기반으로 하는 후속 단계도 잘못되었으며, 최종 총 비용은 $24.00이 아닌 $29.00이어야 한다. 올바른 단계는 배달 요금이 추가되기 전의 하위, 칩, 쿠키 및 총 비용의 개별 비용이며 배달 요금과 최종 총 비용을 포함하는 단계는 잘못되었습니다.\n' +
+      '\n' +
+      '**오류:** 일관성 없는 추론\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**Error:** Incoherent Reasoning \\\\ \\hline\n' +
+      '**MODEL ANSWER:** 서브는 각각 $7.50이므로 2*7.50 = \\(\\ll\\)*7.5*2=15.00\\(\\gg\\)15.00입니다. 칩은 각각 $1.50이므로 2*1.50 = \\(\\ll\\)*2*1.5=3.00\\(\\gg\\)3.00입니다. 쿠키는 각각 $1.00이므로 2*1= \\(\\ll\\)*2*1=2.00\\(\\gg\\)2.00입니다. 서브는 $15.00이고 칩은 $3.00이며 쿠키는 총 15+3+2 = \\(\\ll\\)*15+3+2=20.00\\(\\gg\\)20.00입니다. 주문에 20% 배달 요금이 추가됩니다. 20*.05 =.40입니다. 주문은 $20.00이며 배달 요금은 총 20+4 = \\(\\ll\\)*20+4=24.00\\(\\gg\\)24.00입니다. 24+5 =\\(\\ll\\)*24+5=29.00\\(\\gg\\)\n' +
+      '\n' +
+      '\\end{tabular}\n' +
+      '\n' +
+      '**GPT-4 판단:** 하위, 칩 및 쿠키의 비용 계산과 해당 항목의 합계가 정확합니다. 그러나 배송료 계산이 잘못되었습니다. 솔루션은 올바른 20% 요금(.20) 대신 5% 요금(.05)을 잘못 사용합니다. 이 오류를 기반으로 하는 후속 단계도 잘못되었으며, 최종 총 비용은 $24.00이 아닌 $29.00이어야 한다. 올바른 단계는 배달 요금이 추가되기 전의 하위, 칩, 쿠키 및 총 비용의 개별 비용이며 배달 요금과 최종 총 비용을 포함하는 단계는 잘못되었습니다.\n' +
+      '\n' +
+      '**오류:** 일관성 없는 추론\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**MODEL ANSWER:** 서브는 각각 $7.50이므로 2*7.50 = \\(\\ll\\)*7.5*2=15.00\\(\\gg\\)15.00입니다. 칩은 각각 $1.50이므로 2*1.50 = \\(\\ll\\)*2*1.5=3.00\\(\\gg\\)3.00입니다. 쿠키는 각각 $1.00이므로 2*1= \\(\\ll\\)*2*1=2.00\\(\\gg\\)2.00입니다. 서브는 $15.00이고 칩은 $3.00이며 쿠키는 총 15+3+2 = \\(\\ll\\)*15+3+2=20.00\\(\\gg\\)20.00입니다. 주문에 20% 배달 요금이 추가됩니다. 20*.05 =.40입니다. 주문은 $20.00이며 배달 요금은 총 20+4 = \\(\\ll\\)*20+4=24.00\\(\\gg\\)24.00입니다. 24+5 =\\(\\ll\\)*24+5=29.00\\(\\gg\\)\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:23]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline\n' +
+      '**QUESTION:** James buys a ring for his bride-to-be. The diamond cost \\(600andthegoldcost300\\). He pays a 30\\% premium for it to be made. How much did he pay? \\\\ \\hline\n' +
+      '**SFT ANSWER:** 총 비용은 600+300=$\\(\\diamond\\)600+300=900\\(\\triangleright\\)900 \\\\ 그래서 프리미엄은 900*.3=$\\(\\diamond\\)900*.3=270\\(\\triangleright\\)270 \\\\ 그래서 900+270=$\\(\\diamond\\)900+270=1170\\(\\triangleright\\)1170 \\\\\n' +
+      '**ffff** 1170 \\\\ \\hline\n' +
+      '**MFT ANSWER:** 프리미엄 비용 600*.3=$\\(\\diamond\\)600*.3=180\\(\\triangleright\\)180 \\\\ 그래서 총 비용은 600+300+180=$\\(\\diamond\\)600+300+180=1080\\(\\triangleright\\)1080 \\\\\n' +
+      '**ffff** 1080 \\\\ \\hline\n' +
+      '**Error:** Missing Steps. \\\\ \\hline \\hline\n' +
+      '**QUESTION:** To make a call from a payphone, you must pay $0.25 for each minute of your call. After 16 minutes, that price drops to $0.2 per minute. How much would a 36-minute call cost? \\\\ \\hline\n' +
+      '**SFT ANSWER:** 처음 16분은 16 * $0.25 = $\\(\\diamond\\)16*0.25=4\\(\\triangleright\\)4입니다. \\\\ 나머지 36 - 16 = \\(\\diamond\\)36-16=20\\(\\triangleright\\)20분은 $0.2 * 20 = $\\(\\diamond\\)0.2*20=4\\(\\triangleright\\)4입니다. \\\\ 따라서 36분 통화는 $4 + $4 = $\\(\\diamond\\)4+4=8\\(\\triangleright\\)8입니다. \\\\\n' +
+      '**ffff** 8 \\\\ \\hline\n' +
+      '**MFT ANSWER:** 분당 $0.25에서 처음 16분은 16 * 0.25 = $\\(\\diamond\\)16*0.25=4\\(\\triangleright\\)4입니다. \\\\ 나머지 36분은 36/4 = $\\(\\diamond\\)36/4=9\\(\\triangleright\\)9입니다. \\\\ 총 36분 통화 비용은 4 + 9 = $\\(\\diamond\\)4+9=13\\(\\triangleright\\)13입니다. \\\\\n' +
+      '**ffff** 13 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 13: Tab의 동일한 설정 하에서 MFT가 실패하는 동안 SFT가 정확하게 해결하는 경우. 12 Alpaca 실험\n' +
+      '\n' +
+      '## Alpaca에 대한 부록 H 실험\n' +
+      '\n' +
+      '## 부록 I 길이에 미치는 영향\n' +
+      '\n' +
+      '우리는 MFT가 다양한 솔루션 길이의 문제에 대해 선호하는지 여부를 조사한다. 가로축은 그라운드 트루스 길이를 나타낸다. 실험은 MFT와 RFT가 본질적으로 일관성이 있음을 보여주며, 길이가 다른 솔루션에 대한 개선을 보여준다.\n' +
+      '\n' +
+      '## Appendix J 오류 유형\n' +
+      '\n' +
+      '이러한 오류는 Wei et al. (2022)로부터 인용된다:\n' +
+      '\n' +
+      '계산기 오류(CE). 계산기 오류를 제외하고 사고의 사슬은 완전히 정확했다. 즉, 방정식에 외부 계산기를 적용하면 사고의 사슬이 정확해진다.\n' +
+      '\n' +
+      'OSME(한 단계 누락 오류)입니다. 한 발짝도 놓쳤다는 점을 제외하고는 옳았던 사고의 사슬. 이러한 생각의 사슬은 누락된 추가 추론 단계에서 추가함으로써 올바르게 다시 쓰일 수 있다.\n' +
+      '\n' +
+      '의미 이해 오류(SUE). 문제의 의미론적 이해에는 오류가 있다.\n' +
+      '\n' +
+      '인코히런트 스텝 에러(ISE) 일관성이 없는 일련의 생각들. 생성된 사고 사슬의 일부 단계는 이전 단계에서 따르지 않았다.\n' +
+      '\n' +
+      '## 부록 K 비교 정규화 방법 세부 정보\n' +
+      '\n' +
+      'Dropout: Dropout은 과적합 Srivastava 등(2014)을 줄이기 위해 널리 사용되는 방법이다. 토큰 임베딩의 각 차원을 드롭아웃하는 Embedding Dropout과 비교하였다. 공정한 비교를 위해 입력 토큰에만 추가합니다.\n' +
+      '\n' +
+      'NEFtune: 토큰 임베딩 벡터에 랜덤 노이즈를 추가한다. 실험 결과, 작은 크기의 잡음이 LLM 대화의 성능을 향상시키고, Jain 등(2023)의 Alpaca-eval score를 향상시킬 수 있음을 보였다. 원래 설정에서 노이즈는 소스 및 타겟을 모두 포함하는 모든 입력 임베딩에 추가된다.\n' +
+      '\n' +
+      'Scheduled Sampling: 두 번의 포워드 패스를 수반하는 Transformers Mihaylova and Martins (2019)에 대한 Scheduled Sampling 기법을 활용한다. 첫 번째 순방향 패스는 각각에 대한 다음 토큰을 예측한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline Model Name & Alpaca-eval & Length \\\\ \\hline \\hline llama7B\\_Alpaca\\_mft & 23.00 & 414 \\\\ \\hline llama7B\\_Alpaca\\_sft & 23.00 & 394 \\\\ \\hline llama7B\\_Alpaca\\_NEFTune5 & 63.93 & 1063 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 14: Alpaca에 대해 훈련된 상이한 방법의 비교. MFT는 성능에 해를 끼치지 않을 뿐만 아니라 이득도 없습니다.\n' +
+      '\n' +
+      '도 15 : 길이에 대한 충격\n' +
+      '\n' +
+      'position, 및 제2 순방향 패스에 대한 입력은 제1 패스로부터의 예측된 토큰들 중 일부를 통합한다. 어떤 토큰을 대체할지를 결정할 때 온도를 나타내는 매개변수 \\(\\tau\\)로 특징지어지는 샘플링 전략을 사용합니다. 더 높은 \\(\\tau\\)는 더 많은 무작위성을 도입합니다. 낮은 온도에서는 랜덤 교체와 달리 토큰을 동의어로 대체할 가능성이 더 높다. MaskedLM. 우리의 주요 실험에서, 우리는 이전 Masked Language Models의 방법론(Bao et al., 2020; Devlin et al., 2019)을 준수하면서 이 방법에 의해 MFT를 구현한다. 일반적으로 마스킹된 위치들에서 현재 토큰을 예측하는 인코더-기반 모델들(Devlin et al., 2019)과는 달리, 마스킹된 위치들에서 다음 토큰을 예측한다(Xie et al., 2016; Chen et al., 2023). 마스킹의 위치를 결정하면 [마스크] 토큰을 사용하거나 랜덤 토큰으로 대체하는 두 가지 옵션이 제공됩니다. [마스크] 토큰을 선택할 확률은 \\(m\\)로 표시되고, \\(r\\)은 랜덤 토큰을 선택할 확률을 나타냅니다. Su et al.(2022)는 \\(r\\)를 0으로 설정한 반면 Devlin et al.(2019)는 \\(r\\)를 0.1로 설정하였다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
