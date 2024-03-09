@@ -13,6 +13,7 @@
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
 | 2403.04652v1 | Yi Open Foundation Models by 01AI | [arXiv](https://arxiv.org/abs/2403.04652v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.04652v1) |
+| 2403.03883v2 | SaulLM-7B A pioneering Large Language Model for Law | [arXiv](https://arxiv.org/abs/2403.03883v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.03883v2) |
 | 2403.03507v1 | GaLore Memory-Efficient LLM Training by Gradient Low-Rank Projection | [arXiv](https://arxiv.org/abs/2403.03507v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.03507v1) |
 | 2403.02178v1 | Masked Thought Simply Masking Partial Reasoning Steps Can Improve Mathematical Reasoning Learning of Language Models | [arXiv](https://arxiv.org/abs/2403.02178v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.02178v1) |
 | 2402.18563v1 | Approaching Human-Level Forecasting with Language Models | [arXiv](https://arxiv.org/abs/2402.18563v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2402.18563v1) |
