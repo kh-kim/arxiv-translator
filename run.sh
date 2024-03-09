@@ -49,7 +49,7 @@ if [ ! -f $AR5IV_FN ]; then
 fi
 
 # Extract the text
-CUDA_VISIBLE_DEVICES=-1 nougat $PDF_FN -o papers/$ARXIV_ID
+CUDA_VISIBLE_DEVICES=0 nougat $PDF_FN -o papers/$ARXIV_ID
 MMD_FN=$(echo $PDF_FN | sed 's/pdf/mmd/g')
 echo $MMD_FN
 

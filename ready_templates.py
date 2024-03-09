@@ -180,7 +180,8 @@ def main(en_mmd_fn):
 
 
 if __name__ == "__main__":
-    en_mmd_fn = sys.argv[1]
+    if len(sys.argv) == 2:
+        en_mmd_fn = sys.argv[1]
 
-    main(en_mmd_fn)
+        main(en_mmd_fn)
     update_main_readme()
