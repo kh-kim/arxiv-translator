@@ -30,6 +30,7 @@
 | 2401.05654v1 | Towards Conversational Diagnostic AI | [arXiv](https://arxiv.org/abs/2401.05654v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.05654v1) |
 | 2401.01055v2 | LLaMA Beyond English An Empirical Study on Language Capability Transfer | [arXiv](https://arxiv.org/abs/2401.01055v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.01055v2) |
 | 2312.05934v3 | Fine-Tuning or Retrieval? Comparing Knowledge Injection in LLMs | [arXiv](https://arxiv.org/abs/2312.05934v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2312.05934v3) |
+| 2312.05934 | Fine-Tuning or Retrieval? Comparing Knowledge Injection in LLMs | [arXiv](https://arxiv.org/abs/2312.05934) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2312.05934) |
 | 2311.12023v2 | LQ-LoRA Low-rank Plus Quantized Matrix Decomposition for Efficient Language Model Finetuning | [arXiv](https://arxiv.org/abs/2311.12023v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.12023v2) |
 | 2310.11511 | Self-RAG Learning to Retrieve Generate and Critique through Self-Reflection | [arXiv](https://arxiv.org/abs/2310.11511) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.11511) |
 | 2310.01889 | Ring Attention with Blockwise Transformers for Near-Infinite Context | [arXiv](https://arxiv.org/abs/2310.01889) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.01889) |

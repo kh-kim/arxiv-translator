@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# 미세 조정 또는 검색?\n' +
+      '\n' +
+      'LLM의 지식 주입 비교\n' +
+      '\n' +
+      'Oded Ovadia, Menachem Brief, Moshik Mishaeli, Oren Elisha\n' +
+      '\n' +
+      '{odedovadia,t-mbrief,mmishaeli,oren.elisha}@microsoft.com\n' +
+      '\n' +
+      'Microsoft, Israel\n' +
+      '\n' +
+      '교신저자. 동등 기여.\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '대형 언어 모델(LLM)은 다양한 도메인에 걸쳐 다양한 질문에 답하는 능력에 의해 입증된 바와 같이 사전 훈련된 가중치 내에 방대한 양의 사실 정보를 캡슐화한다. 그러나 이러한 지식은 학습 데이터의 특성에 크게 의존하여 본질적으로 제한적이다. 결과적으로 외부 데이터 세트를 사용하여 새로운 정보를 통합하거나 이전에 볼 수 있는 정보에 대한 LLM의 기능을 개선하는 것은 상당한 문제를 제기한다. 본 연구에서는 비감독 미세 조정과 검색 증강 생성의 두 가지 일반적인 접근 방식을 비교한다. 우리는 서로 다른 주제에 걸쳐 다양한 지식 집약적 작업에 대한 두 접근 방식을 평가한다. 우리의 연구 결과는 감독되지 않은 미세 조정이 약간의 개선을 제공하지만 RAG가 훈련 중에 직면하는 기존 지식과 완전히 새로운 지식 모두에서 일관되게 이를 능가한다는 것을 보여준다. 더욱이, 우리는 LLM이 감독되지 않은 미세 조정을 통해 새로운 사실 정보를 배우기 위해 고군분투하고 훈련 중에 동일한 사실의 수많은 변형에 노출시키는 것이 이 문제를 완화할 수 있음을 발견했다.\n' +
+      '\n' +
+      '**키워드:** LLM, NLP, Fine-Tuning vs. RAG, 지식 및 사실성\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '대형 언어 모델(LLM)은 방대한 양의 사실 정보를 포착할 수 있다(Petroni et al., 2019; Cohen et al., 2023; Hu et al., 2023). LLM은 방대한 사전 훈련 데이터 세트로 인해 다양한 영역에서 놀라운 수준의 지식을 보여준다. 그러나 이 지식에는 두 가지 중요한 한계가 있다. 첫째, 정적이며 시간에 따라 업데이트되지 않습니다. 둘째, 비특정적이어서 특정 도메인에 대한 미묘한 전문 지식이 부족할 수 있다. 이는 두 가지 다른 문제이지만 해결책은 동일하기 때문에 모델의 지식을 향상시키는 것과 관련이 깊다.\n' +
+      '\n' +
+      '최근, LLM을 특정 도메인에 적응시키고 그들의 지식을 업데이트하는 아이디어가 점점 더 보편화되고 있다(Yu et al., 2022). 헬스케어(Singhal et al., 2023; Wu et al., 2023; Wu et al., 2023), 금융(Wu et al., 2023; Yang et al., 2023), 및 법률(Huang et al., 2023; Nguyen, 2023)과 같은 다양한 분야에서 사실적 지식과 능력을 향상시키기 위한 다양한 모델이 제안되었다.\n' +
+      '\n' +
+      '이 연구에서는 모델의 지식과 사실 데이터를 암기, 이해 및 검색하는 능력에 대한 평가에 중점을 둔다. 우리는 _지식 주입_의 개념을 이해하는 것을 목표로 한다(Wang et al., 2020; Chen et al., 2022; Liu et al., 2020; Lauscher et al., 2020). 텍스트 코퍼스 형태의 지식 기반이 주어진다면, 사전 훈련된 모델을 이 지식을 가르치는 가장 좋은 방법은 무엇인가?\n' +
+      '\n' +
+      '사전 학습된 모델에 지식을 추가하는 한 가지 방법은 미세 조정을 통한 것이다. 미세 조정을 통해 모델의 훈련 프로세스를 계속하고 태스크별 데이터를 사용하여 적응합니다. 모델을 특정 지식베이스에 노출시킴으로써 모델 가중치가 그에 따라 적응할 수 있을 것으로 기대한다. 이 프로세스는 타겟팅된 애플리케이션들에 대한 모델을 최적화하여, 그 성능 및 특수 도메인들에서의 맥락적 관련성을 향상시키는 것을 의미한다.\n' +
+      '\n' +
+      '모델의 지식 베이스를 향상시키는 또 다른 방법은 인-컨텍스트 학습(in-context learning, ICL)의 사용을 통한 것이다(Chen et al., 2021; Radford et al., 2019; Min et al., 2021; Lampinen et al., 2022). ICL의 주요 아이디어는 모델의 가중치를 직접 변경하지 않고 입력 쿼리를 모델로 수정하여 새로운 태스크에 대한 사전 훈련된 LLM의 성능을 향상시키는 것이다. ICL의 한 형태는 검색 증강 생성(RAG)이다(Lewis et al., 2020; Neelakantan et al., 2022). RAG는 정보 검색 기술을 사용하여 LLM이 지식 소스로부터 관련 정보를 얻고 이를 생성된 텍스트에 통합할 수 있도록 한다.\n' +
+      '\n' +
+      '본 연구는 미세 조정과 RAG의 비교를 통해 LLM의 지식 주입 능력을 평가하는 것을 목적으로 한다. 그 근거를 설명하기 위해, 비유를 사용하자. 특정 주제에 대한 시험을 보는 대학생 세 명을 고려해보자. 모두 수업 자료에 접근할 수 있었지만 사전에 주제를 알지 못했다. 첫 번째 학생은 시험 중에만 교과서를 가지고 있었고, 두 번째 학생은 시험 전에 접근하여 공부했으며, 세 번째 학생은 시험 발표로 접근성을 잃었다. 누가 더 잘했을까요?\n' +
+      '\n' +
+      '## 2 Background\n' +
+      '\n' +
+      '지식 주입을 평가하려면 먼저 LLM에 대한 지식이 무엇을 의미하는지 이해해야 합니다.\n' +
+      '\n' +
+      '지식을 정의하는 지식과 언어 모델은 이 연구의 범위를 훨씬 넘어선 복잡한 철학적 과제이다. 그러나 우리는 언어 모델의 맥락에서 사실적 지식이 무엇을 의미하는지 살펴볼 수 있다. 모델이 사실을 안다면, 그것은 그것에 대한 질문에 정확하고 일관되게 대답할 수 있다. 나아가 이 사실과 관련된 참진술과 거짓진술을 확실하게 구분할 수 있다. 그런 다음 우리는 이 정의를 하나의 사실이 아닌 전체 지식 베이스로 확장할 수 있다.\n' +
+      '\n' +
+      '수학적으로, \\(\\mathcal{Q}=\\{q_{n}\\}_{n=1}^{N}\\)을 \\(N\\) 객관식 사실문항의 집합으로 하자. 여기서 각 문항은 \\(L\\) 가능한 답과 정확히 하나의 정답을 갖는다. \\(\\mathcal{A}=\\{(a_{n}^{1},\\ldots,a_{n}^{L})\\}_{n=1}^{N}\\)이 가능한 답의 집합이고, \\(\\mathcal{C}=\\{c_{n}\\}_{n=1}^{N}\\)이 정답이라고 하자.\n' +
+      '\n' +
+      '\\(\\mathcal{M}\\)를 언어 모델로 하자. 우리는 \\(n\\) 번째 질문에 대한 모델의 예측된 답을 \\(\\mathcal{M}(q_{n})\\in\\{a_{n}^{1},\\ldots,a_{n}^{L}\\}\\)로 나타낸다.\n' +
+      '\n' +
+      '우리는 \\(\\mathcal{Q}\\)와 관련하여 \\(\\mathcal{M}\\)의 _지식 점수_\\(\\mathcal{L}\\)를 표준 정확도 점수로 정의한다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\mathcal{M},\\mathcal{Q}}:=\\frac{\\#\\{q_{n}|\\;\\mathcal{M}(q_{n})=c _{n}\\}}{N}. \\tag{1}\\]\n' +
+      '\n' +
+      '우리는 모델 \\(\\mathcal{M}\\)이 다음이 성립하면 질문 집합 \\(\\mathcal{Q}\\)에 관한 _any_ 지식을 가지고 있다고 말한다.\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\mathcal{M},\\mathcal{Q}}>\\frac{1}{L}. \\tag{2}\\]\n' +
+      '\n' +
+      '더 간단한 용어로 모델은 일관된 정답을 제공하여 단순한 무작위 추측 기준선을 능가할 수 있다. 물론 지식점수 \\(\\mathcal{L}_{\\mathcal{M},\\mathcal{Q}}\\)가 다른 모형에 비해 한 모형에서 더 높은 경우, 전자는 후자에 비해 \\(\\mathcal{Q}\\)에 대해 더 많은 지식을 가진다고 주장한다.\n' +
+      '\n' +
+      '이전에 본 지식 1의 중요한 구별은 완전히 새로운 사실과 달리 사전 훈련 중에 모델이 이전에 노출된 지식 간의 구별이다. 현대 LLM 트레이닝 세트의 크기를 고려할 때, 그들은 웹 소스 텍스트를 통해 이용 가능한 방대한 양의 정보를 다룬다. 결과적으로 틈새 영역에서도 지식 주입의 목표는 반드시 모델이 완전히 새로운 사실을 가르치는 것이 아니라 특정 영역에 대한 편향을 유도하여 기억을 "새로 고침"하는 것이다.\n' +
+      '\n' +
+      '지식 및 추론 우리는 LLMs에 대한 이러한 지식 평가 프레임워크가 불완전하다는 것을 강조한다. 중요한 것은 모델의 반응에 영향을 미치는 다른 품질 메트릭을 해결하지 않는다는 것입니다. 일부 수준의 추론을 포함하지 않고 순수하게 지식 집약적인 데이터 세트를 만드는 것은 어렵다. 결과적으로, 강력한 추론 능력을 가진 모델은 객관식 시험에서 "교육된 추측"을 함으로써 익숙하지 않은 지식 집약적인 과제에 탁월할 수 있다. 따라서 LLM에서 지식에 대한 평가는 이를 고려해야 하며, 결과는 추론(Sakaguchi 등, 2021), 독해(Dua 등, 2019) 및 일반 언어 능력(Srivastava 등, 2022)에 대한 광범위한 벤치마크의 일부로 간주된다. 그러나 이러한 평가 틀은 여전히 무엇보다 사실적 정보를 강하게 강조하고 있다.\n' +
+      '\n' +
+      '사실적 오류에 대한 원인 모델들이 사실적 질문에 정확하게 대답하지 못하는 데에는 많은 가능한 이유가 있다. (Wang et al., 2023)에서 Wang _et al._은 다섯 가지 주요 모델 수준 원인의 분류법을 소개한다.\n' +
+      '\n' +
+      '* **도메인 지식 부족**: 언어 모델은 노출되지 않은 특정 도메인에 대한 포괄적인 전문 지식이 부족할 수 있습니다. 예를 들어, 윌리엄 셰익스피어가 쓴 텍스트로만 훈련된 모델은 마크 트웨인의 작품에 대해 질문을 받았을 때 제대로 작동하지 않을 것이다.\n' +
+      '* **구식 정보**: LLM에는 항상 훈련 데이터 세트에 따라 컷오프 날짜가 결정됩니다. 결과적으로, 마지막 트레이닝 업데이트 이후에 발생하는 임의의 이벤트들, 발견들 또는 변화들은 외부 소스들에 대한 액세스 없이 모델의 지식 내에 있지 않을 것이다.\n' +
+      '* **Immemorization**: 때때로 모델은 교육 프로세스 중에 지식에 노출되지만 유지되지 않습니다. 이것은 트레이닝 데이터세트에서 거의 나타나지 않는 희귀한 사실들에 대해 특히 그렇다(Kandpal et al., 2023).\n' +
+      '* **잊기**: 언어 모델은 사전 학습 단계(미세 조정) 후에 추가 교육을 받는 경우가 많습니다. 어떤 경우에는, 이것은 _재난적 망각_이라고 불리는 현상으로 이어질 수 있다(Kirkpatrick et al., 2017; Goodfellow et al., 2013; Chen et al., 2020; Luo et al., 2023). 여기서 모델은 미세 조정 프로세스 이전에 가지고 있던 지식 중 일부를 잃는다.\n' +
+      '* **오류 추론**: 특정 인스턴스에서 언어 모델은 사실에 대한 관련 지식을 가지고 있지만 올바르게 활용하지 못할 수 있습니다. 이는 특히 복잡한 다단계 추론 과제(Tan et al., 2023)에서 또는 동일한 사실에 대해 상이한 질문으로 제기될 때, 상이한 결과를 초래한다(Berglund et al., 2023).\n' +
+      '\n' +
+      '우리는 이러한 문제의 대부분이 사전 훈련 단계에서 발생하며 치명적인 망각이 주목할 만한 예외임을 관찰한다. 따라서 많은 LLM은 훈련 후 프로세스에 관계없이 이러한 종류의 사실적 오류로 고통받을 것이다.\n' +
+      '\n' +
+      '## 3 언어 모델에 지식 주입\n' +
+      '\n' +
+      '제2절에서 주어진 배경에 따라 많은 지식집약적 과제에는 일반적인 사전훈련이 미흡함을 알 수 있다. 이를 해결하기 위해서는 사전 학습된 모델의 지식을 증강하기 위한 추가적인 후처리 단계가 필수적이다. 이 단계는 종종 _지식 주입_으로 지칭된다(Wang et al., 2020; Chen et al., 2022; Liu et al., 2020; Lauscher et al., 2020).\n' +
+      '\n' +
+      '본 절에서는 지식 주입을 위해 널리 사용되는 두 가지 프레임워크인 미세 조정(FT)과 검색 증강 생성(RAG)을 살펴본다. 우리는 일관된 용어를 사용하여 두 방법을 설명하는 것을 목표로 지식 주입 문제를 공식화하는 것으로 시작한다.\n' +
+      '\n' +
+      '### Problem formulation\n' +
+      '\n' +
+      '식 (1)과 식 (2)에서는 질의응답(Q&A)의 렌즈를 통해 언어 모델의 지식 공식을 제시하였다. 우리는 이제 이 공식을 동일한 용어를 사용하는 지식 주입 문제로 확장한다.\n' +
+      '\n' +
+      '일련의 사실적 질문이 주어지면, 이러한 질문과 관련된 정보를 포함하는 일부 텍스트 코퍼스가 존재한다. 지식 주입의 중심 가정은 이 코퍼스에 대한 완전한 액세스가 주어지면 보조 지식 베이스 역할을 하고 이 질문 세트에 대한 모델의 성능을 향상시킬 수 있다는 것이다.\n' +
+      '\n' +
+      '수학적으로, \\(\\mathcal{M}\\)는 사전 훈련된 모델이고, \\(\\mathcal{Q}\\)는 이전과 같이 사실적 질문의 집합이라고 하자. 이제, 우리가 관련 보조 지식 베이스 \\(\\mathcal{B}_{\\mathcal{Q}}\\)를 가지고 있다고 가정하자. 우리의 목표는 \\(\\mathcal{F}\\)로 표기된 변환을 발견하는 것이며, 그것이 적용될 때, \\(\\mathcal{Q}\\)에 대한 지식을 향상시킬 것이다:\n' +
+      '\n' +
+      '\\[\\mathcal{M}^{\\prime}:=\\mathcal{F}(\\mathcal{M},\\mathcal{B}_{\\mathcal{Q}})\\quad s.t.\\quad\\mathcal{L}_{\\mathcal{M}^{\\prime},\\mathcal{Q}}>\\mathcal{L}_{\\mathcal{M},\\mathcal{Q}}. \\tag{3}\\]\n' +
+      '\n' +
+      '본 연구에서는 \\(\\mathcal{F}\\): 미세 조정과 RAG의 두 가지 옵션을 비교하여 어떤 옵션이 이 문제에서 더 나은 성능을 보이는지 확인하는 것을 목표로 한다.\n' +
+      '\n' +
+      '### Fine-Tuning\n' +
+      '\n' +
+      '미세 조정은 특정 도메인에서 성능을 향상시키기 위해 특정, 종종 더 좁은 데이터 세트 또는 태스크에서 사전 훈련된 모델을 조정하는 프로세스이다. 여기서, 서로 다른 유형의 미세 조정을 구별하는 것이 필수적이다. FT techniques are commonly classified into supervised, unsu\n' +
+      '\n' +
+      '그림 1: 지식 주입 프레임워크의 시각화입니다.\n' +
+      '\n' +
+      'pervised, 및 강화 학습(reinforcement learning, RL) 기반 방법. 우리는 이러한 방법들과 지식 주입의 문제와의 관련성에 대해 간략히 검토하는 것으로 진행한다.\n' +
+      '\n' +
+      '감독 미세 조정 감독 미세 조정(Supervised Fine-Tuning Supervised Fine-Tuning, SFT)은 라벨링된 입력-출력 쌍들의 세트들을 필요로 한다. 가장 일반적인 SFT 방법 중 하나는 명령어 튜닝(Wang et al., 2022; Mishra et al., 2021; Ouyang et al., 2022; Taori et al., 2023)이며, 이는 모델 성능을 향상시키는 가장 강력한 방법 중 하나로 부상하였다. 명령어 튜닝을 통해, 입력은 자연어 태스크 설명이고, 출력은 원하는 행동의 예시이다. 현재 많은 최첨단 LLM은 사전 훈련 단계 후에 지시 튜닝을 거쳤다.\n' +
+      '\n' +
+      '수업 튜닝은 제로 샷 및 추론 능력에 특히 중점을 두고 모델의 전반적인 품질을 개선하는 데 매우 효과적인 것으로 나타났다. 그러나, 이러한 장점에도 불구하고, 명령어 튜닝이 반드시 모델 새로운 지식을 가르치는 것은 아니다(Ouyang et al., 2022; Chung et al., 2022; Mitra et al., 2023; Chia et al., 2023; Zhou et al., 2023). 이와 같이, 명령어 튜닝만으로는 지식 주입 문제에 대한 실행 가능한 해결책이 되지 못한다.\n' +
+      '\n' +
+      '강화 학습 또 다른 형태의 FT는 사전 훈련 단계 후에 모델을 더 잘 정렬하기 위해 RL 또는 RL에서 영감을 받은 최적화 전략에 의존한다. 몇 가지 두드러진 예는 인간 피드백(RLHF)으로부터의 강화 학습(OpenAI, 2023; Touvron et al., 2023), 직접 선호 최적화(DPO)(Rafailov et al., 2023), 및 근접 정책 최적화(PPO)(Schulman et al., 2017; Tunstall et al., 2023).\n' +
+      '\n' +
+      '이러한 기술들은 특히 명령어 튜닝과 함께 사용될 때 매우 유용한 것으로 나타났다. 그러나 명령 조정과 유사하게 이러한 방법은 응답의 전반적인 품질과 예상되는 행동에 초점을 맞추고 반드시 지식의 폭에 초점을 맞추지는 않는다.\n' +
+      '\n' +
+      '감독되지 않은 미세 조정 우리가 논의하는 최종 FT 전략은 감독되지 않았으며, 이는 모델이 배울 수 있는 레이블이 없다는 것을 의미한다. 하나의 일반적인 비감독 FT 기술은 종종 _지속적인 사전 훈련_ 또는 _구조화되지 않은_ FT라고 한다.\n' +
+      '\n' +
+      '이 방법에서 FT 과정은 사전 훈련 단계의 직접적인 연속으로 본다. 우리는 원래 LLM의 저장된 체크포인트로 시작하여 인과적 자동 회귀 방식, 즉 다음 토큰을 예측하는 방식으로 훈련한다. 실제 사전 훈련과 비교했을 때 큰 차이점 중 하나는 학습률이다. 일반적으로, 재앙적인 망각을 피하기 위해 모델의 사전 훈련을 계속할 때 훨씬 낮은 학습률이 필요할 것이다(Kirkpatrick et al., 2017).\n' +
+      '\n' +
+      'LLM들이 그들의 사전 트레이닝 단계 동안 방대한 양의 지식을 저장한다는 것은 잘 알려져 있다(Zhou et al., 2023). 따라서 모델에 지식을 주입하기 위해 이 과정을 계속하는 것이 타당합니다. 따라서 우리는 이 작업 전반에 걸쳐 감독되지 않은 FT 접근법을 사용하고 새로운 정보를 학습하는 모델의 능력을 향상시키는 데 그 효능을 평가한다.\n' +
+      '\n' +
+      '### 검색 강화 생성\n' +
+      '\n' +
+      '검색 증강 생성(retrieval augmented generation, RAG)(Lewis et al., 2020)은 외부 지식 소스를 사용함으로써, 특히 지식 집약적인 태스크에서 LLMs의 능력을 확장하는 기술이다. 원래 공식에는 작업당 추가 훈련이 포함되었지만, 이후 사전 훈련된 _임베딩_ 모델이 추가 훈련 없이 향상된 성능을 달성할 수 있음이 입증되었다(닐라칸탄 등, 2022).\n' +
+      '\n' +
+      '이 아이디어는 보조 지식베이스와 입력 질의가 주어졌을 때, RAG 아키텍처를 사용하여 입력 질의와 유사한 지식베이스 내의 문서를 찾는 것이다. 그런 다음 이 문서들은 입력 쿼리에 추가되며, 따라서 모델에 쿼리의 주제에 대한 추가 컨텍스트를 제공한다.\n' +
+      '\n' +
+      '실제적으로, 제안된 아키텍처를 구현하는 것은 매우 간단하다: 보조 지식 베이스 \\(\\mathcal{B}_{\\mathcal{Q}}\\)와 사전 훈련된 임베딩 모델 \\(\\mathcal{M}_{e}\\)이 주어지면, 문서당 밀도 벡터 표현(embedding) \\(b\\in\\mathcal{B}_{\\mathcal{Q}}\\)을 생성하고 이를 벡터 저장소에 저장한다. 새로운 질의 \\(q\\)를 수신하면, \\(\\mathcal{M}_{e}(q)\\)의 임베딩을 이용하여 \\(q\\)의 최상위 \\(K\\) 인접 이웃 \\(\\mathbf{b}_{q}=\\{b_{k}\\}_{1}^{K}\\)을 점-곱 순위에 따라 검색한다. 그런 다음 \\(q\\)를 \\(\\tilde{q}=\\mathbf{b}_{q}\\|q\\)로 업데이트합니다. 여기서 \\(\\|\\)는 문자열 연결을 나타냅니다. 마지막으로 \\(\\mathcal{M}(\\tilde{q})\\)를 모델의 출력으로 반환한다.\n' +
+      '\n' +
+      '## 4 지식 베이스 만들기\n' +
+      '\n' +
+      '### 작업 선택 및 합리화\n' +
+      '\n' +
+      'MMLU 벤치마크 지식집약적 과제에서 LLM의 능력을 적절하게 평가하기 위해 해부학, 천문학, 대학 생물학, 대학 화학 및 선사학 주제에서 MMLU 벤치마크(Hendrycks et al., 2021)와 구별되는 4개의 과제를 선택했다. 선택된 과제는 사실적 지식에 대한 강조와 추론에 대한 최소한의 의존도를 기반으로 선택되었다. 휴리스틱으로 질문이 짧고 컨텍스트가 없는 작업을 선택했습니다. 실제로 우리는 평가가 특정 분야에 국한되지 않도록 인문학 과목 1개뿐 아니라 STEM 과목 4개를 선택했다. 선사에는 모든 비근대 역사에 걸친 질문이 포함된다는 점에 유의하라. 이 접근법은 추론 과정과 별도로 정보를 이해하고 조작하는 LLM 능력을 테스트할 수 있도록 하는 것을 목표로 한다.\n' +
+      '\n' +
+      '현재 이벤트 태스크 LLMs가 새로운 지식을 배울 수 있는 능력을 더 분리하기 위해 현재 이벤트에 대한 객관식 질문을 포함하는 태스크를 만들었다. 이 태스크는 다양한 모델의 훈련 데이터를 컷오프한 후 발생한 이벤트에 대한 객관식 질문을 포함한다. 특히, 2023년 8월부터 11월까지의 기간 동안 미국의 "현재 사건"에 초점을 맞추어 관련 위키피디아 지수 1에 수록하였다. 이 방법을 통해 대부분의 모델이 이러한 사실에 노출되지 않았음을 보장할 수 있으며, 따라서 지식 주입 능력을 직접 테스트할 수 있다.\n' +
+      '\n' +
+      '각주 1: [https://en.wikipedia.org/wiki/Category:2023_events_in_the_United_States_by_month](https://en.wikipedia.org/wiki/Category:2023_events_in_the_United_States_by_month)\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l} \\hline \\hline Task & Model & Base model & Base model + RAG & Fine-tuned & Fine-tuned + RAG \\\\ \\hline \\multirow{3}{*}{Anatomy (0-shot)} & Mistral 7B & 0.556 & **0.681** & 0.570 & 0.659 \\\\  & Llama2 7B & 0.393 & **0.489** & 0.430 & **0.489** \\\\  & Orca2 7B & 0.607 & **0.637** & 0.600 & **0.637** \\\\  & Mistral 7B & 0.600 & **0.681** & 0.622 & 0.674 \\\\  & Llama2 7B & 0.467 & **0.563** & 0.496 & 0.548 \\\\  & Orca2 7B & 0.570 & 0.659 & 0.593 & **0.674** \\\\ \\hline \\multirow{3}{*}{Astronomy (0-shot)} & Mistral 7B & 0.625 & 0.678 & 0.651 & **0.697** \\\\  & Llama2 7B & 0.401 & 0.467 & 0.487 & **0.520** \\\\  & Orca2 7B & 0.645 & **0.750** & 0.651 & **0.750** \\\\  & Mistral 7B & 0.658 & **0.724** & 0.651 & 0.697 \\\\  & Llama2 7B & 0.401 & 0.474 & 0.447 & **0.520** \\\\  & Orca2 7B & 0.664 & **0.763** & 0.664 & 0.743 \\\\ \\hline \\multirow{3}{*}{College biology (0-shot)} & Mistral 7B & 0.681 & 0.757 & 0.701 & **0.764** \\\\  & Llama2 7B & 0.438 & **0.493** & 0.458 & 0.465 \\\\  & Orca2 7B & 0.583 & **0.639** & 0.604 & 0.632 \\\\ \\cline{1-1}  & Mistral 7B & 0.722 & **0.778** & 0.736 & 0.771 \\\\ \\cline{1-1}  & Llama2 7B & 0.451 & **0.521** & 0.424 & 0.479 \\\\ \\cline{1-1}  & Orca2 7B & 0.604 & **0.660** & 0.625 & 0.653 \\\\ \\hline \\multirow{3}{*}{College chemistry (0-shot)} & Mistral 7B & 0.470 & **0.500** & 0.490 & **0.500** \\\\  & Llama2 7B & 0.310 & 0.380 & 0.390 & **0.390** \\\\  & Orca2 7B & 0.370 & **0.440** & 0.370 & 0.390 \\\\ \\cline{1-1}  & Mistral 7B & 0.470 & **0.540** & 0.500 & 0.500 \\\\ \\cline{1-1}  & Llama2 7B & 0.370 & 0.380 & 0.360 & **0.390** \\\\ \\cline{1-1}  & Orca2 7B & 0.430 & **0.470** & 0.370 & 0.380 \\\\ \\hline \\multirow{3}{*}{Prehistory (0-shot)} & Mistral 7B & 0.713 & **0.750** & 0.719 & 0.731 \\\\  & Llama2 7B & 0.448 & **0.481** & 0.457 & 0.478 \\\\ \\cline{1-1}  & Orca2 7B & 0.642 & **0.679** & 0.673 & 0.673 \\\\ \\cline{1-1}  & Mistral 7B & 0.722 & **0.762** & 0.725 & **0.762** \\\\ \\cline{1-1}  & Llama2 7B & 0.515 & 0.531 & 0.503 & **0.537** \\\\ \\cline{1-1}  & Orca2 7B & 0.664 & **0.698** & 0.667 & 0.694 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 로그-가능성 정확도의 관점에서 섹션 4.1에 기술된 MMLU 데이터세트에 대한 결과(식 (4)).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l} \\hline \\hline  & Base model & Base model + RAG & FT-reg & FT-par & FT-reg + RAG & FT-par + RAG \\\\ \\hline Mistral 7B & 0.481 & **0.875** & 0.504 & 0.588 & 0.810 & 0.830 \\\\ Llama2 7B & 0.353 & **0.585** & 0.219 & 0.392 & 0.326 & 0.520 \\\\ Orca2 7B & 0.456 & **0.876** & 0.511 & 0.566 & 0.820 & 0.826 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 현재 이벤트 결과. 원래 데이터 세트에서 미세 조정된 모델은 _FT-reg_로 레이블이 지정되고 여러 패러프레이즈가 있는 데이터 세트에서 학습된 모델은 _FT-par_로 레이블이 지정됩니다.\n' +
+      '\n' +
+      '### 데이터 수집 및 전처리\n' +
+      '\n' +
+      '이러한 지식 집약적 작업에 대한 LLM의 성능을 효과적으로 평가하기 위해 위키피디아에서 주제당 관련 기사를 스크래핑하여 포괄적인 보조 데이터 세트를 수집했다. 위키피디아를 지식의 주요 원천으로 선택하는 근거는 관련 주제에 대한 광범위한 범위와 군중 검증 지식의 저장소로서의 신뢰성이다. 작업과 관련된 모든 문서는 토픽당 관련 중앙 페이지를 식별하여 공식 위키피디아 API2를 통해 검색되었다.\n' +
+      '\n' +
+      '각주 2: [https://www.mediawiki.org/wiki/API:Main_page](https://www.mediawiki.org/wiki/API:Main_page)\n' +
+      '\n' +
+      '그 후, 데이터를 원시 하위 섹션에서 청소 청크로 변환하기 위해 엄격한 청소 프로세스가 활용되었다. 이 단계는 "위키 추출기" 도구(Attardi, 2015)로 수행되었다. 작은 클린 청크(예를 들어, HTML, URL 등 제거)들로의 분할은 다양한 지식 도메인들에 걸쳐 LLMs들의 이해의 평가를 향상시키고 미세 조정 프로세스에서 LLMs들을 돕기 위한 것이었다.\n' +
+      '\n' +
+      '### 현재 이벤트 작업 만들기\n' +
+      '\n' +
+      '위키피디아에서 관련 청크를 수집한 후 GPT-4(OpenAI, 2023)의 도움으로 새로운 객관식 데이터 세트를 만들었다. 먼저 작은 덩어리를 제거했습니다. 말뭉치의 나머지 각 청크에 대해 GPT-4는 하나의 정답만 있는 매우 구체적이고 고품질 객관식 질문 4개를 생성하도록 지시받았다. 구체적으로, 우리는 질문이 어떤 컨텍스트를 지칭하고 최소한의 모호성으로 질문에 대답할 수 있다는 것을 의미한다. 다음으로 GPT-4는 4개 중 가장 구체적인 2개를 선택하도록 요청받았다. 이어서 수동 평가 및 검증 단계를 거쳤다. 그 결과 총 910개의 새로운 질문이 나왔습니다.\n' +
+      '\n' +
+      '### Paraphrases Generation\n' +
+      '\n' +
+      '데이터 세트를 만든 후 GPT-4를 사용하여 데이터 세트의 증강을 생성했다. 우리는 GPT-4에 재워딩되는 동안 정보를 완전히 유지하는 입력 데이터의 패러프레이즈된 버전을 제공하도록 지시했다. 각 패러프레이징 반복은 다양성을 보장하기 위해 다른 종자로 수행되었다.\n' +
+      '\n' +
+      '우리는 각 작업에 대해 무작위로 240개의 청크를 선택하고 청크당 2개의 패러프레이즈를 생성했다. 이들은 하이퍼파라미터 튜닝을 위한 검증 세트로 사용하기 위해 따로 두었다. 현재 이벤트 데이터 세트의 경우 섹션 6에 설명된 미세 조정 프로세스에 사용된 각 청크에 대해 10개의 패러프레이즈를 생성했다.\n' +
+      '\n' +
+      '## 5 실험 및 결과\n' +
+      '\n' +
+      '실험 프레임워크 우리는 선택된 지식 집약적인 작업에 대한 LLM의 성능을 평가하기 위해 인기 있는 LM-평가-Harness (Gao et al., 2021) 저장소를 사용했다. LM-Evaluation-Harness는 현재 모델 평가의 산업 표준 역할을 하는 강력한 벤치마킹 도구이며 HuggingFace 리더보드3의 기본이다. 이 플랫폼을 활용하면 표준화된 평가 프레임워크가 보장되고 모델, 방법 및 데이터 세트 간에 일관된 비교가 가능하다. 더 중요한 것은 평가를 위해 업계 표준을 사용함으로써 신속한 엔지니어링 및 형식화 문제로 인한 차이를 피하고 각 모델에 대해 보고된 기준 결과를 복제할 수 있다는 것이다.\n' +
+      '\n' +
+      '각주 3: [https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard](https://huggingface.co/spaces/HuggingFaceH4/open_1lm_leaderboard)\n' +
+      '\n' +
+      '모델 선택 추론 평가를 위해 Llama2-7B (Touvron et al., 2023), Mistral-7B (Jiang et al., 2023), Orca2-7B (Mitra et al., 2023)의 세 가지 모델을 선택했다. 이러한 모델의 선택은 다양한 기본 기능에 걸쳐 가장 인기 있는 오픈 소스 기반 모델과 명령 조정 모델을 나타내는 것을 의미했다. 또한 RAG 구성 요소에 대한 임베딩 모델로 _bge-large-en_(Xiao et al., 2023)을 선택하고 벡터 저장소로 FAISS(Johnson et al., 2019)를 사용했다. 휴지페이스 MTEB 리더보드4에 따르면, 이 임베딩 모델은 현재 오픈소스 임베딩 모델의 SOTA이다.\n' +
+      '\n' +
+      '각주 4: [https://huggingface.co/spaces/mteb/leaderboard](https://huggingface.co/spaces/mteb/leaderboard)\n' +
+      '\n' +
+      '구성 변동 평가에는 보다 포괄적인 벤치마킹을 허용하기 위해 그리드 검색과 함께 여러 구성이 포함되었다.\n' +
+      '\n' +
+      '먼저, 기준선 및 미세 조정된 모델과 RAG 구성 요소와 성능을 비교했다. 둘째, RAG의 컨텍스트에 추가할 최적의 텍스트 청크 수를 탐색하였다. 구체적으로 \\(K\\in\\{0,\\dots,5\\}\\)의 다른 값을 사용하여 모델 성능에 미치는 영향을 분석했다. 마지막으로 5-shot 성능 대 5-shot 성능을 탐색하였다. 0샷.\n' +
+      '\n' +
+      '그림 2: 각 지식 주입 방법에 대한 상대적 정확도 이득(식 (5)에서 설명한 대로), 표 1의 모든 실험에 걸쳐 평균(열별로)이다.\n' +
+      '\n' +
+      '훈련 설정 섹션 3.2에 설명된 비지도 훈련 절차를 사용하여 모든 모델을 훈련했다. 각 데이터 세트에 대해 보조 지식 베이스를 길이에 따라 원래 청크를 연결하거나 분할하여 크기 \\(256\\)의 동일한 청크로 분할했다. 또한 문서의 구조를 보존하기 위해 원본 청크의 시작과 끝을 구분하기 위해 두 개의 특수 토큰인 \\(<\\)BOS\\(>\\)와 \\(<\\)EOS\\(>\\)를 추가하였다.\n' +
+      '\n' +
+      '모델은 \\(1\\times 10^{-6}\\)과 \\(5\\times 10^{-5}\\) 사이의 학습률을 사용하여 학습되었으며 하이퍼파라미터 검색을 통해 발견되었다. 모든 모델은 최대 5에포크 및 배치 크기 64에 대해 4개의 NVIDIA A-100 GPU에서 훈련되었다.\n' +
+      '\n' +
+      '평가 방법 모든 평가는 각 객관식 옵션을 질문에 추가한 다음 연결을 모델에 전달하여 옵션당 로그 확률 점수를 얻음으로써 수행되었다. 가장 높은 점수를 모델의 선택으로 해석하여 정확도 계산에 사용하였다. 보다 형식적으로, 이것은 식 (1)에서 우리가 \\(\\mathcal{M}(q_{n})=c_{n}\\) if라고 말하는 것을 의미한다:\n' +
+      '\n' +
+      '\\[c_{n}=\\operatorname*{arg\\,max}_{l}\\{\\mathcal{M}(q_{n}\\|a_{n}^{1}),\\dots, \\mathcal{M}(q_{n}\\|a_{n}^{L})\\}, \\tag{4}\\]\n' +
+      '\n' +
+      '여기서 \\(\\mathcal{M}(q_{n}\\|a_{n}^{l})=\\log P_{\\mathcal{M}}(q_{n}\\|a_{n}^{l})\\).\n' +
+      '\n' +
+      'MMLU 결과 각 작업과 모델에 대해 기본 모델, RAG, FT만 사용하고 마지막으로 미세 조정된 모델을 생성기로 사용하여 FT와 RAG를 결합하는 네 가지 접근법을 비교했다. 또한, 0-shot 시나리오와 5-shot 시나리오를 사용하여 MMLU 태스크를 테스트했다. 전체 결과는 표 1에 나타나 있다. 상대 정확도 이득의 집합, 즉,\n' +
+      '\n' +
+      '\\[(\\mathcal{L}_{\\mathcal{M}^{\\prime},\\mathcal{Q}}-\\mathcal{L}_{\\mathcal{M},\\mathcal{Q}})/\\mathcal{L}_{\\mathcal{M},\\mathcal{Q}},\\tag{5}\\]\n' +
+      '\n' +
+      '여기서 \\(\\mathcal{M}\\)는 기본 모델이고 \\(\\mathcal{M}^{\\prime}\\)는 지식 주입 모델이며 그림 2에 나와 있다.\n' +
+      '\n' +
+      '모든 경우에 RAG는 기본 모델에 비해 훨씬 더 나은 성능을 보였다. 또한, 기본 모델과 함께 RAG를 생성기로 사용하는 것이 미세 조정보다 일관되게 더 우수했다. 어떤 경우에는 RAG 파이프라인에서 생성기로 기본 모델 대신 미세 조정된 모델을 사용하여 결과를 훨씬 더 개선했다. 그러나 이는 일관되지 않으므로 미세 조정의 고유한 불안정성을 보여준다. 또한, 우리는 5-shot 접근법이 대부분의 경우 작은 마진만큼 결과를 향상시키며, 모든 다른 접근법에서 유사한 경향이 관찰된다는 것을 발견했다.\n' +
+      '\n' +
+      '현재 이벤트 결과 현재 이벤트 작업에 대한 평가는 표 2에 나와 있다. RAG는 질문과 보조 데이터세트 사이의 일대일 대응으로 인해 특히 효과적인 것으로 입증된다(섹션 4.3 참조). 미세 조정은 RAG와 경쟁력이 없습니다. 그러나 여러 패러프레이즈를 사용한 미세 조정은 여전히 기준선에 비해 상당한 개선을 제공한다. 우리는 RAG와 미세 조정을 결합하는 것이 RAG 단독에 비해 열등한 성능을 나타낸다는 점에 주목한다.\n' +
+      '\n' +
+      '질문은 훈련 중 모델이 노출되지 않은 정보에 기초하지만 기본 모델의 결과는 \\(\\frac{1}{L}=0.25\\)를 능가한다는 점에 주목할 필요가 있다. 이는 과거 정보와 독립적이지 않은 질문에 답할 때 추론 및/또는 기존 지식을 사용하는 모델에 의해 부분적으로 설명될 수 있다. 이것의 몇 가지 예는 부록 C에서 찾을 수 있다.\n' +
+      '\n' +
+      '파인튜닝 vs. RAG: MMLU 및 현재 이벤트 태스크 모두의 결과에서 미세 조정보다 RAG에 대한 상당한 이점이 분명하다. 미세 조정은 대부분의 경우 기본 모델에 비해 결과가 향상되었지만 RAG 접근법과는 경쟁력이 없었다.\n' +
+      '\n' +
+      '이 행동에 몇 가지 요인이 기여할 수 있다. 첫째, RAG는 모델에 지식을 추가할 뿐만 아니라 미세 조정에 부족한 특징인 질문과 관련된 컨텍스트를 통합한다. 또한, 미세 조정은 어느 정도의 치명적인 망각으로 인해 모델의 다른 기능에 영향을 미칠 수 있다. 마지막으로, 감독되지 않은 미세 조정 모델은 기본 라마2에 비해 Orca2의 성능이 크게 개선된 것으로 입증된 바와 같이 감독 또는 RL 기반 미세 조정을 통해 추가 정렬의 이점을 얻을 수 있다.\n' +
+      '\n' +
+      '## 6 반복의 중요성\n' +
+      '\n' +
+      '모델이 사전 훈련 중에 토픽과 관련된 측면에 노출된 다른 작업과 달리 _현재 이벤트_에는 새로운 정보가 포함됩니다. 이 경우 표준 정기 미세 조정은 Llama2의 성능을 향상시키지 못했을 뿐만 아니라 크게 저하시켰다. 미세 조정 결과를 개선하기 위해 패러프레이즈를 사용하여 데이터의 증강을 조사했다.\n' +
+      '\n' +
+      '데이터 증강 데이터 증강은 언어 모델의 성능을 향상시키기 위한 잘 확립된 방법이며 광범위하게 조사되었다(Shorten\n' +
+      '\n' +
+      '그림 3: 미스트랄-7B에 대한 시간 경과에 따른 훈련 손실.\n' +
+      '\n' +
+      'et al., 2021). 증강에 생성 모델을 사용하는 것은 또한 과거 샤르마 등(2022)에서 분류 모델을 개선하는 데 성공적으로 사용되었다. 패러프레이징을 이용한 데이터 증강의 예는 부록 B에서 찾을 수 있다.\n' +
+      '\n' +
+      '**단조 개선** 이 접근법은 사용된 패러프레이즈의 수와 모델의 정확도 사이의 직접적인 상관 관계를 보여줌으로써 결과의 현저한 개선을 초래했다. 우리의 실험은 그림 4에 표시된 강력한 경향을 보여주었다. 테스트한 모든 모델에 대해 정확도는 사용된 패러프레이즈 수의 단조 증가 함수였다. 이 관찰은 제한된 데이터에서 새로운 지식을 이해하고 일반화하는 모델의 능력에 대한 정보 반복을 산출하는 패러프레이즈 확대의 긍정적인 영향을 강력하게 시사한다.\n' +
+      '\n' +
+      '**새로운 정보 학습** 그림 3에서는 실험 전반에 걸쳐 관찰된 흥미로운 현상을 볼 수 있습니다. 각 에포크, 즉 전체 데이터 세트에 걸쳐 또 다른 반복을 완료한 후, 트레이닝 손실은 상당히 떨어진다. 이것은 트레이닝 동안 데이터를 암기하고 Tirumala 등(2022)에 과적합하는 LLMs에 대해 알려진 것과 일치한다.\n' +
+      '\n' +
+      '우리의 가설은 다음과 같다:\n' +
+      '\n' +
+      '사전 훈련된 LLM **새** 지식을 가르치려면 여러 가지 방법으로 지식을 반복해야 합니다.\n' +
+      '\n' +
+      '이것은 LLM 사전 훈련 Kandpal 등(2023)에 잘 알려져 있으며, 이 경우 이것이 미세 조정에도 적용된다는 것을 알 수 있다. 이 가설의 근거는 Berglund et al.(2023)에 이미 나타난 바와 같이 단순한 문장 암기는 문장의 내용에 대한 지식을 수반하지 않는다는 것이다. 데이터 증강 프로세스와 같이 다양한 형태로 정보를 제공함으로써, 데이터의 다양한 관계(예: \\(a\\implies b,\\b\\implies c\\))가 자연스럽게 나타날 가능성이 더 높다. 우리는 이것이 잠재적으로 \\(\\mathcal{L_{M,Q}}\\)을 증가시킬 수 있을 뿐만 아니라 Berglund 등의 _역전 저주_ 를 개선할 수 있다고 믿는다. 이 결과는 유망하지만 여전히 추가 연구가 필요하다.\n' +
+      '\n' +
+      '## 7 결론 및 미래 작업\n' +
+      '\n' +
+      '대형 언어 모델은 다양한 주제에 대한 방대한 양의 지식을 보유하고 있다. 이 작업에서 우리는 전문화된 지식과 전혀 보이지 않는 새로운 지식에 적응하는 능력을 테스트했다. 이것은 이 영역에서 두 가지 두드러진 접근법, 즉 미세 조정 및 검색 증강 생성을 비교한 첫 번째 연구 중 하나이다. 미세 조정은 많은 사용 사례에 유용할 수 있지만 RAG가 지식 주입에 더 신뢰할 수 있는 선택임을 발견했다.\n' +
+      '\n' +
+      '이 작업의 일부 측면은 여전히 추가 연구가 필요하다. 예를 들어, 우리는 지도 조정 또는 RL 기반 방법과 달리 1차 미세 조정 방법으로 감독되지 않은 훈련에 중점을 두었다. 다양한 보조 지식 기반과 다양한 기술의 조합을 연구하면 개선된 결과를 얻을 수 있다. 섹션 6의 가설과 결합된 이 접근법은 FT를 통한 지식 주입에 대한 이해를 더욱 향상시킬 수 있다.\n' +
+      '\n' +
+      '우리는 이 작업이 LLM에 대한 지식에 대한 이해를 더욱 향상시킨다고 생각하지만, 이 분야에서 해야 할 일이 훨씬 더 많다. 특히 이론적인 관점에서 LLMs에서 지식 표상의 문제와 관련하여 더 많은 연구가 필요하다.\n' +
+      '\n' +
+      '마지막으로 LLM에서 지식을 측정하기 위한 추가 노력이 필요하다. 식 (2)에 설명된 경험적 접근법을 사용했지만 지식에 대한 다른 정의와 관점도 탐색하고 이 작업을 확장하는 것이 중요하다.\n' +
+      '\n' +
+      '## 8 Limitations\n' +
+      '\n' +
+      '모든 기계 학습 애플리케이션에서와 같이 하이퍼파라미터의 선택은 결과에 상당한 영향을 미친다. 따라서 특정 사례에 대해 모든 관련 하이퍼 매개 변수를 최적화하는 것이 좋습니다.\n' +
+      '\n' +
+      '우리는 세 가지 다른 모델에 대한 실험을 실행함으로써 우리의 주장을 지지했습니다. 그러나 다른 LLM에 대한 일반화는 철저히 테스트되어야 한다. 예를 들어, GPT-4는 일부 MMLU 작업 Nori 등(2023)에 대해 거의 완벽한 정확도를 달성하고, 따라서 추가적인 개선은 적용 가능하지 않다.\n' +
+      '\n' +
+      '마지막으로 지식 베이스를 위한 다양한 주제를 선택하는 동안 모든 출처는 위키피디아에서 나왔다. 다른 데이터 세트는 다른 결과를 산출할 수 있으므로 신중하게 평가해야 한다.\n' +
+      '\n' +
+      '그림 4: 패러프레이즈 수의 함수로 _현재 이벤트_ 작업에 대한 모델 정확도입니다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Attardi (2015) Attardi, G. Wikiextractor. [https://github.com/attardi/wikiextractor] (https://github.com/attardi/wikiextractor), 2015.\n' +
+      '* Berglund et al. (2023) Berglund, L., Tong, M., Kaufmann, M., Balesni, M., Stickland, A. C., Korbak, T., and Evans, O. 역전 저주: "a"에 훈련된 LIms는 "b"는 "b"는 "a"를 학습하지 못합니다. _ arXiv preprint arXiv:2309.12288_, 2023.\n' +
+      '* Chen et al.(2020) Chen, S., Hou, Y., Cui, Y., Che, W., Liu, T., and Yu, X. 기억하고 배우세요: 잊어버림이 적은 심층 사전 훈련 언어 모델을 미세 조정합니다. _ arXiv preprint arXiv:2004.12651_, 2020.\n' +
+      '* Chen et al.(2022) Chen, X., Zhang, N., Xie, X., Deng, S., Yao, Y., Tan, C., Huang, F., Si, L., and Chen, H. Knowprompt: Knowledge-aware prompt-tuning with synergistic optimization for relation extraction. In _Proceedings of the ACM Web conference 2022_, pp. 2778-2788, 2022.\n' +
+      '* Chen et al.(2021) Chen, Y., Zhong, R., Zha, S., Karypis, G., and He, H. Meta-learning via language model in-context tuning _ arXiv preprint arXiv:2110.07814_, 2021.\n' +
+      '* Chia et al. (2023) Chia, Y. K., Hong, P., Bing, L., and Poria, S. 명령어: 명령 조정된 대규모 언어 모델의 전체적 평가를 위해 _ arXiv preprint arXiv:2306.04757_, 2023.\n' +
+      '* Chung et al.(2022) Chung, H. W., Hou, L., Longpre, S., Zoph, B., Tay, Y., Fedus, W., Li, Y., Wang, X., Dehghani, M., Brahma, S., et al. Scaling instruction-finetuned language models. _ arXiv preprint arXiv:2210.11416_, 2022.\n' +
+      '* Cohen et al.(2023) Cohen, R., Geva, M., Berant, J., and Globerson, A. Crawling the internal knowledge-base of language models. _ arXiv preprint arXiv:2301.12810_, 2023.\n' +
+      '* Dua et al. (2019) Dua, D., Wang, Y., Dasigi, P., Stanovsky, G., Singh, S., and Gardner, M. 드롭: 단락에 대한 이산 추론이 필요한 읽기 이해 벤치마크입니다. _ arXiv preprint arXiv:1903.00161_, 2019.\n' +
+      '* Gao 등 (2021) Gao, L., Tow, J., Biderman, S., Black, S., DiPofi, A., Foster, C., Golding, L., Hsu, J., McDonell, K., Muennighoff, N., Phang, J., Reynolds, L., Tang, E., Thite, A., Wang, B., Wang, K., and Zou, A. A framework for few-shot language model evaluation, September 2021. URL [https://doi.org/10.5281/zenodo.5371628](https://doi.org/10.5281/zenodo.5371628)\n' +
+      '* Goodfellow et al. (2013) Goodfellow, I. J., Mirza, M., Xiao, D., Courville, A., and Bengio, Y. 경사도 기반 신경망에서 치명적인 망각에 대한 경험적 조사입니다. _ arXiv preprint arXiv:1312.6211_, 2013.\n' +
+      '* Hendrycks et al. (2021) Hendrycks, D., Burns, C., Basart, S., Zou, A., Mazeika, M., Song, D., and Steinhardt, J. Measuring massive multitask language understanding _ International Conference on Learning Representations (ICLR)_, 2021.\n' +
+      '* Hu et al.(2023) Hu, L., Liu, Z., Zhao, Z., Hou, L., Nie, L., and Li, J. A survey of knowledge enhanced pre-trained language models. _ IEEE Transactions on Knowledge and Data Engineering_, 2023.\n' +
+      '* Huang et al. (2023) Huang, Q., Tao, M., An, Z., Zhang, C., Jiang, C., Chen, Z., Wu, Z., and Feng, Y. 변호사 라마 기술 보고서입니다 arXiv preprint arXiv:2305.15062_, 2023.\n' +
+      '* Jiang et al.(2023) Jiang, A. Q., Sablayrolles, A., Mensch, A., Bamford, C., Chaplot, D. S., Casas, D. d. l., Bressand, F., Lengyel, G., Lample, G., Saulnier, L., et al. Mistral 7b. _ arXiv preprint arXiv:2310.06825_, 2023.\n' +
+      '* Johnson 등(2019) Johnson, J., Douze, M., and Jegou, H. Billion-scale similarity search with GPUs. _ IEEE Transactions on Big Data_, 7(3):535-547, 2019.\n' +
+      '* Kandpal et al. (2023) Kandpal, N., Deng, H., Roberts, A., Wallace, E., and Raffel, C. Large language models struggle to learn long-tail knowledge. In _International Conference on Machine Learning_, pp. 15696-15707. PMLR, 2023.\n' +
+      '* Kirkpatrick et al.(2017) Kirkpatrick, J., Pascanu, R., Rabinowitz, N., Veness, J., Desjardins, G., Rusu, A. A., Milan, K., Quan, J., Ramalho, T., Grabska-Barwinska, A., et al. Overcoming catastrophic forgetting in neural networks. _ Proceedings of the National Academy of sciences_, 114(13):3521-3526, 2017.\n' +
+      '* Lampinen et al.(2022) Lampinen, A. K., Dasgupta, I., Chan, S. C., Matthewson, K., Tessler, M. H., Creswell, A., McClelland, J. L., Wang, J. X., and Hill, F. Can language models learn from explanation in context? _ arXiv preprint arXiv:2204.02329_, 2022.\n' +
+      '* Lauscher et al. (2020) Lauscher, A., Majewska, O., Ribeiro, L. F., Gurevych, I., Rozanov, N., and Glavas, G. Common sense or world knowledge. 사전 훈련된 변압기에 어댑터 기반 지식 주입을 조사합니다. _ arXiv preprint arXiv:2005.11787_, 2020.\n' +
+      '* Lewis et al. (2020) Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., Kuttler, H., Lewis, M., Yih, W. -t., Rocktaschel, T., et al. Retrieval-augmented generation for knowledge-intensive nlp tasks _ Advances in Neural Information Processing Systems_, 33:9459-9474, 2020.\n' +
+      '* Liu et al.(2020) Liu, W., Zhou, P., Zhao, Z., Wang, Z., Ju, Q., Deng, H., and Wang, P. K-bert: Enabling language representation with knowledge graph. <Proceedings of the AAAI Conference on Artificial Intelligence>에서, 34권, 2901-2908, 2020.\n' +
+      '* Luo et al. (2023) Luo, Y., Yang, Z., Meng, F., Li, Y., Zhou, J., and Zhang, Y. 지속적인 미세 조정 동안 대규모 언어 모델에서 치명적인 망각에 대한 경험적 연구 _ arXiv preprint arXiv:2308.08747_, 2023.\n' +
+      '\n' +
+      'Min, S., Lewis, M., Zettlemoyer, L., and Hajishirzi, H. Metaicl: Learning to learn in the context. _ arXiv preprint arXiv:2110.15943_, 2021.\n' +
+      '* Mishra et al.(2021) Mishra, S., Khashabi, D., Baral, C., and Hajishirzi, H. Cross-task Generalization via natural language crowdsourcing instructions _ arXiv preprint arXiv:2104.08773_, 2021.\n' +
+      '* Mitra et al.(2023) Mitra, A., Del Corro, L., Mahajan, S., Codas, A., Simoes, C., Agrawal, S., Chen, X., Razdaibiedina, A., Jones, E., Aggarwal, K., et al. Orca 2: Teaching small language models how to reasoning. _ arXiv preprint arXiv:2311.11045_, 2023.\n' +
+      '* Neelakantan et al. (2022) Neelakantan, A., Xu, T., Puri, R., Radford, A., Han, J. M., Tworek, J., Yuan, Q., Tezak, N. A., Kim, J. W., Hallacy, C., Heidecke, J., Shyam, P., Power, B., Nekoul, T. E., Sastry, G., Krueger, G., Schnurr, D. P., Such, F. P., Hsu, K. S.-K., Thompson, M., Khan, T., Sherbakov, T., Jang, J., Welinder, P., and Weng, L. 대비 사전 훈련에 의한 텍스트 및 코드 임베딩입니다. _ ArXiv_, abs/2201.10005, 2022. URL [https://api.semanticscholar.org/CorpusID:246275593](https://api.semanticscholar.org/CorpusID:246275593).\n' +
+      '* Nguyen(2023) Nguyen, H.-T. Lawgpt 1.0에 대한 간략한 보고서: gpt-3을 기반으로 하는 가상 법률 비서. _arXiv preprint arXiv:2302.05729_, 2023.\n' +
+      '* Nori et al. (2023) Nori, H., King, N., McKinney, S. M., Carignan, D., and Horvitz, E. Capabilities of gpt-4 on medical challenge problems _ ArXiv_, abs/2303.13375, 2023. URL [https://api.semanticscholar.org/CorpusID:257687695](https://api.semanticscholar.org/CorpusID:257687695).\n' +
+      '* OpenAI (2023) OpenAI. Gpt-4 기술 보고서입니다. _ ArXiv_, abs/2303.08774, 2023. URL [https://api.semanticscholar.org/CorpusID:257532815](https://api.semanticscholar.org/CorpusID:257532815).\n' +
+      '* Ouyang et al.(2022) Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. Training language models to follow instructions with human feedback. _ Advances in Neural Information Processing Systems_, 35:27730-27744, 2022.\n' +
+      '* Petroni et al. (2019) Petroni, F., Rocktaschel, T., Lewis, P., Bakhtin, A., Wu, Y., Miller, A. H., and Riedel, S. 지식 기반으로서의 언어 모델? _ arXiv preprint arXiv:1909.01066_, 2019.\n' +
+      '* Radford 등(2019) Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I., et al. 언어 모델은 unsupervised multitask learners이다. _ OpenAI blog_, 1(8):9, 2019.\n' +
+      '* Rafailov et al. (2023) Rafailov, R., Sharma, A., Mitchell, E., Ermon, S., Manning, C. D., and Finn, C. Direct preference optimization: Your language model is secretly a reward model. _ arXiv preprint arXiv:2305.18290_, 2023.\n' +
+      '* Sakaguchi et al. (2021) Sakaguchi, K., Bras, R. L., Bhagavatula, C., and Choi, Y. 위노그란데: 규모의 적대적인 위노그라드 스키마 도전입니다. _ Communications of the ACM_, 64(9):99-106, 2021.\n' +
+      '* Schulman et al. (2017) Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. 근위 정책 최적화 알고리즘 _ arXiv preprint arXiv:1707.06347_, 2017.\n' +
+      '* Sharma et al. (2022) Sharma, S., Joshi, A., Mukhija, N., Zhao, Y., Bhathena, H., Singh, P., Santhanam, S., and Biswas, P. Systematic review of effect of data augmentation using paraphrasing on named entity recognition. *NeurIPS 2022 Workshop on Synthetic Data for Empowering ML Research_, 2022. URL [https://openreview.net/forum?id=rc2h1h89aDi](https://openreview.net/forum?id=rc2h1h89aDi)\n' +
+      '* Shorten 등(2021) Shorten, C., Khoshgoftaar, T. M., and Furht, B. Text data augmentation for deep learning _ Journal of Big Data_, 8, 2021. URL [https://api.semanticscholar.org/CorpusID:236096559](https://api.semanticscholar.org/CorpusID:236096559).\n' +
+      '* Singhal et al.(2023a) Singhal, K., Azizi, S., Tu, T., Mahdavi, S. S., Wei, J., Chung, H. W., Scales, N., Tanwani, A., Cole-Lewis, H., Pfohl, S., et al. Large language models encode clinical knowledge. _ Nature_, 620(7972):172-180, 2023a.\n' +
+      '* Singhal 등(2023b) Singhal, K., Tu, T., Gottweis, J., Sayres, R., Wulczyn, E., Hou, L., Clark, K., Pfohl, S., Cole-Lewis, H., Neal, D., et al. Towards expert-level medical question answering with large language models. _ arXiv preprint arXiv:2305.09617_, 2023b.\n' +
+      '* Srivastava et al.(2022) Srivastava, A., Rastogi, A., Rao, A., Shoeb, A. A. M., Abid, A., Fisch, A., Brown, A. R., Santoro, A., Gupta, A., Garriga-Alonso, A., et al. Beyond the imitation game: Quantifying and extrapolation the capabilities of language models. _ arXiv preprint arXiv:2206.04615_, 2022.\n' +
+      '* Tan et al.(2023) Tan, Y., Min, D., Li, Y., Li, W., Hu, N., Chen, Y., and Qi, G. Can chatgpt replace traditional kbqa models? gpt llm 패밀리의 질의 응답 수행에 대한 심층 분석. In _International Semantic Web Conference_, pp. 348-367. Springer, 2023.\n' +
+      '* Taori 등(2023) Taori, R., Gulrajani, I., Zhang, T., Dubois, Y., Li, X., Guestrin, C., Liang, P., and Hashimoto, T. B. Alpaca: A strong, replicable instruction-following model. _ Stanford Center for Research on Foundation Models. [https://crfm.stanford.edu/2023/03/13/alpaca] (https://crfm.stanford.edu/2023/03/13/alpaca). html_, 3(6):7, 2023.\n' +
+      '* Tirumala 등(2022) Tirumala, K., Markosyan, A. H., Zettlemoyer, L., and Aghajanyan, A. Memorization without Overfitting: Analyzing the training dynamics of large language models. _ ArXiv_, abs/2205.10770, 2022. URL [https://api.semanticscholar.org/CorpusID:248986465](https://api.semanticscholar.org/CorpusID:248986465).\n' +
+      '\n' +
+      '* [Touvron et al.2023] Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S., et al. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_, 2023.\n' +
+      '* [Tunstall et al.2023] Tunstall, L., Beeching, E., Lambert, N., Rajani, N., Rasul, K., Belkada, Y., Huang, S., von Werra, L., Fourrier, C., Habib, N., et al. Zephyr: Direct distillation of lm alignment. _ arXiv preprint arXiv:2310.16944_, 2023.\n' +
+      '* [Wang et al.2023] Wang, C., Liu, X., Yue, Y., Tang, X., Zhang, T., Jiayang, C., Yao, Y., Gao, W., Hu, X., Qi, Z., et al. Survey on factuality in large language models: Knowledge, retrieval and domain-specificity. _ arXiv preprint arXiv:2310.07521_, 2023.\n' +
+      '* [Wang et al.2020] Wang, R., Tang, D., Duan, N., Wei, Z., Huang, X., Cao, G., Jiang, D., Zhou, M., et al. K-adapter: Infusing knowledge into pre-trained models with adapters. _ arXiv preprint arXiv:2002.01808_, 2020.\n' +
+      '* [Wang et al.2022] Wang, Y., Mishra, S., Alipoormolabashi, P., Kordi, Y., Mirzaei, A., Arunkumar, A., Ashok, A., Dhanasekaran, A. S., Naik, A., Stap, D., et al. Super-naturalinstructions: Generalization via declarative instructions on 1600+ nlp tasks. _ arXiv preprint arXiv:2204.07705_, 2022.\n' +
+      '* [Wu et al.2023a] Wu, C., Zhang, X., Zhang, Y., Wang, Y., and Xie, W. Pmc-llama: 의학 논문에 라마를 더 미세 조정합니다. _ arXiv preprint arXiv:2304.14454_, 2023a.\n' +
+      '* [Wu et al.2023b] Wu, S., Irsoy, O., Lu, S., Dabravolski, V., Dredze, M., Gehrmann, S., Kambadur, P., Rosenberg, D., and Mann, G. Bloomberggpt: A large language model for finance. _ arXiv preprint arXiv:2303.17564_, 2023b.\n' +
+      '* [Xiao et al.2023] Xiao, S., Liu, Z., Zhang, P., and Muennighoff, N. C-pack: Packaged resources to advance general chinese embedding, 2023.\n' +
+      '* [Yang et al.2023] Yang, H., Liu, X. -Y., and Wang, C. D. Fingpt: 오픈 소스 금융 대형 언어 모델. _ arXiv preprint arXiv:2306.06031_, 2023.\n' +
+      '* [Yu et al.2022] Yu, W., Zhu, C., Li, Z., Hu, Z., Wang, Q., Ji, H., and Jiang, M. 지식 향상 텍스트 생성에 대한 조사입니다. _ ACM Computing Surveys_, 54(11s):1-38, 2022.\n' +
+      '* [Zhou et al.2023] Zhou, C., Liu, P., Xu, P., Iyer, S., Sun, J., Mao, Y., Ma, X., Efrat, A., Yu, P., Yu, L., et al. Lima: Less is more for alignment _ arXiv preprint arXiv:2305.11206_, 2023.\n' +
+      '\n' +
+      'RAG 제거 연구\n' +
+      '\n' +
+      '5절에서 언급했듯이 표 3에 표시된 다양한 \\(K\\in\\{0,\\ldots,5\\}\\) 값을 비교했다. 모델당, \\(0/5\\)-shot당 또는 작업당 최적의 \\(K\\) 값을 찾을 수 없었다. 실제로 \\(K=2\\)와 일관되게 잘 작동한 해부학 외에는 다른 설정에 대해 (루이스 등, 2020)에 제시된 결과와 달리 \\(K\\)당 성능을 예측하는 데 도움이 되는 패턴이 없는 것으로 판단된다. 더욱이, 최상의 수행 \\(K\\)s와 최악의 수행 \\(K\\)s 사이의 갭은 클 수 있다.\n' +
+      '\n' +
+      '안타깝게도 이 추가 하이퍼파라미터가 불안정하다는 결론을 내려야 한다. 이것은 실제로 RAG를 사용하는 것의 단점이며, \\(K\\)의 선택을 무시할 수 없다.\n' +
+      '\n' +
+      '## 부록 B 패러프레이즈 예\n' +
+      '\n' +
+      '아래는 GPT-4로 패러프레이즈를 생성하는 데 사용한 프롬프트이다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l c|c c c} Task & Model & \\multicolumn{5}{c}{\\# Retrieved documents (\\(k\\))} \\\\  & & 1 & 2 & 3 & 4 & 5 \\\\ \\hline \\multirow{4}{*}{Anatomy (0-shot)} & Mistral 7B & 0.615 & **0.681** & 0.630 & 0.644 & 0.622 \\\\  & Llama2 7B & 0.444 & **0.489** & 0.467 & 0.474 & 0.481 \\\\  & Orca2 7B & 0.607 & **0.637** & 0.600 & 0.585 & **0.637** \\\\  & Mistral 7B & 0.659 & 0.667 & 0.659 & **0.681** & 0.674 \\\\  & Llama2 7B & 0.496 & **0.563** & 0.541 & 0.526 & 0.526 \\\\  & Orca2 7B & 0.630 & **0.659** & 0.600 & 0.600 & 0.600 \\\\ \\hline \\multirow{4}{*}{Astronomy (0-shot)} & Mistral 7B & 0.651 & **0.678** & **0.678** & 0.664 & 0.664 \\\\  & Llama2 7B & 0.447 & 0.434 & 0.447 & 0.434 & **0.467** \\\\  & Orca2 7B & 0.711 & 0.730 & 0.730 & **0.750** & 0.730 \\\\  & Mistral 7B & 0.704 & 0.684 & 0.658 & 0.684 & **0.724** \\\\  & Llama2 7B & 0.461 & 0.447 & **0.474** & 0.428 & 0.454 \\\\  & Orca2 7B & 0.730 & 0.737 & 0.750 & 0.743 & **0.763** \\\\ \\hline \\multirow{4}{*}{Biology (0-shot)} & Mistral 7B & 0.736 & 0.722 & **0.757** & 0.743 & 0.736 \\\\  & Llama2 7B & 0.438 & 0.472 & **0.493** & 0.479 & 0.472 \\\\  & Orca2 7B & **0.639** & 0.618 & **0.639** & 0.625 & **0.639** \\\\  & Mistral 7B & 0.722 & **0.778** & **0.778** & 0.771 & 0.743 \\\\  & Llama2 7B & 0.500 & **0.521** & 0.507 & 0.465 & 0.472 \\\\  & Orca2 7B & 0.625 & 0.639 & 0.625 & **0.660** & **0.660** \\\\ \\hline \\multirow{4}{*}{Chemistry (0-shot)} & Mistral 7B & 0.450 & 0.470 & 0.470 & **0.500** & 0.470 \\\\  & Llama2 7B & 0.320 & 0.320 & 0.300 & **0.380** & 0.360 \\\\  & Orca2 7B & 0.370 & 0.420 & 0.400 & 0.410 & **0.440** \\\\  & Mistral 7B & **0.540** & 0.490 & 0.500 & 0.510 & 0.470 \\\\  & Llama2 7B & 0.280 & 0.320 & 0.340 & 0.340 & **0.380** \\\\  & Orca2 7B & 0.390 & 0.430 & 0.400 & 0.430 & **0.470** \\\\ \\hline \\multirow{4}{*}{Prehistory (0-shot)} & Mistral 7B & 0.728 & 0.725 & **0.750** & 0.735 & 0.728 \\\\  & Llama2 7B & **0.481** & 0.460 & 0.457 & 0.457 & 0.429 \\\\  & Orca2 7B & 0.648 & 0.645 & 0.660 & 0.670 & **0.679** \\\\ \\cline{1-1}  & Mistral 7B & 0.710 & 0.750 & 0.759 & 0.756 & **0.762** \\\\ \\cline{1-1}  & Llama2 7B & 0.512 & 0.485 & 0.525 & 0.519 & **0.531** \\\\ \\cline{1-1}  & Orca2 7B & 0.660 & 0.688 & 0.685 & **0.698** & 0.688 \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: RAG 절제 연구.\n' +
+      '\n' +
+      '당신의 임무는 텍스트 문단을 패러프레이즈하는 것이다. 그 단락은 아래에 나와 있다.\n' +
+      '\n' +
+      '같은 의미를 유지하되 문구를 바꿔야 한다. 사실적인 정보를 변경하지 마십시오.\n' +
+      '\n' +
+      '원문의 길이를 거의 동일하게 유지하려고 노력하세요.\n' +
+      '\n' +
+      'NUM _PARAPHASES_ 는 각 텍스트에 대해 다른 패러프레이즈입니다.\n' +
+      '\n' +
+      '이러한 패러프레이즈들은 가능한 한 서로 달라야 한다.\n' +
+      '\n' +
+      '\'패러프레이즈\'라고 하는 하나의 키와 패러프레이즈 목록을 사용하여 JSON 형식의 문자열을 반환합니다.\n' +
+      '\n' +
+      'Input paragraph:\n' +
+      '\n' +
+      '다음은 몇 가지 예입니다. 먼저, 다음 위키피디아 페이지에서 예로 든 것: "제51회 국제 에미상"\n' +
+      '\n' +
+      '**Paraphrase I**\n' +
+      '\n' +
+      '국제 에미상 대회 제51판은 2022년 12월 7일부터 2023년 2월 16일까지 모든 부문에 걸쳐 제출을 수락했다.\n' +
+      '\n' +
+      '**Paraphrase II**\n' +
+      '\n' +
+      '이제 51년째인 국제 에미상 대회는 2022년 12월 7일부터 2023년 2월 16일 마감일까지 모든 부문에 걸쳐 제출을 수락했다.\n' +
+      '\n' +
+      '**Paraphrase III**\n' +
+      '\n' +
+      '국제 에미상 대회 제51판은 2022년 12월 7일부터 2023년 2월 16일까지 모든 부문에 걸쳐 제출을 수락했다.\n' +
+      '\n' +
+      '다음 예는 다음 위키피디아 페이지인 "2023 인디애나폴리스 시장 선거"에서 가져왔다.\n' +
+      '\n' +
+      '**바꾸어 말하면 I** 인디애나폴리스의 시장 선거는 2023년 11월 7일에 실시되었으며 예비 선거는 5월 2일에 실시되었습니다. 현직 시장인 민주당 조 호그셋은 성공적으로 3선에 출마했습니다. 호그셋과 그의 공화당 적수 제퍼슨 슈리브는 모두 본선거로 넘어갔다.\n' +
+      '\n' +
+      '**패러프레이즈 II** 2023년 11월 7일 인디애나폴리스 시민들은 5월 2일 예비 선거에 이어 시장을 선출하기 위해 투표를 했습니다. 이미 집권하고 있는 민주당원인 조 호그셋이 그의 3선 입찰에서 승리했습니다. 호그셋과 공화당 후보인 제퍼슨 슈리브는 최종 선거 라운드에서 두 명의 경쟁자였다.\n' +
+      '\n' +
+      '**Paraphrase III**\n' +
+      '\n' +
+      '인디애나폴리스 시장 선거는 지난 5월 2일 치러진 예비 선거에 이어 2023년 11월 7일 치러졌다. 현직 민주당원인 조 호그셋은 성공적으로 3선에 출마했다. 호그셋과 그의 공화당 도전자 제퍼슨 슈리브는 모두 선거의 마지막 라운드에 진출했다.\n' +
+      '\n' +
+      '## 부록 C 기존 지식 예제\n' +
+      '\n' +
+      '모델이 무작위 성공보다 나은 새로운 정보에 대한 질문에 어떻게 대답할 수 있는지 더 잘 이해하기 위해 세 가지 가능한 시나리오를 예로 제시한다. 이러한 시나리오는 추론 능력이 더 강한 모델이 보이지 않는 정보에 대해서도 정답을 추론할 수 있는 방법을 보여준다.\n' +
+      '\n' +
+      '첫 번째 시나리오는 이전에 보이지 않았던 정보에 대한 질문을 포함하며, 여기서 기본 추론 능력은 모델이 교육을 받은 추측을 할 수 있게 한다.\n' +
+      '\n' +
+      '**질문:** 2023년 미국 자동차 노동자들의 파업으로 이어진 핵심 문제는 무엇이었습니까?\n' +
+      '\n' +
+      '**Answers:**\n' +
+      '\n' +
+      '1. 구내식당 음식의 품질에 대한 불만.\n' +
+      '2. 직원 복장 규정에 대한 의견 불일치.\n' +
+      '3. 정체된 임금과 계층화된 고용 시스템에 대한 불만.\n' +
+      '\n' +
+      '4. 공장의 색상 구성에 대한 토론.\n' +
+      '\n' +
+      '이 경우 이 특정 파업에 대한 지식이 없더라도 세 번째 옵션이 가장 가능성이 높다고 추측하기 쉽다.\n' +
+      '\n' +
+      '두 번째 시나리오는 주제에 대한 사전 지식이 모델이 응답하는 데 도움이 될 수 있는 질문을 포함한다.\n' +
+      '\n' +
+      '**질문:** 2023년 하와이 산불로 인해 일부 과학자들이 제기한 환경 문제는 무엇입니까?\n' +
+      '\n' +
+      '**Answers:**\n' +
+      '\n' +
+      '1. 온도 상승.\n' +
+      '2. 만년설이 녹는다.\n' +
+      '3. 해안선으로 흘러가는 탄 토양.\n' +
+      '4. 대기 오염 증가.\n' +
+      '\n' +
+      '이 경우 하와이의 지리와 산불의 즉각적인 영향을 알면 모델이 처음 두 가지 옵션을 더 낮은 확률로 제공할 수 있다. 이러한 제거 과정은 나머지 선택지 중 하나를 선택할 확률을 높인다(세 번째 선택지는 정답이다).\n' +
+      '\n' +
+      '세 번째 시나리오는 자동 질문 생성 과정으로 인해 발생하며, 일부 질문은 기존 지식에 강하게 의존한다.\n' +
+      '\n' +
+      '**질문:** 2021년의 어떤 이벤트가 2023년 9월 뉴욕 홍수와 비교되었습니까?\n' +
+      '\n' +
+      '**Answers:**\n' +
+      '\n' +
+      '1. 허리케인 카트리나.\n' +
+      '2. 허리케인 이다.\n' +
+      '3. 허리케인 샌디.\n' +
+      '4. 허리케인 하비.\n' +
+      '\n' +
+      '이러한 이벤트 중 하나만 2021년에 발생했고(허리케인 이다), 테스트한 모든 모델이 사전 훈련 동안 2021년부터 이벤트에 노출되었기 때문에 이 질문은 추가 현재 정보를 사용하지 않고도 잠재적으로 대답할 수 있다.\n' +
+      '\n' +
+      '마지막으로, 모델이 무작위 성공보다 나은 새로운 정보에 대한 질문에 일반적으로 대답할 수 없다고 가정하는 것이 합리적인 이유를 입증하기 위해 다음 예를 살펴보십시오.\n' +
+      '\n' +
+      '**질문:** 국립 기상청 기상학자인 매튜 벨크가 2023년 9월 미국 북동부의 홍수를 어떻게 묘사했을까요?\n' +
+      '\n' +
+      '**Answers:**\n' +
+      '\n' +
+      '1. 50년 이벤트.\n' +
+      '2. 100년 이벤트.\n' +
+      '3. 200년 행사.\n' +
+      '4. 500년 행사.\n' +
+      '\n' +
+      '홍수와 그 통계적 특성에 대한 약간의 지식이 있더라도 이 특정 기상학자가 홍수를 \'200년 사건\'이라고 부를 것이라고 추측하기는 매우 어려울 것이다. 특히 모형이 홍수의 세부 사항에 대한 정보에 노출되지 않은 경우에는 더욱 그러하다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
