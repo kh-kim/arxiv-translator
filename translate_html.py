@@ -15,6 +15,7 @@ def define_argparser():
     p = argparse.ArgumentParser()
     
     p.add_argument("--arxiv_id", required=True)
+    p.add_argument("--ar5iv", action="store_true")
     p.add_argument("--html_base_dir", default="./papers/")
 
     return p.parse_args()
@@ -27,21 +28,29 @@ def write_html(fn, html):
     with open(fn, "w") as f:
         f.write(html)
 
-def translate_html(html, arxiv_id):
-    # find "=/" and replace with "=\"https://arxiv.org/"
-    html = html.replace("=\"/", "=\"https://arxiv.org/")
+def translate_html(html, arxiv_id, is_ar5iv=False):
+    if not is_ar5iv: # ArXiv Native HTML
+        if "<p>HTML is not available for the source.</p>" in html:
+            raise ValueError(f"HTML is not available for the source: {arxiv_id}")
 
-    # find r"src=\".*\.png\"" and replace with "src=\"https://arxiv.org/html/2402.06196v2/\1\""
-    html = re.sub(r"src=\"(.*\.png)\"", "src=\"https://arxiv.org/html/" + arxiv_id + r"/\1" + "\"", html)
+        # find "=/" and replace with "=\"https://arxiv.org/"
+        html = html.replace("=\"/", "=\"https://arxiv.org/")
 
-    # find "<nav class=\"ltx_TOC active\"" and replace with "<nav class=\"ltx_TOC mobile collapse\"".
-    html = html.replace("<nav class=\"ltx_TOC active\"", "<nav class=\"ltx_TOC mobile collapse\"")
+        # find r"src=\".*\.png\"" and replace with "src=\"https://arxiv.org/html/2402.06196v2/\1\""
+        html = re.sub(r"src=\"(.*\.png)\"", "src=\"https://arxiv.org/html/" + arxiv_id + r"/\1" + "\"", html)
+
+        # find "<nav class=\"ltx_TOC active\"" and replace with "<nav class=\"ltx_TOC mobile collapse\"".
+        html = html.replace("<nav class=\"ltx_TOC active\"", "<nav class=\"ltx_TOC mobile collapse\"")
+    else:
+        html = html.replace("href=\"/", "href=\"https://ar5iv.labs.arxiv.org/")
+        html = html.replace("src=\"/", "src=\"https://ar5iv.labs.arxiv.org/")
 
     translated_lines = []
     buffer = []
     tag_cnt_map = {}
     for line_idx, line in tqdm.tqdm(enumerate(html.split("\n"))):
-        if line.startswith("<p class=\"ltx_p\"") or line.startswith("<figcaption"):
+        if line.startswith("<p class=\"ltx_p\"") or line.startswith("<figcaption") \
+                or (line.startswith("<p id=") and "class=\"ltx_p\"" in line):
             # find html tag using re and count for each
             re_result = re.findall(r"<[^>]+>", line)
             for tag in re_result:
@@ -200,11 +209,15 @@ if __name__ == "__main__":
     config = define_argparser()
 
     arxiv_id = config.arxiv_id
-    fn = os.path.join(config.html_base_dir, arxiv_id, "paper.raw.en.html")
+    fn = os.path.join(config.html_base_dir, arxiv_id, "paper.{type}.en.html".format(
+        type="ar5iv" if config.ar5iv else "raw"
+    ))
 
     html = read_html(fn)
-    html = translate_html(html, arxiv_id)
+    html = translate_html(html, arxiv_id, config.ar5iv)
     write_html(
-        os.path.join(config.html_base_dir, arxiv_id, "paper.raw.ko.html"),
+        os.path.join(config.html_base_dir, arxiv_id, "paper.{type}.ko.html".format(
+            type="ar5iv" if config.ar5iv else "raw"
+        )),
         html
     )

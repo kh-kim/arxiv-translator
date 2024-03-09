@@ -24,8 +24,8 @@ def update_main_readme():
                 pdf_fn_list.append(fn)
     pdf_fn_list.sort(reverse=True)
 
-    arxiv_id_list = [fn[:10] for fn in pdf_fn_list]
-    title_list = [fn[11:].replace(".pdf", "").replace("_", " ") for fn in pdf_fn_list]
+    arxiv_id_list = [fn.split("_")[0] for fn in pdf_fn_list]
+    title_list = ["_".join(fn.split("_")[1:]).replace(".pdf", "").replace("_", " ") for fn in pdf_fn_list]
     arxiv_url_list = [
         "https://arxiv.org/abs/{arxiv_id}".format(arxiv_id=arxiv_id)
         for arxiv_id in arxiv_id_list
@@ -34,8 +34,16 @@ def update_main_readme():
         "https://ar5iv.org/abs/{arxiv_id}".format(arxiv_id=arxiv_id)
         for arxiv_id in arxiv_id_list
     ]
+    readme_url_list = [
+        "https://github.com/{github_id}/{repo_name}/tree/main/papers/{arxiv_id}".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        )
+        for arxiv_id in arxiv_id_list
+    ]
     en_html_url_list = [
-        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.en.html".format(
+        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.en.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
@@ -43,7 +51,23 @@ def update_main_readme():
         for arxiv_id in arxiv_id_list
     ]
     ko_html_url_list = [
-        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ko.html".format(
+        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.ko.html".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        )
+        for arxiv_id in arxiv_id_list
+    ]
+    ar5iv_en_html_url_list = [
+        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ar5iv.en.html".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        )
+        for arxiv_id in arxiv_id_list
+    ]
+    ar5iv_ko_html_url_list = [
+        "https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ar5iv.ko.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
@@ -52,19 +76,17 @@ def update_main_readme():
     ]
 
     insertion_lines = [
-        "| ArXiv ID | Title | ArXiv / Ar5iv | English / Korean |",
-        "|:--------:|-------|:-------------:|:----------------:|",
+        "| ArXiv ID | Title | ArXiv | Go to |",
+        "|:---:|:---|:---:|:---:|",
     ]
     for i in range(len(pdf_fn_list)):
         insertion_lines.append(
-            "| {arxiv_id} | {title} | [arXiv]({arxiv_url}){new_tab} / [ar5iv]({ar5iv_url}){new_tab} | [en]({en_html_url}){new_tab} / [ko]({ko_html_url}){new_tab} |".format(
+            "| {arxiv_id} | {title} | [arXiv]({arxiv_url}){new_tab} | [page]({readme_url}){new_tab} |".format(
                 arxiv_id=arxiv_id_list[i],
                 title=title_list[i],
                 arxiv_url=arxiv_url_list[i],
                 new_tab="", #"{:target=\"_blank\"}",
-                ar5iv_url=ar5iv_url_list[i],
-                en_html_url=en_html_url_list[i],
-                ko_html_url=ko_html_url_list[i],
+                readme_url=readme_url_list[i],
             )
         )
 
@@ -131,12 +153,22 @@ def main(en_mmd_fn):
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
         ),
-        raw_en_html_url="https://raw.githubusercontent.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.en.html".format(
+        raw_en_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.en.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
         ),
-        raw_ko_html_url="https://raw.githubusercontent.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.ko.html".format(
+        raw_ko_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.raw.ko.html".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        ),
+        ar5iv_en_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ar5iv.en.html".format(
+            github_id=GITHUB_ID,
+            repo_name=REPO_NAME,
+            arxiv_id=arxiv_id,
+        ),
+        ar5iv_ko_html_url="https://raw.githack.com/{github_id}/{repo_name}/master/papers/{arxiv_id}/paper.ar5iv.ko.html".format(
             github_id=GITHUB_ID,
             repo_name=REPO_NAME,
             arxiv_id=arxiv_id,
