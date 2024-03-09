@@ -36,6 +36,7 @@
 | 2309.12288 | The Reversal Curse LLMs trained on A is B fail to learn B is A | [arXiv](https://arxiv.org/abs/2309.12288) / [ar5iv](https://ar5iv.org/abs/2309.12288) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2309.12288/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2309.12288/paper.ko.html) |
 | 2304.08177 | 3 Efficient and Effective Text Encoding for Chinese LLaMA and Alpaca | [arXiv](https://arxiv.org/abs/2304.08177) / [ar5iv](https://ar5iv.org/abs/2304.08177) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2304.08177/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2304.08177/paper.ko.html) |
 | 2110.03215 | Towards Continual Knowledge Learning of Language Models | [arXiv](https://arxiv.org/abs/2110.03215) / [ar5iv](https://ar5iv.org/abs/2110.03215) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2110.03215/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2110.03215/paper.ko.html) |
+| 2104.13478 | Geometric Deep Learning Grids Groups Graphs Geodesics and Gauges | [arXiv](https://arxiv.org/abs/2104.13478) / [ar5iv](https://ar5iv.org/abs/2104.13478) | [en](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2104.13478/paper.en.html) / [ko](https://raw.githack.com/kh-kim/arxiv-translator/master/papers/2104.13478/paper.ko.html) |
 
 ## Procedure
 
