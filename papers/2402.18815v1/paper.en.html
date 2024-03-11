@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# How do Large Language Models Handle Multilingual?\n' +
+      '\n' +
+      ' Yiran Zhao\\({}^{1,2}\\) Wenxuan Zhang\\({}^{1,3}\\) Guizhen Chen\\({}^{1,4}\\)1 Kenji Kawaguchi\\({}^{2}\\) Lidong Bing\\({}^{1,3}\\)\n' +
+      '\n' +
+      '\\({}^{1}\\) DAMO Academy, Alibaba Group, Singapore \\({}^{2}\\) National University of Singapore\n' +
+      '\n' +
+      '\\({}^{3}\\) Hupan Lab, 310023, Hangzhou, China \\({}^{4}\\) Nanyang Technological University, Singapore\n' +
+      '\n' +
+      'zhaoyiran@u.nus.edu kenji@comp.nus.edu.sg\n' +
+      '\n' +
+      '{saike.zwx, guizhen.chen, l.bing}@alibaba-inc.com\n' +
+      '\n' +
+      'This work was done during the internship of Yiran Zhao at Alibaba DAMO Academy.Wenxuan Zhang is the corresponding author.Guizhen Chen is under the Joint Ph.D. Program between DAMO Academy and NTU.\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Large language models (LLMs) demonstrate remarkable performance across a spectrum of languages. In this work, we delve into the question: How do LLMs handle multilingual? We introduce a framework that depicts LLMs\' processing of multilingual inputs: In the first several layers, LLMs understand the question, converting multilingual inputs into English to facilitate the task-solving phase. In the intermediate layers, LLMs engage in problem-solving by thinking in English and incorporating multilingual knowledge to obtain factual content, leveraging the self-attention and feed-forward structures, respectively. In the last several layers, LLMs generate responses that align with the original language of the query. In addition, we investigate the existence of language-specific neurons when processing a certain language. To detect neurons activated by the input language, even without labels, we innovatively design a Parallel Language specific Neuron Detection (PLND) method that effectively measures the significance of neurons when handling multilingual inputs. By comprehensive ablation analysis through deactivating neurons of different layers and structures, we verify the framework that we propose. Additionally, we demonstrate that we can utilize such a framework to effectively enhance the multilingual ability with much less training effort.1\n' +
+      '\n' +
+      'Footnote 1: Our code implementation will be publicly available at [https://github.com/DAMO-NLP-SG/multilingual_analysis](https://github.com/DAMO-NLP-SG/multilingual_analysis)\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Recent advancements in large language models (LLMs) such as PaLM Chowdhery et al. (2022), GPT-4 OpenAI (2023), LLaMA Touvron et al. (2023), and Mistral Jiang et al. (2023) have dramatically transformed traditional natural language processing (NLP) tasks, integrating seamlessly into daily and professional uses. Thanks to their extensive pretraining on massive corpora mixed with different languages, these models demonstrate remarkable capabilities in understanding and generating text across multiple languages Huang et al. (2023); Zhu et al. (2023); Zhang et al. (2023); Zhao et al. (2024). Despite their proven effectiveness, the intricate workings of their multilingual processing mechanisms remain largely unclear, which leads to an important research question: _How do large language models handle multilingual?_\n' +
+      '\n' +
+      'Some studies explore the multilingual capabilities of language models, focusing on their cross-lingual performance or structural commonalities between languages K et al. (2020); Doddapaneni et al. (2021); Chai et al. (2022). More recently, to understand the relation of certain abilities with specific model architecture especially the dominant Transformer Vaswani et al. (2017) architecture, studies such as Hou et al. (2023); Stolfo et al. (2023); Friedman et al. (2023) explore the reasoning abilities of LLMs with self-attention layers. While others like Geva et al. (2021); Dai et al. (2022); Meng et al. (2022) focus on the feed-forward layers, regarding them as key-value memories for storing factual knowledge. However, these works often examine components in isolation and lack a comprehensive framework that encompasses the entire end-to-end process. More importantly, the working mechanism of multilingualism is largely unaddressed in these interpretations.\n' +
+      '\n' +
+      'In this study, to gain an initial understanding of the multilingual mechanisms within LLMs, we analyze the decoded embeddings after each layer when processing inputs in various languages other than English. We then classify these embeddings as corresponding to either English or non-English tokens (see details in Appendix A). As illustrated in Figure 1, the models initially represent non-English user instructions in non-English form. However, asthe instructions are processed through the layers of the model, the representation surprisingly becomes English-centric. In the final layers, we observe a reversion to a predominance of non-English embeddings, as the initial instructions are posted in non-English languages. This pattern suggests a complex interplay between languages within LLMs, as they negotiate between instruction fidelity and a possible English-oriented processing bias.\n' +
+      '\n' +
+      'Motivated by these observations, we propose a new framework shown in Figure 2 that conceptualizes the operational stages of LLMs when processing multilingual inputs: In the first several layers, LLMs _understand_ the user input and convert the diverse linguistic features into a unified representation. Transitioning into the _task-solving_ phase, LLMs engage in solving the tasks by thinking in English and incorporating multilingual knowledge to obtain factual contents, leveraging the self-attention and feed-forward structures, respectively. Finally, models _generate_ responses that align with the original language of the query. Such a framework echoes the observations we have above and also some findings in previous studies, and thus reveals the LLMs\' ability to shift among languages, allowing them to comprehend, reason, and respond effectively to multilingual tasks.\n' +
+      '\n' +
+      'The subsequent question that arises is whether LLMs engage all available neurons of certain components or only a particular subset when processing a single language, which essentially investigates the presence of "language-specific neurons". To tackle this question, it is crucial to pinpoint which neurons are activated by the input, even without explicit labels of certain tasks. Therefore, we further develop a novel approach called Parallel Language-specific Neuron Detection (PLND), which effectively measures the significance of individual neurons in relation to the input provided. With PLND, we can identify language-specific neurons by feeding free text corpus of that language into the model and isolating neurons that consistently activate in responses. Experimental results show that by deactivating language-specific neurons which account for only \\(0.13\\%\\) of all neurons, LLMs\' performance on a summarization task could drop by \\(99\\%\\).\n' +
+      '\n' +
+      'With the proposed PLND method, we then conduct extensive experiments to validate our hypothesis illustrated in Figure 2. We selectively disable neuron groups to study their effect on LLM multilingualism. Notably, deactivating the language-specific neurons in the understanding layer leaves English XQuAD performance stable but decreases non-English performance by \\(14\\%\\). Other tasks including reasoning, knowledge question answering and NLG also exhibit the same characteristics. Moreover, enhancing the multilingual capabilities of LLMs can be achieved by fine-tuning language-specific neurons with merely \\(200\\) contextual examples. This method results in a substantial increase in model performance, with a \\(7.4\\%\\) relative improvement on the XQuAD and an \\(8.9\\%\\) enhancement on XSum, reducing the size of the required training dataset significantly.\n' +
+      '\n' +
+      '## 2 Parallel Language-specific Neuron Detection (Plnd)\n' +
+      '\n' +
+      'In this section, we introduce a neuron detection method called PLND for investigating the presence of language-specific neurons.\n' +
+      '\n' +
+      '### Sequential Neuron Detection\n' +
+      '\n' +
+      'To identify neurons responsible for a specific language, it is crucial to discern the significance of a neuron in relation to the inference of a given\n' +
+      '\n' +
+      'Figure 1: Distribution of English and non-English tokens among layers given non-English instructions.\n' +
+      '\n' +
+      'Figure 2: Our proposed multilingual workflow of LLMs.\n' +
+      '\n' +
+      'input. We denote the input of \\(i\\)-th layer in Transformer (Vaswani et al., 2017) as \\(h_{i}\\), with the corresponding output represented as \\(h_{i+1}=T_{i}(h_{i})\\), where \\(T_{i}\\) represents the parameters of the \\(i\\)-th layer. For a specific neuron, denoted as \\(N_{k}^{(i)}\\), within the \\(i\\)-th layer--whether located in the attention or feed-forward layer--the importance is quantified as the difference between output when \\(N_{k}^{(i)}\\) is either activated or deactivated. Formally, it is defined as\n' +
+      '\n' +
+      '\\[\\text{Imp}(N_{k}^{(i)}|h_{i})=\\|T_{i}\\backslash N_{k}^{(i)}(h_{i})-T_{i}(h_{i })\\|_{2}, \\tag{1}\\]\n' +
+      '\n' +
+      'where \\(T_{i}\\backslash N_{k}(\\cdot)\\) denotes deactivating \\(N_{k}^{(i)}\\) in \\(T_{i}\\). Then, with a set of the corpus in the specific language, denoted as \\(\\mathcal{C}=\\{c_{1},\\cdots,c_{l},\\cdots,c_{n}\\}\\), we can calculate the importance of each neuron in each layer to each corpus. Furthermore, we can select neurons that are important to all corpus in \\(\\mathcal{C}\\), i.e.,\n' +
+      '\n' +
+      '\\[\\text{Imp}(N_{k}^{(i)}|c_{l})\\geq\\epsilon,\\ \\forall c_{l}\\in\\mathcal{C}, \\tag{2}\\]\n' +
+      '\n' +
+      'where \\(\\epsilon\\) is the pre-defined threshold. However, it is super time-consuming to traverse all neurons and all inputs sequentially. Therefore, we need to design a parallel algorithm for acceleration.\n' +
+      '\n' +
+      '### Parallel Neuron Detection\n' +
+      '\n' +
+      'Feed-Forward LayerIn Llama2 (Touvron et al., 2023), the \\(\\text{FFN}(x)\\) is defined as\n' +
+      '\n' +
+      '\\[\\Big{(}\\text{SiLU}\\big{(}W_{gate}(x)\\big{)}\\cdot W_{up}(x)\\Big{)}W_{down}, \\tag{3}\\]\n' +
+      '\n' +
+      'where \\(x\\in\\mathbb{R}^{l\\times d_{model}}\\), \\(W_{gate}\\in\\mathbb{R}^{d_{model}\\times d_{inter}}\\), \\(W_{down}\\in\\mathbb{R}^{d_{inter}\\times d_{model}}\\). We denote hidden embedding before \\(W_{down}\\) as \\(h_{\\text{ffn}}\\). When deactivating the \\(k\\)-th neuron of \\(W_{up}\\),\n' +
+      '\n' +
+      '\\[\\begin{split}&\\text{Imp}(W_{up}[:,k]|x)=\\|\\text{FFN}(x)-\\text{FFN}(x )\\|_{2}\\\\ &=\\Big{\\|}\\big{(}h_{\\text{ffn}}\\cdot\\texttt{Mask}[k]\\big{)}W_{ down}(x)\\Big{\\|}_{2},\\end{split} \\tag{4}\\]\n' +
+      '\n' +
+      'where \\(\\texttt{Mask}[k]\\) is a vector of length \\(d_{inter}\\) with the \\(k\\)-th element as \\(1\\) and others as \\(0\\). For calculating \\(\\text{Imp}(W_{up}[:,k]|x)\\) for all neurons in \\(W_{up}\\) parallelly, we introduce a diagonal mask matrix of size \\((d_{inter},d_{inter})\\), denoted as Mask. Therefore,\n' +
+      '\n' +
+      '\\[\\text{Imp}(W_{up}|x)=\\|(h_{\\text{ffn}}\\cdot\\texttt{Mask})W_{down}(x)\\|_{2}. \\tag{5}\\]\n' +
+      '\n' +
+      'Furthermore, we find that deactivating the \\(k\\)-th neuron of \\(W_{down}\\) is equivalent to deactivating the \\(k\\)-th neuron in \\(W_{up}\\) as they all set \\(h_{\\text{ffn}}[k]=0\\). Therefore \\(\\text{Imp}(W_{down}|x)\\) can be obtain by Equation (5).\n' +
+      '\n' +
+      'Self-Attention LayerFor the input \\(x\\) of length \\(l\\), the self-attention layer is defined as\n' +
+      '\n' +
+      '\\[\\text{Softmax}\\big{(}\\frac{W_{Q}(x)W_{K}^{T}(x)}{\\sqrt{d}}\\big{)}W_{V}(x), \\tag{6}\\]\n' +
+      '\n' +
+      'where \\(W_{Q}\\in\\mathbb{R}^{d_{model}\\times d_{mid}}\\), \\(W_{K}\\in\\mathbb{R}^{d_{model}\\times d_{mid}}\\), \\(W_{V}\\in\\mathbb{R}^{d_{model}\\times d_{mid}}\\).2 As \\(W_{V}(x)\\) is a linear layer, \\(\\text{Imp}(W_{V}|x)\\) can be obtained following Equation (5). In the case of \\(W_{Q}\\), when deactivating the \\(k\\)-th neuron, \\(\\hat{W}_{Q}\\gets W_{Q}[:,k]=0\\), we aim to obtain \\(\\text{Imp}(W_{Q}[:,k]|x)\\). Firstly, we calculate the difference in attention weight, i.e., \\(W_{Q}(x)W_{K}^{T}(x)\\).\n' +
+      '\n' +
+      'Footnote 2: In Vicuna and Mistral, \\(d_{model}=d_{mid}\\), but we use different notations to avoid ambiguity.\n' +
+      '\n' +
+      '\\[\\begin{split}\\Delta_{k}&=\\hat{W}_{Q}(x)W_{K}^{T}(x )-W_{Q}(x)W_{K}^{T}(x)\\\\ &=W_{Q}(x)[:,k]W_{K}(x)[k;]\\in\\mathbb{R}^{l\\times l}\\end{split} \\tag{7}\\]\n' +
+      '\n' +
+      'Then, the importance of \\(W_{Q}[:,k]\\) can be defined as\n' +
+      '\n' +
+      '\\[\\begin{split}&\\text{Imp}(W_{Q}[k,:]|x)\\\\ &\\approx\\|\\text{attention}(x)-\\text{attention}(x)\\|_{2}\\\\ &\\approx\\Big{\\|}\\text{softmax}\\big{(}\\frac{W_{Q}(x)W_{K}^{T}(x)- \\Delta_{k}}{\\sqrt{d}}\\big{)}-\\\\ &\\quad\\text{softmax}\\big{(}\\frac{W_{Q}(x)W_{K}^{T}(x)}{\\sqrt{d}} \\big{)}\\Big{\\|}_{2}\\end{split} \\tag{8}\\]\n' +
+      '\n' +
+      'This process can also be calculated parallelly, i.e.,\n' +
+      '\n' +
+      '\\[\\begin{split}\\Delta&=\\hat{W}_{Q}(x)W_{K}^{T}(x)-W_{Q}( x)W_{K}^{T}(x)\\\\ &=W_{Q}(x).resize(l,1,d_{mid})\\times\\\\ &\\quad W_{K}(x).resize(1,l,d_{mid})\\in\\mathbb{R}^{l\\times l \\times d_{mid}}\\end{split} \\tag{9}\\]\n' +
+      '\n' +
+      'Then, the importance of \\(W_{Q}\\) can be defined as\n' +
+      '\n' +
+      '\\[\\begin{split}\\text{Imp}(W_{Q}|x)&\\approx\\Big{\\|} \\text{softmax}\\big{(}\\frac{W_{Q}(x)W_{K}^{T}(x)-\\Delta}{\\sqrt{d}}\\big{)}-\\\\ &\\quad\\text{softmax}\\big{(}\\frac{W_{Q}(x)W_{K}^{T}(x)}{\\sqrt{d}} \\big{)}\\Big{\\|}_{2}.\\end{split}\\]\n' +
+      '\n' +
+      '\\(\\text{Imp}(W_{K}|x)\\) can be calculated the same way.\n' +
+      '\n' +
+      '## 3 Investigate Language-Specific Neurons\n' +
+      '\n' +
+      'In this section, we apply the PLND method to selected languages and models in order to confirm the existence of language-specific neurons and investigate the relationships between languages.\n' +
+      '\n' +
+      '### Experimental Setup\n' +
+      '\n' +
+      'ModelsWe test two open-source models that perform well on multilingual tasks, including _Vicuna-7b-v1.5_Chiang et al. (2023) and _Mistral-7b-v1.0_Jiang et al. (2023). Vicuna-7b-v1.5 is an open-source chat model fine-tuned on top of LlaMa 2 Touvron et al. (2023) via instruction fine-tuning and has shown good multilingual instruction following ability.3 Mistral-7b-v1.0 is fine-tuned on Mistral-7b. For simplicity, we abbreviate them as Vicuna and Mistral hereafter to represent the two models respectively.\n' +
+      '\n' +
+      'Footnote 3: We do not directly utilize Llama2-chat as it does not follow multilingual instructions, consistently responding in English regardless of the language of the query.\n' +
+      '\n' +
+      'LanguagesWe adopt \\(6\\) languages including English (En), German (De), French (Fr), Chinese (Zh), Spanish (Es), and Russian (Ru). These languages were selected because their training corpora represent over \\(0.1\\%\\) of the total pre-training data for Llama2. Furthermore, both Vicuna and Mistral are designed to tackle problems across these languages effectively, and their performance in these languages is much higher than in other low-resource languages such as Thai, Swahili, and Greek.\n' +
+      '\n' +
+      'CorpusTo compile a language-specific corpus without task-specific considerations, we utilize OSCAR Caswell et al. (2020) corpus which contains web crawling texts for each language. Our selection criterion for the number of contexts is based on achieving substantial coverage of each language\'s vocabulary, ensuring that the selected contexts provide a representative sample of the language. Details are shown in Table 1, where "corpus size" indicates the number of contexts selected, "corpus vocab" represents the vocabulary coverage within the selected contexts, "vocab size" refers to the number of vocabularies of that language.\n' +
+      '\n' +
+      '### Existence of Language-Specific Neurons\n' +
+      '\n' +
+      'Using PLND, we feed a corpus in a specific language to LLMs and identify the neurons that are consistently activated. These language-specific neurons are responsible for processing queries in that language. To ascertain whether these neurons are genuinely language-specific, we assess the performance of LLMs in corresponding languages when these neurons are deactivated versus when the same number of randomly sampled neurons is deactivated. We utilize the summarization task with XLSum dataset Hasan et al. (2021) to showcase the capabilities of LLMs, aiming to demonstrate that the resulting output can be devoid of meaning.\n' +
+      '\n' +
+      'Table 2 demonstrates the decline of multilingual capabilities when deactivating language-specific neurons. Although just deactivating around \\(0.13\\%\\) neurons, LLMs lose multilingual capabilities including understanding multilingual inputs, handling multilingual questions, and generating multilingual outputs. In contrast, deactivating the same number of randomly selected neurons does not yield any difference. Therefore, the detected neurons are language-specific and related to handling corresponding multilingual inputs.\n' +
+      '\n' +
+      '### Interrelation of Language-Specific Neurons Across Languages\n' +
+      '\n' +
+      'Using neurons identified by PLND, we investigate the relationships of two languages via the degree of overlap between their language-specific neurons:\n' +
+      '\n' +
+      '\\[\\text{overlap}(x,y)=\\frac{|\\mathcal{N}_{x}\\cap\\mathcal{N}_{y}|}{|\\mathcal{N}_ {y}|}, \\tag{10}\\]\n' +
+      '\n' +
+      'where \\(\\mathcal{N}_{language}\\) represents the set of detected language-specific neurons. Figure 3 shows the neuron overlapping ratio overlap\\((x,y)\\) of any two languages in different structures of two models.\n' +
+      '\n' +
+      'We can observe that in both Mistral and Vicuna, the intersection with English from other languages is relatively limited, suggesting that English possesses a predominant number of language-specific\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c|c|c|c|c|c} \\hline \\hline\n' +
+      '**Language** & En & De & Fr & Zh & Es & Ru \\\\ \\hline Corpus Size & \\(180\\)k & \\(30\\)k & \\(50\\)k & \\(20\\)k & \\(20\\)k & \\(20\\)k \\\\ \\hline Corpus Vocab & \\(249\\)k & \\(154\\)k & \\(134\\)k & \\(198\\)k & \\(90\\)k & \\(144\\)k \\\\ \\hline Vocab Size & \\(273\\)k & \\(148\\)k & \\(135\\)k & \\(329\\)k & \\(93\\)k & \\(150\\)k \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Corpus details across languages are tailored to encompass the majority of each language’s vocabulary.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l|c|c|c|c|c} \\hline \\hline  & Method & Fr & Zh & Es & Ru & Avg. \\\\ \\hline \\multirow{3}{*}{**PLND**} & Original & \\(14.2\\) & \\(61.1\\) & \\(10.4\\) & \\(20.8\\) & \\(26.6\\) \\\\  & Deact-Rand. & \\(14.1\\) & \\(61.6\\) & \\(10.4\\) & \\(20.8\\) & \\(26.7\\) \\\\  & Deact-Lang. & \\(\\mathbf{0.83}\\) & \\(\\mathbf{0.00}\\) & \\(\\mathbf{0.24}\\) & \\(\\mathbf{0.42}\\) & \\(\\mathbf{0.37}\\) \\\\ \\hline \\multirow{3}{*}{**PLND**} & Original & \\(15.2\\) & \\(56.4\\) & \\(10.6\\) & \\(21.0\\) & \\(25.8\\) \\\\  & Deact-Rand. & \\(15.4\\) & \\(55.9\\) & \\(10.2\\) & \\(21.2\\) & \\(25.7\\) \\\\  & Deact-Lang. & \\(\\mathbf{0.21}\\) & \\(\\mathbf{0.39}\\) & \\(\\mathbf{0.15}\\) & \\(\\mathbf{0.07}\\) & \\(\\mathbf{0.21}\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Multilingual performance of LLMs upon deactivating neurons, where “Lang.” denotes language-specific neurons and “Rand.” indicates an equivalent number of neurons selected at random.\n' +
+      '\n' +
+      'neurons. Additionally, there is a pronounced tendency for languages belonging to the same family to demonstrate a higher degree of overlap with each other. Moreover, the feed-forward structure typically exhibits a higher degree of consistency in overlap across various languages, due to the shared world knowledge embedded within the neurons that is accessible to multiple languages.\n' +
+      '\n' +
+      '## 4 How do LLMs Handle Multilingual?\n' +
+      '\n' +
+      'In this section, we validate the workflow presented in Figure 2 by systematically deactivating language-specific neurons across different layers and components to examine their impact on a range of tasks.\n' +
+      '\n' +
+      '### Experimental Setup\n' +
+      '\n' +
+      'DatasetTo comprehensively understand how LLMs work with different abilities, we employ four different kinds of tasks including MGSM Shi et al. (2022) for reasoning task, XQuAD Artetxe et al. (2020) for NLU task, XLSum Hasan et al. (2021) for NLG task, and X-CSQA Lin et al. (2021) for knowledge question answering task. For XL-Sum, we randomly sample \\(500\\) data points from the whole test set for each language, while for other tasks, we employ the whole test set.\n' +
+      '\n' +
+      'Original ResultsWe first evaluate the vanilla performance of Vicuna and Mistral on these datasets for later comparison as presented in Table 3.\n' +
+      '\n' +
+      'Experiment DetailsFor reasoning, NLU, and knowledge question answering tasks, we adopt accuracy as the metric. As for the NLG tasks, we adopt ROUGE-L as the metric. Furthermore, for the concrete numbers of different layers, we tune hyperparameters by XQuAD in Chinese. Details are explained in Appendix B.\n' +
+      '\n' +
+      'NotationsTables 4 to 7 present the results of deactivating certain neurons, where "Under" denotes the understanding layers, "S-ATTN" and "S-FFN" correspond to the self-attention and the feed-forward within the task-solving layers respectively, "Gen" refers to the generation layers. The term "Random" is used to describe deactivating randomly chosen neurons, whereas "Lang-Spec" refers to the deactivation of language-specific neurons. We also present the gap between the original performance and performance after deactivation for English (\\(\\Delta_{\\text{Eng}}\\)) and averaged non-English languages (\\(\\Delta_{\\text{n-Eng}}\\)), respectively. A single metric \\(\\Delta\\) is then introduced as \\(\\Delta_{\\text{Eng}}-\\Delta_{\\text{n-Eng}}\\), where a high value indicates such deactivation operation does not bring much impact to the English performance but lead to performance drop in non-English.\n' +
+      '\n' +
+      '### Analysis on Understanding\n' +
+      '\n' +
+      'Deactivating MethodTable 4 shows the results of the understanding task following the deactivation of five distinct sets of neurons: (i) neurons randomly selected from the understanding layers; (ii) neurons randomly chosen across all layers; (iii) language-specific neurons within the understanding layers; (iv) language-specific neurons in the task-solving layers; (v) language-specific neurons in the generation layers. For a fair comparison, we ensure the numbers of deactivated neurons in all settings are the same. Full results of each language are listed in Appendix C.\n' +
+      '\n' +
+      'FindingsWe find that by deactivating randomly sampled neurons, no matter in the understanding layer or all layers, the performance of LLMs in both English and non-English languages is almost unaffected compared to other deactivating methods. Note that in some cases, deactivating ran\n' +
+      '\n' +
+      'Figure 3: Overlapping ratio of language-specific neurons in self-attention and feed-forward structures.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c|c|c|c|c|c|c} \\hline  & Task & En & De & Fr & Zh & Es & Ru \\\\ \\hline \\multirow{4}{*}{**NLU**} & XQuAD & \\(57.5\\) & \\(50.3\\) & \\(-\\) & \\(55.7\\) & \\(55.7\\) & \\(-\\) \\\\  & MGSM & \\(20.4\\) & \\(14.8\\) & \\(14.8\\) & \\(12.8\\) & \\(13.2\\) & \\(10.0\\) \\\\  & X-CSQA & \\(57.8\\) & \\(43.8\\) & \\(40.1\\) & \\(43.2\\) & \\(44.3\\) & \\(26.0\\) \\\\  & XLSum & \\(13.1\\) & \\(-\\) & \\(14.2\\) & \\(61.1\\) & \\(10.4\\) & \\(20.8\\) \\\\ \\hline \\multirow{4}{*}{**NLU**} & XQuAD & \\(57.1\\) & \\(48.5\\) & \\(-\\) & \\(64.3\\) & \\(54.1\\) & \\(-\\) \\\\  & MGSM & \\(46.0\\) & \\(21.2\\) & \\(26.0\\) & \\(31.6\\) & \\(31.2\\) & \\(21.6\\) \\\\  & X-CSQA & \\(61.7\\) & \\(40.0\\) & \\(40.4\\) & \\(47.1\\) & \\(45.7\\) & \\(14.1\\) \\\\  & XLSum & \\(13.5\\) & \\(-\\) & \\(15.2\\) & \\(56.4\\) & \\(10.6\\) & \\(21.0\\) \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: Assessing the baseline performance of Vicuna and Mistral across four representative multilingual tasks in selected languages.\n' +
+      '\n' +
+      'domly sampled neurons may even increase the performance because irrelevant neurons are removed, which also aligns with the finding from Sharma et al. (2023). When assessing the differential impact on English and non-English language performance post-deactivation, specifically the difference calculated as \\(\\Delta_{\\text{Eng}}-\\Delta_{\\text{n-Eng}}\\), it is evident that the deactivation of random neurons within the understanding layer amplifies this effect. This observation lends partial support to the hypothesized role of the understanding layer in language processing.\n' +
+      '\n' +
+      'Furthermore, we find that deactivating language-specific neurons in the understanding layer influences the performance in English a little while significantly decreasing the performance in non-English languages. When deactivating language-specific neurons in the task-solving layer, both English and non-English languages are significantly reduced while deactivating language-specific neurons in the generation layer influences a little for both English and non-English languages. Therefore, we prove that the first several layers are responsible for understanding because deactivated neurons just disable LLMs on the NLU task in non-English languages. Furthermore, disabling language-specific neurons in the task-solving layer shows that LLMs rely on English, as their performance drops across all languages.\n' +
+      '\n' +
+      '### Analysis on Reasoning\n' +
+      '\n' +
+      'Deactivating MethodTable 5 shows the result of the reasoning task, where we deactivate \\(6\\) sets of neurons. Details are listed in Appendix C.\n' +
+      '\n' +
+      'FindingsWe find that deactivating randomly sampled neurons in task-solving layers disables the capabilities of LLMs in reasoning to a greater extent than deactivating randomly sampled neurons in all layers, which verifies the function of the task-solving layer. Furthermore, comparing three deactivating language-specific neuron methods, we find that deactivating the task-solving layer decreases performance in both English and non\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c|c c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multicolumn{4}{c|}{**Deactivating Method**} & \\multicolumn{4}{c}{**Performance**} \\\\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta\\uparrow\\) \\\\ \\hline \\multirow{4}{*}{Vicuna} & ✓ & ✗ & ✗ & � & Random & \\(57.8\\) & \\(53.9\\) & \\(+0.3\\) & \\(-0.1\\) & \\(+0.4\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(57.9\\) & \\(54.2\\) & \\(+0.4\\) & \\(+0.3\\) & \\(+0.1\\) \\\\  & ✓ & ✗ & ✗ & ✗ & Lang-Spec & \\(56.5\\) & \\(46.0\\) & \\(-0.5\\) & \\(-7.9\\) & \\(+7.4\\) \\\\  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \\(40.9\\) & \\(38.6\\) & \\(-15.9\\) & \\(-15.3\\) & \\(-0.6\\) \\\\  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \\(57.9\\) & \\(52.8\\) & \\(-0.4\\) & \\(-1.1\\) & \\(+0.7\\) \\\\ \\hline \\multirow{4}{*}{Mistral} & ✓ & ✗ & ✗ & ✗ & Random & \\(58.1\\) & \\(55.5\\) & \\(+1.0\\) & \\(-0.2\\) & \\(+1.2\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(57.6\\) & \\(55.5\\) & \\(+0.5\\) & \\(-0.2\\) & \\(+0.7\\) \\\\ \\cline{1-1}  & ✓ & ✗ & ✗ & ✗ & Lang-Spec & \\(56.2\\) & \\(48.3\\) & \\(-0.9\\) & \\(-7.4\\) & \\(+6.5\\) \\\\ \\cline{1-1}  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \\(53.2\\) & \\(47.0\\) & \\(-3.9\\) & \\(-8.7\\) & \\(+4.8\\) \\\\ \\cline{1-1}  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \\(56.4\\) & \\(54.6\\) & \\(-0.7\\) & \\(-1.0\\) & \\(+0.3\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: Results of the understanding task, where ‘✓’ indicates that neurons in the corresponding layer are deactivated, and ‘✗’ signifies they are not. \\(\\Delta\\) is defined as the difference between the reduction in performance in English, denoted as \\(\\Delta_{\\text{Eng}}\\), and the reduction in performance in non-English languages, denoted as \\(\\Delta_{\\text{Eng}}\\).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c|c c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multicolumn{4}{c|}{**Deactivating Method**} & \\multicolumn{4}{c}{**Performance**} \\\\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta\\uparrow\\) \\\\ \\hline \\multirow{4}{*}{Vicuna} & ✗ & ✓ & ✗ & ✗ & Random & \\(20.0\\) & \\(11.3\\) & \\(-0.4\\) & \\(-1.8\\) & \\(+1.4\\) \\\\  & ✗ & ✓ & ✓ & ✗ & Random & \\(18.4\\) & \\(12.2\\) & \\(-2.0\\) & \\(-1.0\\) & \\(-1.0\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(19.6\\) & \\(12.5\\) & \\(-0.8\\) & \\(-0.7\\) & \\(-0.1\\) \\\\  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \\(7.2\\) & \\(3.4\\) & \\(-13.2\\) & \\(-9.8\\) & \\(-3.4\\) \\\\  & ✓ & ✗ & ✗ & ✓ & Lang-Spec & \\(18.1\\) & \\(8.3\\) & \\(-2.3\\) & \\(-4.9\\) & \\(+2.6\\) \\\\  & ✓ & ✗ & ✓ & ✓ & Lang-Spec & \\(19.0\\) & \\(7.8\\) & \\(-1.4\\) & \\(-5.4\\) & \\(+0.0\\) \\\\ \\hline \\multirow{4}{*}{Mistral} & ✗ & ✓ & ✗ & ✗ & Random & \\(40.8\\) & \\(23.4\\) & \\(-5.2\\) & \\(-2.9\\) & \\(-2.3\\) \\\\  & ✗ & ✓ & ✓ & ✗ & Random & \\(39.2\\) & \\(24.0\\) & \\(-6.8\\) & \\(-2.3\\) & \\(-4.5\\) \\\\ \\cline{1-1}  & ✓ & ✓ & ✓ & ✓ & Random & \\(45.2\\) & \\(26.8\\) & \\(-0.8\\) & \\(+0.5\\) & \\(-1.3\\) \\\\ \\cline{1-1}  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \\(38.2\\) & \\(18.4\\) & \\(-7.8\\) & \\(-7.9\\) & \\(+0.1\\) \\\\ \\cline{1-1}  & ✓ & ✗ & ✗ & ✓ & Lang-Spec & \\(44.0\\) & \\(18.1\\) & \\(-2.0\\) & \\(-8.2\\) & \\(+6.2\\) \\\\ \\cline{1-1}  & ✓ & ✗ & ✓ & ✓ & Lang-Spec & \\(46.2\\) & \\(18.3\\) & \\(+0.2\\) & \\(-8.0\\) & \\(+8.2\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: Results of the reasoning task. The highest performance reduction difference (\\(\\Delta\\)) is achieved by disabling all language-specific neurons, except for those involved in self-attention structure within the task-solving layer.\n' +
+      '\n' +
+      'English. On the contrary, when we only deactivate language-specific neurons not in the task-solving layer, non-English is influenced more seriously than English. Moreover, eliminating interference from the feed-forward layer achieves better results, which verifies the function of attention structure in the task-solving layer.\n' +
+      '\n' +
+      '### Analysis on Knowledge Question Answering\n' +
+      '\n' +
+      'Deactivating MethodTable 6 shows the result of the knowledge question answering task, where we deactivate \\(5\\) sets of neurons. Details are listed in Appendix C.\n' +
+      '\n' +
+      'FindingsLikewise, the deactivation of randomly selected neurons has a lesser impact compared to language-specific neurons, validating the efficiency of PLND in identifying neurons pertinent to a particular language. Targeted deactivation of language-specific neurons within the feed-forward structure of the task-solving layer predominantly affects non-English languages. This implies that processing multilingual queries necessitates accessing the multilingual information embedded within the relevant structures. However, disabling the self-attention structure compromises the ability to solve tasks across all languages.\n' +
+      '\n' +
+      '### Analysis on Generation\n' +
+      '\n' +
+      'Deactivating MethodTable 7 shows the result of the generation task, where we deactivate \\(3\\) sets of neurons. Details are listed in Appendix C.\n' +
+      '\n' +
+      'FindingsSimilar to other tasks, the disabling of language-specific neurons within the generation layer attenuates their capacity to generate content in the respective languages. By selectively deactivating neurons that are not associated with English, we do not completely eliminate the models\' multilingual generation abilities. However, as demonstrated in Table 2, the complete deactivation of all language-specific neurons results in the total loss of the LLMs\' multilingual generation capabilities.\n' +
+      '\n' +
+      '## 5 Further Analysis\n' +
+      '\n' +
+      '### Enhance Multilingual Ability\n' +
+      '\n' +
+      'We have verified the proposed framework for explaining the multilingual working mechanism of LLMs in the above section via deactivating certain neurons. While opposite to employing deactivation, we can also enhance their multilingual ability, especially the understanding and generating ability, by fine-tuning these language-specific neurons.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c|c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multicolumn{4}{c|}{**Deactivating Method**} & \\multicolumn{4}{c}{**Performance**} \\\\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta\\uparrow\\) \\\\ \\hline \\multirow{4}{*}{Vicuna} & ✗ & ✗ & ✓ & ✗ & Random & \\(57.5\\) & \\(39.5\\) & \\(-0.3\\) & \\(+0.0\\) & \\(-0.3\\) \\\\  & ✗ & ✓ & ✓ & ✗ & Random & \\(56.0\\) & \\(38.7\\) & \\(-1.8\\) & \\(-0.8\\) & \\(-1.0\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(57.7\\) & \\(39.6\\) & \\(-0.1\\) & \\(+0.1\\) & \\(-0.2\\) \\\\  & ✗ & ✓ & ✗ & ✗ & Lang-Spec & \\(33.7\\) & \\(30.3\\) & \\(-24.1\\) & \\(-9.2\\) & \\(-14.9\\) \\\\  & ✗ & ✗ & ✓ & ✗ & Lang-Spec & \\(57.5\\) & \\(37.5\\) & \\(-0.3\\) & \\(-2.0\\) & \\(+17.7\\) \\\\ \\hline \\multirow{4}{*}{Mistral} & ✗ & ✗ & ✓ & ✗ & Random & \\(61.0\\) & \\(37.0\\) & \\(-0.3\\) & \\(-0.5\\) & \\(+0.2\\) \\\\  & ✗ & ✓ & ✓ & ✗ & Random & \\(60.7\\) & \\(36.3\\) & \\(-0.6\\) & \\(-1.2\\) & \\(+0.6\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(61.8\\) & \\(37.4\\) & \\(+0.1\\) & \\(-0.1\\) & \\(+0.2\\) \\\\  & ✗ & ✓ & ✗ & ✗ & Lang-Spec & \\(51.2\\) & \\(28.9\\) & \\(-1.0\\) & \\(-8.6\\) & \\(-1.5\\) \\\\  & ✗ & ✗ & ✓ & ✗ & Lang-Spec & \\(61.2\\) & \\(35.1\\) & \\(-0.1\\) & \\(-2.4\\) & \\(+2.3\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 6: Results of the knowledge question answering. The highest performance reduction difference (\\(\\Delta\\)) is achieved by disabling all language-specific neurons in the feed-forward structure within the task-solving layer.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c|c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multicolumn{4}{c|}{**Deactivating Method**} & \\multicolumn{4}{c}{**Performance**} \\\\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta_{\\text{Eng}}\\) & \\(\\Delta\\uparrow\\) \\\\ \\hline \\multirow{4}{*}{Vicuna} & ✗ & ✗ & ✗ & ✓ & Random & \\(13.2\\) & \\(26.8\\) & \\(+0.1\\) & \\(+0.1\\) & \\(+0.0\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(13.0\\) & \\(26.7\\) & \\(-0.1\\) & \\(+0.0\\) & \\(-0.1\\) \\\\  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \\(13.1\\) & \\(25.7\\) & \\(-0.0\\) & \\(-1.1\\) & \\(+1.1\\) \\\\ \\hline \\multirow{4}{*}{Mistral} & ✗ & ✗ & ✗ & ✓ & Random & \\(13.6\\) & \\(25.9\\) & \\(+0.1\\) & \\(+0.1\\) & \\(+0.0\\) \\\\  & ✓ & ✓ & ✓ & ✓ & Random & \\(13.6\\) & \\(25.7\\) & \\(+0.1\\) & \\(-0.2\\) & \\(+0.3\\) \\\\ \\cline{1-1}  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \\(13.8\\) & \\(24.3\\) & \\(-0.3\\) & \\(-1.5\\) & \\(+1.8\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: Results of the generation task following neuron deactivation. The highest performance reduction difference (\\(\\Delta\\)) is achieved by disabling all language-specific neurons in the generation layer.\n' +
+      '\n' +
+      'We employ Llama2-7b-base model for enhancement to eliminate the interference of instruction fine-tuning. We select causal language modeling as our fine-tuning task and create a dataset comprising \\(200\\) documents for each language, extracted from the Wikipedia corpus.4 It is important to note that our enhancements are focused on augmenting the model\'s capabilities in understanding and generation only; we do not extend its reasoning faculties or broaden its knowledge base as it may require more specific data preparation. Accordingly, we evaluate the efficacy of our enhancements through targeted understanding and generation tasks. Detailed experiment results are shown in Table 8.\n' +
+      '\n' +
+      'Footnote 4: [https://dumps.wikimedia.org/](https://dumps.wikimedia.org/)\n' +
+      '\n' +
+      'Our findings indicate that with just \\(10\\) minutes of fine-tuning on \\(200\\) contexts, LLMs exhibit significant enhancements in multilingual understanding and generation abilities. Notably, there is a relative performance boost of \\(7.4\\%\\) on the XQuAD benchmark. Similarly, for XLSum, we observe an \\(8.9\\%\\) relative improvement in performance.\n' +
+      '\n' +
+      '### Analysis on Different Multilingual LLMs\n' +
+      '\n' +
+      'To further verify our proposed framework, we examine two more types of multilingual LLMs, including BLOOMZ Muennighoff et al. (2022), a _hyper-multilingual_ LLM claiming to support 46 languages, and Chinese Llam Cui et al. (2023), a _bilingual_ LLM focusing on English and Chinese.\n' +
+      '\n' +
+      'Hyper-Multilingual LLMsFrom Figure 0(b) we observe that BLOOMZ also tends to default to English as its "thinking" language. Therefore, it can support multiple languages mainly because it has the ability to understand and generate these languages while using English as the language of thinking. Additionally, Figure 4 illustrates the degree of neuron overlap among languages within both the self-attention and feed-forward structures of BLOOMZ. In contrast to the findings shown in Figure 3, there is a marked reduction in overlap, indicating that individual languages maintain a higher degree of independence and do not extensively share neurons with one another.\n' +
+      '\n' +
+      'Bilingual LLMsWe employ Chinese Llama Cui et al. (2023), which extends existing vocabulary and incorporate secondary pre-training using Chinese data and fine-tune the model with Chinese instruction datasets. However, this intensive training can lead to a degradation in performance for languages other than Chinese. As depicted in Figure 5, Chinese predominates as the primary language for thinking processing and knowledge extraction across all languages. Consequently, the absence of language-specific neurons results in the transformation of it into a Chinese-centric LLM.\n' +
+      '\n' +
+      '## 6 Related Work\n' +
+      '\n' +
+      'InterpretabilityConventional interpretability research investigates the significance of input features with their corresponding outputs Vig (2019); Hewitt and Liang (2019); Qiu et al. (2020).In the era of LLMs, one brunch of work includes efforts to understand knowledge storage, with Geva et al. (2021) initiating the study of the feed-forward layer as a knowledge base. Subsequent work has furthered this by altering neuron values Dai et al. (2022), mapping embeddings to words Geva et al. (2022), modifying inputs to recover embeddings Meng et al. (2022), and analyzing attention heads Li\n' +
+      '\n' +
+      'Figure 4: Overlapping ratio of language-specific neurons in BLOOMZ.\n' +
+      '\n' +
+      'Figure 5: Distribution of languages among layers in Chinese Llama given non-English instructions.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l|c c c c c} \\hline \\hline\n' +
+      '**Task** & **Method** & De & Fr & Zh & Es & Ru \\\\ \\hline XQuAD & Original & \\(42.2\\) & – & \\(47.3\\) & \\(39.6\\) & – \\\\  & Enhance & \\(\\mathbf{45.3}\\) & – & \\(\\mathbf{49.7}\\) & \\(\\mathbf{43.7}\\) & – \\\\ \\hline XLSum & Original & – & \\(8.5\\) & \\(48.2\\) & \\(9.1\\) & \\(19.7\\) \\\\  & Enhance & – & \\(\\mathbf{9.4}\\) & \\(\\mathbf{51.6}\\) & \\(\\mathbf{11.0}\\) & \\(\\mathbf{21.1}\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 8: Enhancement is achieved by fine-tuning the Llama2-7b-base model through a causal language modeling task, utilizing \\(200\\) contexts from each language.\n' +
+      '\n' +
+      'et al., 2023). Another line of research centers on the self-attention layer, examining its connection to reasoning Hou et al. (2023); Stolfo et al. (2023); Friedman et al. (2023) by contrasting the reasoning tree based on attention weights.\n' +
+      '\n' +
+      'MultilingualismVarious studies have been undertaken to construct benchmarks Zhang et al. (2023), enhance performance through translation Liang et al. (2023); Huang et al. (2023), aligning representations Nguyen et al. (2023); Salesky et al. (2023), prompting Li et al. (2023); Tanwar et al. (2023). These efforts underscore the importance and complexity of enabling LLMs to operate effectively across multiple languages.\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      'In this work, we introduce a hypothesis suggesting that LLMs address multilingualism by first translating queries into English, processing them using English with the help of multilingual knowledge, and then translating the responses back into the original language. To validate this framework, we introduce a novel method for detecting language-specific neurons and conduct extensive ablation studies. These studies involve selectively deactivating various neuron sets to observe their impact on the multilingual capabilities of LLMs. Additionally, we refine the multilingual performance of LLMs by fine-tuning these language-specific neurons, which only take up a small part of the neurons.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. B. Pham, H. W. Chung, C. Sutton, S. Gehrmann, et al. (2022)Palm: scaling language modeling with pathways. arXiv preprint arXiv:2204.02311. Cited by: SS2.\n' +
+      '* Y. Cui, Z. Yang, and X. Yao (2023)Efficient and effective text encoding for chinese llama and alpaca. arXiv preprint arXiv:2304.08177. Cited by: SS2.\n' +
+      '* D. Dai, L. Dong, Y. Hao, Z. Sui, B. Chang, and F. Wei (2022)Knowledge neurons in pretrained transformers. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), Dublin, Ireland, pp. 8493-8502. Cited by: SS2.\n' +
+      '* S. Doddapaneni, G. Ramesh, A. Kunchukuttan, P. Kumar, and M. M. Khapra (2021)A primer on pretrained multilingual language models. CoRRabs/2107.00676. Cited by: SS2.\n' +
+      '* D. Friedman, A. Lampinen, L. Dixon, D. Chen, and A. Ghandeharioun (2023)Interpretability illusions in the generalization of simplified models. Cited by: SS2.\n' +
+      '* M. Geva, A. Caciularu, K. Wang, and Y. Goldberg (2022)Transformer feed-forward layers build predictions by promoting concepts in the vocabulary space. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, pp. 30-45. Cited by: SS2.\n' +
+      '* M. Geva, R. Schuster, J. Berant, and O. Levy (2021)Transformer feed-forward layers are key-value memories. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 5484-5495. Cited by: SS2.\n' +
+      '* T. Hasan, A. Bhattacharjee, M. S. Islam, K. Mubashir, Y. Li, Y. Kang, M. S. Rahman, and R. Shahriyar (2021)Xl-sum: large-scale multilingual abstractive summarization for 44 languages. In Findings of the Association for Computational Linguistics: ACL-IJCNLP 2021, Dublin, Ireland, pp. 4693-4703. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      '* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probes with control tasks. arXiv preprint arXiv:1909.03368. Cited by: SS2.\n' +
+      'Yifan Hou, Jiaoda Li, Yu Fei, Alessandro Stolfo, Wangchunshu Zhou, Guangtao Zeng, Antoine Bosselut, and Mrinmaya Sachan. 2023. Towards a mechanistic interpretation of multi-step reasoning capabilities of language models. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 4902-4919, Singapore. Association for Computational Linguistics.\n' +
+      '* Huang et al. (2023) Haoyang Huang, Tianyi Tang, Dongdong Zhang, Xin Zhao, Ting Song, Yan Xia, and Furu Wei. 2023. Not all languages are created equal in LLMs: Improving multilingual capability by cross-lingual-thought prompting. In _Findings of the Association for Computational Linguistics: EMNLP 2023_, pages 12365-12394, Singapore. Association for Computational Linguistics.\n' +
+      '* Jiang et al. (2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. 2023. Mistral 7b. _arXiv preprint arXiv:2310.06825_.\n' +
+      '* K. K. K. Wang, S. Mayhew, and D. Roth. 2020. Cross-lingual ability of multilingual BERT: an empirical study. In _8th International Conference on Learning Representations, ICLR 2020_.\n' +
+      '* Li et al. (2023a) Kenneth Li, Oam Patel, Fernanda Viegas, Hanspeter Pfister, and Martin Wattenberg. 2023a. Inference-time intervention: Eliciting truthful answers from a language model. _arXiv preprint arXiv:2306.03341_.\n' +
+      '* Li et al. (2023b) Shuang Li, Xuming Hu, Aiwei Liu, Yawen Yang, Fukun Ma, Philip S Yu, and Lijie Wen. 2023b. Enhancing cross-lingual natural language inference by soft prompting with multilingual verbalizer. _arXiv preprint arXiv:2305.12761_.\n' +
+      '* Liang et al. (2023) Yaobo Liang, Quanzhi Zhu, Junhe Zhao, and Nan Duan. 2023. Machine-created universal language for cross-lingual transfer. _arXiv preprint arXiv:2305.13071_.\n' +
+      '* Lin et al. (2021) Bill Yuchen Lin, Seyeon Lee, Xiaoyang Qiao, and Xiang Ren. 2021. Common sense beyond english: Evaluating and improving multilingual language models for commonsense reasoning. In _Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers)_, pages 1274-1287.\n' +
+      '* Meng et al. (2022) Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022. Locating and editing factual associations in gpt. _Advances in Neural Information Processing Systems_, 35:17359-17372.\n' +
+      '* Muennighoff et al. (2022) Niklas Muennighoff, Thomas Wang, Lintang Sutawika, Adam Roberts, Stella Biderman, Teven Le Scao, M Saiful Bari, Sheng Shen, Zheng-Xin Yong, Hailey Schoelkopf, et al. 2022. Crosslingual generalization through multitask finetuning. _arXiv preprint arXiv:2211.01786_.\n' +
+      '* Nguyen et al. (2023) Hoang H Nguyen, Chenwei Zhang, Tao Zhang, Eugene Rohrbaugh, and Philip S Yu. 2023. Enhancing cross-lingual transfer via phonemic transcription integration. _arXiv preprint arXiv:2307.04361_.\n' +
+      '* OpenAI (2023) OpenAI. 2023. Gpt-4 technical report.\n' +
+      '* Qiu et al. (2020) Xipeng Qiu, Tianxiang Sun, Yige Xu, Yunfan Shao, Ning Dai, and Xuanjing Huang. 2020. Pre-trained models for natural language processing: A survey. _Science China Technological Sciences_, 63(10):1872-1897.\n' +
+      '* Salesky et al. (2023) Elizabeth Salesky, Neha Verma, Philipp Koehn, and Matt Post. 2023. Pixel representations for multilingual translation and data-efficient cross-lingual transfer. _arXiv preprint arXiv:2305.14280_.\n' +
+      '* Sharma et al. (2023) Pratyusha Sharma, Jordan T Ash, and Dipendra Misra. 2023. The truth is in there: Improving reasoning in language models with layer-selective rank reduction. _arXiv preprint arXiv:2312.13558_.\n' +
+      '* Shi et al. (2022) Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, et al. 2022. Language models are multilingual chain-of-thought reasoners. In _The Eleventh International Conference on Learning Representations_.\n' +
+      '* Stolfo et al. (2023) Alessandro Stolfo, Yonatan Belinkov, and Mrinmaya Sachan. 2023. A mechanistic interpretation of arithmetic reasoning in language models using causal mediation analysis. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 7035-7052, Singapore. Association for Computational Linguistics.\n' +
+      '* Tanwar et al. (2023) Eshaan Tanwar, Manish Borthakur, Subhabrata Dutta, and Tanmoy Chakraborty. 2023. Multilingual lms are better cross-lingual in-context learners with alignment. _arXiv preprint arXiv:2305.05940_.\n' +
+      '* Touvron et al. (2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajiwal Bhargava, Shruti Bhosale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_.\n' +
+      '* Vaswani et al. (2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. Attention is all you need. _Advances in neural information processing systems_, 30.\n' +
+      '* Vig (2019) Jesse Vig. 2019. A multiscale visualization of attention in the transformer model.\n' +
+      '* Zhang et al. (2023) Wenxuan Zhang, Sharifah Mahani Aljunied, Chang Gao, Yew Ken Chia, and Lidong Bing. 2023. M3exam: A multilingual, multimodal, multilevel benchmark for examining large language models. _CoRR_, abs/2306.05179.\n' +
+      '\n' +
+      'Jun Zhao, Zhihao Zhang, Luhui Gao, Qi Zhang, Tao Gui, and Xuanjing Huang. 2024. Llama beyond english: An empirical study on language capability transfer.\n' +
+      '* Zhu et al. (2023) Wenhao Zhu, Yunzhe Lv, Qingxiu Dong, Fei Yuan, Jingjing Xu, Shujian Huang, Lingpeng Kong, Jiajun Chen, and Lei Li. 2023. Extrapolating large language models to non-english by aligning languages.\n' +
+      '\n' +
+      '## Appendix A English and Non-English Tokens\n' +
+      '\n' +
+      'We employ cld3 package to detect the language of each token in the embeddings of each layer, which is a language detection library based on the Compact Language Detector \\(3\\) model developed by Google. Furthermore, if the detection result is reliable, i.e., cld3.get_language(token).is_reliable\\(==True\\), we adopt the detection results, otherwise the token is categorized as a non-word.\n' +
+      '\n' +
+      '## Appendix B Hyper-parameters\n' +
+      '\n' +
+      'We adopt the performance on XQuAD in Chinese as the validation set to all languages and all tasks. Specifically, Table 9 shows the result on Vicuna when deactivating language-specific neurons in the understanding layer (\\(D_{\\mathcal{U}}\\)) and generation layer (\\(D_{\\mathcal{G}}\\)), where \\(N_{1}\\) is the number of understanding layers and \\(N_{2}\\) is the number of generation layer. We find that when setting \\(N_{1}=8\\) and \\(N_{2}=2\\), performance in English is influenced the least while performance in Chinese decreases the most. As for Mistral, the number is \\(N_{1}=6\\) and \\(N_{2}=3\\).\n' +
+      '\n' +
+      '## Appendix C Detailed Experiment Results\n' +
+      '\n' +
+      '### Detailed Experiment Settings\n' +
+      '\n' +
+      'Reasoning TaskDeactivation methods: (i) randomly sampled neurons in the attention structure of task-solving layer. (ii) randomly sampled neurons in the task-solving layer. (iii) randomly sampled neurons in the task-solving layer. (iii) randomly sampled neurons in all layers. (iv) language-specific neurons in the task-solving layer. (v) language-specific neurons in the understanding layer and generation layer. (vi) language-specific neurons not in the attention structure of task-solving layers.\n' +
+      '\n' +
+      'Knowledge Question Answering TaskDeactivation methods: (i) randomly sampled neurons in the feed-forward structure of task-solving layers. (ii) randomly sampled neurons in the task-solving layer. (iii) randomly sampled neurons in all layers. (iv) language-specific neurons in the attention structure of task-solving layers. (v) language-specific neurons in the feed-forward structure of task-solving layers.\n' +
+      '\n' +
+      'Generation TaskDeactivation methods: (i) randomly sampled neurons in the generating layers. (ii) randomly sampled neurons in all layers. (iv) language-specific neurons in the generating layers.\n' +
+      '\n' +
+      '### Detailed Result\n' +
+      '\n' +
+      'Due to the limited space, we employ a more concise notation. We denote deactivating neurons in the self-attention layer of the \\(i\\)-th layer as \\(D_{i}^{(A)}\\), while deactivating neurons in the feed-forward layer of the \\(i\\)-th layer is denoted as \\(D_{i}^{(F)}\\). We denote \\(\\mathcal{U}=\\{1,\\cdots,N_{1}\\}\\) as the set of layers that take charge of understanding as shown in Figure 2. Similarly, we denote \\(\\mathcal{S}=\\{N_{1}+1,\\cdots,N_{2}\\}\\) as the set of layers that take charge of task solving and \\(\\mathcal{G}=\\{N_{2}+1,\\cdots,32\\}\\) as the set of layers that take charge of generation5. Furthermore, \\(D_{\\mathcal{U}}^{(A)}\\) represents deactivating neurons in self-attention layers of \\(\\mathcal{U}\\). Similarly, we introduce \\(D_{\\mathcal{U}}^{(F)}\\), \\(D_{\\mathcal{S}}^{(A)}\\), \\(D_{\\mathcal{S}}^{(F)}\\), \\(D_{\\mathcal{G}}^{(A)}\\) and \\(D_{\\mathcal{G}}^{(A)}\\).\n' +
+      '\n' +
+      'Footnote 5: Vicuna-7b-v1.5 and Mistral-7b-v1.0 both have \\(32\\) layers.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c|c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multicolumn{2}{c|}{\\(D_{\\mathcal{U}}\\)} & \\multicolumn{2}{c}{\\(D_{\\mathcal{G}}\\)} \\\\  & \\(N_{1}\\) & \\(ACC\\) & \\(N_{2}\\) & \\(ACC\\) \\\\ \\hline En-Vanilla & \\multicolumn{4}{c}{\\(57.1\\)} \\\\ Zh-Vanilla & \\multicolumn{4}{c}{\\(64.3\\)} \\\\ \\hline En-Deact & \\multirow{2}{*}{\\(8\\)} & \\(53.3\\,(\\downarrow 3.8)\\) & \\multirow{2}{*}{4} & \\multirow{2}{*}{55.8 (\\(\\downarrow 1.3\\))} \\\\  & & \\(52.6\\,(\\downarrow 11.7)\\) & & \\multirow{2}{*}{62.9 (\\(\\downarrow 1.4\\))} \\\\ \\hline En-Deact & \\multirow{2}{*}{\\(\\mathbf{6}\\)} & \\(\\mathbf{56.8}\\,(\\downarrow 0.3)\\) & \\multirow{2}{*}{3} & \\multirow{2}{*}{**56.3 (\\(\\downarrow 0.8\\))**} \\\\  & & \\(\\mathbf{54.9}\\,(\\downarrow 9.4)\\) & & & \\multirow{2}{*}{**62.7 (\\(\\downarrow 1.6\\))**} \\\\ \\hline En-Deact & \\multirow{2}{*}{\\(4\\)} & \\(57.6\\,(\\uparrow 0.5)\\) & \\multirow{2}{*}{2} & \\multirow{2}{*}{55.7 (\\(\\downarrow 1.4\\))} \\\\  & & \\(61.8\\,(\\downarrow 2.5)\\) & & & \\multirow{2}{*}{63.8 (\\(\\downarrow 0.5\\))} \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 10: XQuAD with Chinese on Mistral-7b-v1.0.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c|c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multicolumn{2}{c|}{\\(D_{\\mathcal{U}}\\)} & \\multicolumn{2}{c}{\\(D_{\\mathcal{G}}\\)} \\\\  & \\(N_{1}\\) & \\(ACC\\) & \\(N_{2}\\) & \\(ACC\\) \\\\ \\hline En-Vanilla & \\multicolumn{4}{c}{\\(57.5\\)} \\\\ Zh-Vanilla & \\multicolumn{4}{c}{\\(55.5\\)} \\\\ \\hline En-Deact & \\multirow{2}{*}{\\(\\mathbf{8}\\)} & \\(\\mathbf{57.7}\\,(\\uparrow 0.2)\\) & \\multirow{2}{*}{4} & \\(54.7\\,(\\downarrow 2.8)\\) \\\\ Zh-D-Deact & & \\(\\mathbf{44.9}\\,(\\downarrow 10.6)\\) & & \\(54.6\\,(\\downarrow 0.9)\\) \\\\ \\hline En-Deact & \\multirow{2}{*}{\\(6\\)} & \\(58.6\\,(\\uparrow 1.1)\\) & \\multirow{2}{*}{3} & \\(57.7\\,(\\uparrow 0.2)\\) \\\\ Zh-Deact & & \\(55.1\\,(\\downarrow 0.4)\\) & & \\(54.5\\,(\\downarrow 1.0)\\) \\\\ \\hline En-Deact & \\multirow{2}{*}{\\(4\\)} & \\(57.3\\,(\\downarrow 0.2)\\) & \\multirow{2}{*}{**2**} & \\(\\mathbf{58.4}\\,(\\uparrow 0.9)\\) \\\\ Zh-Deact & & \\(53.9\\,(\\downarrow 1.6)\\) & & \\(\\mathbf{54.1}\\,(\\downarrow 1.4)\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 9: XQuAD with Chinese on Vicuna-7b-v1.5.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c c|c c c|c c c|c c c|c c c|c c c} \\hline \\hline \\multirow{2}{*}{**Method**} & \\multicolumn{4}{c|}{**German**} & \\multicolumn{4}{c|}{**French**} & \\multicolumn{4}{c|}{**Chinese**} & \\multicolumn{4}{c|}{**Spanish**} & \\multicolumn{4}{c}{**Russian**} \\\\  & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{De-D} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{Ru-D} & \\multicolumn{2}{c}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c}{\\(\\Delta_{\\text{En-D}}\\)} \\\\ \\hline \\multirow{4}{*}{**Embed**} & \\(D_{\\mathcal{B}}^{R}\\) & \\(57.5\\) & \\(43.8\\) & \\(-0.3\\) & \\(+0.0\\) & \\(57.5\\) & \\(40.3\\) & \\(-0.3\\) & \\(+0.2\\) & \\(57.5\\) & \\(43.2\\) & \\(-0.3\\) & \\(+0.0\\) & \\(57.5\\) & \\(44.6\\) & \\(-0.3\\) & \\(+0.3\\) & \\(57.5\\) & \\(25.5\\) & \\(-0.3\\) & \\(-0.5\\) \\\\  & \\(D_{\\mathcal{B}}^{R}\\) & \\(56.0\\) & \\(44.0\\) & \\(-1.8\\) & \\(+0.2\\) & \\(56.0\\) & \\(38.6\\) & \\(-1.8\\) & \\(-1.5\\) & \\(56.0\\) & \\(43.4\\) & \\(-1.8\\) & \\(+0.2\\) & \\(56.0\\) & \\(43.5\\) & \\(-1.8\\) & \\(-0.8\\) & \\(56.0\\) & \\(24.0\\) & \\(-1.8\\) & \\(-2.0\\) \\\\  & \\(D_{\\mathcal{B}}^{R}\\) & \\(57.7\\) & \\(43.6\\) & \\(-0.1\\) & \\(-0.2\\) & \\(57.4\\) & \\(-0.5\\) & \\(-1.0\\) & \\(+0.4\\) & \\(57.7\\) & \\(43.2\\) & \\(-0.1\\) & \\(+0.0\\) & \\(57.7\\) & \\(44.6\\) & \\(-0.1\\) & \\(+0.2\\) & \\(57.7\\) & \\(26.0\\) & \\(-1.1\\) & \\(+0.0\\) \\\\  & \\(D_{\\mathcal{B}}^{R}\\) & \\(34.8\\) & \\(43.4\\) & \\(-23.0\\) & \\(-34.2\\) & \\(36.31\\) & \\(-1.52\\) & \\(-2.17\\) & \\(32.6\\) & \\(28.9\\) & \\(-2.5\\) & \\(-14.3\\) & \\(24.0\\) & \\(25.0\\) & \\(-37.1\\) & \\(-19.3\\) & \\(48.3\\) & \\(29.9\\) & \\(-3.1\\) \\\\  & \\(D_{\\mathcal{B}^{\\prime}}^{R}\\) & \\(57.8\\) & \\(41.5\\) & \\(-0.0\\) & \\(-2.8\\) & \\(57.2\\) & \\(37.8\\) & \\(-0.6\\) & \\(-6.0\\) & \\(56.9\\) & \\(39.6\\) & \\(-0.9\\) & \\(-3.6\\) & \\(57.6\\) & \\(43.0\\) & \\(-0.2\\) & \\(-1.3\\) & \\(57.8\\) & \\(25.6\\) & \\(-0.0\\) & \\(-0.4\\) \\\\ \\hline \\multirow{4}{*}{**Embed**} & \\(D_{\\mathcal{B}}^{R}\\) & \\(61.0\\) & \\(40.2\\) & \\(-0.7\\) & \\(+0.2\\) & \\(61.0\\) & \\(40.1\\) & \\(-0.7\\) & \\(-0.3\\) & \\(61.0\\) & \\(46.7\\) & \\(-0.7\\) & \\(-0.4\\) & \\(61.0\\) & \\(45.2\\) & \\(-0.7\\) & \\(-0.5\\) & \\(61.0\\) & \\(12.7\\) & \\(-0.7\\) & \\(-1.4\\) \\\\  & \\(D_{\\mathcal{B}}^{R}\\) & \\(60.7\\) & \\(40.4\\) & \\(-1.0\\) & \\(+0.4\\) & \\(60.7\\) & \\(36.9\\) & \\(-1.0\\) & \\(-0.3\\) & \\(60.7\\) & \\(46.9\\) & \\(-1.0\\) & \\(-0.3\\) & \\(60.7\\) & \\(46.3\\) & \\(-1.0\\) & \\(+0.7\\) & \\(60.7\\) & \\(11.1\\) & \\(-1.0\\) & \\(-3.0\\) \\\\  & \\(D_{\\mathcal{B}}^{R}\\) & \\(61.8\\) & \\(40.1\\) & \\(+0.1\\) & \\(61.8\\) & \\(40.7\\) & \\(+0.1\\) & \\(+0.3\\) & \\(61.8\\) & \\(47.2\\) & \\(+0.1\\) & \\(+0.1\\) & \\(61.8\\) & \\(44.7\\) & \\(+0.1\\) & \\(-1.0\\) & \\(61.8\\) & \\(14.1\\) & \\(+0.1\\) & \\(+0.0\\) \\\\  & \\(D_{\\mathcal{B}^{\\prime}}^{R}\\) & \\(50.4\\) & \\(32.3\\) & \\(-11.3\\) & \\(-7.7\\) & \\(55.3\\) & \\(27.4\\) & \\(-6.4\\) & \\(-13.0\\) & \\(54.7\\) & \\(42.4\\) & \\(-7.0\\) & \\(-4.7\\) & \\(44.5\\) & \\(34.1\\) & \\(-17.2\\) & \\(-11.6\\) & \\(51.1\\) & \\(8.3\\) & \\(-10.6\\) & \\(-5.8\\) \\\\  & \\(D_{\\mathcal{B}^{\\prime}}^{R}\\) & \\(61.5\\) & \\(38.1\\) & \\(-0.2\\) & \\(-1.9\\) & \\(61.2\\) & \\(38.1\\) & \\(\\mathbf{0.5}\\) & \\(\\mathbf{2.3}\\) & \\(61.3\\) & \\(43.5\\) & \\(-0.4\\) & \\(-3.6\\) & \\(61.0\\) & \\(43.9\\) & \\(-0.7\\) & \\(-1.8\\) & \\(60.8\\) & \\(11.8\\) & \\(0.4\\) & \\(-2.3\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 13: Knowledge Question Answering task.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c c|c c|c c c|c c|c c|c c c} \\hline \\hline \\hline \\multirow{2}{*}{**Method**} & \\multicolumn{4}{c|}{**German**} & \\multicolumn{4}{c|}{**Chinese**} & \\multicolumn{4}{c|}{**Spanish**} & \\multicolumn{4}{c}{**Russian**} \\\\  & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{De-D} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c|}{En-D} & \\multicolumn{2}{c|}{Es-D} & \\multicolumn{2}{c|}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c}{\\(\\Delta_{\\text{En-D}}\\)} & \\multicolumn{2}{c}{\\(\\Delta_{\\text{En-D}}\\)} \\\\ \\hline \\multirow{4\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

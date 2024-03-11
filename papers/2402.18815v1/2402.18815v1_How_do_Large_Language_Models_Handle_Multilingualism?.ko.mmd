@@ -1,0 +1,342 @@
+# 대용량 언어 모델은 다국어를 어떻게 처리합니까?
+
+ Yiran Zhao\({}^{1,2}\) Wenxuan Zhang\({}^{1,3}\) Guizhen Chen\({}^{1,4}\)1 Kenji Kawaguchi\({}^{2}\) Lidong Bing\({}^{1,3}\)
+
+싱가포르 국립대학교 알리바바그룹 DAMO 아카데미
+
+중국 항저우 310023번지 후판 연구소
+
+zhaoyiran@u.nus.edu kenji@comp.nus.edu.sg
+
+{saike.zwx, guizhen.chen, l.bing}@alibaba-inc.com
+
+이 작업은 알리바바 다모 아카데미에서 이란 자오의 인턴십 동안 수행되었습니다. 원수안 장은 교신 저자입니다. 귀젠 첸은 다모 아카데미와 NTU 사이의 공동 박사 과정에 있습니다.
+
+###### Abstract
+
+대규모 언어 모델(LLM)은 다양한 언어에 걸쳐 놀라운 성능을 보여줍니다. 이 작업에서, 우리는 LLM이 다국어를 어떻게 다룰 것인가에 대한 질문을 조사한다 우리는 다국어 입력의 LLMs 처리를 묘사하는 프레임워크를 소개한다. 첫 번째 몇 개의 계층에서 LLMs는 문제를 이해하고, 다국어 입력을 영어로 변환하여 과제 해결 단계를 용이하게 한다. 중간 계층에서 LLM은 영어로 사고하고 사실적 내용을 얻기 위해 다국어 지식을 통합하여 문제 해결에 참여하며, 각각 자기 주의와 피드포워드 구조를 활용한다. 마지막 여러 계층에서 LLM은 쿼리의 원래 언어와 일치하는 응답을 생성합니다. 또한 특정 언어를 처리할 때 언어별 뉴런의 존재를 조사한다. 입력 언어에 의해 활성화된 뉴런을 검출하기 위해 레이블이 없어도 다국어 입력을 처리할 때 뉴런의 중요도를 효과적으로 측정하는 병렬 언어 특정 뉴런 검출(PLND) 방법을 혁신적으로 설계한다. 다양한 층과 구조의 뉴런 비활성화를 통한 포괄적인 절제 분석을 통해 제안하는 프레임워크를 검증한다. 또한, 우리는 이러한 프레임워크를 활용하여 훨씬 적은 훈련 노력으로 다국어 능력을 효과적으로 향상시킬 수 있음을 보여준다. 1
+
+각주 1: 코드 구현은 [https://github.com/DAMO-NLP-SG/multilingual_analysis](https://github.com/DAMO-NLP-SG/multilingual_analysis)에서 공개적으로 사용할 수 있습니다.
+
+## 1 Introduction
+
+PaLM Chowdhery et al.(2022), GPT-4 OpenAI(2023), LLaMA Touvron et al.(2023) 및 Mistral Jiang et al.(2023)과 같은 대규모 언어 모델(LLM)의 최근 발전은 전통적인 자연어 처리(NLP) 작업을 극적으로 변형시켜 일상적이고 전문적인 용도로 원활하게 통합했다. 다양한 언어와 혼합된 대규모 말뭉치에 대한 광범위한 사전 훈련 덕분에, 이 모델들은 Huang 등(2023), Zhu 등(2023), Zhang 등(2023), Zhao 등(2024)에 걸쳐 텍스트를 이해하고 생성하는 놀라운 능력을 보여준다. 검증된 효과에도 불구하고 다국어 처리 메커니즘의 복잡한 작업은 대체로 불분명하여 중요한 연구 문제로 이어집니다. _대규모 언어 모델은 다국어를 어떻게 처리합니까?_
+
+일부 연구에서는 언어 모델의 다국어 능력을 K 등(2020), Doddapaneni 등(2021), Chai 등(2022) 언어 간의 교차 언어 성능 또는 구조적 공통점에 초점을 맞추어 탐구한다. 보다 최근에, 특정 능력과 특정 모델 아키텍처 특히 지배적인 트랜스포머 바스와니 등(2017) 아키텍처의 관계를 이해하기 위해 Hou 등(2023), Stolfo 등(2023), Friedman 등(2023)과 같은 연구가 자기 주의 층을 갖는 LLM의 추론 능력을 탐구한다. Geva et al. (2021); Dai et al. (2022); Meng et al. (2022)는 사실적 지식을 저장하기 위한 키-값 메모리들로서, 피드-포워드 층들에 초점을 맞춘다. 그러나 이러한 작업은 종종 구성 요소를 개별적으로 검사하고 전체 종단 간 프로세스를 포괄하는 포괄적인 프레임워크가 부족하다. 더 중요한 것은 이러한 해석에서 다국어주의의 작동 메커니즘은 대체로 해결되지 않는다는 것이다.
+
+본 연구에서는 LLM 내의 다국어 메커니즘에 대한 초기 이해를 얻기 위해 영어 이외의 다양한 언어로 입력을 처리할 때 각 레이어 이후의 디코딩된 임베딩을 분석한다. 그런 다음 이러한 임베딩을 영어 또는 비영어 토큰에 해당하는 것으로 분류합니다(부록 A의 세부 정보 참조). 도 1에 예시된 바와 같이, 모델들은 처음에 비영어 사용자 명령들을 비영어 형태로 나타낸다. 그러나, 명령어들은 모델의 레이어들을 통해 처리되고, 그 표현은 놀랍게도 영어 중심적이 된다. 최종 레이어에서 초기 지침이 비영어 언어로 게시되기 때문에 비영어 임베딩의 우세로 되돌아가는 것을 관찰한다. 이 패턴은 LLM 내에서 언어 간의 복잡한 상호 작용을 시사하며, 이는 명령 충실도와 가능한 영어 지향 처리 편향 사이에서 협상하기 때문이다.
+
+이러한 관찰에 동기 부여되어 우리는 다국어 입력을 처리할 때 LLM의 작동 단계를 개념화하는 그림 2에 표시된 새로운 프레임워크를 제안한다. 첫 번째 여러 계층에서 LLM은 사용자 입력을 _이해_하고 다양한 언어 특징을 통일된 표현으로 변환한다. LLM은 _과제 해결_ 단계로 전환하면서 영어로 생각하고 사실적인 내용을 얻기 위해 다국어 지식을 통합하여 과제를 해결하는 데 참여하며, 각각 자기 주의 및 피드포워드 구조를 활용한다. 마지막으로 모델은 쿼리의 원래 언어와 일치하는 _생성_ 응답을 생성합니다. 이러한 프레임워크는 위의 관찰과 이전 연구에서 일부 결과를 반영하므로 LLMs가 언어 간에 이동하여 다국어 작업을 이해하고 추론하고 효과적으로 대응할 수 있는 능력을 보여준다.
+
+발생하는 후속 질문은 LLM이 단일 언어를 처리할 때 특정 구성요소의 사용 가능한 모든 뉴런과 결합하는지 아니면 특정 하위 집합만 결합하는지이며, 이는 본질적으로 "언어 특정 뉴런"의 존재를 조사한다. 이 문제를 해결하려면 특정 작업에 대한 명시적인 레이블이 없어도 입력에 의해 활성화되는 뉴런을 정확히 파악하는 것이 중요하다. 따라서 우리는 제공된 입력과 관련하여 개별 뉴런의 중요성을 효과적으로 측정하는 병렬 언어 특정 뉴런 검출(PLND)이라는 새로운 접근법을 추가로 개발한다. PLND를 사용하면 해당 언어의 무료 텍스트 코퍼스를 모델에 공급하고 응답에서 일관되게 활성화되는 뉴런을 분리함으로써 언어 특이적 뉴런을 식별할 수 있다. 실험 결과 전체 뉴런의 \(0.13\%\)만을 차지하는 언어별 뉴런을 비활성화함으로써 요약 태스크에서 LLMs의 성능이 \(99\%\) 감소할 수 있음을 보였다.
+
+제안된 PLND 방법을 사용하여 그림 2에 예시된 가설을 검증하기 위해 광범위한 실험을 수행했다. LLM 다언어론에 대한 영향을 연구하기 위해 뉴런 그룹을 선택적으로 비활성화한다. 특히, 이해 계층에서 언어별 뉴런을 비활성화하면 영어 XQuAD 성능은 안정적으로 유지되지만 비영어 성능은 \(14\%\) 감소한다. 추론, 지식 질의 응답 및 NLG를 포함한 다른 작업도 동일한 특성을 나타낸다. 더욱이, LLM의 다국어 능력을 향상시키는 것은 단지 \(200\) 컨텍스트 예들로 언어-특정 뉴런들을 미세 조정함으로써 달성될 수 있다. 이 방법은 XQuAD에서 \(7.4\%\)의 상대적 개선과 XSum에서 \(8.9\%\)의 향상으로 모델 성능이 크게 향상되어 필요한 훈련 데이터 세트의 크기를 크게 줄였다.
+
+## 2 Parallel Language-specific Neuron Detection (Plnd)
+
+본 절에서는 언어 특이 뉴런의 존재를 조사하기 위한 PLND라는 뉴런 검출 방법을 소개한다.
+
+### 순차적 뉴런 검색
+
+특정 언어를 담당하는 뉴런을 식별하기 위해서는 주어진 언어의 추론과 관련하여 뉴런의 중요성을 식별하는 것이 중요하다.
+
+그림 1: 비영어 지침이 주어진 계층 간 영어 및 비영어 토큰의 분포.
+
+그림 2: LLM의 제안된 다국어 워크플로우입니다.
+
+입력. 우리는 트랜스포머(Vaswani et al., 2017)에서 \(i\)번째 층의 입력을 \(h_{i}\)로 나타내며, 해당 출력은 \(h_{i+1}=T_{i}(h_{i})\)로 나타내며, 여기서 \(T_{i}\)는 \(i\)번째 층의 파라미터를 나타낸다. 특정 뉴런에 대해, \(N_{k}^{(i)}\)로 표시된 \(i\)번째 층 내에서, 주의 또는 피드포워드 층에 위치하든 -- 중요성은 \(N_{k}^{(i)}\)가 활성화되거나 비활성화될 때 출력 간의 차이로 정량화된다. 형식적으로는 다음과 같이 정의된다.
+
+\[\text{Imp}(N_{k}^{(i)}|h_{i})=\|T_{i}\backslash N_{k}^{(i)}(h_{i})-T_{i}(h_{i})\|_{2}, \tag{1}\]
+
+여기서 \(T_{i}\backslash N_{k}(\cdot)\)는 \(T_{i}\)에서 \(N_{k}^{(i)}\)를 비활성화시킨다. 그런 다음, 특정 언어의 말뭉치 집합인 \(\mathcal{C}=\{c_{1},\cdots,c_{l},\cdots,c_{n}\}\)을 사용하여 각 코퍼스에 대한 각 레이어의 뉴런의 중요도를 계산할 수 있다. 또한, \(\mathcal{C}\)의 모든 코퍼스에 중요한 뉴런을 선택할 수 있다.
+
+\[\text{Imp}(N_{k}^{(i)}|c_{l})\geq\epsilon,\\forall c_{l}\in\mathcal{C}, \tag{2}\]
+
+여기서 \(\epsilon\)는 미리 정의된 임계값입니다. 그러나 모든 뉴런과 모든 입력을 순차적으로 횡단하는 것은 매우 시간이 많이 걸린다. 따라서 가속을 위한 병렬 알고리즘을 설계해야 한다.
+
+### 병렬 뉴런 탐지
+
+Feed-Forward LayerIn Llama2 (Touvron et al., 2023), \(\text{FFN}(x)\)는 다음과 같이 정의된다.
+
+\[\Big{(}\text{SiLU}\big{(}W_{gate}(x)\big{)}\cdot W_{up}(x)\Big{)}W_{down}, \tag{3}\]
+
+여기서 \(x\in\mathbb{R}^{l\times d_{model}}\), \(W_{gate}\in\mathbb{R}^{d_{model}\times d_{inter}}\), \(W_{down}\in\mathbb{R}^{d_{inter}\times d_{model}}\). 우리는 \(W_{down}\) 앞에 숨겨진 임베딩을 \(h_{\text{ffn}}}\)로 표현한다. 상기 \(W_{up}\)의 상기 \(k\)번째 뉴런을 비활성화하는 경우,
+
+\[\begin{split}&\text{Imp}(W_{up}[:,k]|x)=\|\text{FFN}(x)-\text{FFN}(x)\|_{2}\\ &=\Big{\|}\big{(}h_{\text{ffn}}\cdot\texttt{Mask}[k]\big{)}W_{ down}(x)\Big{\|}_{2},\end{split} \tag{4}\}
+
+여기서, \(\texttt{Mask}[k]\)는 \(k\)-번째 원소를 \(1\)로 하고 다른 원소를 \(0\)로 하는 길이 \(d_{inter}\)의 벡터이다. \(W_{up}\)의 모든 뉴런에 대해 \(\text{Imp}(W_{up}[:,k]|x)\)을 병렬로 계산하기 위해 Mask로 표시된 크기 \((d_{inter},d_{inter})\의 대각 마스크 행렬을 도입한다. 따라서,
+
+\[\text{Imp}(W_{up}|x)=\|(h_{\text{ffn}}\cdot\texttt{Mask})W_{down}(x)\|_{2}. \tag{5}\]
+
+또한, \(h_{\text{ffn}}[k]=0\)을 모두 설정함에 따라 \(W_{down}\)의 \(k\)번째 뉴런을 비활성화하는 것은 \(W_{up}\)의 \(k\)번째 뉴런을 비활성화하는 것과 동일함을 알 수 있었다. 따라서 \(\text{Imp}(W_{down}|x)\)는 수학식 5에 의해 구할 수 있다.
+
+Self-Attention LayerFor the input \(x\) of length \(l\), self-attention layer is defined as
+
+\[\text{Softmax}\big{(}\frac{W_{Q}(x)W_{K}^{T}(x)}{\sqrt{d}}\big{)}W_{V}(x), \tag{6}\]
+
+여기서, \(W_{Q}\in\mathbb{R}^{d_{model}\times d_{mid}}\), \(W_{K}\in\mathbb{R}^{d_{model}\times d_{mid}}\), \(W_{V}\in\mathbb{R}^{d_{model}\times d_{mid}}\).2 \(W_{V}(x)\)는 선형층으로서, \(\text{Imp}(W_{V}|x)\)는 수학식 5와 같이 구할 수 있다. \(W_{Q}\)의 경우 \(k\)번째 뉴런을 비활성화할 때 \(\hat{W}_{Q}\gets W_{Q}[:,k]=0\) \(\text{Imp}(W_{Q}[:,k]|x)\)를 얻는 것을 목표로 한다. 먼저 주의집중 가중치의 차이, 즉 \(W_{Q}(x)W_{K}^{T}(x)\)를 계산한다.
+
+각주 2: Vicuna와 Mistral에서 \(d_{model}=d_{mid}\)이지만 모호성을 피하기 위해 서로 다른 표기법을 사용한다.
+
+\[\begin{split}\Delta_{k}&=\hat{W}_{Q}(x)W_{K}^{T}(x))-W_{Q}(x)W_{K}^{T}(x)\\ &=W_{Q}(x)[:,k]W_{K}(x)[k;]\in\mathbb{R}^{l\times l}\end{split} \tag{7}\]
+
+그러면 \(W_{Q}[:,k]\)의 중요도를 다음과 같이 정의할 수 있다.
+
+\[\begin{split}&\text{Imp}(W_{Q}[k,:]|x)\\ &\approx\|\text{attention}(x)-\text{attention}(x)\|_{2}\\ &\approx\Big{\|}\text{softmax}\big{(}\frac{W_{Q}(x)W_{K}^{T}(x)- \Delta_{k}}{\sqrt{d}}\big{)}-\\ &\quad\text{softmax}\big{(}\frac{W_{Q}(x)W_{K}^{T}(x)}{\sqrt{d}} \big{)}\Big{\|}_{2}\end{split} \tag{8}\\
+
+이 프로세스는 또한 병렬적으로, 즉, 계산될 수 있다.
+
+\[\begin{split}\Delta&=\hat{W}_{Q}(x)W_{K}^{T}(x))-W_{Q}(x)W_{K}^{T}(x)\\ &=W_{Q}(x).resize(l,1,d_{mid})\times\\ &\quad W_{K}(x).resize(1,l,d_{mid})\in\mathbb{R}^{l\times l \times d_{mid}}\end{split} \tag{9}\]
+
+그런 다음 \(W_{Q}\)의 중요도를 다음과 같이 정의할 수 있다.
+
+\[\begin{split}\text{Imp}(W_{Q}|x)&\approx\Big{\|}\text{softmax}\big{(}\frac{W_{Q}(x)W_{K}^{T}(x)-\Delta}{\sqrt{d}}\big{)}-\\ &\quad\text{softmax}\big{(}\frac{W_{Q}(x)W_{K}^{T}(x)}{\sqrt{d}} \big{)}\Big{\|}_{2}.\end{split}\
+
+\(\text{Imp}(W_{K}|x)\)는 동일한 방식으로 계산될 수 있다.
+
+## 3 Investigate Language-Specific Neurons
+
+본 절에서는 언어 특정 뉴런의 존재를 확인하고 언어 간의 관계를 조사하기 위해 선택된 언어 및 모델에 PLND 방법을 적용한다.
+
+### Experimental Setup
+
+모델은 _Vicuna-7b-v1.5_Chiang 등(2023)과 _Mistral-7b-v1.0_Jiang 등(2023)을 포함하여 다국어 작업에서 잘 수행되는 두 개의 오픈 소스 모델을 테스트한다. Vicuna-7b-v1.5는 LlaMa 2 Touvron et al.(2023)의 명령어 미세 조정을 통한 오픈 소스 채팅 모델이며, 좋은 다국어 명령어 추종 능력을 보였다. 3 Mistral-7b-v1.0은 Mistral-7b에서 미세 조정되었다. 단순화를 위해 이하에서는 비쿠나와 미스트랄로 약칭하여 두 모델을 각각 나타낸다.
+
+각주 3: Llama2-chat은 다국어 명령어를 따르지 않기 때문에 직접 활용하지 않으며, 질의어의 언어와 상관없이 일관되게 영어로 응답한다.
+
+우리는 영어(En), 독일어(De), 프랑스어(Fr), 중국어(Zh), 스페인어(Es), 러시아어(Ru)를 포함한 \(6\) 언어를 채택한다. 이들 언어는 Llama2에 대한 전체 사전 훈련 데이터의 \(0.1\%\) 이상을 나타내기 때문에 선택되었다. 또한, Vicuna와 Mistral은 이들 언어들 사이의 문제를 효과적으로 해결하도록 설계되었으며, 이들 언어에서의 성능은 태국어, 스와힐리어, 그리스어와 같은 다른 저자원 언어들에 비해 훨씬 높다.
+
+Corpus는 태스크별 고려 사항 없이 언어별 코퍼스를 컴파일하기 위해 각 언어에 대한 웹 크롤링 텍스트를 포함하는 OSCAR Caswell et al.(2020) 코퍼스를 사용한다. 컨텍스트 수에 대한 우리의 선택 기준은 각 언어의 어휘에 대한 실질적인 커버리지를 달성하여 선택된 컨텍스트가 언어의 대표적인 샘플을 제공하는 것을 기반으로 한다. 상세 내용은 표 1에 도시되며, 여기서 "corpus size"는 선택된 컨텍스트들의 수를 나타내고, "corpus 어휘"는 선택된 컨텍스트들 내의 어휘 커버리지를 나타내고, "vocab size"는 해당 언어의 어휘들의 수를 나타낸다.
+
+### 언어 특정 뉴런의 존재
+
+PLND를 사용하여 특정 언어의 코퍼스를 LLM에 공급하고 일관되게 활성화되는 뉴런을 식별한다. 이러한 언어 특정 뉴런은 해당 언어로 쿼리를 처리하는 역할을 한다. 이러한 뉴런이 진정으로 언어 특이적인지 확인하기 위해 이러한 뉴런이 비활성화될 때와 무작위로 샘플링된 동일한 수의 뉴런이 비활성화될 때의 해당 언어에서 LLM의 성능을 평가한다. 본 논문에서는 XLSum 데이터세트 Hasan et al.(2021)을 사용하여 요약 태스크를 활용하여 LLMs의 성능을 보여주며, 결과 산출물이 의미가 없을 수 있음을 입증한다.
+
+표 2는 언어 특정 뉴런을 비활성화할 때 다국어 능력의 감소를 보여준다. 비록 \(0.13\%\) 뉴런 주변을 비활성화하지만, LLM은 다국어 입력 이해, 다국어 질문 처리, 다국어 출력 생성 등 다국어 기능을 상실한다. 대조적으로, 동일한 수의 무작위로 선택된 뉴런을 비활성화하는 것은 어떠한 차이도 산출하지 않는다. 그러므로, 검출된 뉴런들은 언어-특정적이고 대응하는 다국어 입력들을 핸들링하는 것과 관련된다.
+
+### 언어 간 언어 특정 뉴런의 상호 관계
+
+PLND로 식별된 뉴런을 사용하여 언어 특이적 뉴런 간의 중첩 정도를 통해 두 언어의 관계를 조사한다:
+
+\[\text{overlap}(x,y)=\frac{|\mathcal{N}_{x}\cap\mathcal{N}_{y}|}{|\mathcal{N}_ {y}|}, \tag{10}\]
+
+여기서 \(\mathcal{N}_{language}\)는 검출된 언어-특정 뉴런들의 세트를 나타낸다. 그림 3은 두 모델의 서로 다른 구조에서 임의의 두 언어의 뉴런 중첩 비율 중첩\((x,y)\)을 보여준다.
+
+우리는 미스트랄과 비쿠나 모두에서 다른 언어의 영어와의 교차점이 상대적으로 제한적이라는 것을 관찰할 수 있으며, 이는 영어가 언어에 특화된 우세한 수를 가지고 있음을 시사한다.
+
+\begin{table}
+\begin{tabular}{l|c|c|c|c|c|c} \hline \hline
+**Language** & En & De & Fr & Zh & Es & Ru \\ \hline Corpus Size & \(180\)k & \(30\)k & \(50\)k & \(20\)k & \(20\)k & \(20\)k \\ \hline Corpus Vocab & \(249\)k & \(154\)k & \(134\)k & \(198\)k & \(90\)k & \(144\)k \\ \hline Vocab Size & \(273\)k & \(148\)k & \(135\)k & \(329\)k & \(93\)k & \(150\)k \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 언어 전반에 걸친 코퍼스 세부 사항은 각 언어의 어휘 대부분을 포함하도록 조정됩니다.
+
+\begin{table}
+\begin{tabular}{l l|c|c|c|c|c} \hline \hline  & Method & Fr & Zh & Es & Ru & Avg. \\ \hline \multirow{3}{*}{**PLND**} & Original & \(14.2\) & \(61.1\) & \(10.4\) & \(20.8\) & \(26.6\) \\  & Deact-Rand. & \(14.1\) & \(61.6\) & \(10.4\) & \(20.8\) & \(26.7\) \\  & Deact-Lang. & \(\mathbf{0.83}\) & \(\mathbf{0.00}\) & \(\mathbf{0.24}\) & \(\mathbf{0.42}\) & \(\mathbf{0.37}\) \\ \hline \multirow{3}{*}{**PLND**} & Original & \(15.2\) & \(56.4\) & \(10.6\) & \(21.0\) & \(25.8\) \\  & Deact-Rand. & \(15.4\) & \(55.9\) & \(10.2\) & \(21.2\) & \(25.7\) \\  & Deact-Lang. & \(\mathbf{0.21}\) & \(\mathbf{0.39}\) & \(\mathbf{0.15}\) & \(\mathbf{0.07}\) & \(\mathbf{0.21}\) \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 뉴런을 비활성화할 때 LLM의 다국어 성능, 여기서 "Lang."은 언어 특이적 뉴런을 나타내고 "Rand."는 무작위로 선택된 뉴런의 동등한 수를 나타낸다.
+
+뉴런. 또한, 동일한 계열에 속하는 언어들이 서로 더 높은 중복도를 나타내는 경향이 뚜렷하다. 더욱이, 피드-포워드 구조는 전형적으로, 다수의 언어들에 액세스가능한 뉴런들 내에 임베딩된 공유된 세계 지식들로 인해, 다양한 언어들에 걸쳐 중첩에서 더 높은 정도의 일관성을 나타낸다.
+
+## 4 LLMs는 다국어를 어떻게 처리합니까?
+
+이 섹션에서는 다양한 태스크에 미치는 영향을 조사하기 위해 서로 다른 계층 및 구성 요소에 걸쳐 언어별 뉴런을 체계적으로 비활성화함으로써 그림 2에 제시된 워크플로우를 검증한다.
+
+### Experimental Setup
+
+데이터셋은 LLM이 서로 다른 능력으로 작동하는 방식을 종합적으로 이해하기 위해 추론 과제는 MGSM Shi 등(2022), NLU 과제는 XQuAD Artetxe 등(2020), NLG 과제는 XLSum Hasan 등(2021), 지식 질의 응답 과제는 X-CSQA Lin 등(2021)의 네 가지 태스크를 사용한다. XL-Sum의 경우 각 언어에 대해 전체 테스트 세트에서 \(500\) 데이터 포인트를 무작위로 샘플링하는 반면, 다른 작업의 경우 전체 테스트 세트를 사용한다.
+
+원래 결과 먼저 표 3에 제시된 바와 같이 나중에 비교하기 위해 이러한 데이터 세트에 대한 비쿠나 및 미스트랄의 바닐라 성능을 평가한다.
+
+실험 세부 정보 추론, NLU 및 지식 질문 응답 작업을 위해 정확도를 메트릭으로 채택한다. NLG 작업의 경우 ROUGE-L을 메트릭으로 채택한다. 또한, 서로 다른 층의 구체적인 수에 대해 중국어로 XQuAD에 의해 하이퍼파라미터를 조정한다. 자세한 내용은 부록 B에 설명되어 있다.
+
+Notations표 4~7은 특정 뉴런을 비활성화한 결과를 나타내며, 여기서 "Under"는 이해 계층을 나타내고, "S-ATTN" 및 "S-FFN"은 과제 해결 계층 내의 자기 주의 및 피드 포워드에 각각 해당하며, "Gen"은 생성 계층을 나타낸다. "랜덤"이라는 용어는 무작위로 선택된 뉴런을 비활성화하는 것을 설명하는 데 사용되는 반면, "Lang-Spec"은 언어 특정 뉴런의 비활성화를 나타낸다. 또한 영어(\(\Delta_{\text{Eng}}\))와 비영어 평균 언어(\(\Delta_{\text{n-Eng}}\))에 대해 비활성화 후 원래의 성능과 성능의 차이를 제시한다. 단일 메트릭 \(\Delta\)은 \(\Delta_{\text{Eng}}-\Delta_{\text{n-Eng}}\)로 도입되며, 여기서 높은 값은 이러한 비활성화 동작이 영어 성능에 큰 영향을 미치지 않지만 비영어에서는 성능 저하로 이어진다는 것을 나타낸다.
+
+### 이해 분석
+
+방법표 4의 비활성화는 다섯 개의 별개의 뉴런 세트의 비활성화에 따른 이해 태스크의 결과를 나타낸다: (i) 이해 계층들로부터 무작위로 선택된 뉴런들; (ii) 모든 계층들에 걸쳐 무작위로 선택된 뉴런들; (iii) 이해 계층들 내의 언어-특정 뉴런들; (iv) 과제 해결 계층들 내의 언어-특정 뉴런들; (v) 세대 계층들 내의 언어-특정 뉴런들. 공정한 비교를 위해 모든 설정에서 비활성화된 뉴런의 수가 동일한지 확인합니다. 각 언어의 전체 결과는 부록 C에 나열되어 있다.
+
+연구 결과는 이해 계층 또는 모든 계층에 관계없이 무작위로 샘플링된 뉴런을 비활성화함으로써 영어 및 비영어 언어 모두에서 LLM의 성능이 다른 비활성화 방법에 비해 거의 영향을 받지 않는다는 것을 발견했다. 실행되는 것을 비활성화하는 경우에 유의
+
+도 3: 자기-주의 및 피드-포워드 구조에서 언어-특이적 뉴런의 중첩 비율.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c|c|c|c} \hline  & Task & En & De & Fr & Zh & Es & Ru \\ \hline \multirow{4}{*}{**NLU**} & XQuAD & \(57.5\) & \(50.3\) & \(-\) & \(55.7\) & \(55.7\) & \(-\) \\  & MGSM & \(20.4\) & \(14.8\) & \(14.8\) & \(12.8\) & \(13.2\) & \(10.0\) \\  & X-CSQA & \(57.8\) & \(43.8\) & \(40.1\) & \(43.2\) & \(44.3\) & \(26.0\) \\  & XLSum & \(13.1\) & \(-\) & \(14.2\) & \(61.1\) & \(10.4\) & \(20.8\) \\ \hline \multirow{4}{*}{**NLU**} & XQuAD & \(57.1\) & \(48.5\) & \(-\) & \(64.3\) & \(54.1\) & \(-\) \\  & MGSM & \(46.0\) & \(21.2\) & \(26.0\) & \(31.6\) & \(31.2\) & \(21.6\) \\  & X-CSQA & \(61.7\) & \(40.0\) & \(40.4\) & \(47.1\) & \(45.7\) & \(14.1\) \\  & XLSum & \(13.5\) & \(-\) & \(15.2\) & \(56.4\) & \(10.6\) & \(21.0\) \\ \hline \end{tabular}
+\end{table}
+표 3: 선택된 언어에서 4개의 대표적인 다국어 태스크에 걸친 비쿠나 및 미스트랄의 기준 성능을 평가한다.
+
+대체로 샘플링된 뉴런은 심지어 무관한 뉴런이 제거되기 때문에 성능을 증가시킬 수 있으며, 이는 또한 샤르마 등(2023)의 발견과 일치한다. 비활성화 후 영어 및 비영어 언어 성능에 미치는 차이, 특히 \(\Delta_{\text{Eng}}-\Delta_{\text{n-Eng}}\)로 계산된 차이를 평가할 때 이해층 내의 무작위 뉴런의 비활성화가 이러한 효과를 증폭시킨다는 것이 분명하다. 이 관찰은 언어 처리에서 이해 계층의 가정된 역할에 부분적인 지지를 제공한다.
+
+또한, 이해 계층에서 언어 특정 뉴런을 비활성화하면 영어의 성능에 약간의 영향을 미치지만 비영어의 성능은 크게 감소한다는 것을 발견했다. 과제 해결 계층에서 언어 특화 뉴런을 비활성화하는 경우, 영어 및 비영어 언어 모두 크게 감소하는 반면, 생성 계층에서 언어 특화 뉴런을 비활성화하는 것은 영어 및 비영어 언어 모두에 약간의 영향을 미친다. 따라서 비활성화된 뉴런이 비영어권 언어의 NLU 작업에서 LLM을 비활성화시키기 때문에 처음 몇 개의 레이어가 이해의 책임이 있음을 증명한다. 게다가, 과제 해결 계층에서 언어 특정 뉴런을 비활성화하는 것은 LLM이 모든 언어에서 성능이 떨어지기 때문에 영어에 의존한다는 것을 보여준다.
+
+### 추론에 대한 분석
+
+비활성화 방법표 5는 추론 과제의 결과를 보여주며, 여기서 뉴런의 \(6\) 세트를 비활성화한다. 자세한 내용은 부록 C에 나와 있습니다.
+
+연구 결과 과제 해결 계층에서 무작위로 샘플링된 뉴런을 비활성화하면 모든 계층에서 무작위로 샘플링된 뉴런을 비활성화하면 과제 해결 계층의 기능을 확인하는 것보다 추론에서 LLM의 기능이 더 크게 비활성화된다는 것을 발견했다. 또한, 세 가지 비활성화 언어별 뉴런 방법을 비교하여 과제 해결 레이어를 비활성화하면 영어와 비영어 모두에서 성능이 감소한다는 것을 발견했다.
+
+\begin{table}
+\begin{tabular}{c c c c c|c c c c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{4}{c|}{**Deactivating Method**} & \multicolumn{4}{c}{**Performance**} \\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \(\Delta_{\text{Eng}}\) & \(\Delta_{\text{Eng}}\) & \(\Delta\uparrow\) \\ \hline \multirow{4}{*}{Vicuna} & ✓ & ✗ & ✗ & � & Random & \(57.8\) & \(53.9\) & \(+0.3\) & \(-0.1\) & \(+0.4\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(57.9\) & \(54.2\) & \(+0.4\) & \(+0.3\) & \(+0.1\) \\  & ✓ & ✗ & ✗ & ✗ & Lang-Spec & \(56.5\) & \(46.0\) & \(-0.5\) & \(-7.9\) & \(+7.4\) \\  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \(40.9\) & \(38.6\) & \(-15.9\) & \(-15.3\) & \(-0.6\) \\  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \(57.9\) & \(52.8\) & \(-0.4\) & \(-1.1\) & \(+0.7\) \\ \hline \multirow{4}{*}{Mistral} & ✓ & ✗ & ✗ & ✗ & Random & \(58.1\) & \(55.5\) & \(+1.0\) & \(-0.2\) & \(+1.2\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(57.6\) & \(55.5\) & \(+0.5\) & \(-0.2\) & \(+0.7\) \\ \cline{1-1}  & ✓ & ✗ & ✗ & ✗ & Lang-Spec & \(56.2\) & \(48.3\) & \(-0.9\) & \(-7.4\) & \(+6.5\) \\ \cline{1-1}  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \(53.2\) & \(47.0\) & \(-3.9\) & \(-8.7\) & \(+4.8\) \\ \cline{1-1}  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \(56.4\) & \(54.6\) & \(-0.7\) & \(-1.0\) & \(+0.3\) \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 이해 과제 결과로서, '✓'는 해당 층의 뉴런이 비활성화된 것을 나타내고, '✗'는 그렇지 않은 것을 나타낸다. \ (\Delta\)는 영어의 성능 감소(\(\Delta_{\text{Eng}}\)와 비영어의 성능 감소(\(\Delta_{\text{Eng}}\)의 차이로 정의된다.
+
+\begin{table}
+\begin{tabular}{c c c c c c|c c c c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{4}{c|}{**Deactivating Method**} & \multicolumn{4}{c}{**Performance**} \\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \(\Delta_{\text{Eng}}\) & \(\Delta_{\text{Eng}}\) & \(\Delta\uparrow\) \\ \hline \multirow{4}{*}{Vicuna} & ✗ & ✓ & ✗ & ✗ & Random & \(20.0\) & \(11.3\) & \(-0.4\) & \(-1.8\) & \(+1.4\) \\  & ✗ & ✓ & ✓ & ✗ & Random & \(18.4\) & \(12.2\) & \(-2.0\) & \(-1.0\) & \(-1.0\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(19.6\) & \(12.5\) & \(-0.8\) & \(-0.7\) & \(-0.1\) \\  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \(7.2\) & \(3.4\) & \(-13.2\) & \(-9.8\) & \(-3.4\) \\  & ✓ & ✗ & ✗ & ✓ & Lang-Spec & \(18.1\) & \(8.3\) & \(-2.3\) & \(-4.9\) & \(+2.6\) \\  & ✓ & ✗ & ✓ & ✓ & Lang-Spec & \(19.0\) & \(7.8\) & \(-1.4\) & \(-5.4\) & \(+0.0\) \\ \hline \multirow{4}{*}{Mistral} & ✗ & ✓ & ✗ & ✗ & Random & \(40.8\) & \(23.4\) & \(-5.2\) & \(-2.9\) & \(-2.3\) \\  & ✗ & ✓ & ✓ & ✗ & Random & \(39.2\) & \(24.0\) & \(-6.8\) & \(-2.3\) & \(-4.5\) \\ \cline{1-1}  & ✓ & ✓ & ✓ & ✓ & Random & \(45.2\) & \(26.8\) & \(-0.8\) & \(+0.5\) & \(-1.3\) \\ \cline{1-1}  & ✗ & ✓ & ✓ & ✗ & Lang-Spec & \(38.2\) & \(18.4\) & \(-7.8\) & \(-7.9\) & \(+0.1\) \\ \cline{1-1}  & ✓ & ✗ & ✗ & ✓ & Lang-Spec & \(44.0\) & \(18.1\) & \(-2.0\) & \(-8.2\) & \(+6.2\) \\ \cline{1-1}  & ✓ & ✗ & ✓ & ✓ & Lang-Spec & \(46.2\) & \(18.3\) & \(+0.2\) & \(-8.0\) & \(+8.2\) \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 추론 과제의 결과. 가장 높은 성능 감소 차이(\(\Delta\))는 과제 해결 계층 내에서 자기 주의 구조에 관련된 뉴런을 제외한 모든 언어 특정 뉴런을 비활성화함으로써 달성된다.
+
+영어로요 반대로 과제 해결 계층이 아닌 언어 특화 뉴런만 비활성화하면 비영어가 영어보다 더 심각하게 영향을 받는다. 또한 피드포워드 계층에서 간섭을 제거하면 더 나은 결과를 얻을 수 있으며, 이는 과제 해결 계층에서 주의 구조의 기능을 검증한다.
+
+### 지식 질의 응답 분석
+
+방법표 6을 비활성화하면 지식 질의 응답 작업의 결과가 나타나는데, 여기서 뉴런의 \(5\) 집합을 비활성화한다. 자세한 내용은 부록 C에 나와 있습니다.
+
+마찬가지로, 무작위로 선택된 뉴런의 비활성화는 언어 특정 뉴런에 비해 영향이 적어 특정 언어와 관련된 뉴런을 식별하는 PLND의 효율성을 검증한다. 과제 해결 계층의 피드포워드 구조 내의 언어-특정 뉴런의 표적화된 비활성화는 비영어 언어에 주로 영향을 미친다. 이는 다국어 질의를 처리하기 위해서는 관련 구조 내에 내재된 다국어 정보에 접근해야 함을 의미한다. 그러나 자체 주의 구조를 비활성화하면 모든 언어에서 작업을 해결할 수 있는 기능이 손상됩니다.
+
+### 세대 분석
+
+방법표 7을 비활성화하는 것은 뉴런의 \(3\) 세트를 비활성화하는 생성 태스크의 결과를 보여준다. 자세한 내용은 부록 C에 나와 있습니다.
+
+다른 작업들과 유사한 발견들, 생성 층 내의 언어-특정 뉴런들의 디스에이블링은 각각의 언어들에서 콘텐츠를 생성하기 위한 그들의 능력을 약화시킨다. 영어와 연관되지 않은 뉴런을 선택적으로 비활성화함으로써 모델의 다국어 생성 능력을 완전히 제거하지는 못한다. 그러나 표 2에서 증명된 바와 같이, 모든 언어별 뉴런의 완전한 비활성화는 LLMs의 다국어 생성 능력의 총 손실을 초래한다.
+
+## 5 추가 분석
+
+### 다국어 능력 향상
+
+우리는 위의 섹션에서 LLM의 다국어 작업 메커니즘을 설명하기 위한 제안된 프레임워크를 특정 뉴런을 비활성화함으로써 검증하였다. 비활성화를 사용하는 것과는 반대로, 우리는 또한 이러한 언어 특정 뉴런을 미세 조정함으로써 그들의 다언어 능력, 특히 이해 및 생성 능력을 향상시킬 수 있다.
+
+\begin{table}
+\begin{tabular}{c c c c c c|c c c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{4}{c|}{**Deactivating Method**} & \multicolumn{4}{c}{**Performance**} \\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \(\Delta_{\text{Eng}}\) & \(\Delta_{\text{Eng}}\) & \(\Delta\uparrow\) \\ \hline \multirow{4}{*}{Vicuna} & ✗ & ✗ & ✓ & ✗ & Random & \(57.5\) & \(39.5\) & \(-0.3\) & \(+0.0\) & \(-0.3\) \\  & ✗ & ✓ & ✓ & ✗ & Random & \(56.0\) & \(38.7\) & \(-1.8\) & \(-0.8\) & \(-1.0\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(57.7\) & \(39.6\) & \(-0.1\) & \(+0.1\) & \(-0.2\) \\  & ✗ & ✓ & ✗ & ✗ & Lang-Spec & \(33.7\) & \(30.3\) & \(-24.1\) & \(-9.2\) & \(-14.9\) \\  & ✗ & ✗ & ✓ & ✗ & Lang-Spec & \(57.5\) & \(37.5\) & \(-0.3\) & \(-2.0\) & \(+17.7\) \\ \hline \multirow{4}{*}{Mistral} & ✗ & ✗ & ✓ & ✗ & Random & \(61.0\) & \(37.0\) & \(-0.3\) & \(-0.5\) & \(+0.2\) \\  & ✗ & ✓ & ✓ & ✗ & Random & \(60.7\) & \(36.3\) & \(-0.6\) & \(-1.2\) & \(+0.6\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(61.8\) & \(37.4\) & \(+0.1\) & \(-0.1\) & \(+0.2\) \\  & ✗ & ✓ & ✗ & ✗ & Lang-Spec & \(51.2\) & \(28.9\) & \(-1.0\) & \(-8.6\) & \(-1.5\) \\  & ✗ & ✗ & ✓ & ✗ & Lang-Spec & \(61.2\) & \(35.1\) & \(-0.1\) & \(-2.4\) & \(+2.3\) \\ \hline \hline \end{tabular}
+\end{table}
+표 6: 지식 질의 응답의 결과. 가장 높은 성능 감소 차이(\(\Delta\))는 과제 해결 계층 내의 피드-포워드 구조의 모든 언어-특정 뉴런을 디스에이블함으로써 달성된다.
+
+\begin{table}
+\begin{tabular}{c c c c c c|c c c c} \hline \hline \multirow{2}{*}{**Model**} & \multicolumn{4}{c|}{**Deactivating Method**} & \multicolumn{4}{c}{**Performance**} \\  & Under & S-ATTN & S-FFN & Gen & Neuron & Eng & n-Eng & \(\Delta_{\text{Eng}}\) & \(\Delta_{\text{Eng}}\) & \(\Delta\uparrow\) \\ \hline \multirow{4}{*}{Vicuna} & ✗ & ✗ & ✗ & ✓ & Random & \(13.2\) & \(26.8\) & \(+0.1\) & \(+0.1\) & \(+0.0\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(13.0\) & \(26.7\) & \(-0.1\) & \(+0.0\) & \(-0.1\) \\  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \(13.1\) & \(25.7\) & \(-0.0\) & \(-1.1\) & \(+1.1\) \\ \hline \multirow{4}{*}{Mistral} & ✗ & ✗ & ✗ & ✓ & Random & \(13.6\) & \(25.9\) & \(+0.1\) & \(+0.1\) & \(+0.0\) \\  & ✓ & ✓ & ✓ & ✓ & Random & \(13.6\) & \(25.7\) & \(+0.1\) & \(-0.2\) & \(+0.3\) \\ \cline{1-1}  & ✗ & ✗ & ✗ & ✓ & Lang-Spec & \(13.8\) & \(24.3\) & \(-0.3\) & \(-1.5\) & \(+1.8\) \\ \hline \hline \end{tabular}
+\end{table}
+표 7: 뉴런 비활성화에 따른 생성 태스크의 결과. 가장 높은 성능 감소 차이(\(\Delta\))는 생성 계층 내의 모든 언어-특정 뉴런들을 디스에이블함으로써 달성된다.
+
+본 논문에서는 Llama2-7b-base 모델을 사용하여 명령어 미세조정의 간섭을 제거하였다. 우리는 위키피디아 말뭉치에서 추출한 인과적 언어 모델링을 미세 조정 작업으로 선택하고 각 언어에 대한 \(200\) 문서로 구성된 데이터 세트를 생성한다. 4 우리의 개선 사항은 모델의 이해 및 생성에만 초점을 맞추고 있으며, 더 구체적인 데이터 준비가 필요할 수 있기 때문에 추론 특성을 확장하거나 지식 기반을 확장하지 않는다는 점에 유의해야 한다. 따라서 목표 이해 및 생성 작업을 통해 개선 효과를 평가합니다. 자세한 실험 결과는 표 8과 같다.
+
+각주 4: [https://dumps.wikimedia.org/](https://dumps.wikimedia.org/)
+
+본 연구의 결과는 \(200\) 문맥에 대한 \(10\)분의 미세 조정만으로도 LLMs이 다국어 이해와 생성 능력에 상당한 향상을 보인다는 것을 보여준다. 특히 XQuAD 벤치마크에서 \(7.4\%\)의 상대적 성능 향상이 있었다. 유사하게, XLSum의 경우, 우리는 \(8.9\%\)의 상대적 성능 향상을 관찰한다.
+
+### 다른 다국어 LLMs 분석
+
+제안된 프레임워크를 검증하기 위해 46개 언어를 지원하는 _hyper-multilingual_ LLM인 BLOOMZ Muennighoff 등(2022)과 영어와 중국어에 초점을 맞춘 _bilingual_ LLM인 Chinese Llam Cui 등(2023)을 포함한 두 가지 유형의 다국어 LLM을 추가로 검토한다.
+
+그림 0(b)에서 하이퍼-다국어 LLMs 우리는 BLOOMZ도 "생각하는" 언어로서 영어로 디폴트되는 경향이 있음을 관찰한다. 따라서 주로 영어를 사고의 언어로 사용하면서 이러한 언어를 이해하고 생성할 수 있는 능력을 가지고 있기 때문에 여러 언어를 지원할 수 있다. 또한 그림 4는 BLOOMZ의 자기 주의 및 피드 포워드 구조 모두에서 언어 간의 뉴런 중첩 정도를 보여준다. 그림 3에 나타난 결과와 대조적으로 중첩의 현저한 감소가 있으며, 이는 개별 언어가 더 높은 독립성을 유지하고 뉴런을 서로 광범위하게 공유하지 않는다는 것을 나타낸다.
+
+이중언어 LLMs은 중국어 Llama Cui et al.(2023)을 활용하며, 기존 어휘를 확장하고 중국어 데이터를 이용한 2차 사전 학습과 중국어 명령어 데이터셋으로 모델을 미세 조정한다. 그러나 이러한 집중적인 훈련은 중국어 이외의 언어에 대한 성능 저하로 이어질 수 있다. 그림 5와 같이 중국어는 모든 언어에 걸쳐 사고 처리 및 지식 추출을 위한 기본 언어로 우세하다. 결과적으로 언어 특이적 뉴런이 없으면 중국 중심 LLM으로 변환된다.
+
+## 6 관련 작업
+
+해석성 기존의 해석성 연구는 Vig (2019); Hewitt and Liang (2019); Qiu et al. (2020). LLMs 시대에 한 가지 브런치 작업은 지식 저장을 이해하려는 노력을 포함하며, Geva et al. (2021)은 피드포워드 계층 연구를 지식 베이스로 시작했다. 후속 작업은 뉴런 값 Dai 등(2022)을 변경하고, 임베딩들을 단어 Geva 등(2022)에 매핑하고, 임베딩들을 복구하기 위해 입력들을 수정하고, 주의 헤드 Li를 분석함으로써 이를 개선했다.
+
+그림 4: BLOOMZ에서 언어 특이적 뉴런의 중첩 비율.
+
+그림 5: 비영어 지침이 주어진 중국어 라마의 계층 간 언어 분포.
+
+\begin{table}
+\begin{tabular}{l l|c c c c c} \hline \hline
+**Task** & **Method** & De & Fr & Zh & Es & Ru \\ \hline XQuAD & Original & \(42.2\) & – & \(47.3\) & \(39.6\) & – \\  & Enhance & \(\mathbf{45.3}\) & – & \(\mathbf{49.7}\) & \(\mathbf{43.7}\) & – \\ \hline XLSum & Original & – & \(8.5\) & \(48.2\) & \(9.1\) & \(19.7\) \\  & Enhance & – & \(\mathbf{9.4}\) & \(\mathbf{51.6}\) & \(\mathbf{11.0}\) & \(\mathbf{21.1}\) \\ \hline \hline \end{tabular}
+\end{table}
+표 8: 각 언어의 \(200\) 컨텍스트를 활용하여 인과적 언어 모델링 작업을 통해 Llama2-7b-베이스 모델을 미세 조정함으로써 향상이 달성된다.
+
+et al., 2023). 또 다른 연구 라인은 자기 주의 층을 중심으로, 추론 Hou 등(2023); Stolfo 등(2023); Friedman 등(2023)이 주의 가중치에 기초한 추론 트리를 대조함으로써 추론에 대한 연결을 조사한다.
+
+Benchmarks Zhang et al. (2023), translation Liang et al. (2023); Huang et al. (2023), aligning representations Nguyen et al. (2023); Salesky et al. (2023), prompting Li et al. (2023); Tanwar et al. (2023). 이러한 노력은 LLM이 여러 언어에서 효과적으로 작동할 수 있도록 하는 것의 중요성과 복잡성을 강조한다.
+
+## 7 Conclusion
+
+본 연구에서는 LLMs이 먼저 질의어를 영어로 번역하고, 다국어 지식의 도움으로 영어를 사용하여 처리한 다음, 응답을 원래 언어로 다시 번역함으로써 다국어를 해결한다는 가설을 소개한다. 이 프레임워크를 검증하기 위해 언어 특이적 뉴런을 탐지하는 새로운 방법을 소개하고 광범위한 절제 연구를 수행한다. 이러한 연구들은 LLM의 다국어 능력에 미치는 영향을 관찰하기 위해 다양한 뉴런 세트를 선택적으로 비활성화하는 것을 포함한다. 또한, 뉴런의 작은 부분만을 차지하는 이러한 언어별 뉴런을 미세 조정함으로써 LLM의 다국어 성능을 개선한다.
+
+## References
+
+* A. Chowdhery, S. 나랑 J. 데블린 Bosma, G. Mishra, A. Roberts, P. B. Pham, H. W. Chung, C. Sutton, S. Gehrmann, et al. (2022)Palm: scaling language modeling with pathways. arXiv preprint arXiv:2204.02311. 인용: SS2.
+* Y. 추이진 양, 엑스. Yao (2023)Efficient and effective text encoding for chinese llama and alpaca. arXiv preprint arXiv:2304.08177. 인용: SS2.
+* D. Dai, L. 동영 하정 Sui, B. Chang, and F. Wei (2022)Knowledge neurons in pretrained transformers. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), Dublin, Ireland, pp. 8493-8502. Cited by: SS2.
+* S. Doddapaneni, G. Ramesh, A. Kunchukuttan, P. Kumar, and M. M. Khapra (2021)A primer on prerained multilingual language models. CoRRabs/2107.00676. 인용: SS2.
+* D. Friedman, A. Lampinen, L. Dixon, D. Chen, and A. Ghandeharioun (2023)Interpretability illusion in generalization of simplified models. SS2로 인용됩니다.
+* M. A. Caciularu Geva 왕, Y. 골드버그(2022)트랜스포머 피드포워드 레이어는 어휘 공간에서 개념을 촉진하여 예측을 구축한다. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing, pp. 30-45. 인용: SS2.
+* M. 게바 Schuster, J. Berant, and O. Levy (2021)Transformer feed-forward layer는 key-value memory이다. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, pp. 5484-5495. 인용: SS2.
+*T. Hasan, A. Bhattacharjee, M. S. Islam, K. 무바시르 이영 강명석 Shahriyar (2021)Xl-sum: 44개 언어에 대한 대규모 다국어 추상 요약. In Findings of the Association for Computational Linguistics: ACL-IJCNLP 2021, Dublin, Ireland, pp. 4693-4703. Cited by: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+* J. Hewitt, P. Liang, and P. Liang (2019)Designing and interpreting probe with control tasks. arXiv preprint arXiv:1909.03368. 인용: SS2.
+이판 호우, 지아오다 리, 유페이, 알레산드로 스톨포, 왕춘슈 저우, 광타오 정, 앙투안 보셀루트, 므린마야 사찬. 2023. 언어 모델의 다단계 추론 능력의 기계론적 해석을 향하여. 싱가포르의 4902-4919 페이지의 _2023 자연 언어 처리 실증 방법에 관한 회의 회보_에서. 계산 언어학 협회
+*황 등 (2023) Haoyang Huang, Tianyi Tang, Dongdong Zhang, Xin Zhao, Ting Song, Yan Xia, and Furu Wei. 2023. 모든 언어가 LLMs에서 동등하게 만들어지는 것은 아니다: 언어 간 사고 프롬프트를 통해 다국어 능력을 향상시킨다. 계산 언어학 협회의 발견: EMNLP 2023_, 싱가포르 12365-12394 페이지. 계산 언어학 협회
+* Jiang 등(2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. 2023. Mistral 7b. _ arXiv preprint arXiv:2310.06825_.
+* K. K. K. Wang, S. 메이휴와 D. 로스 2020. Cross-Lingual ability of multilingual BERT: a empirical study. 제8회 국제학술대회, ICLR 2020에서.
+* Li et al.(2023a) Kenneth Li, Oam Patel, Fernanda Viegas, Hanspeter Pfister, and Martin Wattenberg. 2023a. 추론 시간 개입: 언어 모델에서 진실된 답변을 유도합니다. _ arXiv preprint arXiv:2306.03341_.
+* Li et al.(2023b) Shuang Li, Xuming Hu, Aiwei Liu, Yawen Yang, Fukun Ma, Philip S Yu, and Lijie Wen. 2023b. 다국어 언어화기로 부드럽게 프롬프트하여 언어 간 자연어 추론을 향상시킵니다. _ arXiv preprint arXiv:2305.12761_.
+* Liang et al. (2023) Yaobo Liang, Quanzhi Zhu, Junhe Zhao, and Nan Duan. 2023. 언어 간 이동을 위한 기계로 만든 범용 언어입니다. _ arXiv preprint arXiv:2305.13071_.
+* Lin et al.(2021) Bill Yuchen Lin, Seyeon Lee, Xiaoyang Qiao, and Xiang Ren. 2021. 영어를 넘어선 상식: 상식 추론을 위한 다국어 언어 모델의 평가 및 개선. 제59차 전산언어학회 연차총회 및 제11차 자연어처리 국제공동회의(제1권: 장문)에서 1274-1287쪽이다.
+* Meng et al.(2022) Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022. gpt에서 사실 연관성을 찾고 편집합니다. _ Advances in Neural Information Processing Systems_, 35:17359-17372.
+* Muennighoff 등(2022) Niklas Muennighoff, Thomas Wang, Lintang Sutawika, Adam Roberts, Stella Biderman, Teven Le Scao, M Saiful Bari, Sheng Shen, Zheng-Xin Yong, Hailey Schoelkopf, et al. 2022. Crosslingual Generalization through multitask finetuning. _ arXiv preprint arXiv:2211.01786_.
+* Nguyen et al. (2023) Hoang H Nguyen, Chenwei Zhang, Tao Zhang, Eugene Rohrbaugh, and Philip S Yu. 2023. 음소 전사 통합을 통한 언어 간 전달을 향상시킵니다. _ arXiv preprint arXiv:2307.04361_.
+* OpenAI (2023) OpenAI. 2023. Gpt-4 기술 보고서.
+* Qiu et al. (2020) Xipeng Qiu, Tianxiang Sun, Yige Xu, Yunfan Shao, Ning Dai, and Shuanjing Huang. 2020. 자연어 처리를 위한 사전 훈련 모델: 설문 조사 _ Science China Technological Sciences_, 63(10):1872-1897.
+* Salesky et al. (2023) Elizabeth Salesky, Neha Verma, Philipp Koehn, and Matt Post. 2023. 다국어 번역 및 데이터 효율적인 교차 언어 전송을 위한 픽셀 표현 _ arXiv preprint arXiv:2305.14280_.
+* Sharma et al. (2023) Pratyusha Sharma, Jordan T Ash, and Dipendra Misra. 2023. 진실은 거기에 있습니다: 계층 선택 순위 축소를 사용하여 언어 모델에서 추론 개선 _ arXiv preprint arXiv:2312.13558_.
+* Shi et al.(2022) Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, et al. 2022. 언어 모델들은 다국어 연쇄 사상 추론기들이다. <표상 학습에 관한 제11차 국제회의>에서.
+* Stolfo et al. (2023) Alessandro Stolfo, Yonatan Belinkov, and Mrinmaya Sachan. 2023. A mechanistic interpretation of arithmetic reasoning in language models using causal mediation analysis. 2023 자연 언어 처리에 관한 경험적 방법에 관한 회의록에서 싱가포르의 7035-7052 페이지입니다. 계산 언어학 협회
+* Tanwar et al.(2023) Eshaan Tanwar, Manish Borthakur, Subhabrata Dutta, and Tanmoy Chakraborty. 2023. 다국어 lms는 정렬을 가진 더 나은 교차 언어 맥락 내 학습자들입니다. _ arXiv preprint arXiv:2305.05940_.
+* Touvron 등(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajiwal Bhargava, Shruti Bhosale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_.
+* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. 주의력만 있으면 됩니다. _ 신경 정보 처리 시스템의 진보_, 30.
+* Vig (2019) Jesse Vig. 2019. A multiscale visualization of attention in the transformer model.
+* Zhang 등(2023) Wenxuan Zhang, Sharifah Mahani Aljunied, Chang Gao, Yew Ken Chia, and Lidong Bing. 2023. M3exam: A multilingual, multimodal, multilevel benchmark for examining large language models _ CoRR_, abs/2306.05179.
+
+준자오, 지하오 장, 료후이 가오, 치장, 타오귀, 현징황. 2024. Llama beyond English: the empirical study on language capability transfer.
+* Zhu et al. (2023) Wenhao Zhu, Yunzhe Lv, Qingxiu Dong, Fei Yuan, Jing Jing Xu, Shujian Huang, Lingpeng Kong, Jiajun Chen, and Lei Li. 2023. 언어를 정렬하여 대형 언어 모델을 비영어로 외삽하는 단계.
+
+## 부록 A 영어 및 비영어 토큰
+
+구글이 개발한 Compact Language Detector \(3\) 모델을 기반으로 한 언어 검출 라이브러리인 각 계층의 임베딩에서 각 토큰의 언어를 검출하기 위해 cld3 패키지를 사용한다. 또한, 탐지 결과가 신뢰할 수 있는 경우, 즉 cld3.get_language(token).is_reliable\(==True\)인 경우, 탐지 결과를 채택하고, 그렇지 않은 경우 토큰을 비워드로 분류한다.
+
+## 부록 B Hyper-parameters
+
+우리는 모든 언어와 모든 작업에 대한 검증 집합으로 중국어로 된 XQuAD에 대한 성능을 채택한다. 구체적으로, 표 9는 이해층(\(D_{\mathcal{U}}\)) 및 생성층(\(D_{\mathcal{G}}\))에서 언어별 뉴런을 비활성화할 때의 Vicuna에 대한 결과를 나타낸 것으로, 여기서, \(N_{1}\)는 이해층 수이고, \(N_{2}\)는 생성층 수이다. 그리고 \(N_{1}=8\)와 \(N_{2}=2\)를 설정할 때 영어의 성능은 가장 적게 영향을 받는 반면 중국어의 성능은 가장 적게 영향을 받는 것으로 나타났다. 미스트랄은 \(N_{1}=6\)와 \(N_{2}=3\)이다.
+
+## 부록 C 자세한 실험 결과
+
+### 자세한 실험 설정
+
+과제 비활성화 추론 방법: (i) 과제 해결층의 주의 구조에서 무작위로 뉴런을 샘플링한다. (ii) 과제 해결 층에서 무작위로 샘플링된 뉴런. (iii) 과제 해결 층에서 무작위로 샘플링된 뉴런. (iii) 모든 층에서 무작위로 샘플링된 뉴런. (iv) 과제 해결층의 언어별 뉴런. (v) 이해 계층 및 생성 계층에서의 언어-특정 뉴런. (vi) 과제 해결 계층의 주의 구조에 있지 않은 언어 특이적 뉴런.
+
+지식 질문 응답 TaskDeactivation 방법: (i) 과제 해결 계층의 피드포워드 구조에서 뉴런을 무작위로 샘플링한다. (ii) 과제 해결 층에서 무작위로 샘플링된 뉴런. (iii) 모든 층에서 무작위로 샘플링된 뉴런. (iv) 과제 해결 층의 주의 구조 내의 언어-특정 뉴런. (v) 과제 해결층의 피드포워드 구조의 언어 특이적 뉴런.
+
+생성 TaskDeactivation 방법들: (i) 생성 층들에서 랜덤하게 샘플링된 뉴런들. (ii) 모든 층에서 무작위로 샘플링된 뉴런. (iv) 상기 생성 층들 내의 언어-특정 뉴런들.
+
+### Detailed Result
+
+제한된 공간으로 인해 우리는 더 간결한 표기법을 사용합니다. 우리는 \(i\) 번째 층의 자기 주의층에서 뉴런을 비활성화하는 것을 \(D_{i}^{(A)}\)로 나타내고, \(i\) 번째 층의 피드포워드층에서 뉴런을 비활성화하는 것을 \(D_{i}^{(F)}\)로 나타낸다. 우리는 그림 2와 같이 이해를 담당하는 층들의 집합으로 \(\mathcal{U}=\{1,\cdots,N_{1}\}\)을 나타낸다. 마찬가지로 과제 해결을 담당하는 층들의 집합으로 \(\mathcal{S}=\{N_{1}+1,\cdots,N_{2}\}\)을 나타내고, 생성 5를 담당하는 층들의 집합으로 \(\mathcal{G}=\{N_{2}+1,\cdots,32\}\)을 나타낸다. 또한, \(D_{\mathcal{U}}^{(A)}\)은 \(\mathcal{U}\)의 자기 주의 층에서 뉴런을 비활성화하는 것을 나타낸다. 마찬가지로 \(D_{\mathcal{U}}^{(F)}\), \(D_{\mathcal{S}}^{(A)}\), \(D_{\mathcal{S}}^{(F)}\), \(D_{\mathcal{G}}^{(A)}\) 및 \(D_{\mathcal{G}}^{(A)}\를 소개한다.
+
+각주 5: Vicuna-7b-v1.5 및 Mistral-7b-v1.0 둘 다 \(32\) 층을 갖는다.
+
+\begin{table}
+\begin{tabular}{l|c c|c c} \hline \hline \multirow{2}{*}{**Method**} & \multicolumn{2}{c|}{\(D_{\mathcal{U}}\)} & \multicolumn{2}{c}{\(D_{\mathcal{G}}\)} \\  & \(N_{1}\) & \(ACC\) & \(N_{2}\) & \(ACC\) \\ \hline En-Vanilla & \multicolumn{4}{c}{\(57.1\)} \\ Zh-Vanilla & \multicolumn{4}{c}{\(64.3\)} \\ \hline En-Deact & \multirow{2}{*}{\(8\)} & \(53.3\,(\downarrow 3.8)\) & \multirow{2}{*}{4} & \multirow{2}{*}{55.8 (\(\downarrow 1.3\))} \\  & & \(52.6\,(\downarrow 11.7)\) & & \multirow{2}{*}{62.9 (\(\downarrow 1.4\))} \\ \hline En-Deact & \multirow{2}{*}{\(\mathbf{6}\)} & \(\mathbf{56.8}\,(\downarrow 0.3)\) & \multirow{2}{*}{3} & \multirow{2}{*}{**56.3 (\(\downarrow 0.8\))**} \\  & & \(\mathbf{54.9}\,(\downarrow 9.4)\) & & & \multirow{2}{*}{**62.7 (\(\downarrow 1.6\))**} \\ \hline En-Deact & \multirow{2}{*}{\(4\)} & \(57.6\,(\uparrow 0.5)\) & \multirow{2}{*}{2} & \multirow{2}{*}{55.7 (\(\downarrow 1.4\))} \\  & & \(61.8\,(\downarrow 2.5)\) & & & \multirow{2}{*}{63.8 (\(\downarrow 0.5\))} \\ \hline \hline \end{tabular}
+\end{table}
+표 10: 미스트랄-7b-v1.0 상의 중국어를 갖는 XQuAD.
+
+\begin{table}
+\begin{tabular}{l|c c|c c} \hline \hline \multirow{2}{*}{**Method**} & \multicolumn{2}{c|}{\(D_{\mathcal{U}}\)} & \multicolumn{2}{c}{\(D_{\mathcal{G}}\)} \\  & \(N_{1}\) & \(ACC\) & \(N_{2}\) & \(ACC\) \\ \hline En-Vanilla & \multicolumn{4}{c}{\(57.5\)} \\ Zh-Vanilla & \multicolumn{4}{c}{\(55.5\)} \\ \hline En-Deact & \multirow{2}{*}{\(\mathbf{8}\)} & \(\mathbf{57.7}\,(\uparrow 0.2)\) & \multirow{2}{*}{4} & \(54.7\,(\downarrow 2.8)\) \\ Zh-D-Deact & & \(\mathbf{44.9}\,(\downarrow 10.6)\) & & \(54.6\,(\downarrow 0.9)\) \\ \hline En-Deact & \multirow{2}{*}{\(6\)} & \(58.6\,(\uparrow 1.1)\) & \multirow{2}{*}{3} & \(57.7\,(\uparrow 0.2)\) \\ Zh-Deact & & \(55.1\,(\downarrow 0.4)\) & & \(54.5\,(\downarrow 1.0)\) \\ \hline En-Deact & \multirow{2}{*}{\(4\)} & \(57.3\,(\downarrow 0.2)\) & \multirow{2}{*}{**2**} & \(\mathbf{58.4}\,(\uparrow 0.9)\) \\ Zh-Deact & & \(53.9\,(\downarrow 1.6)\) & & \(\mathbf{54.1}\,(\downarrow 1.4)\) \\ \hline \hline \end{tabular}
+\end{table}
+표 9: XQuAD with Chinese on Vicuna-7b-v1.5.
+
+\begin{table}
+\begin{tabular}{c c|c c c|c c c|c c c|c c c|c c c|c c c} \hline \hline \multirow{2}{*}{**Method**} & \multicolumn{4}{c|}{**German**} & \multicolumn{4}{c|}{**French**} & \multicolumn{4}{c|}{**Chinese**} & \multicolumn{4}{c|}{**Spanish**} & \multicolumn{4}{c}{**Russian**} \\  & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{De-D} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{Ru-D} & \multicolumn{2}{c}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c}{\(\Delta_{\text{En-D}}\)} \\ \hline \multirow{4}{*}{**Embed**} & \(D_{\mathcal{B}}^{R}\) & \(57.5\) & \(43.8\) & \(-0.3\) & \(+0.0\) & \(57.5\) & \(40.3\) & \(-0.3\) & \(+0.2\) & \(57.5\) & \(43.2\) & \(-0.3\) & \(+0.0\) & \(57.5\) & \(44.6\) & \(-0.3\) & \(+0.3\) & \(57.5\) & \(25.5\) & \(-0.3\) & \(-0.5\) \\  & \(D_{\mathcal{B}}^{R}\) & \(56.0\) & \(44.0\) & \(-1.8\) & \(+0.2\) & \(56.0\) & \(38.6\) & \(-1.8\) & \(-1.5\) & \(56.0\) & \(43.4\) & \(-1.8\) & \(+0.2\) & \(56.0\) & \(43.5\) & \(-1.8\) & \(-0.8\) & \(56.0\) & \(24.0\) & \(-1.8\) & \(-2.0\) \\  & \(D_{\mathcal{B}}^{R}\) & \(57.7\) & \(43.6\) & \(-0.1\) & \(-0.2\) & \(57.4\) & \(-0.5\) & \(-1.0\) & \(+0.4\) & \(57.7\) & \(43.2\) & \(-0.1\) & \(+0.0\) & \(57.7\) & \(44.6\) & \(-0.1\) & \(+0.2\) & \(57.7\) & \(26.0\) & \(-1.1\) & \(+0.0\) \\  & \(D_{\mathcal{B}}^{R}\) & \(34.8\) & \(43.4\) & \(-23.0\) & \(-34.2\) & \(36.31\) & \(-1.52\) & \(-2.17\) & \(32.6\) & \(28.9\) & \(-2.5\) & \(-14.3\) & \(24.0\) & \(25.0\) & \(-37.1\) & \(-19.3\) & \(48.3\) & \(29.9\) & \(-3.1\) \\  & \(D_{\mathcal{B}^{\prime}}^{R}\) & \(57.8\) & \(41.5\) & \(-0.0\) & \(-2.8\) & \(57.2\) & \(37.8\) & \(-0.6\) & \(-6.0\) & \(56.9\) & \(39.6\) & \(-0.9\) & \(-3.6\) & \(57.6\) & \(43.0\) & \(-0.2\) & \(-1.3\) & \(57.8\) & \(25.6\) & \(-0.0\) & \(-0.4\) \\ \hline \multirow{4}{*}{**Embed**} & \(D_{\mathcal{B}}^{R}\) & \(61.0\) & \(40.2\) & \(-0.7\) & \(+0.2\) & \(61.0\) & \(40.1\) & \(-0.7\) & \(-0.3\) & \(61.0\) & \(46.7\) & \(-0.7\) & \(-0.4\) & \(61.0\) & \(45.2\) & \(-0.7\) & \(-0.5\) & \(61.0\) & \(12.7\) & \(-0.7\) & \(-1.4\) \\  & \(D_{\mathcal{B}}^{R}\) & \(60.7\) & \(40.4\) & \(-1.0\) & \(+0.4\) & \(60.7\) & \(36.9\) & \(-1.0\) & \(-0.3\) & \(60.7\) & \(46.9\) & \(-1.0\) & \(-0.3\) & \(60.7\) & \(46.3\) & \(-1.0\) & \(+0.7\) & \(60.7\) & \(11.1\) & \(-1.0\) & \(-3.0\) \\  & \(D_{\mathcal{B}}^{R}\) & \(61.8\) & \(40.1\) & \(+0.1\) & \(61.8\) & \(40.7\) & \(+0.1\) & \(+0.3\) & \(61.8\) & \(47.2\) & \(+0.1\) & \(+0.1\) & \(61.8\) & \(44.7\) & \(+0.1\) & \(-1.0\) & \(61.8\) & \(14.1\) & \(+0.1\) & \(+0.0\) \\  & \(D_{\mathcal{B}^{\prime}}^{R}\) & \(50.4\) & \(32.3\) & \(-11.3\) & \(-7.7\) & \(55.3\) & \(27.4\) & \(-6.4\) & \(-13.0\) & \(54.7\) & \(42.4\) & \(-7.0\) & \(-4.7\) & \(44.5\) & \(34.1\) & \(-17.2\) & \(-11.6\) & \(51.1\) & \(8.3\) & \(-10.6\) & \(-5.8\) \\  & \(D_{\mathcal{B}^{\prime}}^{R}\) & \(61.5\) & \(38.1\) & \(-0.2\) & \(-1.9\) & \(61.2\) & \(38.1\) & \(\mathbf{0.5}\) & \(\mathbf{2.3}\) & \(61.3\) & \(43.5\) & \(-0.4\) & \(-3.6\) & \(61.0\) & \(43.9\) & \(-0.7\) & \(-1.8\) & \(60.8\) & \(11.8\) & \(0.4\) & \(-2.3\) \\ \hline \hline \end{tabular}
+\end{table}
+표 13: 지식 질의 응답 과제.
+
+\begin{table}
+\begin{tabular}{c c|c c c|c c|c c c|c c|c c|c c c} \hline \hline \hline \multirow{2}{*}{**Method**} & \multicolumn{4}{c|}{**German**} & \multicolumn{4}{c|}{**Chinese**} & \multicolumn{4}{c|}{**Spanish**} & \multicolumn{4}{c}{**Russian**} \\  & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{De-D} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c|}{En-D} & \multicolumn{2}{c|}{Es-D} & \multicolumn{2}{c|}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c}{\(\Delta_{\text{En-D}}\)} & \multicolumn{2}{c}{\(\Delta_{\text{En-D}}\)} \\ \hline \multirow{4
