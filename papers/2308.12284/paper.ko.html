@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# D4: 문서 중복 제거 및 다양화를 통한 LLM 사전 학습 개선\n' +
+      '\n' +
+      'Kushal Tirumala\n' +
+      '\n' +
+      '메타 AI 연구\n' +
+      '\n' +
+      '&Daniel Simig*\n' +
+      '\n' +
+      '메타 AI 연구\n' +
+      '\n' +
+      '&Armen Aghajanyan\n' +
+      '\n' +
+      '메타 AI 연구\n' +
+      '\n' +
+      '앙아리 S. 모리코스\n' +
+      '\n' +
+      '메타 AI 연구\n' +
+      '\n' +
+      '동등한 기여. 대응 이메일: kitrumala@meta.com, simigd@gmail.com\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '최근 몇 년 동안 대규모 웹 말뭉치에서 무작위로 선택된 가능한 많은 토큰에 대해 원패스 학습을 수행하여 대규모 언어 모델(LLM)을 훈련하는 데 컴퓨팅 및 데이터의 양이 증가하고 있다. 인터넷의 점점 더 큰 부분에 대한 훈련은 일관된 성능 개선으로 이어지지만, 이러한 개선의 크기는 규모에 따라 감소하며, MinHash와 같은 단순한 중복 제거 방법을 넘어 사전 훈련 및 다운스트림 성능에 대한 데이터 선택의 영향을 탐구하는 작업은 거의 없다. 본 논문에서는 6.7B 모델 스케일에서 16개의 NLP 태스크(최대 2%)에 대해 사전 훈련된 모델 임베딩을 통해 (중복되지 않은 데이터 위에) 신중하게 데이터를 선택하는 것이 훈련 속도를 높이고(효율성 이득 20%) 평균 다운스트림 정확도를 향상시킬 수 있음을 보여준다. 또한, 반복 데이터가 기준선 훈련보다 더 나쁜 성능을 보이는 반면, 반복 데이터는 지능적으로 일관되게 기준선 훈련보다 더 좋은 성능을 보인다는 것을 보여준다. 우리의 결과는 영리한 데이터 선택이 LLM 사전 트레이닝을 크게 개선할 수 있고, 가능한 한 많은 데이터에 대해 단일 에포크에 대한 트레이닝의 일반적인 관행에 의문을 제기하며, 웹 데이터를 무작위로 샘플링하는 한계를 넘어 모델을 계속 개선하는 경로를 보여준다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '계산 한계로 인해 언어 모델 사전 훈련에 대한 초기 작업은 북코퍼스[61] 및 위키피디아[32]와 같은 작고 고품질의 텍스트 데이터 세트에 대한 훈련 모델에 중점을 두었다. 그러나 최근에는 [40]과 같은 작업에 의해 촉매되는 대규모 언어 모델(LLM)의 발전은 인터넷의 스냅샷(CommonCrawl [16; 39; 41])에서 파생된 레이블이 지정되지 않은 분류되지 않은 데이터의 대규모 모음을 활용하여 대량의 분류되지 않은 데이터와 대량의 분류되지 않은 데이터를 거래함으로써 주도되었다. 데이터 양의 급격한 증가로 인해 이러한 전략은 더 높은 성능 모델을 초래했으며 대규모의 여과되지 않은 데이터 세트가 학습에 사용되는 새로운 패러다임을 촉발했다[11; 46; 50].\n' +
+      '\n' +
+      '현재 LM 사전 훈련에서 대규모 웹 데이터가 수행하는 필수적인 역할에도 불구하고 대규모 웹 데이터에 대한 데이터 큐레이션 및 선택은 철저히 탐구되지 않았다. 이는 주로 계산 및 데이터 스케일링 법칙[20; 25]의 보편성 때문이며, 이는 실무자들에게 반드시 "올바른" 데이터가 아니라 "더 많은" 데이터를 추가함으로써 LM 성능을 안정적으로 개선하는 저위험 방법을 제공한다. 실제로, 스케일링 법칙들을 모델링하기 위해 사용되는 데이터 선택 방법(대부분의 LLM 사전 트레이닝 파이프라인들에서 사용되는 데이터 선택 방법들과 함께)은 간단한 휴리스틱 필터링(예를 들어, 매우 짧은 스트링들을 제거하기 위해) 및 매우 거의 일치하는 중복제거[27]의 조합을 통해 투입된 웹 데이터 덤프들로부터 토큰들을 단순히 랜덤하게 샘플링하는 것을 포함한다.\n' +
+      '\n' +
+      'LLM을 개선하기 위해 스케일링 법칙에 계속 의존하면 스케일링 법칙의 멱법칙 특성으로 인해 수익 체감에 빠르게 도달할 것이다. 따라서 우리는 일관된 한계 개선을 유지하기 위해 기하급수적으로 더 많은 데이터가 필요할 것이며, 이는 우리가 이용 가능한 인간 생성 텍스트 데이터의 한계에 빠르게 접근하고 있기 때문에 특히 어려운 것으로 판명될 수 있다[51]. 비전의 맥락에서 Sorscher et al. [47]은 비용이 많이 드는 멱법칙 스케일링을 극복하기 위해 간단한 데이터 선택 전략을 활용할 수 있음을 보여주었다. 그들은 수많은 데이터 선택 방법을 비교하고 미리 훈련된 임베딩 공간에서 데이터 포인트를 클러스터링하고 클러스터 중심(cluster centroid; "SSL Prototype")까지의 거리에 따라 순위를 매기는 것이 비전 모델의 데이터 효율성을 크게 향상시킨다는 것을 발견한다. 최근 Abbas et al. [1]은 데이터를 디-중복하기 위해 사전 트레이닝된 임베딩 공간("SemDeDup")을 사용하는 것이 CLIP와 같은 비전-언어 모델의 효율성과 성능을 모두 향상시킨다는 것을 입증하였다. 그러나 LLM을 대규모로 훈련하는 데 있어 이러한 접근법이나 관련 접근법에 대한 탐색은 거의 없다. 이를 통해 이러한 접근 방식을 결합하여 LLM에 적용함으로써 사전 훈련된 임베딩을 활용하는 비교적 간단한 데이터 선택 전략이 LLM 훈련을 크게 개선할 수 있다고 주장한다. 구체적으로, 우리의 기여는 다음과 같다:\n' +
+      '\n' +
+      '* 데이터가 이미 수동으로 필터링/중복 제거(예: MinHash)되었으며 성능을 최적화하는 대상 분포를 알지 못하는 표준 LLM 사전 훈련 설정에 대한 다양한 데이터 선택 전략을 조사합니다. 우리는 SSL 프로토타입의 성능이 임베딩 공간에서 중복 구동 클러스터에 의해 영향을 받는다고 주장한다. 섹션 3.4에서는 이러한 클러스터의 영향을 받지 않도록 SemDeDup을 활용하는 새 데이터 선택 전략 **D4** 를 제안합니다.\n' +
+      '* 섹션 4.1에서는 "무한한" 원본 데이터가 있고 고정된 토큰 예산으로 모델을 훈련하는 _컴퓨팅 제한 체제_에서 무작위 iid 데이터 선택 및 이전에 설정된 방법보다 더 나은 사전 훈련 복잡성과 다운스트림 정확도를 달성할 수 있음을 보여줍니다. 또한, 6.7b 모델 규모에서 D4 방법이 약 20%의 효율 이득을 얻을 수 있음을 보이고, 모델 규모에 따라 효율 이득의 크기가 증가함을 보인다.\n' +
+      '* 데이터가 부족 하 고 데이터를 건너뛰어야 하는 _데이터 제한 체제_ 에서 반복할 데이터를 교묘하게 선택 하면 무작위로 선택한 새 데이터에 대 한 교육을 이길 수 있는 반면 반복할 데이터를 무작위로 선택 하면 새 데이터를 추가 하는 성능이 저하 됩니다 (섹션 4.2). 이것은 단일 epoch LLM 훈련의 표준 관행에 의문을 제기하며 지능적으로 하위 선택된 데이터에 대한 epoching이 더 나은 접근법이 될 수 있음을 시사한다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      '**텍스트가 아닌 도메인의 데이터 선택:** 수많은 작업이 비전 모델 [6; 10; 23; 31; 34; 38; 49]에서 데이터 선택 기술을 성공적으로 사용했지만 대부분 하위 이미지넷 규모였다. 이들 작업 중 일부는 개별 데이터 포인트(예를 들어, Paul 등의 EL2N[38])를 스코어링하는 프루닝 메트릭을 개발하는 반면, 일부는 데이터-효율성에 초점을 맞추고 모델이 더 적은 데이터 포인트, 예를 들어, 코어세트[9; 35; 44; 60]로 기준 성능에 도달할 수 있게 하는 포인트 그룹을 찾으려고 시도한다. Sorscher et al. [47]은 ImageNet 스케일에서 기존의 많은 개인-점수 방법들을 비교하며, 그들의 SSL 프로토타입 메트릭들 및 (금지적으로 비싼)\n' +
+      '\n' +
+      '그림 1: D4(핑크 라인) 및 랜덤(회색 라인)으로 선택된 데이터를 사용하여 100B 토큰에 대한 6.7B OPT 모델 사전 훈련에 대한 학습 곡선. D4는 16개의 NLP 작업에서 검증 복잡도에 대해 18-20%의 효율성 증가와 평균 0-샷 다운스트림 정확도의 2% 증가를 가져 베이스라인 트레이닝을 상당히 능가한다. 전체 학습 곡선은 A.2절을 참조하십시오.\n' +
+      '\n' +
+      '펠드만 및 장[15]으로부터의 메모리화 메트릭은 일반적으로 다른 방법들보다 우수하다. 오디오 도메인에서 Dong et al. [14]는 오디오 장면 분류를 위한 중요한 훈련 샘플을 찾기 위해 중요도 임베딩을 계산한다. 보다 최근에, Abbas et al. [1]은 SSL 프로토타입과 유사한 방법이지만 의미적 중복제거에 초점을 맞춘 SemDeDup을 사용하는 비전 언어 모델(CLIP 모델)에 대해 매우 고무적인 결과를 입증했다. 우리의 작업은 이러한 접근법을 결합하고 대규모 LLM에 적용한다.\n' +
+      '\n' +
+      '**사전 학습 데이터가 LM 성능에 미치는 영향:** Gao 등 [16]은 "파일" 데이터 세트를 CommonCrawl 파생 말뭉치와 비교하기 위해 GPT-2 [40] 모델의 변형을 처음부터 학습합니다. Radford et al. [40]은 1.4B 매개 변수 모델을 처음부터 훈련하여 MassiveWeb을 큐레이트하는 데 사용되는 품질 필터 및 데이터 중복 제거 방법의 긍정적인 영향을 보여줍니다. Hernandez et al. [19]는 다양한 양의 인위적으로 생성된 데이터 복제의 영향을 정량화하고 복제된 데이터에 대해 훈련된 모델의 행동 변화를 해석하는 데 대한 분석을 제공한다. 동시에 Xie et al. [56]은 웹 데이터의 분포를 위키피디아와 같은 고품질 참조 말뭉치에 정렬하기 위해 중요도 재샘플링을 사용하는 것을 제안한다. 유사하게, Gururangan et al. [17]은 LMs를 태스크-특정 코퍼스에 적응시키기 위한 데이터 선택 전략을 탐색한다. 최근 작업의 또 다른 라인은 파일에서 훈련된 8B 매개변수 모델에 대해 모든 데이터 세트에 걸쳐 다운스트림 정확도 및 복잡성에서 인상적인 개선을 보여주는 Xie et al. [55]와 함께 데이터 혼합이 사전 훈련에 어떻게 영향을 미치는지 탐구한다. 마찬가지로 Longpre et al. [30]은 LLM 성능에 대한 학습 데이터의 텍스트 품질, 독성, 연령 및 도메인 분포의 역할을 탐구한다. 데이터 큐레이션 외에도 최근 반복 데이터[5, 37, 57]의 영향을 탐구하는 작업이 급증했으며 일반적으로 반복 토큰이 새 토큰에 대한 훈련보다 나쁘다는 결론(섹션 4.2에서 질문함)이 있다.\n' +
+      '\n' +
+      '## 3 실험 설정\n' +
+      '\n' +
+      '원본 데이터세트 \\(D_{source}\\), 문서(크롤링된 웹 페이지) 및 모델 아키텍처 \\(M\\)를 감안할 때, 우리는 일부 평가 메트릭 \\(E(M(D_{S,R}))\\를 최대화하는 이들 문서의 하위 집합을 선택하기 위한 전략 \\(S\\)를 찾는 것을 목표로 한다. \\ (R\\)은 전략 \\(S\\)으로 데이터를 선택한 후 원본 데이터 세트 \\(D_{source}\\)에서 남은 문서의 비율을 나타낸다. 이러한 이유로 우리는 이 작업 전체에서 \\(R\\)을 _선택 비율_ 이라고 합니다. 예를 들어 \\(R=0.25\\) 및 \\(|D_{source}|=100\\)백만 인 경우 \\(100\\)M 문서의 원본 데이터 세트에서 문서의 25%를 _선택 하 여 \\(25\\)M 문서를 사용 하 여 학습 데이터 세트에 도달 합니다. 우리는 모델 트레이너가 나중에 이러한 문서를 배치로 포장하는 방법과 독립적으로 단일 문서의 세분도로 작동한다. 본 논문에서는 언어 모델 사전 학습을 위한 데이터를 선택하는 가장 일반적인 방법인 \\(S\\)의 기준선으로서 랜덤 선택을 사용한다. 이 섹션의 나머지 부분에서는 소스 데이터 세트(\\(D_{source}\\)), 모델(\\(M\\)), 평가 메트릭(\\(E\\)), 그리고 가장 중요한 선택 전략(\\(S\\))에 대한 우리의 선택을 설명한다.\n' +
+      '\n' +
+      '### Training Dataset (choice for \\(D_{source}\\))\n' +
+      '\n' +
+      '우리는 Touvron et al. [50]에서 사용한 것과 동일한 CCNet [54] 파이프라인으로 전처리된 CommonCrawl 버전에서 모든 훈련 실행을 수행한다. 우리는 MinHash 기반 중복 제거의 추가 단계를 추가한다(섹션 A.1의 자세한 내용을 참조). 실험 전에 이 공통 단계를 적용하면 실험에서 관찰된 모든 효과가 현재 널리 퍼진 MinHash 기반 데이터 중복 제거 전략의 접근법을 보완한다는 것을 보장한다. 이 작업의 나머지 부분에서 이 데이터 세트를 _CC-dedup_ 이라고 합니다.\n' +
+      '\n' +
+      '### 모델 훈련 ( \\(M\\) 및 \\(T_{target}\\)에 대 한 선택)\n' +
+      '\n' +
+      '데이터 선택 전략의 다양한 구성을 평가하기 위해 프루닝된 버전의 데이터 세트에 대해 처음부터 OPT [59] 모델을 학습한다. Zhang et al. [59]의 표준 모델 아키텍처 및 설정을 사용하고 MetaSeq [59]를 사용하여 모든 모델을 훈련합니다. 125M 모델의 경우 \\(T_{target}=3B\\) 토큰으로 훈련합니다. 1.3B 파라미터 모델에 대해, 우리는 \\(T_{target}=40B\\)의 목표 토큰 카운트로 훈련한다. 6.7B 매개변수 모델의 경우 \\(T_{target}=100B\\) 토큰으로 훈련합니다. 계산 제한을 충족하기 위해 Hoffmann 등 [20]에서 제안한 토큰 예산을 트리밍하여 이를 선택합니다. 우리는 섹션 A.1에서 훈련 설정에 대한 전체 세부 정보를 제공한다.\n' +
+      '\n' +
+      '### 평가 메트릭 ( \\(E\\)에 대 한choices)\n' +
+      '\n' +
+      '우리는 대부분의 평가를 Zhang et al. [59]의 설정과 일치시킨다.\n' +
+      '\n' +
+      '**유효성 검사 집합 복잡성**. 우리의 검증 세트는 CommonCrawl, DM Mathematics, HackerNews, OpenSubtitles, OpenWebText2, Project Gutenberg, USPTO, Wikipedia와 같은 파일 [16]의 하위 집합에서 파생된 검증 세트를 포함하는 [59]에서 주로 나온다. 또한 PushShift.io Reddit 데이터 세트 [4]에서 얻은 유효성 검사 세트(이를 _redditflattened_라고 함)를 포함합니다. 또한 원본 데이터 세트 _CC-dedup_ 의 열차 검증 분할 및 C4 [41]의 검증 세트에서 얻은 검증 세트에 대해 복잡성을 측정합니다.\n' +
+      '\n' +
+      '데이터 선택의 효과는 검증 세트가 웹 데이터 코퍼스에서 파생되었는지 여부에 따라 개별 검증 세트에 크게 다르다는 것을 알 수 있다(섹션 4.4.1의 자세한 내용 및 분석 참조). 이를 위해 검증 집합을 Web-snapshots(C4, CommonCrawl, CC-dedup)와 Non-web snapshots로 나누고, 이들 집합 내의 평균 복잡도를 보고한다.\n' +
+      '\n' +
+      '**다운스트림 작업 정확도** 훈련된 모델의 다운스트림 성능을 평가하기 위해 Zhang 등의 16개 NLP 작업에 걸쳐 평균 0샷 정확도를 보고하고 Zhang 등의 [59]와 일치하는 프롬프트 방법론을 사용합니다. 이러한 16개의 NLP 태스크들의 세트는 Arc Challenge 및 ArcEasy[12], HellaSwag[58], OpenBookQA[33], PIQA[7], StoryCloze[36], Winograd[28], Winogrande[42] 뿐만 아니라 SuperGLUE[52]로부터의 태스크들을 포함한다. 이 평가 설정에 대한 자세한 내용은 독자에게 Zhang 등의 [59]를 참조하십시오.\n' +
+      '\n' +
+      '**명령 조정 복잡성**. 위에서 언급한 평가는 고유한 트레이드오프를 제시한다. 다운스트림 태스크에 대한 정확도는 일반적으로 언어 모델의 실제 값을 보다 구체적으로 나타내는 것으로 간주되지만, 이러한 태스크의 제한된 수의 예제와 메트릭으로서 정확도의 단계적 거동으로 인해 분산이 더 높은 경향이 있다. 대조적으로, 메트릭으로서 당혹도는 성능과 강한 상관 관계를 여전히 나타내면서 더 매끄럽다[43]. 따라서 두 평가 메트릭 사이의 중간 지점으로 OPT-IML 미세 조정에 사용된 명령어 조정 데이터 세트에서 가져온 샘플에 대한 복잡도를 평가하는 것을 제안한다[21]. 이 데이터 세트는 1500개의 고유한 NLP 작업에 걸쳐 있으며 광범위한 프롬프트 응답 쌍으로 구성되므로 _평균_ NLP 작업을 대표한다. Super-NaturalInstructions [53] 및 PromptSource [3]과 같은 광범위한 작업 컬렉션을 병합하여 신중하게 제작되었습니다. 우리는 포괄적인 분류를 위해 독자를 [21]의 표 2.1에 참조한다. 이 접근법을 통해 실제 성능 측정과 평가의 통계적 일관성의 균형을 맞출 수 있다. 이 메트릭은 다른 유효성 검사 집합에 대 한 복잡성으로 간주 될 수 있습니다. 여기서 유효성 검사 집합은 명령 조정에 사용 되는 예제로 채워집니다 (이 데이터 집합에서 **그렇지** 않습니다).\n' +
+      '\n' +
+      '### 데이터 선택 전략 ( \\(S\\)에 대 한 선택)\n' +
+      '\n' +
+      '큐레이팅되지 않은 웹 데이터에 대한 초기 탐색에서 우리는 많은 웹 문서 샘플을 내장하고 이러한 임베딩을 클러스터링하고 결과 클러스터를 수동으로 검사했다. 우리는 인간 언어의 자연스러운 분포와 거의 관련이 없는 문서와 웹 크롤링의 인공물, 예를 들어 사소한 수정으로 단일 기본 템플릿에서 자동으로 생성된 나이키 신발의 광고(자세한 내용은 섹션 A.9 참조)로 여러 고밀도 클러스터를 빠르게 확인했다.\n' +
+      '\n' +
+      '이러한 중복 구동 클러스터가 가지치기되어야 한다는 직관과 비전 및 비전 언어 모델에서 가지치기 방법의 최근 성공에 힘입어 우리는 임베딩 공간에서의 위치에 따라 데이터 포인트를 조작하는 데이터 선택 전략에 초점을 맞춘다. 각 문서를 125M OPT 모델에 입력하여 임베딩을 하고 마지막 토큰의 마지막 레이어 임베딩을 사용한다(섹션 A.7에서 서로 다른 임베딩 공간을 사용하여 실험한다). 다음으로, 우리는 몇 가지 접근법을 실험한다:\n' +
+      '\n' +
+      '**SemDeDup**: Abbas 등 [1]은 먼저 K-Means를 사용하여 임베딩 공간을 클러스터링하고 서로의 엡실론 볼 내에 있는 각 클러스터의 점을 제거함으로써 텍스트 및 이미지 도메인 모두에서 중복을 제거하는 것을 제안했다. 우리는 이 알고리즘을 수정 없이 사용하고 이 알고리즘의 구현 세부 사항은 리더를 Abbas 등 [1]에 참조한다.\n' +
+      '\n' +
+      '**원형성**: Sorscher 등 [47]은 가장 좋은 방법 중 하나로 판명된 새로 도입된 "SSL 프로토타입" 메트릭을 포함하여 훈련 이미지 분류 모델의 데이터 효율성을 개선하기 위해 다양한 데이터 가지치기 전략을 조사했습니다. 이 전략은 먼저 k-평균 군집링을 사용하여 임베딩 공간을 클러스터링하고 가장 가까운 군집 중심까지의 거리가 증가하는 순서로 데이터 포인트를 폐기하여 가장 "원형" 데이터 포인트가 폐기되어 훨씬 더 높은 분산 이상치를 풍부하게 하는 것을 포함한다. 본 알고리즘에 대한 보다 상세한 설명은 Sorscher et al. [47]에 독자를 참조한다.\n' +
+      '\n' +
+      '**D4**: 이전에 언급한 대로 MinHash에서 제거하지 않은 템플릿 텍스트 또는 극히 의미적으로 중복되는 정보의 클러스터와 같은 중복 기반 클러스터의 많은 인스턴스를 찾습니다. 이러한 임베딩 공간의 영역은 매우 밀집된 경향이 있으며 k-평균이 복제된 텍스트에 대한 귀중한 클러스터 할당을 낭비하게 한다. 이 편향된 군집링은 또한 많은 군집이 더 많은 국소 일관성 대신 완전히 중복에 의해 구동되기 때문에 SSL 프로토타입의 효과에 부정적인 영향을 미칠 수 있다. 이 통찰력은 우리가 제안한 전략으로 이끕니다.\n' +
+      '\n' +
+      '1. 전체 데이터 세트 \\(D\\)에 선택 비율 \\(R_{dedup}\\)로 _SemDeDup_를 적용하여 더 작은 데이터 세트 \\(D^{\\prime}\\)를 생성합니다.\n' +
+      '2. 클러스터 포인트 in \\(D^{\\prime}\\) with K-Means\n' +
+      '3. 선택 비율 \\(R_{proto}\\) \\(D^{\\prime}\\)에 _SSL 프로토타입_ 적용\n' +
+      '\n' +
+      '상술한 전략은 \\(R=R_{dedup}*R_{proto}\\)의 전체 선택 비율을 가지며, 지역 및 전역적으로 데이터의 분포를 다양화하고자 한다. 간결함을 위해 이 메서드를 **D4** 라고 합니다. _문서 중복 제거 및 다양화_ 의 약자입니다. 이 작업을 통해 우리는 \\(R_{dedup}=0.75\\)을 선택하고 다양한 \\(R_{proto}\\)을 선택한다(섹션 A.1에서 이 선택에 대해 논의한다). 섹션 4에서는 D4의 성능을 베이스라인 트레이닝 및 다른 방법과 비교하고, 섹션 4.4에서는 D4를 분석하고 의미적 중복 제거 후 재클러스터링이 실제로 중복 구동 클러스터의 영향을 감소시킨다는 것을 보여준다(그림 7 참조).\n' +
+      '\n' +
+      '## 4 Results\n' +
+      '\n' +
+      '그림 2: 검증 복잡성에 대한 데이터 선택 방법의 비교. 각 포인트는 40B 토큰에 대해 트레이닝된 1.3B OPT 모델을 나타낸다. x축은 선택비 \\(R\\)를 나타낸다. 상단 2 및 하단 좌측 그래프에 대한 y-축은 복잡성을 묘사하며, 하단 우측 그래프는 Zhang 등의 16개의 NLP 태스크들에 대한 평균 다운스트림이다[59]. 회색선은 기준선 훈련의 값을 나타냅니다. 음영 오차는 3개의 씨앗에 대한 표준 오차이다. **이 그래프의 각 점은 동일한 토큰 예산으로 학습됩니다. \\(R\\)을 줄일 때 원본 데이터 세트의 크기를 공동으로 증가시킵니다 (예: 4x 크기의 원본 데이터 세트에서 문서의 1/4을 선택).\n' +
+      '\n' +
+      '### 고정 컴퓨팅 체제: 데이터 선택이 고정 토큰 예산에 도움이 될 수 있습니까?\n' +
+      '\n' +
+      '이 섹션에서는 원본 데이터 세트 \\(D_{source}\\)의 크기를 공동으로 늘리고 \\(R\\)(선택된 \\(D_{source}\\)의 비율)을 감소시켜 목표 토큰 예산이 일정하게 유지되도록 고정 토큰 예산을 큐레이트하고 훈련하는 고정 컴퓨팅 설정을 고려한다. 이 설정은 LLM 훈련의 가장 일반적인 패러다임과 유사하다. \\(D_{source}\\)가 증가하고 \\(R\\)가 감소함에 따라, 우리는 더 크고 더 큰 초기 데이터 세트로부터 선택하며, 그 결과 선택된 세트의 전체 품질을 증가시키고 선택할 고품질 데이터 포인트 세트가 더 커진다. 명확성을 위해 우리는 \\(D_{source}\\) 대 \\(D_{target}\\)의 비율에 따른 성능을 표시한다. 각 설정에 대해 기준선, SemDeDup 단독, SSL 프로토타입 단독 및 제안된 방법 D4의 성능을 평가한다.\n' +
+      '\n' +
+      '**유효성 검사 복잡성** 그림 2에서는 세 가지 방법 중 하나를 사용하여 상대적으로 적은 양의 데이터 선택(작은 \\(R\\))이 모든 유효성 검사 세트에서 일관된 개선을 가져온다는 것을 보여줍니다. 그러나 \\(R\\)을 늘리면 웹 스냅숏 및 비 웹 스냅숏 유효성 검사 집합에 대 한 _반대 효과_ 를 관찰 합니다. 우리는 섹션 4.4에서 이러한 불일치를 심층적으로 분석한다. 그러나, LLM이 달성하기를 원하는 고품질 세대에 훨씬 더 밀접하게 해당하는 지침 OPT 검증 세트에서 세 가지 방법 모두 일관되고 명확한 복잡성 개선을 초래한다는 것을 발견했다. 특히, 세 가지 방법 모두 이점을 제공했지만 D4는 SemDeDup 및 SSL 프로토타입을 독립적으로 사용하여 성능이 향상되었으며 소스 데이터 세트가 목표 데이터 세트 크기의 약 4배일 때 가장 두드러진 이득이 나타났다. D4가 소스 데이터 세트 크기에 따라 일관되게 개선된다는 점을 감안할 때 이 간격은 소스 데이터 세트 크기에 따라 증가할 것으로 추정한다.\n' +
+      '\n' +
+      '**다운스트림 작업 정확도** 그림 2에서는 NLP 작업 제품군에 걸쳐 평균화된 0샷 다운스트림 정확도도 보고합니다. 다운스트림 정확도의 높은 분산은 다양한 모델의 성능에서 명확한 경향을 식별하는 것을 어렵게 하지만, 0-샷 다운스트림 정확도는 일반적으로 소스 데이터 세트 크기에 따라 증가한다는 것을 다시 관찰한다.\n' +
+      '\n' +
+      '우리의 연구 결과는 또한 더 큰 모델 규모에서 유지됩니다. 우리는 1.3B OPT 실험(예: \\(R=0.25\\))에서 가장 성능이 좋은 구성을 선택하고 100B 토큰에서 6.7B OPT 모델을 훈련한다. 그림 1은 6.7B 모델에 대해 \\(R=0.25\\)로 D4를 적용한 긍정적인 효과를 보여준다. 프루닝된 데이터에 대해 트레이닝된 모델은 평균적으로 20% 더 적은 업데이트 단계를 사용하여 베이스라인 모델과 동일한 당혹도에 도달하고 트레이닝이 끝날 때 다운스트림 태스크의 제품군에서 정확도의 2% 개선을 달성한다 - 동일한 태스크 세트에 대한 OPT와 GPT-3 모델 패밀리 사이의 약 많은 차이 - (Zhang 등의 그림 3 참조 [59])\n' +
+      '\n' +
+      '### 고정 데이터 체제: 데이터가 부족하면 어떻게 됩니까?\n' +
+      '\n' +
+      '섹션 4.1의 결과는 훈련을 위한 고정된 양의 컴퓨팅이 주어진 경우, 더 크고 더 큰 소스 데이터 세트로부터 데이터를 선택하는 것이 언어 모델 성능을 향상시키는 유망한 방법임을 나타낸다. 그러나 웹에서 얼마나 많은 데이터를 큐레이션할 수 있는지에 대한 실질적인 한계가 있으며, 따라서,\n' +
+      '\n' +
+      '그림 3: 새로운 토큰 비교 vs. 랜덤 데이터 선택을 위한 반복 토큰과 1.3B OPT 사전 훈련을 위한 고정 선택 비율 \\(R=0.25\\)에 대한 D4를 반복한다. 각 방법은 원본 데이터 세트 \\(D_{source}\\)에서 문서의 25%를 선택하고 40B의 목표 토큰 버짓에 도달할 때까지 해당 하위 집합에 대한 에포크를 선택한다. 우리는 D4를 통한 반복 토큰이 베이스라인 트레이닝(랜덤, 새로운 토큰)보다 우수하다는 것을 관찰한다.\n' +
+      '\n' +
+      '원본 데이터 세트의 크기에 대한 자연적 제한입니다. 데이터가 부족하면 어떻게 되나요? Hernandez et al. [19]는 훈련 데이터에서 반복된 데이터 포인트의 불균형적인 악영향을 발견하고 분석하였다. 유사하게, 동시에 우리의 작업 Muennighoff et al. [37]은 C4의 랜덤 서브세트에 걸쳐 4회 이상 에포징될 때 테스트 손실이 악화된다는 것을 보여준다. 본 절에서는 이러한 제한된 데이터인 다중 에포크 설정에서 D4의 사용이 모델 성능에 어떤 영향을 미치는지 조사한다.\n' +
+      '\n' +
+      '이를 테스트하기 위해 고정된 토큰 예산과 토큰 예산과 일치하는 고정된 데이터 크기를 가정한다. 우리는 모든 데이터와 D4를 사용하여 선택된 데이터의 하위 집합에 대한 두 개의 에폭에 대한 학습을 평가한다. 이러한 구성에 대해 1.3B 매개변수 OPT 모델을 학습하고 표 1의 평균 당량도를 보고한다. 놀랍게도, 사용 가능한 모든 데이터를 한 번 사용하는 대신 무작위로 선택된 데이터의 하위 집합에 대한 에폭싱은 모델 당량도의 약간의 저하를 초래한다. 대조적으로, D4에 의해 선택된 반복 데이터는 새로운 토큰을 무작위로 샘플링하는 것에 비해 복잡성 및 다운스트림 정확도의 개선을 유도한다. 즉, 사용 가능한 모든 데이터에 대해 원패스 학습을 수행하는 대신 D4 및 epoch를 통해 데이터를 2회 선택하는 것이 유익하다. 그림 3에서 볼 수 있듯이 이 발견은 일반적으로 훈련 전반에 걸쳐 적용된다. 모델 규모 및 데이터 선택 비율에 대한 결과는 섹션 A.6을 참조한다.\n' +
+      '\n' +
+      '우리가 아는 한, 이것은 원칙적인 데이터 선택 기술을 통해 새로운 토큰을 무작위로 샘플링하는 것보다 LLM 사전 훈련을 위해 데이터를 반복하는 것의 이점을 입증한 첫 번째 결과이다. 우리는 대규모 웹 데이터를 사전 훈련 LLM에 사용하는 최적의 방법은 전략적으로 데이터의 훨씬 작지만 더 잘 분산된 하위 집합을 선택하고 여러 번 반복하는 것일 수 있다고 주장한다.\n' +
+      '\n' +
+      '### 데이터 선택 비용\n' +
+      '\n' +
+      '섹션 4.1에서 D4에 의해 선택된 데이터에 대해 6.7B 매개변수 모델을 훈련함으로써 20% 더 적은 모델 업데이트를 사용하여 기준선 모델의 최종 복잡성에 도달한다는 것을 발견했다. 특정 설정에서 이는 **약 4300 GPU 시간을 절약** 하는 것으로 변환 됩니다. 선택 메트릭 계산 비용을 설명하지 않으므로 _naive_ 효율성 이득이라고 합니다.\n' +
+      '\n' +
+      '우리의 방법의 실용성을 입증하기 위해 우리는 데이터 선택 비용이 이것보다 훨씬 적다는 것을 보장해야 한다. 섹션 3.4에 설명된 바와 같이, D4를 통해 데이터를 선택하는 것은, 첫째, 125M OPT 모델을 통해 문서를 임베딩하는 것, 둘째, K-Means 인덱스 + 인덱스까지의 거리를 계산하는 것을 포함한다. 첫 번째 단계는 약 하루 만에 96개의 CPU 코어가 있는 단일 기계에서 완료된다. CPU와 GPU 코어 1의 가격 사이의 두 자릿수 차이를 감안할 때 이 비용은 무시할 수 있다고 생각한다. 두 번째 단계에서는 동일한 A100 GPU를 사용하여 125M 매개 변수 모델을 사용하여 400B 토큰을 내장하는 데 약 888 GPU 시간이 소요됩니다. 이를 4300 GPU 시간의 _naive_ 효율성 이득에서 빼면 3412 GPU 시간의 _전체_ 효율성 이득에 도달합니다. 이것은 단일 6.7B 매개변수 모델을 훈련할 때 D4 컴퓨팅이 실제로 우리를 얼마나 절약했는지 보여줍니다. 를 포함할 수 있다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l|l l} \\(S\\) & \\(T_{total}\\) & \\(T_{selected}\\) & Epochs & Non-Web Snapshot PPL & Instruction + Answers PPL \\\\ \\hline Random & 40B & 40B & \\(1\\) & \\(16.27\\pm 0.012\\) & \\(14.19\\pm 0.003\\) \\\\  & 40B & 20B & \\(2\\) & \\(16.39\\pm 0.011\\) (+\\(0.12\\)) & \\(14.37\\pm 0.015\\) (+\\(0.18\\)) \\\\ \\hline D4 & 40B & 20B & 2 & \\(\\mathbf{16.10\\pm 0.024}\\) (-\\(0.17\\)) & \\(\\mathbf{13.85\\pm 0.016}\\) (\\(-0.34\\)) \\\\ \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 고정 데이터 선택 방법과 원본 데이터 세트 크기에 대해 새로운 토큰 선택 또는 반복 토큰의 효과를 비교합니다. 모든 모델은 40B 토큰에서 훈련된 1.3B OPT 모델입니다. \\ (T_{selected}\\)는 원본 데이터 세트에서 선택한 토큰의 수를 나타냅니다. 맨 위 행은 기준선 훈련을 나타냅니다. 3개의 종자에 대한 평균 및 표준 오차가 표시된다. **놀랍게도 D4를 통해 반복할 토큰을 교묘하게 선택하는 것이 새 토큰을 무작위로 선택하는 것보다 우수합니다.* *\n' +
+      '\n' +
+      '그림 4: 명령 + 응답 복잡도 \\(R=0.25\\)에서 모델 크기의 함수로서 총 훈련 비용에 대한 D4를 통한 데이터 선택의 _Naive_ 및 _전체_ 효율성 이득입니다.\n' +
+      '\n' +
+      '4번에서는 다른 모델 크기에 대해 이 계산을 다시 수행하고 _전체_ 효율성 이득이 모델 크기에 따라 증가한다는 것을 확인합니다. 이를 바탕으로, 우리는 보수적으로 D4가 LLama-65B[50]의 경우 20%, OPT-175B[59]의 경우 22%의 전반적인 효율성 이득을 가질 것이라고 추정할 수 있다.\n' +
+      '\n' +
+      '### D4 분석\n' +
+      '\n' +
+      '#### 4.4.1 데이터 선택이 웹 스냅숏의 성능에 영향을 미치는 이유는 무엇입니까?\n' +
+      '\n' +
+      '일관된 _평균_ 복잡도 개선을 관찰하지만 섹션 A.3은 이 복잡도 개선이 검증 세트에 따라 크게 다르다는 것을 보여준다. 더 중요한 것은 데이터 선택이 CC-dedup, CommonCrawl, C4와 같은 웹 스냅샷 검증 세트에서 항상 성능을 손상시킨다는 것이다. 이러한 현상이 발생하는 이유를 조사하기 위해 각 검증 세트를 훈련 세트와 동일한 임베딩 공간에 임베딩하고 1.3B 기준 모델에 대해 훈련 세트에서 검증 포인트에 가장 가까운 이웃을 검색한다. 도 5의 좌측 플롯에서, 우리는 웹-스냅샷들과 동일한 분포로부터 도출된 검증 세트들이 다른 검증 세트들에 비해 트레이닝 세트에 더 가깝다는 것을 보여주는 반면, 도 5의 우측 플롯에서 데이터 선택이 이러한 웹-스냅샷 검증 세트들에 불균형적으로 영향을 미친다는 것을 보여준다: 우측 상단 플롯에서, 우리는 웹 검증 세트들이 데이터 선택의 결과로서 희소화된 임베딩 공간의 영역들(예를 들어, 트레이닝 세트 내의 클러스터 중심들에 가까운 공간의 영역들)에 상주하는 것을 확인하고, 우측 하단 플롯에서, 데이터 선택 후의 복잡도가 상당히 증가하기 때문에 이들 포인트들이 또한 데이터 선택에 의해 가장 많은 영향을 받는다는 것을 알 수 있다. 더욱이, 중간 오른쪽 그림은 이러한 검증 포인트가 훈련 세트에 대한 근접성 때문일 수 있으므로 이러한 포인트가 "쉬운" 포인트임을 나타내는 가지치기 전에 가장 낮은 복잡성을 갖는다는 것을 보여준다.\n' +
+      '\n' +
+      '우리의 검증 세트 중 일부가 훈련 세트에 매우 가깝다는 점을 감안할 때, 우리는 그것들이 여전히 일반화의 강력한 지표인지 의문을 제기한다. 실제로 그림 6에서 우리는 웹 스냅숏의 복잡도와 명령 조정 데이터 세트의 복잡도 및 다운스트림 정확도와 같은 LM 능력의 보다 강력한 지표 사이의 약간의 역 관계에 대한 증거를 찾는다. 대조적으로, Instruct+Answers의 복잡도는 다운스트림 정확도와 양의 상관관계가 있음을 관찰하여 명령 조정된 데이터에 대한 검증 복잡도가 모델 품질의 더 나은 척도임을 시사한다. 이러한 이유로 섹션 4의 대부분의 결과를 웹 스냅샷 및 비 웹 스냅샷으로 그룹화합니다(그림 5에서 Web-Derived + Web-Independent로 구성됨, 유효성 검사 세트 이름의 전체 목록은 섹션 A.1.4를 참조하세요).\n' +
+      '\n' +
+      '그림 5: **왼쪽**: 유효성 검사 집합 간의 열차 테스트 유사성입니다. X축은 검증 세트의 이름을 나타내고(각 검증 세트에 대한 자세한 내용은 섹션 3.4 참조), y축은 1.3B OPT 40B 기준선에 대한 훈련 세트에서 가장 가까운 이웃까지의 코사인 거리를 나타낸다(녹색 삼각형은 평균을 나타내고 노란색 막대는 중앙값을 나타낸다). 우리는 웹 스냅샷 검증 세트가 훈련 세트의 포인트에 가장 가깝다는 것을 관찰한다. **오른쪽**: C4 유효성 검사 세트의 분석입니다. (상단): 열차에서 가장 가까운 이웃까지의 코사인 거리의 히스토그램. 각 빈에 대해 평균 원본 복잡도(중간)와 데이터 선택 후 복잡도(아래)의 평균 차이를 보여준다. 트레이닝 세트에 가까운 "Easy"(낮은 오리지널 ppl) 포인트들은 일반적으로 데이터 선택에 의해 가장 영향을 받는 포인트들이다.\n' +
+      '\n' +
+      '#### 4.4.2 SemDeDup과 SSL Prototype 간의 재클러스터링의 중요성\n' +
+      '\n' +
+      '섹션 3.4에서 언급했듯이, 우리는 과도한 의미 중복을 포함하는 공간의 밀집된 영역을 희소화하는 것이 클러스터링 품질을 향상시키고 따라서 D4의 성능에 중요하다고 가정한다. D4에 대한 재클러스터링의 영향을 분리하기 위해, 우리는 재클러스터링 단계(예를 들어, 원래 클러스터링을 유지함)를 제거하는 D4 버전을 사용하여 실험을 실행한다. 그림 7에서 볼 수 있듯이 재클러스터링 단계를 생략하면 성능이 크게 악화되며 그림 7의 가장 오른쪽 그림에서 SemDeDup이 실제로 중심(예: 중복 구동 군집)을 둘러싼 극도로 조밀한 군집을 제거한다는 것을 관찰한다. 우리는 A.9절에서 이것을 더 깊이 분석한다.\n' +
+      '\n' +
+      '## 5 요약 및 제한 사항\n' +
+      '\n' +
+      '우리는 LLM에서 데이터 큐레이션을 위한 방법인 D4를 도입하여 여러 모델 규모에서 훈련 효율성을 20% 향상시켰고, 증가된 모델 규모에서 더 큰 이득을 얻었다. 또한 일반적인 관행과 달리 에포칭을 통해 데이터를 반복하는 것이 LLM 교육에 유익할 수 있지만 데이터 하위 집합이 지능적으로 선택되는 경우에만 가능하다는 것을 입증했다. D4를 통해 효율성 향상과 성능 개선을 장려하는 것으로 나타났지만, 우리의 작업에는 몇 가지 한계와 많은 미래 방향이 있다.\n' +
+      '\n' +
+      '**다른 훈련 분포 혼합:** 데이터를 선택하고 훈련하기 위해 하나의 데이터 분포를 선택했지만 최신 LLM 설정은 일반적으로 다른 데이터 원본을 혼합합니다. 우리의 방법은 이러한 파이프라인에 상보적일 수 있다: 실무자들은 D4를 사용하여 개별 데이터 소스를 다양화하고 중복을 제거한 다음 데이터 소스를 혼합하여 훈련 데이터 세트에 추가 다양성을 제공할 수 있다. 우리는 향후 작업으로 학습 분포의 혼합에 대한 D4의 효능을 탐구하는 것을 남겨두지만 이것이 데이터 세트뿐만 아니라 데이터 세트 내에서도 중복성을 줄임으로써 추가 이득을 얻을 것으로 기대한다.\n' +
+      '\n' +
+      '**모델 규모:** 계산 제한으로 인해 평가된 가장 큰 모델은 100B 토큰에서 훈련된 6.7B 매개 변수였습니다. 알고 있는 범위 내에서는, 이것은 임베딩 기반 데이터 큐레이션 접근법의 현재까지 가장 큰 적용이지만, 특히 효율성 이득이 모델 규모에 따라 증가한다는 관찰에 비추어 볼 때 100B를 초과하는 모델 규모에서의 추가 조사는 매우 흥미로울 것이다.\n' +
+      '\n' +
+      '그림 6: (좌측): 부정적인 명령어+응답 복잡도와 부정적인 웹 스냅샷 복잡도 간의 상관관계, (중측): 다운스트림 정확도와 부정적인 웹 스냅샷 복잡도, (우측): 다운스트림 정확도와 부정적인 명령어+응답 복잡도 간의 상관관계. 각 포인트는 하나의 트레이닝 구성(1.3B OPT 모델, 40B 토큰)이며, 유일한 변화는 데이터 선택 방법 및 프리트레이닝 시드이다. 웹 스냅샷 복잡성은 LM 능력의 더 강한 지표와 약간 부정적인 상관 관계가 있다.\n' +
+      '\n' +
+      '그림 7: D4에서 재클러스터링 단계의 필요성 조사. 재클러스터링은 웹 스냅샷(왼쪽), 웹 스냅샷이 아닌 스냅샷(왼쪽 중간) 및 명령 + 응답(오른쪽 중간)에 걸쳐 복잡성을 개선합니다. 오른쪽: 재클러스터링이 있거나 없는 중심까지의 평균 거리의 경험적 CDF입니다. 재클러스터링은 중복 구동 클러스터(중심점까지의 평균 거리가 낮은 클러스터)를 제거합니다.\n' +
+      '\n' +
+      'Acknowledgements\n' +
+      '\n' +
+      '저자들은 이 작품을 결실을 맺는 데 도움을 준 많은 사람들에게 감사하고 싶습니다: 스리니 이이어, 유첸 장, 토도르 미하일로프, 제이콥 쉬 모야 첸, 만시즈 폴, 미첼 워츠만, 암로 압바스, 아디티야 싱, 마이라 쳉, 매튜 레빗. 저자들은 또한 초기 브레인스토밍에 대해 수리야 강굴리, 모나 디아브, 시안 리에게 감사하고 헨리 에스텔라와 빅토리아 린이 제공한 컴퓨팅 인프라에 대한 도움에 감사한다. 마지막으로, 저자들은 익명의 리뷰어들에게 이 논문의 질과 집필을 향상시켜준 것에 대해 감사드린다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1] Amro Abbas, Kushal Tirumala, Daniel Simig, Surya Ganguli, and Ari S. Morcos. Sembeddup: Data-efficient learning at web-scale through semantic deduplication. _ArXiv_, abs/2303.09540, 2023.\n' +
+      '* [2] Mikel Artetxe, Shruti Bhosale, Naman Goyal, Todor Mihaylov, Myle Ott, Sam Shleifer, Xi Victoria Lin, Jingfei Du, Srinivasan Iyer, Ramakanth Pasunuru, et al. Efficient large scale language modeling with mixtures of experts. _arXiv preprint arXiv:2112.10684_, 2021.\n' +
+      '* [3] Stephen H. Bach, Victor Sanh, Zheng Xin Yong, Albert Webson, Colin Raffel, Nihal V. Nayak, Abheesht Sharma, Taewoon Kim, M Saiful Bari, Thibault Fevry, Zaid Alyafeai, Manan Dey, Andrea Santilli, Zhiqing Sun, Srulik Ben-David, Canwen Xu, Gunjan Chhablani, Han Wang, Jason Alan Fries, Maged S. Al-shaibani, Shanya Sharma, Urmish Thakker, Khalid Almubarak, Xiangru Tang, Mike Tian-Jian Jiang, and Alexander M. Rush. Promptsource: An integrated development environment and repository for natural language prompts. _ArXiv_, abs/2202.01279, 2022.\n' +
+      '* [4] Jason Baumgartner, Savvas Zannettou, Brian Keegan, Megan Squire, and Jeremy Blackburn. The pushshift reddit dataset. In _Proceedings of the international AAAI conference on web and social media_, volume 14, pages 830-839, 2020.\n' +
+      '* [5] Stella Biderman, Hailey Schoelkopf, Quentin Anthony, Herbie Bradley, Kyle O\'Brien, Eric Hallahan, Mohammad Afah Khan, Shivanshu Purohit, USVSN Sai Prashanth, Edward Raff, et al. Pythia: A suite for analyzing large language models across training and scaling. _arXiv preprint arXiv:2304.01373_, 2023.\n' +
+      '* [6] Vighnesh Birodkar, Hossein Mobahi, and Samy Bengio. Semantic redundancies in image-classification datasets: The 10% you don\'t need. _arXiv preprint arXiv:1901.11409_, 2019.\n' +
+      '* [7] Yonatan Bisk, Rowan Zellers, Jianfeng Gao, Yejin Choi, et al. Piqa: Reasoning about physical commonsense in natural language. In _Proceedings of the AAAI conference on artificial intelligence_, volume 34, pages 7432-7439, 2020.\n' +
+      '* [8] Andrei Z Broder. On the resemblance and containment of documents. In _Proceedings. Compression and Complexity of SEQUENCES 1997 (Cat. No. 97TB100171)_, pages 21-29. IEEE, 1997.\n' +
+      '* [9] George Cazenavette, Tongzhou Wang, Antonio Torralba, Alexei A Efros, and Jun-Yan Zhu. Dataset distillation by matching training trajectories. In _Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition_, pages 4750-4759, 2022.\n' +
+      '* [10] Kashyap Chitta, Jose M Alvarez, Elmar Haussmann, and Clement Farabet. Training data subset search with ensemble active learning. _IEEE Transactions on Intelligent Transportation Systems_, 23(9):14741-14752, 2021.\n' +
+      '* [11] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, et al. Palm: Scaling language modeling with pathways. _arXiv preprint arXiv:2204.02311_, 2022.\n' +
+      '* [12] Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge. _arXiv preprint arXiv:1803.05457_, 2018.\n' +
+      '* [13] Tim Dettmers, Mike Lewis, Younes Belkada, and Luke Zettlemoyer. Llm: int8 (0: 8-bit matrix multiplication for transformers at scale. _arXiv preprint arXiv:2208.07339_, 2022.\n' +
+      '\n' +
+      '* Dong et al. [2020] Bo Dong, Cristian Lumezanu, Yuncong Chen, Dongjin Song, Takehiko Mizoguchi, Haifeng Chen, and Latifur Khan. At the speed of sound: Efficient audio scene classification. In _Proceedings of the 2020 International Conference on Multimedia Retrieval_, ICMR \'20, page 301-305, New York, NY, USA, 2020. Association for Computing Machinery. ISBN 9781450370875. doi: 10.1145/3372278.3390730. URL [https://doi.org/10.1145/3372278.3390730](https://doi.org/10.1145/3372278.3390730).\n' +
+      '* Feldman and Zhang[2020] Vitaly Feldman and Chiyuan Zhang. 신경망이 기억하는 것과 이유: 영향력 추정을 통해 긴 꼬리를 발견합니다. _ Advances in Neural Information Processing Systems_, 33:2881-2891, 2020.\n' +
+      '* Gao et al. [2020] Leo Gao, Stella Rose Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, Shawn Presser, and Connor Leahy. The pile: An 800gb dataset of diverse text for language modeling. _ArXiv_, abs/2101.00027, 2020.\n' +
+      '* Gururangan et al. [2020] Suchin Gururangan, Ana Marasovic, Swabha Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, and Noah A Smith. Don\'t stop pretraining: Adapt language models to domains and tasks. _arXiv preprint arXiv:2004.10964_, 2020.\n' +
+      '* 헨드릭스와 김펠 [2016] 댄 헨드릭스와 케빈 김펠. 가우시안 오차 선형 단위(겔러스) _ arXiv preprint arXiv:1606.08415_, 2016.\n' +
+      '* Hernandez et al. [2022] Danny Hernandez, Tom B. Brown, Tom Conerly, Nova DasSarma, Dawn Drain, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, T. J. Henighan, Tristan Hume, Scott Johnston, Benjamin Mann, Christopher Olah, Catherine Olsson, Dario Amodei, Nicholas Joseph, Jared Kaplan, and Sam McCandlish. Scaling laws and interpretability of learning from repeated data. _ArXiv_, abs/2205.10487, 2022.\n' +
+      '* Hoffmann et al. [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Jack W. Rae, Oriol Vinyals, and L. Sifre. Training compute-optimal large language models. _ArXiv_, abs/2203.15556, 2022.\n' +
+      '* Iyer et al. [2022] Srinivas Iyer, Xiaojuan Lin, Ramakanth Pasunuru, Todor Mihaylov, Daniel Simig, Ping Yu, Kurt Shuster, Tianlu Wang, Qing Liu, Punit Singh Koura, Xian Li, Brian O\'Horo, Gabriel Pereyra, Jeff Wang, Christopher Dewan, Asli Celikyilmaz, Luke Zettlemoyer, and Veselin Stoyanov. Opt-iml: Scaling language model instruction meta learning through the lens of generalization. _ArXiv_, abs/2212.12017, 2022.\n' +
+      '* Izacard et al. [2021] Gautier Izacard, Mathilde Caron, Lucas Hosseini, Sebastian Riedel, Piotr Bojanowski, Armand Joulin, and Edouard Grave. Unsupervised dense information retrieval with contrastive learning. _arXiv preprint arXiv:2112.09118_, 2021.\n' +
+      '* Jiang et al. [2019] Angela H Jiang, Daniel L-K Wong, Giulio Zhou, David G Andersen, Jeffrey Dean, Gregory R Ganger, Gauri Joshi, Michael Kaminksy, Michael Kozuch, Zachary C Lipton, et al. Accelerating deep learning by focusing on the biggest losers. _arXiv preprint arXiv:1910.00762_, 2019.\n' +
+      '* Johnson et al. [2019] Jeff Johnson, Matthijs Douze, and Herve Jegou. Billion-scale similarity search with GPUs. _IEEE Transactions on Big Data_, 7(3):535-547, 2019.\n' +
+      '* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, T. J. Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeff Wu, and Dario Amodei. Scaling laws for neural language models. _ArXiv_, abs/2001.08361, 2020.\n' +
+      '* Kingma and Ba [2014] Diederik P Kingma and Jimmy Ba. 애덤: 확률적 최적화를 위한 방법입니다. _ arXiv preprint arXiv:1412.6980_, 2014.\n' +
+      '* Lee et al. [2021] Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch, and Nicholas Carlini. Deduplicating training data makes language models better. In _Annual Meeting of the Association for Computational Linguistics_, 2021.\n' +
+      '* Levesque et al. [2012] Hector Levesque, Ernest Davis, and Leora Morgenstern. The winograd schema challenge. In _Thirteenth international conference on the principles of knowledge representation and reasoning_, 2012.\n' +
+      '* Liu et al. [2023] Zichang Liu, Jue Wang, Tri Dao, Tianyi Zhou, Binhang Yuan, Zhao Song, Anshumali Shrivastava, Ce Zhang, Yuandong Tian, Christopher Re, et al. Deja vu: Contextual sparsity for efficient l1ms at inference time, 2023.\n' +
+      '\n' +
+      '* [30] S. Longpre, Gregory Yauney, Emily Reif, Katherine Lee, Adam Roberts, Barret Zoph, Denny Zhou, Jason Wei, Kevin Robinson, David M. Mimno, and Daphne Ippolito. A pretrainer\'s guide to training data: Measuring the effects of data age, domain coverage, quality, & toxicity. _ArXiv_, abs/2305.13169, 2023.\n' +
+      '* [31] Kristof Meding, Luca M Schulze Buschoff, Robert Geirhos, and Felix A Wichmann. Trivial or impossible-dichotomous data difficulty masks model differences (on imagenet and beyond). _arXiv preprint arXiv:2110.05922_, 2021.\n' +
+      '* [32] Stephen Merity, Caiming Xiong, James Bradbury, and Richard Socher. Pointer sentinel mixture models. _arXiv preprint arXiv:1609.07843_, 2016.\n' +
+      '* [33] Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. Can a suit of armor conduct electricity? a new dataset for open book question answering. _arXiv preprint arXiv:1809.02789_, 2018.\n' +
+      '* [34] Soren Mindermann, Jan M Brauner, Muhammed T Razzak, Mrinank Sharma, Andreas Kirsch, Winnie Xu, Benedikt Holten, Aidan N Gomez, Adrien Morisot, Sebastian Farquhar, et al. Prioritized training on points that are learnable, worth learning, and not yet learnt. In _International Conference on Machine Learning_, pages 15630-15649. PMLR, 2022.\n' +
+      '* [35] Baharan Mirzasoleiman, Jeff Bilmes, and Jure Leskovec. Coresets for data-efficient training of machine learning models. In _International Conference on Machine Learning_, pages 6950-6960. PMLR, 2020.\n' +
+      '* [36] Nasrin Mostafazadeh, Nathanael Chambers, Xiaodong He, Devi Parikh, Dhruv Batra, Lucy Vanderwende, Pushmeet Kohli, and James Allen. A corpus and evaluation framework for deeper understanding of commonsense stories. _arXiv preprint arXiv:1604.01696_, 2016.\n' +
+      '* [37] Niklas Muennighoff, Alexander M. Rush, Boaz Barak, Teven Le Scao, Aleksandra Piktus, Nouamane Tazi, Sampo Pyysalo, Thomas Wolf, and Colin Raffel. Scaling data-constrained language models. 2023.\n' +
+      '* [38] Mansheej Paul, Surya Ganguli, and Gintare Karolina Dziugaite. Deep learning on a data diet: Finding important examples early in training. _Advances in Neural Information Processing Systems_, 34:20596-20607, 2021.\n' +
+      '* [39] Guilherme Penedo, Quentin Malartic, Daniel Hesslow, Ruxandra Cojocaru, Alessandro Cappelli, Baptiste Pannier, Ebtesam Almazrouei, and Julien Launay. The refinedweb dataset for falcon llm: Outperforming curated corpora with web data, and web data only.\n' +
+      '* [40] Alec Radford, Jeff Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are unsupervised multitask learners. 2019.\n' +
+      '* [41] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.\n' +
+      '* [42] Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. Winogrande: An adversarial winograd schema challenge at scale. _Communications of the ACM_, 64(9):99-106, 2021.\n' +
+      '* [43] Rylan Schaeffer, Brando Miranda, and Sanmi Koyejo. Are emergent abilities of large language models a mirage? _arXiv preprint arXiv:2304.15004_, 2023.\n' +
+      '* [44] Ozan Sener and Silvio Savarese. Active learning for convolutional neural networks: A core-set approach. _arXiv preprint arXiv:1708.00489_, 2017.\n' +
+      '* [45] Mohammad Shoeybi, M Patwary, R Puri, P LeGresley, J Casper, B Megatron-LM Catanzaro, et al. Training multi-billion parameter language models using model parallelism. _arXiv preprint cs.CL/1909.08053_, 2019.\n' +
+      '* [46] Shaden Smith, Mostofa Patwary, Brandon Norick, Patrick LeGresley, Samyam Rajbhandari, Jared Casper, Zhun Liu, Shrimai Prabhumoye, George Zerveas, Vijay Korthikanti, et al. Using deepspeed and megatron to train megatron-turing nlg 530b, a large-scale generative language model. _arXiv preprint arXiv:2201.11990_, 2022.\n' +
+      '* [47] Ben Sorscher, Robert Geirhos, Shashank Shekhar, Surya Ganguli, and Ari S. Morcos. Beyond neural scaling laws: beating power law scaling via data pruning. _ArXiv_, abs/2206.14486, 2022.\n' +
+      '\n' +
+      '* [48] Kushal Tirumala, Aram Markosyan, Luke Zettlemoyer, and Armen Aghajanyan. Memorization without overfitting: Analyzing the training dynamics of large language models. _Advances in Neural Information Processing Systems_, 35:38274-38290, 2022.\n' +
+      '* [49] Mariya Toneva, Alessandro Sordoni, Remi Tachet des Combes, Adam Trischler, Yoshua Bengio, and Geoffrey J Gordon. An empirical study of example forgetting during deep neural network learning. _arXiv preprint arXiv:1812.05159_, 2018.\n' +
+      '* [50] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothe Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aur\'elien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models. _ArXiv_, abs/2302.13971, 2023.\n' +
+      '* [51] Pablo Villalobos, Jaime Sevilla, Lennart Heim, Tamay Besiroglu, Marius Hobbhahn, and Anson Ho. Will we run out of data? an analysis of the limits of scaling datasets in machine learning, 2022.\n' +
+      '* [52] Alex Wang, Yada Pruksachatkun, Nikita Nangia, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel Bowman. Superglue: A stickier benchmark for general-purpose language understanding systems. _Advances in neural information processing systems_, 32, 2019.\n' +
+      '* [53] Yizhong Wang, Swaroop Mishra, Pegah Alipoormolabashi, Yeganeh Kordi, Amirreza Mirzaei, Anjana Arunkumar, Arjun Ashok, Arut Selvan Dhanasekaran, Atharva Naik, David Stap, Eshaan Pathak, Giannis Karamanolakis, Haizhi Gary Lai, Ishan Purohit, Ishani Mondal, Jacob Anderson, Kirby Kuznia, Krima Doshi, Maitreya Patel, Kuntal Kumar Pal, M. Moradshahi, Mihir Parmar, Mirali Purohit, Neeraj Varshney, Phani Rohitha Kaza, Pulkit Verma, Ravsehaj Singh Puri, Rushang Karia, Shailaja Keyru Sampat, Savan Doshi, Siddharth Deepak Mishra, Sujan Reddy, Sumanta Patro, Tanay Dixit, Xudong Shen, Chitta Baral, Yejin Choi, Noah A. Smith, Hanna Hajishirzi, and Daniel Khashabi. Super-natural instructions: Generalization via declarative instructions on 1600+ nlp tasks. In _Conference on Empirical Methods in Natural Language Processing_, 2022.\n' +
+      '* [54] Guillaume Wenzek, Marie-Anne Lachaux, Alexis Conneau, Vishrav Chaudhary, Francisco Guzm\'an, Armand Joulin, and Edouard Grave. Ccnet: Extracting high quality monolingual datasets from web crawl data. _ArXiv_, abs/1911.00359, 2019.\n' +
+      '* [55] Sang Michael Xie, Hieu Pham, Xuanyi Dong, Nan Du, Hanxiao Liu, Yifeng Lu, Percy Liang, Quoc V. Le, Tengyu Ma, and Adams Wei Yu. Doremi: Optimizing data mixtures speeds up language model pretraining. _ArXiv_, abs/2305.10429, 2023.\n' +
+      '* [56] Sang Michael Xie, Shibani Santurkar, Tengyu Ma, and Percy Liang. Data selection for language models via importance resampling. _ArXiv_, abs/2302.03169, 2023.\n' +
+      '* [57] Fuzhao Xue, Yao Fu, Wangchunshu Zhou, Zangwei Zheng, and Yang You. To repeat or not to repeat: Insights from scaling llm under token-crisis. _arXiv preprint arXiv:2305.13230_, 2023.\n' +
+      '* [58] Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a machine really finish your sentence? _arXiv preprint arXiv:1905.07830_, 2019.\n' +
+      '* [59] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, Todor Mihaylov, Myle Ott, Sam Shleifer, Kurt Shuster, Daniel Simig, Punit Singh Koura, Anjali Sridhar, Tianlu Wang, and Luke Zettlemoyer. Opt: Open pre-trained transformer language models. _ArXiv_, abs/2205.01068, 2022.\n' +
+      '* [60] Bo Zhao, Konda Reddy Mopuri, and Hakan Bilen. Dataset condensation with gradient matching. _arXiv preprint arXiv:2006.05929_, 2020.\n' +
+      '* [61] Yukun Zhu, Ryan Kiros, Rich Zemel, Ruslan Salakhutdinov, Raquel Urtasun, Antonio Torralba, and Sanja Fidler. Aligning books and movies: Towards story-like visual explanations by watching movies and reading books. In _Proceedings of the IEEE international conference on computer vision_, pages 19-27, 2015.\n' +
+      '\n' +
+      'Appendix\n' +
+      '\n' +
+      '### 실험 설정 세부 정보\n' +
+      '\n' +
+      '#### a.1.1 Hyperparameters for model training\n' +
+      '\n' +
+      '섹션 3.4에서 언급된 바와 같이, 우리는 Zhang 등의 원래의 OPT 모델 아키텍처와 동일한 하이퍼파라미터 및 구성을 사용한다[59]. 표 A1에서 이러한 하이퍼파라미터를 간략하게 설명한다. 이러한 구성은 공개적으로 사용할 수 있고 많은 이전 작업[1, 13, 29, 48, 59]에서 표준으로 사용되었기 때문에 선택했다. 모든 모델은 GELU 활성화 [18], Adam Optimizer [26]과 \\(\\beta_{1}=0.9\\), \\(\\beta_{2}=0.95\\), \\(\\epsilon=10^{-8}\\), 가중치 감쇠를 \\(0.1\\)로 설정하고 기울기 규범을 1.0으로 클립한다. 다항식 학습 속도 스케줄을 사용하며, 여기서 학습 속도는 처음 3억 7500만 토큰에서 최대 학습 속도로 0.0에서 최대 학습 속도로 따뜻해지고 나머지 M 토큰에서 (\\(0.1\\) * 최대 LR)로 가열냉각된다. 우리는 fp16 정밀도로 Megatron-LM 텐서 병렬성 [45]를 사용하여 완전 샤드 데이터 병렬 모드 [2]에서 모든 모델을 훈련한다. 재현성의 경우(그리고 아마도 Zhang 등[59]의 원래 구성과 유일한 차이점)는 드롭아웃을 사용하지 않는다는 것이다.\n' +
+      '\n' +
+      '#### a.1.2 Dataset Curation Details\n' +
+      '\n' +
+      '이 하위 섹션에서는 논문 전체에서 사용되는 시작 소스 데이터 세트인 _CC-dedup_을 큐레이트하는 방법을 설명합니다. 우리는 2017년부터 2020년까지 5개의 CommonCrawl 덤프 2로 시작합니다. 그리고 CC-net [54]을 사용하여 문단 수준에서 데이터를 복제하고 영어가 아닌 웹 페이지를 제거하고 품질이 낮은 페이지를 필터링합니다. 우리가 사용하는 파이프라인은 Touvron et al. [50]에서 사용된 파이프라인과 동일하다(2절 내에서 "English CommonCrawl [67%]"라는 부제 뒤에 있는 섹션을 참조).\n' +
+      '\n' +
+      '각주 2: [https://commoncrawl.org/the-data/get-started/](https://commoncrawl.org/the-data/get-started/)\n' +
+      '\n' +
+      '여기에 문서 수준에서 MinHash [8] 중복제거 단계를 추가한다. MinHash의 매개 변수는 서명당 20개의 해시, 20개의 버킷 및 버킷당 1개의 행입니다. 이러한 매개변수는 MinHashLSH의 스파크 구현의 기본 매개변수이며 계산 제한으로 인해 이러한 매개변수에 대해 하이퍼파라미터 스윕을 수행하지 않았다. 이전 작업은 훨씬 더 공격적인 매개 변수를 사용하여 MinHash를 실행하려고 시도했습니다. Lee 등 [27] 및 Penedo 등 [39]는 \\(20\\) 버킷, \\(450\\) 버킷당 해시 및 \\(9000\\) 해시당 서명을 사용합니다. 우리는 더 공격적인 MinHash가 더 많은 템플릿을 제거하여 고품질 시작 데이터 세트를 생성하여 잠재적으로 D4의 SemDeDup 단계가 덜 필요할 것이라고 추측한다. Abbas et al. [1]은 Lee et al. [27] 및 SemDeDup의 MinHash의 성능이 C4에서 3.9%의 고정된 데이터 선택 비율에서 비슷하다는 것을 발견했으며, 이는 SemDeDup이 공격적인 MinHash와 유사한 데이터를 필터링한다는 것을 나타낸다. 우리는 이 하이퍼파라미터들을 훑어보는 것을 미래의 작업으로 남겨둔다.\n' +
+      '\n' +
+      '데이터 세트는 CommonCrawl 덤프에서 선별되기 때문에 교육 세트에 공격적이거나 PII 콘텐츠가 포함될 위험이 있습니다. 그러나 동일한 파이프라인을 사용하여 CommonCrawl 덤프를 필터링하기 때문에 이러한 위험은 Touvron 등 [50]과 같은 표준 언어 모델링 큐레이션의 위험에 불과합니다.\n' +
+      '\n' +
+      '#### a.1.3 Parameters for Data Selection\n' +
+      '\n' +
+      '섹션 3.4에서 소개된 모든 방법은 K-평균을 사용하여 임베딩을 클러스터링하는 것을 포함한다. 시작 훈련 데이터 세트 CC-dedup에는 총 약 6억 개의 문서가 포함되어 있습니다. 6억 개의 768 크기의 벡터 모두에 대해 K-평균 클러스터링을 실행하려면 상당한 양의 계산이 필요하다. 대신 이전 작업 [1, 47]을 따르고 중심을 계산할 약 100M 문서를 무작위로 샘플링한다. 이 100M 문서에 대한 임베딩을 L2-norm이 1.0이 되도록 정규화한 다음 다음 매개 변수를 사용하여 faiss [24]를 사용합니다.\n' +
+      '\n' +
+      '```\n' +
+      'faiss.Kmeans( 768#125MOPTmodelembeddingsize, 11000#11Kclusters, nier=20#20iterations, verbose=True, seed=0, gpu=False, spherical=True, min_points_per_centroid=1, max_points_per_centroid=100000000)\n' +
+      '```\n' +
+      '\n' +
+      '우리는 이전 작업 [1]에 따라 \\(11000\\) 클러스터를 선택하고 이 선택은 클러스터 수가 클러스터되는 총 점 수의 제곱근이 되어야 한다는 휴리스틱을 고수한다는 점에 주목한다. 또한 125M OPT 모델 규모에서 데이터 선택을 위한 초기 실험에서 데이터 선택 방법의 성능에 대한 군집 수의 유의한 영향을 찾지 못했다는 점에 주목한다(그림 A1 참조). 이 발견은 다른 군집 수를 가진 SemDeDup에 의해 선택된 데이터 세트 간에 상당한 중복을 발견한 Abbas 등 [1]과 일치한다(Abbas 등 [1]의 그림 A2 참조).\n' +
+      '\n' +
+      '우리는 페이스가 K-평균을 수행하는 동안 클러스터의 균형을 수동으로 맞추려고 시도하지 않도록 의도적으로 센트로이드당 최소 포인트와 센트로이드당 최대 포인트를 낮게 설정했다. Sorscher et al. [47]은 모든 클래스 쌍에 대한 수량 \\(\\frac{\\text{size of majority class}}{\\text{size of minority class}}}\\)의 기대치인 "클래스 균형 점수"(Sorscher et al. [47]의 섹션 H 참조)를 명시적으로 클래스 균형이 중요하다는 것을 발견했다. 그런 다음 그들은 클래스 균형 점수 0.5에 대해 하드한계를 설정했는데, 이는 "모든 클래스는 모든 클래스를 균등하게 가지치기할 때 가질 이미지의 최소 50%를 갖는다"는 것을 의미한다[47]. 우리는 "클러스터 균형" 점수라고 하는 클래스 균형 점수의 비지도 학습 아날로그를 고려한다. 클러스터 균형 점수는 모든 클러스터 쌍에 대한 \\(\\frac{\\text{size of larger cluster}}{\\text{size of smaller cluster}}\\)의 양에 대한 기대값이다. 모든 데이터 선택 방법(및 R에 대한 선택)에서 이 값은 명시적 개입 없이 일반적으로 \\(0.5\\)과 같거나 더 크다는 것을 발견했다. 이러한 이유로, 우리는 (클러스터의 속성에 기초하여) 각 클러스터에서 샘플링되는 점의 수를 변경하는 것이 향후 매우 흥미로운 작업이라는 점에 주목하지만, 명시적으로 클러스터 균형을 맞추지 않는다.\n' +
+      '\n' +
+      'D4 매개변수: D4를 사용하는 동안 매개변수 \\(R_{proto}\\) 및 \\(R_{dedup}\\)의 선택은 D4의 성능에 영향을 미친다. 제한된 컴퓨팅이 주어진 경우, 우리는 이러한 하이퍼파라미터를 스윕할 수 없다. 대신 전략적으로 이러한 매개 변수를 선택 합니다. 먼저 SemDeDup에서 가장 높은 값 \\(R\\)을 살펴보며 유효성 검사 집합 간에 복잡성 개선을 가져옵니다. SemDeDup의 목적은 중복 기반 클러스터를 제거하는 것이고, SemDeDup을 사용하는 낮은 \\(R\\)은 일반적으로 템플릿/의미 중복만을 제거하는 것이 아니기 때문에 "가장 높은 값"을 선택한다. A.3절에서 볼 수 있듯이, 이것은 일반적으로 \\(R_{dedup}=0.75\\)로 발생했다. 따라서 우리는 D4에 대한 서로 다른 데이터 선택 비율을 얻기 위해 \\(R_{dedup}=0.75\\)와 \\(R_{proto}\\)를 선택했다.\n' +
+      '\n' +
+      '#### a.1.4 어떤 유효성 검사 집합이 평균으로 전달됩니까?\n' +
+      '\n' +
+      '명확성을 위해 평균을 보고할 때 "웹 스냅샷", "비 웹 스냅샷" 및 "명령 + 응답"으로 간주하는 유효성 검사 세트를 명시적으로 명시합니다.\n' +
+      '\n' +
+      '**웹 스냅샷**: C4, CC-dedup, CommonCrawl(파일에서)의 유효성 검사 집합에 대한 복잡성입니다.\n' +
+      '\n' +
+      '**비웹 스냅샷**: OpenWebText2, HackerNews, Wikipedia(en), BookCorpusFair, DM Mathematics, Gutenberg PG-19, OpenSubtitles 및 USPTO로 구성된 파일의 다른 유효성 검사 세트입니다. 또한 이 평균에는 "redditflattened"(Pusshift.io Reddit[4]로부터 설정된 검증), "스토리", "prompts_with_answers"(이하 설명됨) 및 "prompts"(이는 "prompts_with_answers"와 동일하지만 각 샘플은 답이 없는 명령 조정 프롬프트일 뿐이다.\n' +
+      '\n' +
+      '**명령어 + 답변**: OPT-IML의 명령 조정 데이터에 대한 복잡성 [21]에서 각 샘플에는 명령 조정 프롬프트와 답변이 모두 포함되어 있습니다(그림 A4에서 이를 "prompts_with_answers"라고 합니다).\n' +
+      '\n' +
+      '웹 스냅샷 및 비웹 스냅샷의 유효성 검사 세트는 명확하지만(표준 오픈 소스 데이터 세트이거나 일반적으로 사용되는 데이터에서 파생됨), "명령 + 응답" 데이터는 일부 독자에게 새로운 것일 수 있습니다. 이 검증 세트가 표 A2에 어떻게 보이는지에 대한 몇 가지 예를 제공한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline\n' +
+      '**Raw Text** \\\\ \\hline Instructions: In this task, you are given two phrases: Head and Tail, separated with \\textless{}sep\\textgreater{}. The Head and the Tail events are short phrases possibly involving participants. The names of specific people have been replaced by generic words (e.g., PersonX, PersonY, PersonZ). PersonX is always the subject of the event. You have to determine whether the Head is located or can be found at/in/on the Tail or not. Classify your answers into “Yes” and “No”. The phrase may also contain “\\textgreater{}”, a placeholder that can be an object, a person, and/or an action.Input: Head: PersonX acknowledges gratefully the \\textless{}sep\\textgreater{}Tail: to use it Output: No \\\\ \\hline Read the given sentence and if it is a general advice then indicate via “yes”. Otherwise indicate via “no”. advice is basically offering suggestions about the best course of action to someone. advice can come in a variety of forms, for example Direct advice and Indirect advice. (1) Direct advice: Using words (e.g., suggest, advice, recommend), verbs (e.g., can, could, should, may), or using questions (e.g., why don’t you’s, how about, have you thought about). (2) Indirect advice: contains hints from personal experiences with the intention for someone to do the same thing or statements that imply an action should (or should not) be taken. Input: Let it go. Output: yes” \\\\ \\hline Instructions: You are given a sentence in English. Your job is to translate the English sentence into Italian. No! Demand to understand. Ask. Answer: No! Esigete di comprendere. Chiedete. \\\\ \\hline Task: In this task you will be given a list of integers. You should round each integer to the nearest tens place. That means you should round the number to the nearest multiple of 10.Input: [528, -636, -686, 368, -433, 992, 886] Answer: [530, -640, -690, 370, -430, 990, 890] \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 A2: "명령어 + 답변" 유효성 검사 세트의 예\n' +
+      '\n' +
+      '### 모델 규모 및 훈련에 걸친 효율성 향상\n' +
+      '\n' +
+      '이 절에서는 D4를 통해 데이터를 선택하여 얻은 모델 규모와 성능 이득 사이의 관계를 조사한다. 구체적으로, \\(T_{target}=3\\)B 토큰으로 훈련된 125M OPT 모델, \\(T_{target}=40\\)B 토큰으로 훈련된 1.3B OPT 모델, \\(T_{target}=100\\)B 토큰으로 훈련된 6.7B OPT 모델의 세 그룹을 훈련한다. 우리는 그림 A2에서 D4가 복잡성 측면에서 전체적으로 효율성 이득을 가져온다는 것을 주목한다. 놀랍게도, 이러한 효율성 증가는 규모에 따라 증가하는 것으로 보이며, 이는 더 큰 모델 규모에서 D4가 훨씬 더 많은 효율성 증가로 이어질 수 있음을 나타낸다. 또한 1.3B 및 6.7B 모델의 경우 0샷 다운스트림 정확도에서 1.3B 및 6.7B 모델 모두에 대해 30% 정도의 효율성 향상을 볼 수 있지만 중간 체크포인트에 대한 다운스트림 성능 평가는 완료되지 않은 학습률 일정으로 인해 완전히 공정하지 않다는 점에 주목한다. 그럼에도 불구하고, 다운스트림 정확도 효율성 이득은 규모에 따라 감소하지 않는다는 것을 알 수 있다.\n' +
+      '\n' +
+      '### Downstream Accuracy 및 PPL의 개별 분류\n' +
+      '\n' +
+      '섹션 4에서 우리는 D4, SSL 프로토타입 및 SemDeDup이 베이스라인 훈련과 비교하여 복잡성(서로 다른 검증 세트에 걸쳐 평균화됨) 및 다운스트림 정확도(서로 다른 NLP 작업에 걸쳐 평균화됨)에 대한 상당한 이득을 달성한다는 것을 알 수 있다. 또한, 일반적으로 D4가 SSL 프로토타입 및 SemDeDup보다 우수하다는 것을 알 수 있다. 이 섹션에서는 개별 작업에 걸쳐 이러한 주장에 대한 보다 세밀한 분석을 제공한다.\n' +
+      '\n' +
+      '당혹스러움의 경우 그림 A4에서 섹션 4의 클레임이 일반적으로 유효성 검사 세트 전체에 걸쳐 유지된다는 것을 알 수 있습니다. C4, CC-dedup 및 CommonCrawl과 같은 웹 스냅숏 유효성 검사 세트의 경우 기준선 훈련과 비교하여 데이터 선택이 있는 성능 변수를 볼 수 있으며 D4는 일반적으로 성능 저하 속도가 가장 느립니다. 우리는 모든 비 웹 스냅샷 검증 세트에서 데이터 선택 방법 중 명확한 승자가 없다는 점에 주목한다. 그러나 우리는 _대부분의 유효성 검사 세트에서 기준선 훈련보다 일관된 개선을 관찰합니다_ 를 사용합니다. 예를 들어 그림 A4에서 1.25x 원본 데이터 세트에서 토큰을 선택할 때 C4 및 CC-dedup을 제외한 모든 유효성 검사 세트에서 모든 데이터 선택 방법이 기준선보다 개선된다는 것을 관찰합니다 (그러나 섹션 4.4에서 설명한 바와 같이 C4 및 CC-dedup에 대한 이러한 성능 감소가 예상됨).\n' +
+      '\n' +
+      '다운스트림 정확도를 위해 OPT 아키텍처와 하이퍼파라미터를 사용하기 때문에 Zhang 등 [59]에서 수행한 정확한 다운스트림 평가와 일치하도록 선택했다. Zhang 등[59]과 유사하게 그림 A3의 16개 NLP 작업에 걸쳐 상당한 변동성을 인식하여 작업에 걸쳐 평균 다운스트림 정확도를 살펴보도록 동기를 부여한다.\n' +
+      '\n' +
+      '### SSL 프로토타입 및 SemDeDup 중첩\n' +
+      '\n' +
+      '그림 A5는 SemDeDup과 SSL 프로토타입에서 선택한 데이터 세트 간의 중첩을 보여준다. 두 방법은 동일한 데이터 포인트 세트에 도달하지 않지만 두 방법에 의해 선별된 데이터 세트 사이에는 상당한 중복이 있다. SSL 프로토타입과 SemDeDup이 클러스터 중심을 둘러싼 공간의 밀집 영역을 가지치기하기 때문이라고 가정한다. 정의에 따라 SemDeDup은 클러스터 내의 공간의 밀집 영역을 희소화하며, 유사하게 정의에 따라 SSL 프로토타입은 클러스터 중심에 가까운 데이터 포인트를 가지치기한다. K-평균 클러스터링은 중심점을 공간의 밀집된 영역에 배치하기 때문에(클러스터 중심점에 대한 코사인 거리의 분포가 오른쪽으로 치우친 것을 관찰하는 그림 A6 참조), 우리는 공간 주변 중심점의 영역이 밀집될 것임을 알고 SSL 프로토타입과 SemDeDup이 상당한 중첩을 가질 것으로 예상한다. 질적으로, 우리는 그림 A3, 그림 A4, 그림 A5에서 클러스터 중심에 가까운 점의 몇 가지 예를 검사하고 클러스터 중심에 가까운 예가 의미적으로 중복될 수 있음을 확인한다(예: 템플릿). 따라서 합리적인 데이터 선택 전략이 군집 중심을 둘러싼 이러한 밀집된 공간 영역을 희소화하는 것을 우선시하는 것이 합리적이다. 섹션 3.4에서 언급했듯이, 과도한 의미 중복을 포함하는 공간의 이러한 밀집된 영역을 희소화하는 것은 D4 뒤에 있는 원래의 동기이다. 재클러스터링 단계를 생략하면 성능이 크게 악화되며, 우리는 그림 7의 오른쪽 그림에서 SemDeDup이 실제로 중복 기반 클러스터를 제거한다는 것을 관찰한다.\n' +
+      '\n' +
+      '### 조사 Train-Validation 중첩\n' +
+      '\n' +
+      '섹션 4.4에서 간략하게 설명한 대로 많은 검증 세트가 훈련 세트에 가깝고(코사인 거리) 데이터 선택의 영향은 개별 검증 세트에 따라 다르다는 것을 관찰한다. 개별 검증 세트는 임베딩 공간의 다른 영역에 존재하며, 따라서 데이터 선택에 의해 다르게 영향을 받는다. 예를 들어, C4와 같은 웹 스냅샷 검증 세트는 임베딩 공간에서 CC-dedup에 가까운 반면, 난해한 검증 세트(예: Gutenberg PG 19 또는 DM Mathematics)는 멀리 있을 수 있다고 상상할 수 있다. 이를 정량화하기 위해 먼저 모든 검증 세트에서 각 검증 포인트에 대한 훈련 세트에서 가장 가까운 이웃을 찾는다. 그런 다음 훈련 세트의 가장 가까운 이웃이 실제로 검증 지점에 대한 정보를 전달하는지 정성적으로 확인합니다(예제는 표 A8 및 표 A9 참조). 훈련점과 검증점 사이에 상당한 중복이 관찰된다. 그런 다음 각 검증 세트가 훈련 세트에 얼마나 가까운지 정량적으로 분석합니다. 그림 A12에서 각 검증 세트에 대한 이 분포의 분류를 보여줍니다. 웹 스냅샷 검증 세트는 오른쪽으로 치우쳐 있어 훈련 세트에 가장 가까운 반면 난해한 검증 세트(구텐베르크 또는 위키피디아(en))는 더 중앙에 있거나 약간 왼쪽으로 치우친 경향이 있다.\n' +
+      '\n' +
+      '이에 동기화되어 그림 5에서 검증 세트를 나란히 비교하며(훈련 세트까지의 거리 측면에서) 유사한 경향을 볼 수 있다. 서로 다른 유효성 검사 세트가 데이터 선택에 따라 다르게 영향을 받는 이유를 더 이해하기 위해 유효성 검사 세트의 각 데이터 지점과 레코드:* 훈련 세트까지의 거리(예: 검증 지점이 훈련 세트에 얼마나 가까운지)를 반복합니다.\n' +
+      '* D4를 사용한 데이터 선택 전후의 복잡도 차이, 예를 들어 이 검증 지점이 데이터 선택에 의해 얼마나 영향을 받았는지\n' +
+      '* original perplexity e.g. How easy was this data point originally\n' +
+      '\n' +
+      '그림 A11에서 흥미로운 경향을 관찰한다: C4와 같은 웹 스냅샷 검증 세트의 경우, 트레이닝 세트에 가장 가까운 검증 포인트는 (1) 데이터 선택 전에 가장 쉬운(가장 낮은 복잡성) 포인트 및 (2) 데이터 선택에 의해 가장 영향을 받는 포인트이다. 이는 이들 검증 포인트들이 트레이닝 포인트들에 대한 근접성으로 인해 "쉽다"는 것을 나타내는 것으로 보이며, 데이터 선택으로 인해 이들 트레이닝 포인트들이 트레이닝 세트로부터 제거될 때, 근접-바이 검증 포인트들은 모델에 대해 어려워진다. 우리는 DM 수학 및 오픈 서브타이틀과 같은 비웹 스냅샷 검증 세트에서는 이러한 경향을 보지 못하며, 실제로 훈련 세트에서 가장 먼 지점이 일반적으로 데이터 선택에 의해 가장 많은 영향을 받는 반대 경향을 본다.\n' +
+      '\n' +
+      '정상성 검사로 섹션 4.4에서 그림 5를 표시하는 데 사용되는 유효성 검사 세트의 크기를 변경합니다. 그림 A8에서 유효성 검사 세트 크기를 제어하면 웹에서 파생된 유효성 검사 세트에서 웹 독립적인 유효성 검사 세트로 이동하는 동일한 점프를 얻을 수 있습니다. 이 실험을 실행할 때 특정 검증 집합이 너무 크면 무작위로 샘플링해야 하며, 이러한 무작위 샘플링이 학습 데이터 세트의 가장 가까운 이웃까지의 거리를 너무 많이 변경하지 않도록 하기 위해 그림 A7의 세 가지 다른 크기의 데이터 세트에 대해 샘플링하는 양을 변경한다. 검증 집합에서 무작위로 샘플링하는 양을 변경해도 학습에서 가장 가까운 이웃까지의 평균 거리가 크게 변경되지 않는다는 것을 관찰한다.\n' +
+      '\n' +
+      '우리는 또한 그림 5의 검증 세트 간의 차이가 훈련 세트 크기 때문인지 여부를 조사한다. 보다 작은 훈련 세트는 () 이후 유효성 검사 세트에서 "추가"될 것으로 예상한다. 실제로 우리는 그림 A9에서 이것을 본다. 그러나, 우리는 (훈련 세트에 대한 평균 거리에 대한) 검증 세트의 상대적 순서가 임의의 고정된 훈련 데이터세트 크기에 대해 동일하게 유지된다는 것을 관찰한다. 또한 그림 A10에서 모든 검증 세트의 상대적 순위뿐만 아니라 원래 그림 5에서 웹 파생에서 웹 독립 검증 세트로의 점프도 훈련 데이터 세트 크기를 줄이더라도 유지된다는 것을 볼 수 있다.\n' +
+      '\n' +
+      '그림 A7: 검증 세트 크기가 훈련 세트에서 가장 가까운 이웃까지의 코사인 거리에 미치는 영향을 연구한다. x축에서는 검증 세트의 크기를 변경하며(원래 더 큰 검증 세트를 무작위로 샘플링하여), y축은 훈련 세트에서 가장 가까운 이웃까지의 거리를 나타낸다(검증 세트에 걸쳐 평균). 우리는 원래 검증 세트의 어떤 부분이 샘플링되었는지에 관계없이 기차에서 가장 가까운 이웃까지의 평균 거리가 변하지 않는다는 것을 관찰하며, 이는 그림 5가 다른 검증 세트 크기로 인한 것이 아님을 나타낸다.\n' +
+      '\n' +
+      '그림 A8: 검증 세트 크기를 제어하면 그림 5가 변경되는지 여부를 조사합니다. 위의 그림에서 각 검증 세트는 우리가 사용하는 가장 작은 검증 세트(BookCorpusFair)의 크기인 50개의 데이터 포인트를 포함한다. 검증 세트가 50개의 데이터 포인트보다 큰 경우, 우리는 50개의 데이터 포인트를 얻기 위해 검증 세트를 무작위로 샘플링한다.\n' +
+      '\n' +
+      '그림 A9: 훈련 세트에서 가장 가까운 이웃까지의 코사인 거리에 대한 훈련 세트 세트 크기의 영향을 연구한다. x 축에서 우리는 (원래 훈련 세트를 무작위로 샘플링하여) 훈련 세트의 크기를 변경하고 y 축은 (검증 세트에 걸쳐 평균화된) 훈련 세트에서 가장 가까운 이웃까지의 거리를 나타낸다. 훈련 집합에 대한 코사인 거리는 훈련 집합이 작을수록 증가하지만 검증 집합의 상대적 순서(훈련 집합에 대한 평균 거리에 대한)는 동일하게 유지됨을 관찰한다.\n' +
+      '\n' +
+      '도 A11: (상단): 열차에서 가장 가까운 이웃까지의 코사인 거리의 히스토그램. 각 빈 내에서 DM_Mathematics (왼쪽), OpenSubtitles (중간) 및 C4 (오른쪽)에 대해 데이터 선택 후 복잡도의 평균 원본 복잡도(중간) 및 평균 차이를 보여준다. 훈련 세트에 가장 가까운 C4 검증 세트의 포인트는 둘 다 "쉬운"(아마도 훈련 포인트에 대한 근접성 때문)이고 데이터 선택에 의해 가장 큰 영향을 받는다는 점에 주목한다. 우리는 DM_Mathematics 및 OpenSubtitles과 같은 비웹 스냅샷 유효성 검사 세트에 대한 이러한 추세를 보지 못한다.\n' +
+      '\n' +
+      '### 반복 토큰에 대한 추가 조사\n' +
+      '\n' +
+      '이 섹션에서는 섹션 4.2의 결과가 모델 규모, 데이터 선택 비율(예: 에폭 수) 및 데이터 선택 방법에 걸쳐 유지되는지 여부를 조사한다.\n' +
+      '\n' +
+      '**데이터 선택 방법 전반에 걸쳐**: 먼저 섹션 4.2와 동일한 구성을 취하며, 여기서 시작 원본 데이터 집합이 40B 토큰인 경우 각 데이터 선택 방법을 \\(R=0.25\\)로 사용하여 문서의 하위 집합을 선택하고, 목표 토큰 예산에 도달할 때까지 이러한 문서를 반복합니다. 이것은 1.3B 모델 축척에 있습니다. 그림 A13에서 SemDeDup 및 SSL 프로토타입 모두에 의해 선택된 반복 데이터도 무작위로 새로운 데이터를 선택하는 것보다 우수함을 알 수 있다. 그러나 _고정_ 데이터 선택 전략(예: 그림 A13의 _고정_ 열)의 경우 반복 토큰이 새 토큰을 선택하는 것보다 우수하거나 일치한다는 것을 빠르게 알 수 있습니다. 즉, 교묘하게 반복되는 토큰은 무작위로 새로운 토큰을 선택하는 것보다 더 나은 성능을 보일 수 있지만 데이터 선택 전략(랜덤, SemDeDup, SSL 프로토타입 또는 D4)을 수정하면 일반적으로 새로운 토큰을 선택하는 것이 바람직하다. 우리는 또한 그림 A16에서 D4가 고정 계산 체제보다 적은 마진으로 다른 방법보다 우수하다는 점에 주목한다.\n' +
+      '\n' +
+      '**모델 규모 및 데이터 선택 비율**: 섹션 4.2에서 수행한 대로 데이터 선택 전략을 D4로 수정하지만 3개 모델 규모(125M, 1.3B 및 6.7B) 및 데이터 선택 비율(\\(R=0.5\\) 및 \\(R=0.25\\))에서 반복 토큰을 시도합니다. 우리는 그림 A15에서 D4를 사용한 반복 데이터가 모든 모델 규모와 \\(R\\)의 선택에 걸쳐 무작위로 새로운 토큰을 선택하는 것보다 우수하다는 것을 알 수 있다.\n' +
+      '\n' +
+      '고정 \\(R\\)의 경우 서로 다른 데이터 선택 방법이 서로 다른 양의 토큰을 포함하는 원본 데이터 세트의 하위 집합을 선택한다는 점에 유의합니다. 이는 상이한 데이터 선택 방법들이 상이한 횟수들을 에포크할 것임을 의미한다. 예를 들어, 1.3B OPT 모델 40B 토큰 버짓 트레이닝 실행의 경우, \\(R=0.25\\)가 있는 데이터를 무작위로 반복해서 10B 토큰이 있는 서브세트를 선택하고 \\(R=0.25\\)가 있는 D4를 15B 토큰이 있는 서브세트를 선택하면 랜덤 실행은 4회, D4 실행은 2.67회 에포크된다. 이를 보다 명확하게 보여주기 위해 그림 A14에서 x축을 에포크 수로 변경한 1.3B와 6.7B 반복 데이터 실행을 플롯한다. D4로 선택한 데이터의 최대 2에포크가 무작위로 선택한 새 데이터를 크게 능가하지만 5에포크에 가까우면 성능이 더 나빠진다는 것을 알 수 있다.\n' +
+      '\n' +
+      '도 A14: 반복 토큰과 D4(핑크 라인), 랜덤하게 새로운 토큰을 선택하는 것(수평 파선 그레이 라인), 랜덤하게 데이터를 반복하는 것(그레이 라인)의 비교. 우리는 서로 다른 시대 번호를 가지고 본다. y축은 복잡도를 나타내고 x축은 에폭의 수를 나타낸다.\n' +
+      '\n' +
+      '그림 A13: 트레이닝을 통한 데이터 선택 방법에 걸친 반복 토큰의 효과. X축은 업데이트 횟수를 나타내고, y축은 웹 스냅숏이 아닌 유효성 검사 세트(맨 위 행) 및 명령 OPT(맨 아래 행)에 걸친 평균 복잡도를 나타냅니다. 위의 그림에서 각 열은 다른 데이터 선택 방법을 나타냅니다. 각 열 내에서: (1) 회색 선은 베이스라인 트레이닝을 나타내고, (2) 착색된 점선은 지정된 데이터 선택 방법을 통해 반복 토큰들을 나타내고, (3) 착색된 실선은 지정된 데이터 선택 방법을 통해 새로운 토큰들을 선택하는 것을 나타낸다. 데이터를 반복하는 것은 일반적으로 _고정 데이터 선택 방법_(예를 들어, 고정 열)에 대해 새로운 데이터를 선택하는 것보다 더 나쁘다.\n' +
+      '\n' +
+      '### Embedding Space 선택\n' +
+      '\n' +
+      '우리가 사용하는 모든 데이터 선택 방법은 기본 임베딩 공간의 품질에 크게 의존한다. 마지막 토큰 마지막 계층 OPT 125M 모델에 의해 생성된 임베딩을 정성적으로 분석하고 문서 끝 형식에 대한 편향을 관찰했다. 예를 들어, 문서가 모두 이메일 또는 표준 문구("오늘 제품 구매!")로 끝나는 경우, 이러한 문서는 함께 클러스터링됩니다. 템플릿을 탐지하는 데 도움이 될 수 있지만(템플릿이 매우 유사한 방식으로 텍스트를 종료하는 경향이 있기 때문에),\n' +
+      '\n' +
+      '그림 A16: 125M, 3B 토큰 예산 규모에서 데이터를 반복할 때 데이터 선택 방법을 비교합니다. x축은 데이터 선택 비율 \\(R\\), y축은 검증 세트에 대한 평균 복잡도이다. 우리는 D4를 통해 반복할 데이터를 선택하는 것이 특히 낮은 선택 비율 \\(R\\)에서 다른 데이터 선택 방법보다 우수하다는 것을 관찰한다(고정 데이터 체제에서 낮은 선택 비율은 더 많은 에포크에 해당됨).\n' +
+      '\n' +
+      '도 A15: 반복 토큰과 D4(핑크 라인), 랜덤하게 새로운 토큰(수평 파선 그레이 라인), 랜덤하게 반복 데이터(그레이 라인)의 비교. 우리는 모델 규모(3B 토큰에 대해 훈련된 상단: 125M, 40B 토큰에 대해 훈련된 중간: 1.3B, 100B 토큰에 대해 훈련된 하단: 6.7B)와 데이터 선택 비율에 걸쳐 D4에 의해 선택된 반복 데이터가 무작위로 새로운 데이터를 선택하는 것보다 성능이 우수하다.\n' +
+      '\n' +
+      '예를 들어, 관련이 없는 주제에 대한 수천 개의 위키피디아 기사를 가져다가 각 기사의 끝에 같은 이메일을 첨부하면 함께 클러스터링될 수 있습니다.\n' +
+      '\n' +
+      '이에 동기부여된 우리는 서로 다른 임베딩 공간에 대해 간단히 실험하고 이 절에서 우리의 결과에 대해 논의한다.\n' +
+      '\n' +
+      '#### a.7.1 SentenceTransformer 모델\n' +
+      '\n' +
+      'BERT 임베딩은 일반적으로 다양한 NLP 태스크를 수행하는 데 사용되었는데, 이는 BERT(GPT/OPT와 달리)가 임베딩을 생성할 때 입력의 모든 토큰을 처리할 수 있기 때문이다(BERT는 인코더-디코더 모델인 반면 OPT/GPT는 디코더 전용임). 이용 가능한 수많은 BERT 스타일 모델이 있지만 의미적 유사성에 초점을 맞춘 임베딩 공간을 달성하기를 희망했다. 따라서, 우리는 특히 >1B 텍스트 유사성 쌍이 미세 조정된 BERT 스타일 모델인 널리 인기 있는 SentenceTransformer 모델 3을 사용하기로 선택했다. SentenceTransformer 리더보드에서 상위 모델(all-mpnet-base-v2)과 가장 작은 성능 모델(all-Mini-LM-v6)을 선택합니다. 이러한 모델은 256 및 384의 최대 컨텍스트 길이를 가지며(각각), 최대 시퀀스 길이에 맞게 입력을 절단하는 SentenceTransformer 기본값(즉, 이러한 임베딩은 문서의 시작만 고려함)을 고수한다.\n' +
+      '\n' +
+      '각주 3: [https://www.sbert.net/docs/pretrained_models.html](https://www.sbert.net/docs/pretrained_models.html)\n' +
+      '\n' +
+      '그림 A17에서 작은 모델 규모에서 문장 변환기 임베딩 공간이 OPT 임베딩 공간보다 우수함을 관찰한다. 이러한 초기 결과를 감안할 때, 우리는 1.3b 모델 규모("all-mini-lm-v6")에서 가장 전반적인 효율적인 임베딩 공간을 취하고 6.7b 트레이닝 실행을 실행했다. 놀랍게도, 더 큰 모델 규모에서 OPT 임베딩 공간이 "all-mini-LM-v6" 임베딩 공간보다 우수하다는 것을 관찰했다. "all-mini-LM-v6"과 "all-mp-net-base-v2"의 차이가 일반적으로 작다는 점을 감안할 때(그림 A17 참조), 계산 제한으로 인해 이 실행을 완료할 수 없었지만 OPT 임베딩 공간이 6.7b에서 "all-mpnet-base-v2"를 이길 것으로 예상한다. 그림 A18에서 서로 다른 임베딩 공간을 가진 D4 사용의 전체적이고 순진한 효율성을 고려할 때 동일한 경향을 볼 수 있다.\n' +
+      '\n' +
+      'SentenceTransformer 임베딩 공간이 더 큰 모델 스케일에서 더 나쁜 성능을 보이는 이유를 이해하기 위해, 우리는 각 SentenceTransformer 임베딩 공간과의 클러스터링을 정성적으로 분석한다. 우리는 "all-mp-net-base-v2" 및 "all-mini-lm-v6"과 함께 D4를 사용하면 긴 문서를 불균형적으로 자른다. 이는 실제 문장 쌍에 대해 문장 변환기 모델이 훈련되고 미세 조정되기 때문이며, 이는 모델의 최대 문맥 길이를 거의 포화시키지 않기 때문이라고 가정한다. 이렇게 하면 모든 "긴" 문서(또는 최소 최대 컨텍스트 길이 크기인 입력)가 모형에 분산되지 않은 것처럼 보일 수 있습니다. 이로 인해 긴 문서가 함께 클러스터링되어 가지치기 중에 불균형적으로 영향을 받는다고 추측한다. 이것은 위키피디아 기사와 같은 도메인에서 특히 관련이 있을 수 있으며, 여기서 헤더와 소개는 의미적으로 유사하지만 실제 콘텐츠(첫 번째 최대 컨텍스트 길이 토큰 이전)는 매우 다르다.\n' +
+      '\n' +
+      '이 문제를 우회하기 위해 우리는 작은 모델 척도에서 두 가지 접근법을 시도했다.\n' +
+      '\n' +
+      '* M1: 긴 문서를 최대 컨텍스트 길이 청크로 청크화하고, 청크 전체에 걸쳐 전체 미니-LM-v6 임베딩을 평균화하여 최종 문서 임베딩을 생성함.\n' +
+      '* M2: Contriever [22] 임베딩을 사용 합니다. 여기서 Contriever 모델은 두 개의 문장이 동일한 문서의 것인지 여부를 결정 하도록 훈련 되었으므로 문서 내 위치에 불가지론적이어야 합니다.\n' +
+      '\n' +
+      '훈련이 끝날 때의 복잡성 개선(그림 A19 참조)과 효율성(그림 A18 참조)의 관점에서 우리는 작은 모델 규모(1억 2,500만 파라미터)에서 OPT 임베딩 공간과 임베딩 공간 M1 및 M2 사이의 유의미한 차이를 관찰하지 못한다. 우리는 M1과 M2가 작은 규모에서 all-mp-net-base-v2와 all-mini-LM-v6보다 훨씬 더 나쁘고 **및** 긴 문서를 가지치기하는 동일한 문제를 겪으므로 이러한 모델이 6.7b 규모에서 OPT 임베딩 공간을 과소 수행할 것으로 예상한다.\n' +
+      '\n' +
+      '그림 A17: D4를 통해 데이터를 선택할 때, 서로 다른 임베딩 공간에 대한 복잡성(y축) 대 선택 비율 \\(R\\)(x축)이다. 서로 다른 8m(상단), 125m(중간) 및 1.3b(하단) 모델 스케일에서 SentenceTransformer 임베딩 공간이 OPT 임베딩 공간을 능가하는 것을 볼 수 있지만, 6.7b 모델 스케일에서 OPT 임베딩 공간이 모든 Mini LM v6 임베딩 공간을 능가하기 시작하는 것을 볼 수 있다. 계산 제한으로 인해 “all-mp-net-base-v2” 6.7b 실험을 실행할 수 없었지만 모델 규모 및 선택 비율에 따라 “all-mini-lm-v6”과 “all-mp-net-base-v2”의 차이가 일반적으로 작으므로 OPT 임베딩 공간이 6.7b 규모에서 “all-mp-net-base-v2”보다 우수할 것으로 예상한다.\n' +
+      '\n' +
+      '그림 A18: 데이터 선택 전략으로 D4를 사용할 때 다른 임베딩 공간에 대한 순진한 효율성 비교. 그림 A17과 유사하게, 우리는 모든 미니-LM-v6이 작은 규모에서는 OPT 임베딩 공간을 능가하지만 큰(6.7b) 모델 규모에서는 그렇지 않다는 것을 안다.\n' +
+      '\n' +
+      '### C4에 고정 계산 결과 복제\n' +
+      '\n' +
+      '이 섹션에서는 사전 훈련 데이터 세트가 CC-dedup 대신 C4 [41] 데이터 세트인 125M 규모에서 데이터 선택 방법을 비교하기 위한 결과를 간략하게 보여준다. 우리는 그림 A20에서 D4가 일반적으로 다른 방법을 능가한다는 것을 알 수 있다. 이러한 초기 실험들은 더 많이 필터링된 웹 데이터(즉, CC-dedup)에서 데이터 선택 방법을 비교하도록 동기를 부여한다.\n' +
+      '\n' +
+      '그림 A20: 데이터 선택 전략과 OPT 모델 임베딩 공간의 비교, 선택 전략으로 D4를 사용할 때, 시작 훈련 데이터 세트로 C4를 사용할 때. x축은 선택 비율 \\(R\\)이고 y축은 기준선과 비교하여 복잡도 차이(0.0의 수평 회색 점선은 기준선, 즉 데이터 선택이 수행되지 않은 경우)이므로 **낮음**이 더 좋습니다. 이 실험을 위해 \\(R_{dedup}=0.9\\)을 사용하고 \\(R_{proto}\\)을 변화시켰기 때문에 D4와 SemDeDup이 90% 일치함을 알 수 있다.\n' +
+      '\n' +
+      '### 중복 구동 클러스터 조사\n' +
+      '\n' +
+      '이 하위 섹션에서는 매우 조밀하고 중심에 가까운 군집인 중복 구동 군집의 몇 가지 예를 제시한다. 우리는 이러한 클러스터들이 의미적 중복 및/또는 중복된 텍스트로 채워지는 경향이 있음을 발견한다. 우리는 일반적으로 클러스터 중심까지의 코사인 거리의 표준 편차가 0.03 미만인 클러스터들을 살펴봄으로써 그러한 극단적인 중복 구동 클러스터들을 발견할 수 있다. 이것은 본질적으로 그림 7(갈색 선)의 경험적 CDF의 하부 꼬리에 있는 클러스터들을 살펴보는 것이다. 다음과 같은 클러스터의 몇 가지 예를 제시합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline\n' +
+      '**Cosine Distance to Centroid** & **Raw Text** \\\\ \\hline\n' +
+      '0.011662006 & The American Way, Inc. The American Way, Inc. is a suspended Californian business entity incorporated 19th August 1949. is listed as........ for bulk data downloadsI want to request the removal of a page on your websiteI want to contact California Explore \\\\ \\hline\n' +
+      '0.012483656 & John St-Amour, Inc. John St-Amour, Inc. is a suspended Californian business entity incorporated 5th October 1962. is listed as the agent........ for bulk data downloadsI want to request the removal of a page on your websiteI want to contact California Explore \\\\ \\hline\n' +
+      '0.012564898 & Joseph E. Barbour, Inc. Joseph E. Barbour, Inc. is a suspended Californian business entity incorporated 27th January 1959. is listed as........ for bulk data downloadsI want to request the removal of a page on your websiteI want to contact California Explore \\\\ \\hline\n' +
+      '0.012756169 & The Jolly Boys, Inc. is a suspended Californian business entity incorporated 4th March 1955. is listed as........ for bulk data downloadsI want to request the removal of a page on your websiteI want to contact California Explore \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 10: 클러스터 중심 682에 대한 최근접 이웃\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Cosine Distance to Cluster Centroid** & **Raw Text** \\\\ \\hline\n' +
+      '0.044178426 & Eastern Florida State College nutritional sciences Learn about Eastern Florida State College nutritional sciences, and registering for elevtives. Which college degrees......... System (IPEDS). If any stats on Hagerstown Community College career planning are incorrect, please contact us with the right data. \\\\ \\hline\n' +
+      '0.056984067 & Albany State University introduction to business Find info concerning Albany State University introduction to business, and registering for elective discussion sections......... If any stats on Warren County Community College plant science major are incorrect, please contact us with the right data. \\\\ \\hline\n' +
+      '0.0534693 & Baldwin Wallace University cost per unit Learn about Baldwin Wallace University cost per unit, submitting required application forms, and follow-up scheduling.......... (IPEDS). If any stats on San Jose State nursing degree programs are incorrect, please contact us with the right data. \\\\ \\hline\n' +
+      '0.06892538 & Niagara University managerial accounting Information about Niagara University managerial accounting, and registering for elective lectures. Which college degrees give you the......... System (IPEDS). If any stats on Midwestern University pharmacy tech program are incorrect, please contact us with the right data. \\\\ \\hline\n' +
+      '0.07246786 & Fanshawe College app download Learn about Fanshawe College app download, and registering for elective discussion sections and seminars. Which college degrees......... Data System (IPEDS). If any stats on Stratford University cell biology are incorrect, please contact us with the right data. \\\\ \\hline\n' +
+      '0.07147932 & Standish Maine Licensed Vocational Nurse LVN Jobs Find out about Standish, ME licensed vocational nurse LVN jobs options. It’s a smart......... (IPEDS). If any stats on William Jewell College medical insurance coding are incorrect, please contact us with the right data. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: 클러스터 695로부터의 랜덤 예\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Cosine Distance to Centroid** & **Raw Text** \\\\ \\hline\n' +
+      '0.035506427 & Search hundreds of travel sites at once for hotel deals at Hotel Olympic \\\\  & Kornarou Square 44, Heraklion, Greece 34 m Bembo Fountain 262......... \\\\  & hundreds of travel sites to help you find and book the hotel deal at Hotel \\\\  & Olympic that suits you best. \\\\ \\hline\n' +
+      '0.036230028 & Search hundreds of travel sites at once for hotel deals at Hotel Estrella \\\\  & del Norte Juan Hormaechea, s/n, 39195 Isla, Cantabria,........ travel \\\\  & sites to help you find and book the hotel deal at Hotel Estrella del Norte \\\\  & that suits you best. \\\\ \\hline\n' +
+      '0.036280274 & Search hundreds of travel sites at once for hotel deals at H10 Costa Adeje \\\\  & Palace Provided by H10 Costa Adeje Palace Provided........ travel sites \\\\  & to help you find and book the hotel deal at H10 Costa Adeje Palace that suits you best. \\\\ \\hline\n' +
+      '0.036827266 & Search hundreds of travel sites at once for hotel deals at Hotel Miguel \\\\  & Angel by BlueBay Calle Miguel Angel 29-31, 28010........ sites to help \\\\  & you find and book the hotel deal at Hotel Miguel Angel by BlueBay that suits you best. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: Cluster Centroid 10715에 대한 최근접 이웃\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Cosine Distance to Cluster Centroid** & **Raw Text** \\\\ \\hline\n' +
+      '0.027729392 & Seenti - Bundi Seenti Population - Bundi, Rajasthan Seenti is a medium size village located in Bundi Tehsil of Bundi district, Rajasthan......... 6 months. Of 186 workers engaged in Main Work, 63 were cultivators (owner or co-owner) while 0 were Agricultural labourer. \\\\ \\hline\n' +
+      '0.036407113 & Kodunaickenpatty pudur - Salem Kodunaickenpatty pudur Population - Salem, Tamil Nadu Kodunaickenpatty pudur is a large village located in Omalur Taluka of......... 6 months. Of 3523 workers engaged in Main Work, 1500 were cultivators (owner or co-owner) while 1533 were Agricultural labourer. \\\\ \\hline\n' +
+      '0.017463684 & Chhotepur - Gurdaspur Chhotepur Population - Gurdaspur, Punjab Chhotepur is a medium size village located in Gurdaspur Tehsil of Gurdaspur district, Punjab......... 6 months. Of 677 workers engaged in Main Work, 123 were cultivators (owner or co-owner) while 142 were Agricultural labourer. \\\\ \\hline\n' +
+      '0.02616191 & Maksudanpur - Azamgarh Maksudanpur Population - Azamgarh, Uttar Pradesh Maksudanpur is a small village located in Sagri Tehsil of Azamgarh district, Uttar......... 6 months. Of 22 workers engaged in Main Work, 14 were cultivators (owner or co-owner) while 0 were Agricultural labourer. \\\\ \\hline\n' +
+      '0.028420448 & Karambavane - Ratnagiri Karambavane Population - Ratnagiri, Maharashtra Karambavane is a medium size village located in Chiplun Taluka of Ratnagiri district, Maharashtra......... 6 months. Of 444 workers engaged in Main Work, 116 were cultivators (owner or co-owner) while 214 were Agricultural labourer. \\\\ \\hline\n' +
+      '0.037917078 & Barda - Purba Medinipur Barda Population - Purba Medinipur, West Bengal Barda is a large village located in Egra - I Block......... 6 months. Of 1182 workers engaged in Main Work, 278 were cultivators (owner or co-owner) while 252 were Agricultural labourer. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 A7: 클러스터 8342로부터의 랜덤 예\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline\n' +
+      '**Cosine Distance** & **Raw Text** \\\\ \\hline\n' +
+      '0.0(original validation text) & Offers two child care opportunities to Charles County citizens— the Port Tobacco Onsite Child Care Program and the Before and After School Child Care Program (BASCC). Supports parents through home visits to first time parents and by helping them search for child care, find resources for a child with social, emotional. Special needs kids. Free to look, a fee to contact the providers. Hotline is staffed by highly-trained and friendly Child Care Consumer Education Specialists who offer both parents and providers invaluable information about child care, and referrals to local Child Care Resource and Referral agencies where they can receive individualized assistance. \\\\ \\hline\n' +
+      '0.12867724895477295 & Child Care Options is a program of Options Community Services, a non-profit registered charity dedicated to making a difference in the South Fraser Region. Options is committed to empowering individuals, supporting families and promoting community health. Funding for Child Care Options is provided through British Columbia’s Ministry of Children. Rock. Child Care Options links families and child care providers in the communities of Delta, Surrey and White Rock by offering free consultation, support and child care referral services and subsidy support to parents seeking child care. Child care providers are supported through information, outreach, resource library, networking, and learning opportunities. \\\\ \\hline\n' +
+      '0.15080827474594116 & Below are links to child development resources, both from within the department and from external sources. Child Development Division Publications Publications that can help you will help you follow your child’s development (from birth to age five) so you can identify and address any issues early on. Resources to help you understand children’s families to local resources and services. Specialists are available from 9 AM to 6 PM Monday – Friday. Services are confidential. Caregivers can also visit [http://www.helpmegrowvt.org/families.html](http://www.helpmegrowvt.org/families.html) to learn more about child development, discover developmental tips, and watch videos demonstrating children’s developmental milestones (click a button to choose your child’s age). \\\\ \\hline\n' +
+      '0.15738284587860107 & National Domestic Violence Hotlines Programs that provide immediate assistance for women and men who have experienced domestic abuse which may include steps to ensure the person’s safety; short-term emotional support; assistance with shelter; legal information and advocacy; referrals for medical treatment; ongoing counseling and/or group support; and other related services. Hotline. RP-1500.1400-200) www.thehotline.org/ Toll Free Phone: 800-799-SAFE URL: [https://www.thehotline.org/](https://www.thehotline.org/) Eligibility: Anyone affected by relationship abuse. Services Provided: Available 24/7/365 via phone, TTY, and chat. Provides lifesaving tools and immediate support to enable victims to find safety and live lives free of abuse. Highly trained, experienced advocates offer support, crisis intervention, education, safety planning, and referral services. \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 88: C4에서 랜덤 검증 지점까지의 최근접 이웃\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Cosine Distance** & **Raw Text** \\\\ \\hline\n' +
+      '0.0(original validation text) & SONET (Synchronous Optical NETwork) is a North American transmission standard for optical communication systems. SDH (Synchronous Digital Hierarchy), a European transmission standard, is a minor variant of SONET. SONET defines a hierarchy of electrical signals referred to as Synchronous Transport Signals (STS). The STS hierarchy is built upon a basic signal. the corresponding row and column numbers may include up to 18 comparison operations, which are onerous to implement, for example, in terms of the required logic circuitry. This problem is exacerbated at the upper levels of the STS hierarchy, where processing of multiple pointer values per data frame is performed. \\\\ \\hline\n' +
+      '0.1998944878578186 & US20080109728A1 - Methods and Systems for Effecting Video Transitions Represented By Bitmaps - Google Patents Methods and Systems for Effecting Video Transitions Represented By Bitmaps Download PDF David Maymudes Multi-media project editing methods and systems are described. In one embodiment, a project editing system comprises a multi-media editing application that is configured to. synchronization models for multimedia data US20120206653A1 (en) 2012-08-16 Efficient Media Processing US6658477B1 (en) 2003-12-02 Improving the control of streaming data through multiple processing modules US6212574B1 (en) 2001-04-03 User mode proxy of kernel mode operations in a computer operating system US7752548B2 (en) 2010-07-06 Features such as titles, transitions, and/or effects which vary according to positions \\\\ \\hline\n' +
+      '0.21122217178344727 & Both the Ethernet \\(\\Pi\\) and IEEE 802.3 standards define the minimum frame size as 64 bytes and the maximum as 1518 bytes. This includes all bytes from the Destination MAC Address field through the Frame Check Sequence (FCS) field. The Preamble and Start Frame Delimiter fields are not included when. frame. Dropped frames are likely to be the result of collisions or other unwanted signals and are therefore considered invalid. At the data link layer the frame structure is nearly identical. At the physical layer different versions of Ethernet vary in their method for detecting and placing data on the media. \\\\ \\hline\n' +
+      '0.2133803367614746 & A byte is a group of bits, usually eight. As memory capacities increase, the capacity of chip cards is often quoted in bytes rather than in bits as in the past. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 9: USPTO에서 랜덤 검증 지점까지의 최근접 이웃\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

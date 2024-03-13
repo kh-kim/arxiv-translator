@@ -38,8 +38,10 @@
 | 2310.11511 | Self-RAG Learning to Retrieve Generate and Critique through Self-Reflection | [arXiv](https://arxiv.org/abs/2310.11511) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.11511) |
 | 2310.01889 | Ring Attention with Blockwise Transformers for Near-Infinite Context | [arXiv](https://arxiv.org/abs/2310.01889) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.01889) |
 | 2309.12288 | The Reversal Curse LLMs trained on A is B fail to learn B is A | [arXiv](https://arxiv.org/abs/2309.12288) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2309.12288) |
+| 2308.12284 | D4 Improving LLM Pretraining via Document De-Duplication and Diversification | [arXiv](https://arxiv.org/abs/2308.12284) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2308.12284) |
 | 2304.08177v3 | Efficient and Effective Text Encoding for Chinese LLaMA and Alpaca | [arXiv](https://arxiv.org/abs/2304.08177v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2304.08177v3) |
 | 2110.03215 | Towards Continual Knowledge Learning of Language Models | [arXiv](https://arxiv.org/abs/2110.03215) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2110.03215) |
+| 2107.06499 | Deduplicating Training Data Makes Language Models Better | [arXiv](https://arxiv.org/abs/2107.06499) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2107.06499) |
 | 2104.13478 | Geometric Deep Learning Grids Groups Graphs Geodesics and Gauges | [arXiv](https://arxiv.org/abs/2104.13478) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2104.13478) |
 
 ## Procedure
