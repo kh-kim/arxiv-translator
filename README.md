@@ -12,6 +12,7 @@
 
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
+| 2403.06563v1 | Unraveling the Mystery of Scaling Laws Part I | [arXiv](https://arxiv.org/abs/2403.06563v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.06563v1) |
 | 2403.04706v1 | Common 7B Language Models Already Possess Strong Math Capabilities | [arXiv](https://arxiv.org/abs/2403.04706v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.04706v1) |
 | 2403.04652v1 | Yi Open Foundation Models by 01AI | [arXiv](https://arxiv.org/abs/2403.04652v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.04652v1) |
 | 2403.03883v2 | SaulLM-7B A pioneering Large Language Model for Law | [arXiv](https://arxiv.org/abs/2403.03883v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.03883v2) |

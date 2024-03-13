@@ -1,0 +1,251 @@
+# Unraveling the Mystery of Scaling Laws: Part I
+
+ Hui Su
+
+**Zhi Tian**
+
+**Xiaoyu Shen**
+
+**Xunliang Cai**
+
+**Meituan Inc.**
+
+suhui07@meituan.com
+
+Equal contribution. Zhi Tian's work was done in Meituan.
+
+###### Abstract
+
+Scaling law principles indicate a power-law correlation between loss and variables such as model size, dataset size, and computational resources utilized during training. These principles play a vital role in optimizing various aspects of model pre-training, ultimately contributing to the success of large language models such as GPT-4, Llama and Gemini. However, the original scaling law paper by OpenAI did not disclose the complete details necessary to derive the precise scaling law formulas, and their conclusions are only based on models containing up to 1.5 billion parameters. Though some subsequent works attempt to unveil these details and scale to larger models, they often neglect the training dependency of important factors such as the learning rate, context length and batch size, leading to their failure to establish a reliable formula for predicting the test loss trajectory. In this technical report, we confirm that the _scaling law formulations proposed in the original OpenAI paper remain valid when scaling the model size up to 33 billion_, but the constant coefficients in these formulas vary significantly with the experiment setup 2. We meticulously identify influential factors and provide transparent, step-by-step instructions to estimate all constant terms in scaling-law formulas by training on models with only 1M\(\sim\)60M parameters. Using these estimated formulas, we showcase the capability to accurately predict various attributes for models with up to 33B parameters before their training, including (1) the minimum possible test loss; (2) the minimum required training steps and processed tokens to achieve a specific loss; (3) the critical batch size with an optimal time/computation trade-off at any loss value; and (4) the complete test loss trajectory with arbitrary batch size. We further illustrate how scaling laws can aid in determining the most suitable batch/model size, dataset mix ratio and training duration under fixed computational constraints in a principled way. Our research represents a significant shift from theoretical comprehension of scaling laws to their practical derivation and application, with the aim of advancing the development of large-scale language models.
+
+Footnote 2: Experiments on models with larger parameters are ongoing, and we will provide the results once they are done.
+
+## 1 Introduction
+
+A wide range of studies have shown that the performance of a language model exhibits a notable growth pattern as the number of parameters and data size increase, following a power-law relationship [17, 20, 21, 22, 23, 24]. This scaling law plays a fundamental role in the development of large language models, enabling us to estimate optimal configurations of large models from the training logs of much smaller models [22, 23]. As mentioned in the GPT-4 technical report [1], some aspects of GPT-4's performance can be accurately predicted based on models trained with no more than 1/1,000th the compute of GPT-4. By properly utilizing the scaling law, we avoid the need to perform extensive model-specific tuning on large models.
+
+The original scaling law paper by OpenAI presented the formulas of scaling laws and illustrated how they could aid in determining optimal training configurations [20]. Nonetheless, the presented formulas are based on static exponents estimated from their specific experiment setup. The full details on how to derive the constant terms in the scaling-law formulas for a new experiment setup (model architecture, tokenization, data distribution, etc) remain undisclosed. Furthermore, [20] only conducted experiments with models containing up to 1.5B parameters, a size significantly smaller than that of contemporary large language models. There have been subsequent works that study scaling laws on larger models [3, 23, 24]. Some have drawn different conclusions from the original scaling-law paper, casting doubt to the general applicability of scaling laws. For example, [23] claimed that the training data size should be scaled much more than the recommendation in [20]. [3] suggested that the optimal batch size depends only on the compute budget rather than the loss value.
+
+In this paper, we revisit the scaling-law formulas proposed by [20], confirming that they _remain generally applicable when scaling the model size up to 33B_. Other works obtain different conclusions primarily due to (1) Many factors such as the data distribution, context length, tokenization affect the constant coefficients in scaling-law formulas, so the constant coefficients, unlike the formulas themselves, are not universal; and (2) The loss value adheres to an analytical power law relationship with the training step under infinite batch size. With a finite batch size, fitting the loss value with an analytical function is problematic. As a result, none of other works have provided compelling evidence to reliably predict the full loss trajectory of larger models by training solely on smaller models.
+
+After meticulously identifying influential factors in predicting the loss trajectory, we provide transparent, step-by-step guidelines on how to estimate all constant terms in scaling-law formulas by training on models with only 1M\(\sim\)60M parameters. Using these estimated formulas from small models, we showcase the capability to accurately predict various attributes for models with up to 33B parameters before their training starts. By unravelling the mystery of scaling laws and making them easily accessible to everyone, our objective is to shift the understanding of scaling laws from theoretical concepts to practical implementation, thereby aiding future research in pre-training large language models in a more principled manner. The summary of the key results in this paper is as follows:
+
+Figure 1: Left: Actual and predicted loss trajectories of a 2B model on the C4 test data (Section 4.1). Right: Actual and predicted loss trajectories of a 33B model on the code test data (Section 4.2). The actual and predicted loss trajectories closely align, especially after the initial warm-up stage.
+
+* Hyperparameters such as batch size, learning rate, and learning rate scheduler influence the rate of convergence, yet do not impact the final converged loss provided that (1) their values fall within a reasonable range and (2) the model is trained with sufficient steps on adequate amounts of data.
+* Adjusting the batch size involves a trade-off between time and computation. The critical batch size that strikes an optimal time/computation balance can be determined based solely on the loss value. Training with this critical batch size requires twice as many training steps to achieve a specific loss value compared to using an infinite batch size (minimum possible required steps).
+* The context length, tokenization, data distribution and model configurations have big impacts on the constants in scaling law formulas, but do not affect the form of scaling law itself.
+* When given a fixed context length, tokenization, data distribution, model configurations and learning rate scheduler, we observe precise and predictable power-law scalings for performance in relation to training step, batch size, and model size, provided that the learning rate is optimally configured.
+* By training models with fewer than 60 million parameters, we can accurately estimate the constants in scaling-law formulas. This allows us to predict various attributes for models with up to 33 billion parameters before their training, including (1) the minimum possible loss; (2) the minimum required training steps and processed tokens to achieve a specific loss; (3) the critical batch size at any loss value; and (4) the complete test loss trajectory with arbitrary batch size.
+* These predicted attributes have many intriguing features, assisting us in identifying crucial factors before training large models, such as the optimal model size and training steps within a fixed computational budget, the necessary amount of data, the ideal mix ratio of multiple datasets, and more.
+
+## 2 Preliminary
+
+Essentially, scaling laws [14] reveal how to predict the _validation/test_ loss3 of a given model, which can be the final loss when the model is trained to converge, or the loss at a certain step amid training. Scaling laws have been proven to be widely valid across a variety of likelihood-based tasks [15]. By adhering to scaling laws, researchers can uncover patterns in how changes in model parameters and training data impact the overall effectiveness of large language models before actually training them.
+
+Footnote 3: for simplicity, we use “test loss” thereafter since we observed a consistent trend for loss measured in various data distributions, differing only in the constant terms within the scaling laws.
+
+NotationTo enhance the clarity of explanations, we use the following notations throughout the paper, most of which are adapted from [14]:
+
+* the cross entropy loss in nats averaged over the tokens in a context
+* the number of model parameters, _excluding all vocabulary and positional embeddings_
+* the batch size
+* the critical batch size defined in [14]. Training at the critical batch size provides a roughly optimal compromise between time and compute efficiency
+* amount of processed tokens
+* an estimate of the minimum amount of processed tokens needed to reach a given value of the loss. This is also the number of training steps that would be used if the model were trained at a batch size much smaller than the critical batch size
+* number of training steps
+* an estimate of the minimal number of training steps needed to reach a given value of the loss. This is also the number of training steps that would be used if the model were trained at a batch size much greater than the critical batch size
+* constant terms in scaling-law formulas that need to be estimated
+
+GoalThe original scaling-law paper is comprehensive, encompassing a wide range of content. To emphasize the key aspects useful for pre-training large language models, this paper concentrates on estimating the following three functions, which serve as foundations of scaling laws. Using these three functions, we are able to accurately predict the training behavior of large language models before the training starts:- predict the converged loss in nats when training a model with \(N\) parameters
+* predict the value of loss at a certain training step \(S_{min}\) for a model with \(N\) parameters, given that the batch size is infinite such that the number of training steps is minimized
+* predict the value of loss at a certain training step \(S\) for a model with \(N\) parameters under a finite batch size \(B\)
+
+AssumptionTo simplify the discussions, we stick to the following assumptions to derive the precise scaling laws, each of which mirrors real-world scenarios in pre-training modern large language models:
+
+1. The model follows the standard Transformer architecture [17] without obvious bottlenecks 4, which has been the de facto architecture in large language models such as GPT [1], Llama [13] and Gemini [14]23 Footnote 4: _e.g._, a limited amount of attention heads or inadequate layer normalization, which we find to make destabilize the estimation process of scaling laws.
+2. We assume access to an extensive set of training data and the training process never re-uses the data. This reflects the typical scenario in model pre-training since the proliferation of online platforms and digital content has contributed to the abundance of available data
+3. The training data is uniformly distributed across the training steps. This is also a reasonable assumption since the training data is often randomly shuffled in the pre-training stage, unless special tricks such as curriculum learning [1] is applied.
+
+## 3 Deriving Scaling Laws
+
+_"Scaling laws are decided by god;_
+
+_The constants are determined by members of the technical staff"_
+
+-- Sam Altman
+
+In this section, we provide clear instructions on how to derive the scaling laws in a step-by-step manner. Most importantly, we unveil the full details for practically estimating all constants in scaling-law formulas, a foundational aspect emphasized by Sam Altman in the context of scaling laws.
+
+### Predicting \(L(n)\)
+
+First, let us discuss the final test loss prediction. Assume that we have infinite training data (_i.e._, infinite number of tokens), and we are going to train a model having \(N\) parameters, scaling laws [15] draw the following correlation:
+
+\[L(N)=\left(\frac{N_{c}}{N}\right)^{\alpha_{N}}, \tag{3.1}\]
+
+where \(N_{c}\) and \(\alpha_{N}\) are constant scalars that can be found by statistical fitting, and \(L(N)\) is the _final test loss_ when the model converges. In other words, \(L(N)\) is the _test loss limit_ that an \(N\)-parameter model can achieve at the best (_i.e._, given the infinite training data, optimal optimizer and hyperparameters, and long enough training time). Note that since we assume the model is trained with infinite data, overfitting is impossible and thus the training loss should exhibit almost the same trend as the test loss.
+
+Estimating \(N_{c}\) and \(\alpha_{N}\).To estimate the two constant scalars, we can train a series of \(k\) models with various numbers of parameters (say, \(N=1M,10M,\ldots,10(k-1)M\)) on the _infinite training data_ until these models converge and obtain their final test losses. With these pairs of \((N_{0},L_{0}),\ldots,(N_{k-1},L_{k-1})\), we can obtain \(k\) equations in the form of \(\alpha_{N}\log N_{c}-\alpha_{N}\log N_{i}-L_{i}=0\big{|}_{i=0}^{k-1}\), which are linear w.r.t. \(\alpha_{N}\) and \(\log N_{c}\). \(N_{c}\) and \(\alpha_{N}\) can then be estimated by parametric fitting using linear regression. In practice, we find that setting \(k=7\) is sufficient for an accurate estimation.
+
+Tolerance with HyperparametersIn our experiments, we find that given sufficient training data, hyperparameters such as batch size, learning rate, and learning rate scheduler influence the rate of convergence, yet do not impact the final converged loss as long as their values fall within a reasonable range. This finding aligns with previous research [15, 16, 17]. Therefore, in order to obtain these \(k\) data pointsof \((N_{0},L_{0}),\ldots,(N_{k-1},L_{k-1})\), there is no need to perform extensive hyperparameter tuning. Instead, it is enough to use a fixed set of hyperparameters for all the \(k\) models, provided that the model is trained with no repeated data until convergence.
+
+What does infinite training data mean?The above steps require training models with a fixed set of hyperparameters on infinite data until convergence. In practical scenarios, however, data is always finite in practice. Nevertheless, it is feasible to have _relatively_ "infinite training data" for a given model. Say we have an extremely small model with only \(N=10\) parameters. For this micro model, due to its very limited capacity, no matter how much training data we use to train it (_e.g._, 1B, 2B, or 1T tokens5), the model's performance cannot be improved, and the training dynamic (_i.e._, the test loss at any given training step) is almost the same. This is to say, beyond a _critical size_, this micro model is unaware of the growth of the data size. In this case, we can say that the training data is _relatively_ infinite for this model. In fact, for a given parameter with \(N\) parameters, this critical size could be computed (see Eq. 4.4 in [16]). Here, we give a simple empirical method to deduce whether a data size is (relatively) infinite for a \(N\)-parameter model. Note that overfitting should not happen when the training data is (relatively) infinite. As a result, we can train the \(N\)-parameter model and observe whether the training and test losses diverge. If the dynamics of the training and test losses are almost the same everywhere (_i.e._, no overfitting), we can safely infer that the training data is (relatively) infinite for the given \(N\)-parameter model.
+
+Footnote 5: Note that according to our third assumption, the quality of the training data is uniform and independent of the size.
+
+### Predicting \(L(n,S_{min})\)
+
+Predicting the entire test loss curve requires estimating the test loss at any given training step. This is very challenging because there are many other factors (_e.g._, learning rate schedules, optimizers, and batch sizes) that significantly affect the training process. However, as shown in [16] and [17], these factors' effects can be largely eliminated if we train the model at an _infinitely large batch size_, where the stochastic gradient descent (SGD) becomes gradient descent (GD). The training step at the _infinitely large batch size_ is denoted by \(S_{\min}\) because it is the minimum possible number of training steps required to attain a certain loss. Note that the larger the training batch size, the fewer the training steps required. As a result, scaling laws [16] state that, given the infinite training data and infinitely large training batch size, the test loss \(L(N,S_{\min})\) at any given step \(S_{\min}\) follows:
+
+\[L(N,S_{\min})=\left(\frac{N_{c}}{N}\right)^{\alpha_{N}}+\ \left(\frac{S_{c}}{S_{ \min}}\right)^{\alpha_{S}}, \tag{3.2}\]
+
+where \(\left(\frac{N_{c}}{N}\right)^{\alpha_{N}}\) is Eq. 3.1, and \(S_{c}\) and \(\alpha_{S}\) are constant scalars to be estimated.
+
+Estimating \(S_{c}\) and \(\alpha_{S}\).Since the first term in Eq. 3.2 has been solved in Sec. 3.1, for any given model with \(N\) parameters, say \(N=1M\), we have \(L(1M,S)=C+\left(\frac{S_{c}}{S_{\min}}\right)^{\alpha_{S}}\), where \(C=\left(\frac{N_{c}}{1M}\right)^{\alpha_{N}}\) is a constant because each element in the equation is known. Now, if we can train the \(1M\)-parameter model with the _infinitely large batch size_ and an optimally set learning rate 6, many pairs of \((L,S_{\min})\) can be obtained. By taking the logarithm on both sizes of Eq. 3.2, we obtain equations which are linear to \(\alpha_{s}\) and \(\log S_{c}\). Again, we can estimate \(S_{c}\) and \(\alpha_{s}\) with linear regression.
+
+Footnote 6: The learning rate is set to maximize the rate at which the training loss decreases.
+
+What does infinite batch size mean?It is infeasible to train a model with an infinite batch size in practice, but we can employ a "trial and error" method to find a sufficiently large batch size that is equivalent to the infinite batch size, which we refer to as a _relatively infinite batch size_. This is based on the fact that a further increase of the sufficiently large batch size does not further reduce the number of training steps required to achieve a certain loss value, thus not altering the training loss curve. As a result, this relatively infinite batch size can be found by increasing the batch size until the training loss curve becomes stationary. We empirically found that for model sizes at the magnitude of 10M, a batch of 40M tokens is sufficiently large. In this way, \(S_{c}\) and \(\alpha_{S}\) can be estimated by the loss values and steps during the training of the 10M model at this _relatively infinite batch size_.
+
+### Predicting \(L(n,S,B)\)
+
+Finding a _relatively infinite batch size_ for small models is easy and we can use this trick to estimate \(S_{c}\) and \(\alpha_{S}\). For large models, however, training with such a _relatively infinite batch size_ is neither affordable nor economical. In practice, we are more interested in predicting the loss trajectory for large models under a _finite batch size_\(B\).
+
+From \(S_{\min}\) to \(S\).Thankfully, there is a conversion between the training step \(S\) with any batch size \(B\) and the training step \(S_{\min}\) with sufficiently/infinitely large batch size. Let \(\theta\) be the model parameters at some point during optimizing the model, \(G_{\mathrm{est}}\) be the noisy gradients estimated by SGD at the point. Note that \(G_{\mathrm{est}}\) is a random variable whose expectation is the real gradients \(G\) with infinitely large batch size (_i.e._, \(\mathbb{E}[G_{\mathrm{est}}]=G\)). According to the Taylor expansion, the loss value after applying this parameter update is
+
+\[L(\theta-\epsilon G_{\mathrm{est}})\approx L(\theta)-\epsilon G_{\mathrm{est} }^{T}G_{\mathrm{est}}+\frac{1}{2}\epsilon^{2}G_{\mathrm{est}}^{T}HG_{\mathrm{ est}}, \tag{3.3}\]
+
+where \(\epsilon\) is the learning rate and \(H\) is the Hessian matrix. Here, the randomness introduced by \(G_{\mathrm{est}}\) can be eliminated by computing the expectation:
+
+\[\begin{split}\mathbb{E}[L(\theta-\epsilon G_{\mathrm{est}})]& \approx\mathbb{E}[L(\theta)]-\epsilon\mathbb{E}[G_{\mathrm{est}}G_{ \mathrm{est}}^{T}]+\frac{1}{2}\epsilon^{2}\mathbb{E}[G_{\mathrm{est}}^{T}HG_{ \mathrm{est}}]\\ &=L(\theta)-\epsilon|G|^{2}+\frac{1}{2}\epsilon^{2}\left(G^{T}HG +\frac{\mathrm{tr}(H\Sigma)}{B}\right),\end{split} \tag{3.4}\]
+
+where \(B\) is the batch size in use, and we can obtain the decrease in the loss value is
+
+\[\Delta L=-\epsilon|G|^{2}+\frac{1}{2}\epsilon^{2}\left(G^{T}HG+\frac{\mathrm{ tr}(H\Sigma)}{B}\right). \tag{3.5}\]
+
+Note that the right-hand side is a quadratic function w.r.t. \(\epsilon\), for simplicity, let \(a=\frac{1}{2}\left(G^{T}HG+\frac{\mathrm{tr}(H\Sigma)}{B}\right)\) and \(b=-|G|^{2}\). Therefore, the maximum decrease \(\Delta L_{\max}\) is achieved when \(\epsilon=-\frac{b}{2a}=\frac{|G|^{2}}{G^{T}HG+\frac{\mathrm{tr}(H\Sigma)}{B}}\), which is \(\Delta L_{\max}=-\frac{b^{2}}{4a}=\frac{|G|^{4}}{2\left(G^{T}HG+\frac{\mathrm{ tr}(H\Sigma)}{B}\right)}\). It is worth noting that when the batch size \(B\rightarrow\infty\), \(\lim\limits_{B\rightarrow\infty}\Delta L_{\max}=\frac{|G|^{4}}{2G^{T}HG}\), and thus we have
+
+\[\frac{\Delta L}{\lim\limits_{B\rightarrow\infty}\Delta L}=\frac{\frac{|G|^{4} }{2\left(G^{T}HG+\frac{\mathrm{tr}(H\Sigma)}{B}\right)}}{\frac{|G|^{4}}{2G^{T} HG}}=\frac{G^{T}HG}{G^{T}HG+\frac{\mathrm{tr}(H\Sigma)}{B}}=\frac{1}{1+\frac{ \mathrm{tr}(H\Sigma)/(G^{T}HG)}{B}}. \tag{3.6}\]
+
+Let \(\mathcal{B}_{\text{noise}}=\mathrm{tr}(H\Sigma)/(G^{T}HG)\), we have
+
+\[\frac{\Delta L}{\lim\limits_{B\rightarrow\infty}\Delta L}=\frac{1}{1+\frac{ \mathcal{B}_{\text{noise}}}{B}} \tag{3.7}\]
+
+Figure 2: Batch size scan of a 10M model with 4096 context length. Each curve has the same loss value with varying batch sizes and training steps.
+
+and thus \(\frac{\lim\limits_{B\rightarrow\infty}\Delta L}{\Delta L}=1+\mathcal{B}_{\text{ noise}}/B\). This formulation indicates that one step with the infinitely large batch size approximately equals \(1+\mathcal{B}_{\text{noise}}/B\) steps with batch size \(B\). Thus,
+
+\[S_{\min}=\frac{S}{1+\mathcal{B}_{\text{noise}}/B} \tag{3.8}\]
+
+Defining \(B_{crit}(L)\)Under the constraint of Equation 3.8, we can derive the critical batch size at \(L\) which minimizes the trade-off between time (\(S/S_{min}\)) and computation (\(E/E_{min}\)):
+
+\[B_{\text{crit}}(L)=\operatorname*{arg\,min}_{B}\left(\frac{S}{S _{min}}+\frac{E}{E_{min}}\right) \tag{3.9}\] \[E_{min}=\min_{B}BS=\min_{B}S_{min}(B+\mathcal{B}_{\text{noise}} )=\lim_{B\to 0}S_{min}(B+\mathcal{B}_{\text{noise}})=S_{min} \mathcal{B}_{\text{noise}}\] \[\Rightarrow B_{\text{crit}}(L)=\operatorname*{arg\,min}_{B} \left(\frac{S}{S_{min}}+\frac{BS}{S_{min}\mathcal{B}_{\text{noise}}}\right)= \operatorname*{arg\,min}_{B}\left(2+\frac{\mathcal{B}_{\text{noise}}}{B}+ \frac{B}{\mathcal{B}_{\text{noise}}}\right)=\mathcal{B}_{\text{noise}}= \frac{E_{min}}{S_{min}}\]
+
+By substituting \(B_{crit}(L)\) into Equation 3.8, we can exactly recover the formula defined in [10], which was shown to apply for a wide variety of neural network tasks:
+
+\[S_{\text{min}}=\frac{S}{1+B_{\text{crit}}(L)/B} \tag{3.10}\] \[\Rightarrow\frac{BS}{B_{\text{crit}}(L)S_{\text{min}}}-1-\frac{B }{B_{\text{crit}}(L)}=0\] \[\Rightarrow\frac{BS^{2}}{B_{\text{crit}}(L)S_{\text{min}}^{2}}- \frac{S}{S_{\text{min}}}-\frac{BS}{B_{\text{crit}}(L)S_{\text{min}}}=0\] \[\Rightarrow\left(\frac{S}{S_{\text{min}}}-1\right)\left(\frac{ BS}{B_{\text{crit}}(L)S_{\text{min}}}-1\right)=1\] \[\Rightarrow\left(\frac{S}{S_{\text{min}}}-1\right)\left(\frac{ E}{E_{\text{min}}}-1\right)=1 \tag{3.11}\]
+
+We also verified the validity of Equation 3.11 in our experiments (see an example in Figure 2). Putting this \(B_{\text{crit}}(L)\) back to Equation 3.11, we can have: When \(B=B_{\text{crit}}(L)\), we have \(S=2S_{min}\) and \(E=2E_{min}\), meaning that training with the critical batch size will cost twice the minimum number of steps and tokens necessary to reach a certain loss value \(L\).
+
+Eq. 3.10 successfully established the conversion between \(S_{min}\) and \(S\) under the finite batch size \(B\). In order to go from \(L(N,S_{min})\) to \(L(N,S,B)\), the core left is to estimate the critical batch size \(B_{\text{crit}}(L)\).
+
+[10] found that the critical batch size also roughly obeys a power law in \(L\):
+
+\[B_{\text{crit}}(L)=\frac{B_{*}}{L^{1/\alpha_{B}}} \tag{3.12}\]
+
+As seen, \(B_{\text{crit}}(L)\) is a variable only depending on the loss value \(L\). We simply need to estimate the constant terms \(B_{*}\) and \(\alpha_{B}\).
+
+Estimating \(B_{*}\) and \(\alpha_{B}\)In order to estimate \(B_{*}\) and \(\alpha_{B}\), we train a fixed-sized model with various batch sizes to generate \(k\) contour lines representing consistent loss values. We then use Equation 3.11 to fit these series of contour lines, yielding a set of \(k\) estimated pairs \((E_{min}^{1},S_{min}^{1}),\ldots,(E_{min}^{k},S_{min}^{k})\) (as shown in Figure 2 where \(k=5\) and \(N=10M\)). Note that Eq 3.11 is linear w.r.t. \(S_{min}\) and \(E_{min}\), so we could use linear regression to fit them and obtain the \(k\) pairs of \((E_{min},S_{min})\).
+
+With these \(k\) pairs of \((E_{min},S_{min})\), we can obtain \(k\) pairs of \((B_{crit}(L),L)\) by setting \(B_{crit}(L)=E_{min}/S_{min}\), which can be used to estimate the values of \(B_{*}\) and \(\alpha_{B}\). By taking the logarithm in Eq 3.12, the equation becomes linear w.r.t. \(\alpha_{B}\) and \(\log B_{*}\) and can be solved with linear regression. Empirically, we find that the value of \(\alpha_{B}\) is quite a sensitive coefficient. Initializing it within the range of 0 and 0.5 typically results in a more stable estimation process 7.
+
+Substituting \(S_{min}\) with \(S\)Finally, after establishing the analytical relationship between \(S_{min}\) and \(S\), we can substitute \(S_{min}\) with \(S\) to link \(S\) with \(L\). By substituting Eq. 3.10 into Eq. 3.2, it yields
+
+\[\begin{split} L(N,S,B)&=\left(\frac{N_{c}}{N}\right)^ {\alpha_{N}}+~{}\left[\frac{S_{c}\cdot(1+B_{\text{crit}}(L)/B)}{S}\right]^{ \alpha_{S}}\\ &=\left(\frac{N_{c}}{N}\right)^{\alpha_{N}}+~{}\left(\frac{S_{c} }{S}\right)^{\alpha_{S}}\cdot\left(1+\frac{B_{\text{crit}}(L)}{B}\right)^{ \alpha_{S}}\\ &=\left(\frac{N_{c}}{N}\right)^{\alpha_{N}}+~{}\left(\frac{S_{c} }{S}\right)^{\alpha_{S}}\cdot\left(1+\frac{B_{*}}{B\cdot L(N,S,B)^{1/\alpha_{B }}}\right)^{\alpha_{S}}.\end{split} \tag{3.13}\]
+
+Now, let us analyze Eq. 3.13, which is the relation between the loss value \(L\) and the training step \(S\) under a fixed finite batch size \(B\). All other quantities are constant scalars that have been worked out before (\(N_{c},\alpha_{N},S_{c},\alpha_{S},B_{*}\) and \(\alpha_{B}\)). The difficulty of computing the loss value \(L(N,S,B)\) is that it appears on both sides of the equation. Although there is no analytical solution to isolate \(L(N,S,B)\) here, we can numerically estimate \(L(N,S,B)\) by any root-finding method (_e.g._, the bisection method) because it is the only unknown quantity in Eq. 3.13.
+
+Concretely, it is easy to show that Eq. 3.13 is monotonically decreasing w.r.t. \(L(N,S,B)\):
+
+\[\begin{split} f(L(N,S,B))&=\left(\frac{N_{c}}{N} \right)^{\alpha_{N}}+~{}\left(\frac{S_{c}}{S}\right)^{\alpha_{S}}\cdot\left( 1+\frac{B_{*}}{B\cdot L(N,S,B)^{1/\alpha_{B}}}\right)^{\alpha_{S}}-L(N,S,B)\\ \Rightarrow\frac{\mathrm{d}f(L(N,S,B))}{\mathrm{d}L(N,S,B)}& =-\left(\frac{S_{c}}{S}\right)^{\alpha_{S}}\left(1+\frac{B_{*}}{B \cdot L(N,S,B)^{1/\alpha_{B}}}\right)^{\alpha_{S}-1}\frac{\alpha_{S}B_{*}}{ \alpha_{B}BL(N,S,B)^{(1/\alpha_{B}+1)}}-1<0\end{split}\]
+
+Therefore, once we find a range \((L_{\text{left}},L_{\text{right}})\) where \(f(L_{\text{left}})\cdot f(L_{\text{right}})<0\), we can iteratively search for the critical point \(L^{*}\) with \(f(L^{*})=0\) through the bisection method. In practice, the loss value is positive and falls within a restricted range, setting \(L_{\text{left}}=0,L_{\text{right}}=10\) is always sufficient to cover the entire range.
+
+Dependency on Learning RateEq. 3.13 depends only on \(N,S\) and \(B\) but not other hyperparameters such as the learning rate. When training with a finite batch size, the learning rate will undoubtedly have a significant impact on the loss trajectory. Removing the influence of the learning rate from Eq. 3.13 is clearly impossible. Empirically, we observe that the prediction from Eq. 3.13 is accurate when the learning rate is _optimally set_, i.e., is adjusted to maximize the rate of decrease in curvature during the initial steps. As suggested in [16, BCC\({}^{+}\)24], the optimal learning rate should decrease when the model size increases. We could simply adopt a "trial and error" method to search for the optimal learning rate in the initial training steps. Once the learning rate is determined for a fixed-sized model, we can predict its precise test loss trajectory from Eq. 3.13 (after the initial warm-up stage.).
+
+## 4 Experiments
+
+After conducting theoretical analysis and deriving scaling laws, this section presents empirical experiments to validate the efficacy of scaling laws. Following standard practice, we utilized the decoder-only Transformer architecture [17] and conducted experiments on two datasets: one utilizing the C4 dataset and the other utilizing a customized mixed dataset. We followed the estimation steps outlined above to derive the scaling-law formulas.
+
+### Scaling with C4 Dataset
+
+The C4 dataset is a large, cleaned version of Common Crawl's web crawl corpus [18]. The context window was set to 1024, and each batch contained about 500k tokens. We utilized 1% of the original C4
+
+\begin{table}
+\begin{tabular}{|c|c|c|c|c|c|c|} \hline Parameter & \(\alpha_{N}\) & \(\alpha_{S}\) & \(\alpha_{B}\) & \(N_{c}\) & \(S_{c}\) & \(B_{*}\) \\ \hline \hline C4 Value & \(0.076\) & \(0.67\) & \(0.205\) & \(1.5\times 10^{14}\) & \(2.6\times 10^{3}\) & \(1.7\times 10^{8}\) \\ \hline
+**[dataset as the test set and performed a deduplication process to ensure the removal of any overlapping text from the training set. In total, we trained only 10 small models, each with a maximum of 60M parameters, to estimate the constant terms of the scaling-law formulas. The estimated constant terms are presented in Table 1. The actual and predicted loss trajectories of a 2B model (30 times larger than the small model used to estimate the constant terms) using the estimated formulas are depicted on the left of Figure 1. It can be observed that the predicted loss trajectory closely aligns with the actual loss trajectory. Our estimated constant terms are also not far from those estimated in [10] despite using different setups, possibly due to the similar distributions of C4 and WebText, both of which consist of crawled website text. This reinforces the assertion in [11] that the power term in scaling laws primarily relies on the data manifold.
+
+### Scaling with a Large Mixed-Language Dataset
+
+For the experiments with the customized mixed dataset, we manually curated a dataset containing 3T tokens comprising a mixture of English, Chinese, and code data. The data underwent a series of rigorous deduplication, filtering, and cleaning processes to ensure its quality. The context window was set to 4096, and each batch contained about 4M tokens. Similarly, we trained only 10 small models, each with a maximum of 60M parameters, to estimate the constant terms of the scaling-law formulas. The formulas are used to predict the test loss trajectory of models up to 33B (600 times larger). We test the accuracy of the predicted loss trajectory on both in-domain and out-of-domain test data.
+
+In-Domain Test Loss PredictionFor the in-domain test set, we use the code data following the same distribution as that used in the training data (the code data comprises \(10\%\) of the full training data). The actual and predicted loss trajectories of a 33B model using the estimated formulas are depicted on the right
+
+Figure 3: Actual and predicted loss trajectories of 500M, 2B and 33B models on the out-of-domain private Chinese test data (Section 4.2). The loss trajectory on out-of-domain test data has large fluctuations, but the overall trend and final converged loss values still closely align with the predictions. The estimated constant values in scaling-law formulas are provided on the bottom right.
+
+of Figure 1. We can see that the loss trajectory is generally accurate after 200k steps. After 200,000 steps, the predicted loss and the actual value are very accurate, but in the earlier stages, the prediction may not be as accurate due to the influence of warm-up and the large prediction multiplier causing errors.
+
+Out-of-Domain Test Loss PredictionFor the out-of-domain test set, we use a private Chinese data whose type is very rare in the training data and can be considered as out-of-domain data. The estimated constant terms, together with the actual and predicted loss trajectories of 500M, 2B and 33B models using the estimated formulas are depicted in Figure 3. It is evident that predicting out-of-domain data is more challenging than predicting in-domain data, as the actual loss trajectory exhibits significant fluctuations. Nonetheless, the overall trend of actual and predicted loss trajectories closely aligns. The final converged loss values are also rather similar, affirming the efficacy of scaling laws in predicting the loss trajectory for both in-domain and out-of-domain data.
+
+## 5 Discussions
+
+The significance of scaling laws extends beyond mere prediction of the loss trajectory. More importantly, they can aid in pinpointing the optimal experimental configuration without requiring extensive tuning on very large models, thereby transforming the training of large language models from an alchemy-like trial-and-error process into a principled methodology. In this section, we highlight main benefits of scaling laws and discuss ways to further advance beyond them.
+
+Determining \(B\)As long as all hyperparameters are well-tuned (especially the learning rate and regularization hyperparameters) and the number of training steps is sufficient, it is believed that the same final performance should be attainable using any batch size [19], so the batch size mainly influences the training speed of language models. Often, when training large language models, the ideal batch size is suggested to be set as the largest batch size supported by the available hardware [1], so as to maximize the training speed without considering the computational cost. In Eq 3.12, we show that the critical batch size with the optimal speed/computation trade-off can be analytically computed from the loss value. Under the guidance of this formula, we would be able to estimate the preferred batch size under any loss trajectory. Furthermore, this optimal batch size in Eq 3.12 is determined by equally minimizing the training time and required computation, as shown in Eq 3.9. In practice, if we would like to prioritize one over the other, we can follow the same process to derive the optimal batch size. By this means, we are able to obtain the optimal batch size based on our customized need in a systematic way.
+
+Determining \(N\) and \(S\)In practice, we often opt for the largest affordable model size and train the model until convergence. Nevertheless, this simplistic approach can deviate significantly from the optimal configuration and result in substantial resource wastage. Scaling laws provide a principled approach to choosing the optimal model size \(N\) and number of training steps \(S\) given a fixed computational budget \(C\)8. Given that Eq 3.13 already provides the precise relation between the loss \(L\), batch size \(B\), model size \(N\) and training steps \(S\), we could find the model size that minimizes \(L\) under the critical batch size (\(B=B_{crit}\)). This optimal \(N\) can be obtained by taking the derivative of Eq 3.13 w.r.t. \(N\) and setting it to \(0\). By inserting this optimal \(N\) into Eq 3.13 and eliminating the loss term, we have:
+
+Footnote 8: We follow [10] to use \(C\approx 6NBS\) here.
+
+\[\begin{split} N(C)=N_{c}\left(\frac{C}{C_{c}}\right)^{\alpha_{C} /\alpha_{N}}\left(1+\frac{\alpha_{N}}{\alpha_{S}}\right)^{1/\alpha_{N}}\\ S\left(C\right)=\frac{C_{c}}{6N_{c}B_{*}}\left(1+\frac{\alpha_{N }}{\alpha_{S}}\right)^{-1/\alpha_{N}}\left(\frac{C}{C_{c}}\right)^{\alpha_{C} /\alpha_{S}}\\ L\left(N\left(C\right),C,S(C)\right)=\left(1+\frac{\alpha_{N}}{ \alpha_{S}}\right)L\left(N(C),\infty\right)\\ C_{c}=6N_{c}B_{*}S_{c}\left(1+\frac{\alpha_{N}}{\alpha_{S}} \right)^{1/\alpha_{S}+1/\alpha_{N}}\left(\frac{\alpha_{S}}{\alpha_{N}}\right)^ {1/\alpha_{S}}\\ \alpha_{C}=1/\left(1/\alpha_{S}+1/\alpha_{B}+1/\alpha_{N}\right) \end{split} \tag{5.1}\]
+
+where \(N(C)\) and \(S(C)\) are the optimal model size and number of training steps given a fixed computational budget \(C\). \(L\left(N\left(C\right),C,S(C)\right)\) is the final loss value with the chosen \(N(c),C\) and \(S(C)\). The detailed derivation can be found in Appendix B.1 of [13]. All the constant terms mentioned above are already known through the derivation steps described in Section 3, so we could directly estimate \(N(C)\) and \(S(C)\) from from our computational budget \(C\). Note that, as shown in Eq 5.1, the final loss is \(\alpha_{N}/\alpha_{S}\) more than the converged loss \(L(N,\infty)\). Therefore, optimally we should _NOT_ train the model until convergence, which contrasts with the current common practice.
+
+Determining Computational BudgetIn many downstream applications, we might not be right provided with a fixed computational budget. Instead, there is often a minimum threshold requirement that must be met before implementation. In such cases, we need to figure out the minimum possible computational budget in order to meet this threshold requirement. As the evaluation criteria is often correlated with the loss value, we can link this minimum threshold requirement into a certain loss value. From this loss value, we can readily determine the optimal model size and minimum computational budget required to achieve it from the analytical relation provided in Equation 5.1.
+
+Determining Data Mix RatioThe quality of pre-training datasets is the one of the most important factors that affects the quality of large language models [15, 16]. However, determining the optimal mix ratio from multiple data sources is an extremely challenging task as it involves combinatorial combinations [13]. Existing works usually determine domain weights (the sampling probabilities for each domain) by using intuition or a set of downstream tasks. Scaling laws can offer some new insights in helping determine the optimal mix ratio. By predicting the test loss trajectory of large models on each individual data source, we could implicitly infer how important and useful each data source is (_e.g._, if the loss decreases faster in one data source and converges into a lower loss value, then this data source might be more useful).
+
+Context LengthAs mentioned, the context length significantly influences the values of the constant terms in scaling-law formulas. Anchoring all constant terms to a specific context length means that we need to rerun the estimation process for every new context length, which is rather inefficient because it is common to adjust the context length to fit various tasks. Given that the loss value at each position also approximately follows a power-law relation [13], it would be possible to include the context length directly as a parameter of the formulas.
+
+Mixture-of-ExperstThe mixture-of-experts (MoE) architecture has gained popularity with demonstrated superior performance compared to its dense counterpart [14, 15]. It would be highly beneficial to derive a similar scaling law applicable to the MoE architecture. In MoE architectures, each input interacts with only a subset of the network's parameters - chosen independently for each datapoint [12, 1]. This changing of the architecture would inevitably impact the form of \(L(N)\) because both the number of both activated and total parameters influence the loss values [10]. The following steps, such as Eq 3.9 and Eq 3.10 are general and should not be affected.
+
+## References
+
+* [AAA\({}^{+}\)23] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. _arXiv preprint arXiv:2303.08774_, 2023.
+* [BBPP16] Emmanuel Bengio, Pierre-Luc Bacon, Joelle Pineau, and Doina Precup. Conditional computation in neural networks for faster models. 2016.
+* [BCC\({}^{+}\)24] Xiao Bi, Deli Chen, Guanting Chen, Shanhuang Chen, Damai Dai, Chengqi Deng, Honghui Ding, Kai Dong, Qiushi Du, Zhe Fu, et al. Deepseek llm: Scaling open-source language models with longtermism. _arXiv preprint arXiv:2401.02954_, 2024.
+* [BLCW09] Yoshua Bengio, Jerome Louradour, Ronan Collobert, and Jason Weston. Curriculum learning. In _Proceedings of the 26th annual international conference on machine learning_, pages 41-48, 2009.
+* [BMR\({}^{+}\)20] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.
+* [BSA\({}^{+}\)23] Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O'Brien, Eric Hallahan, Mohammad Aflah Khan, Shivanshu Purohit, USVSN Sai Prashanth,Edward Raff, et al. Pythia: A suite for analyzing large language models across training and scaling. In _International Conference on Machine Learning_, pages 2397-2430. PMLR, 2023.
+* [CDLCG\({}^{+}\)22] Aidan Clark, Diego De Las Casas, Aurelia Guy, Arthur Mensch, Michela Paganini, Jordan Hoffmann, Bogdan Damoc, Blake Hechtman, Trevor Cai, Sebastian Borgeaud, et al. Unified scaling laws for routed language models. In _International Conference on Machine Learning_, pages 4057-4086. PMLR, 2022.
+* [DG14] Ludovic Denoyer and Patrick Gallinari. Deep sequential neural network. _arXiv preprint arXiv:1410.0510_, 2014.
+* [GDG\({}^{+}\)23] Varun Godbole, George E. Dahl, Justin Gilmer, Christopher J. Shallue, and Zachary Nado. Deep learning tuning playbook, 2023. URL [http://github.com/google-research/tuning_playbook](http://github.com/google-research/tuning_playbook). Version 1.0.
+* [GSH23] Leo Gao, John Schulman, and Jacob Hilton. Scaling laws for reward model overoptimization. In _International Conference on Machine Learning_, pages 10835-10866. PMLR, 2023.
+* [HBM\({}^{+}\)22] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _arXiv preprint arXiv:2203.15556_, 2022.
+* [HKK\({}^{+}\)20] Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative modeling. _arXiv preprint arXiv:2010.14701_, 2020.
+* [HNA\({}^{+}\)17] Joel Hestness, Sharan Narang, Newsha Ardalani, Gregory Diamos, Heewoo Jun, Hassan Kiannejad, Md Mostofa Ali Patwary, Yang Yang, and Yanqi Zhou. Deep learning scaling is predictable, empirically. _arXiv preprint arXiv:1712.00409_, 2017.
+* [IPH\({}^{+}\)24] Berivan Isik, Natalia Ponomareva, Hussein Hazimeh, Dimitris Paparas, Sergei Vassilvitskii, and Sanmi Koyejo. Scaling laws for downstream task performance of large language models. _arXiv preprint arXiv:2402.04177_, 2024.
+* [JSR\({}^{+}\)24] Albert Q Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, et al. Mixtral of experts. _arXiv preprint arXiv:2401.04088_, 2024.
+* [KMH\({}^{+}\)20] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_, 2020.
+* [MKAT18] Sam McCandlish, Jared Kaplan, Dario Amodei, and OpenAI Dota Team. An empirical model of large-batch training. _arXiv preprint arXiv:1812.06162_, 2018.
+* [RSR\({}^{+}\)19] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _arXiv e-prints_, 2019, 1910.10683.
+* [SK22] Utkarsh Sharma and Jared Kaplan. Scaling laws from the data manifold dimension. _The Journal of Machine Learning Research_, 23(1):343-376, 2022.
+* [SLA\({}^{+}\)19] Christopher J Shallue, Jaehoon Lee, Joseph Antognini, Jascha Sohl-Dickstein, Roy Frostig, and George E Dahl. Measuring the effects of data parallelism on neural network training. _Journal of Machine Learning Research_, 20(112):1-49, 2019.
+* [SZY\({}^{+}\)22] Hui Su, Xiao Zhou, Houjin Yu, Xiaoyu Shen, Yuwen Chen, Zilin Zhu, Yang Yu, and Jie Zhou. Welm: A well-read pre-trained language model for chinese. _arXiv preprint arXiv:2209.10372_, 2022.
+* [TAB\({}^{+}\)23] Gemini Team, Rohan Anil, Sebastian Borgeaud, Yonghui Wu, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, et al. Gemini: a family of highly capable multimodal models. _arXiv preprint arXiv:2312.11805_, 2023.
+* [TDR\({}^{+}\)22] Yi Tay, Mostafa Dehghani, Jinfeng Rao, William Fedus, Samira Abnar, Hyung Won Chung, Sharan Narang, Dani Yogatama, Ashish Vaswani, and Donald Metzler. Scale efficiently: Insights from pretraining and finetuning transformers. In _International Conference on Learning Representations_, 2022.
+
+* [TLI\({}^{+}\)23] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.
+* [VSP\({}^{+}\)17] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. _Advances in neural information processing systems_, 30, 2017.
+* [XPD\({}^{+}\)24] Sang Michael Xie, Hieu Pham, Xuanyi Dong, Nan Du, Hanxiao Liu, Yifeng Lu, Percy S Liang, Quoc V Le, Tengyu Ma, and Adams Wei Yu. Doremi: Optimizing data mixtures speeds up language model pretraining. _Advances in Neural Information Processing Systems_, 36, 2024.
+* [ZKHB22] Xiaohua Zhai, Alexander Kolesnikov, Neil Houlsby, and Lucas Beyer. Scaling vision transformers. In _Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition_, pages 12104-12113, 2022.
