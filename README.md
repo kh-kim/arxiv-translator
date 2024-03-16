@@ -12,6 +12,7 @@
 
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
+| 2403.07816v1 | Branch-Train-MiX Mixing Expert LLMs into a Mixture-of-Experts LLM | [arXiv](https://arxiv.org/abs/2403.07816v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.07816v1) |
 | 2403.06634 | Stealing Part of a Production Language Model | [arXiv](https://arxiv.org/abs/2403.06634) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.06634) |
 | 2403.06563v1 | Unraveling the Mystery of Scaling Laws Part I | [arXiv](https://arxiv.org/abs/2403.06563v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.06563v1) |
 | 2403.04706v1 | Common 7B Language Models Already Possess Strong Math Capabilities | [arXiv](https://arxiv.org/abs/2403.04706v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.04706v1) |
