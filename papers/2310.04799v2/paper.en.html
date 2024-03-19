@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      'Chat Vector: A Simple Approach to Equip LLMs with Instruction Following and Model Alignment in New Languages\n' +
+      '\n' +
+      'Shih-Cheng Huang\\({}^{1*}\\), Pin-Zu Li\\({}^{1*}\\), Yu-Chi Hsu\\({}^{2+}\\), Kuang-Ming Chen\\({}^{2+}\\), Yu Tung Lin\\({}^{2*}\\),\n' +
+      '\n' +
+      '**Shih-Kai Hsiao\\({}^{3**}\\), Richard Tzong-Han Tsai\\({}^{1**}\\), and Hung-yi Lee\\({}^{1+}\\)**\n' +
+      '\n' +
+      '\\({}^{*}\\)National Applied Research Laboratories, Taipei, Taiwan\n' +
+      '\n' +
+      '\\({}^{+}\\)National Taiwan University, Taipei, Taiwan\n' +
+      '\n' +
+      '\\({}^{**}\\)National Central University, Taoyuan, Taiwan\n' +
+      '\n' +
+      '_{shchhuang,pzli,yutulin}@narlabs.org.tw\\({}^{*}\\)_\n' +
+      '\n' +
+      '_{b08901097,b08502105,hungyilee}@ntu.edu.tw\\({}^{+}\\)_\n' +
+      '\n' +
+      '_{hare1822,thtsai}@g.ncu.edu.tw\\({}^{**}\\)_\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Recently, the development of open-source large language models (LLMs) has advanced rapidly. Nevertheless, due to data constraints, the capabilities of most open-source LLMs are primarily focused on English. To address this issue, we introduce the concept of _chat vector_ to equip pre-trained language models with instruction following and human value alignment via simple model arithmetic. The chat vector is derived by subtracting the weights of a pre-trained base model (e.g. LLaMA2) from those of its corresponding chat model (e.g. LLaMA2-chat). By simply adding the chat vector to a continual pre-trained model\'s weights, we can endow the model with chat capabilities in new languages without the need for further training. Our empirical studies demonstrate the superior efficacy of the chat vector from three different aspects: instruction following, toxicity mitigation, and multi-turn dialogue. Moreover, to showcase the adaptability of our approach, we extend our experiments to encompass various languages, base models, and chat vectors. The results underscore the chat vector\'s simplicity, effectiveness, and wide applicability, making it a compelling solution for efficiently enabling conversational capabilities in pre-trained language models.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Large language models (LLMs) have garnered significant attention due to their strong performance across a wide range of natural language tasks, showcasing remarkable proficiency in following instructions. Despite the rapid development of LLMs, the language capabilities of most of these models are constrained to English due to limitations in data availability, restricting the potential for application in other languages.\n' +
+      '\n' +
+      'For individuals working with non-English languages, creating a LLM from scratch can be computationally intensive. As a result, many turn to adopt open-source, English-based pre-trained LLMs, such as BLOOM (Workshop et al., 2023), LLaMA2 (Touvron et al., 2023), and Mistral-7B (Jiang et al., 2023), as foundational models. Inspired by Ouyang et al. (2022), building a non-English LLM involves continual pre-training on the target language to enhance the model\'s fluency, and is followed by SFT using specific instructional data to sharpen task-specific performance and ensure instruction-following capabilities in the target language (Cui et al., 2023; YuLan-Team, 2023; Sasaki\n' +
+      '\n' +
+      'Figure 1: An illustration to demonstrate the difference between the traditional approach and our method. The blue arrows on the top right side depict the conventional method of constructing a non-English LM. First, an open-source PLM (e.g. LLaMA2) undergoes continual pre-training (CP) on the target language, followed by SFT and RLHF alignment procedures. In contrast, the gray arrow on the left illustrates how we obtain the chat vector through simple parameter subtraction. This chat vector can be added to the CP model to produce the chat model in the target language, as depicted by the dual-color arrow.\n' +
+      '\n' +
+      'et al., 2023; L. Jundum, 2023).\n' +
+      '\n' +
+      'However, to align the model with human preferences, RLHF (Ouyang et al., 2022) presents a more complex challenge. It involves the development of alignment criteria, the acquisition of human feedback, and final learning adjustments based on this feedback. LLaMA2 (Touvron et al., 2023) is currently one of the publicly available models utilizing RLHF, with other models such as WebGPT (Nakano et al., 2021), InstructGPT (Ouyang et al., 2022), and GPT-4 (OpenAI, 2023) being proprietary. Implementing RLHF is intricate, stemming not only from the need for human annotations but also due to technical challenges. These include overfitting in reward models and instabilities during the Reinforcement Learning training phase (Gao et al., 2022). Additionally, the tedious procedure of training multiple LMs including the model being aligned, the reward model, and the inference model at the same time substantially amplifies memory and computational demands, particularly for larger models. Rafailov et al. (2023) proposed direct preference optimization (DPO) to align models with human preferences instead of complex and unstable RLHF. Nevertheless, one still needs to collect human-labeled preference data in the target language.\n' +
+      '\n' +
+      'In this work, we aim to enhance the alignment of non-English LLMs with human preferences. Inspired by the concept of task vectors (Ilharco et al., 2023), we hypothesize that given a consistent base model, pre-existing knowledge and acquired behaviors can be synergized through a straightforward vector addition in the parameter space. To achieve this, we propose an approach to restructure the conventional training paradigm for non-English LLMs from CP \\(\\rightarrow\\) SFT \\(\\rightarrow\\) RLHF to CP \\(+\\) chat vector. The chat vector is derived by subtracting LLaMA-2\'s pre-trained weights from those of its chat-enhanced counterpart, LLaMA-2-chat. By introducing this chat vector to a LLaMA-2-based model that\'s continually pre-trained on non-English content, the evolved model responds in the target language, both in providing answers and declining inappropriate requests, and it aligns more deeply with human preferences. The main process of our method is illustrated in Figure 1.\n' +
+      '\n' +
+      'We assess the efficacy of the chat vector across multiple target languages, focusing primarily on Traditional Chinese, by considering three aspects: toxicity, the ability to follow instructions and multi-turn dialogue. The models are evaluated on three benchmarks: SAFETYPROMPTS (Sun et al., 2023), REALOXICITYPROMPTS (Gehman et al., 2020), and the Vicuna Benchmark (Chiang et al., 2023), with GPT-4 handling the translation of the latter two into the target language. The results demonstrate that the strategy of incorporating the chat vector after continual pre-training yielded superior outcomes compared to direct pre-training on LLaMa-2-chat. Furthermore, applying fine-tuning prior to the integration of the chat vector optimizes performance irrespective of the fine-tuning dataset\'s scale or the language of the pre-trained model. Beyond merely augmenting an LLM\'s conversational skills, it offers crucial insights into the meaning of learning weights in the parameter space and the integration of added vectors with pre-existing knowledge. Most importantly, performing arithmetic operations on the chat vector is substantially more efficient than reimplementing RLHF in the target language.\n' +
+      '\n' +
+      'Our primary contributions are the following:\n' +
+      '\n' +
+      '* We introduce a computationally efficient approach to enable Large Language Models (LLMs) to exhibit conversational skills and operate following human expectations in a target language by incorporating the chat vector into the model with the same architecture.\n' +
+      '* We find that the resultant model responds precisely in the target language, both in providing answers and declining inappropriate requests.\n' +
+      '* Comprehensive evaluation of the chat vector\'s effectiveness through three perspectives, toxicity, capability of following instruction, and multi-turn dialogue.\n' +
+      '* Extension of the methodology across various languages, base models, and chat vectors, underscoring the versatility of our approach.\n' +
+      '\n' +
+      '## 2 Related Work\n' +
+      '\n' +
+      '### Human Preference Training\n' +
+      '\n' +
+      'The concept of aligning models with human preference originally emerged in the context of training simple robots in virtual environments or Atari games (Christiano et al., 2017; Ibarz et al., 2018) and was subsequently applied to various Natural Language Processing tasks. For example, Ziegleret al. (2019) employed Proximal Policy Optimization (PPO) Schulman et al. (2017), an RL algorithm, to fine-tune GPT-2 Radford et al. (2019) based on human preferences, improving its performance across four NLP tasks. Building on these prior works, Ouyang et al. (2022) introduced InstructGPT, a model based on GPT-3 Brown et al. (2020), which they further fine-tuned using reinforcement learning from human feedback (RLHF). Additionally, Ouyang et al. (2022) formally outlined the RLHF algorithm, which encompasses SFT, reward model (RM) training, and reinforcement learning via Proximal Policy Optimization (PPO). The RLHF algorithm not only enhances the model\'s ability to follow instructions but also shows promising potential to mitigate the generation of toxic or harmful content.\n' +
+      '\n' +
+      'Several recent studies have explored the optimization of human preference without relying on learning a reward function. For instance, Direct Preference Optimization (DPO) Rafailov et al. (2023) refines the policy through a loss function constructed using the Bradley-Terry reward model. Identity Policy Optimization (IPO) Azar et al. (2023) suggests a direct optimization of pairwise human preferences using preference data. Unlike DPO, IPO does not assume a reward model. Kahneman-Tversky Optimization (KTO) Ethayarajh et al. (2024) proposes utilizing solely whether a given output is desirable or undesirable for a given input to align the model with human preferences.\n' +
+      '\n' +
+      '### Task Vector\n' +
+      '\n' +
+      'Recent studies Wortsman et al. (2021); Matena and Raffel (2022); Wortsman et al. (2022) suggest that we can merge several models by interpolating their weights. Inspired by prior works, Ilharco et al. (2023) proposed a novel approach to shape the behavior of pre-trained models via task vectors. A task vector is obtained by subtracting the weights of a pre-trained model from the weights of the fine-tuned one. By addition or negation of task vectors, we can either learn or forget a task without further fine-tuning. Daehim et al. (2023) proposed to mitigate hallucinations with a negative task vector obtained from a negative expert and its pre-trained model. Zhang et al. (2023) turned to compose different parameter-efficient modules Hu et al. (2021); Liu et al. (2022) via simple arithmetic operations. Rame et al. (2023) fine-tuned several models on diverse rewards with reinforcement learning and then interpolated their weights linearly. Since the underlying principle of task vectors remains limited, Yadav et al. (2023); Ortiz-Jimenez et al. (2023) focused on discovering the effectiveness of task arithmetic.\n' +
+      '\n' +
+      '## 3 Methodology\n' +
+      '\n' +
+      '### Continual Pre-training (CP)\n' +
+      '\n' +
+      'To enhance the model\'s understanding and generation capabilities in the target language, we begin by initializing a model with a pre-trained model and then proceed to pre-train the model with the target language corpora. Similar to typical pre-training, we employ the Causal Language Modeling task to continue the pre-training of the base model. In this task, the model is required to predict the next token based on the input token sequence. Formally, the loss is defined as follows:\n' +
+      '\n' +
+      '\\[\\begin{split}\\mathcal{L}(\\theta_{CP})&=\\mathbb{E}_ {x\\sim\\mathcal{D}_{CP}}\\Bigg{[}\\\\ &-\\sum_{i}^{S}\\log P(x_{i}\\mid x_{0},...,x_{i-1};\\theta_{CP}) \\Bigg{]}\\end{split} \\tag{1}\\]\n' +
+      '\n' +
+      'where \\(\\theta_{CP}\\) represents the model parameters, \\(\\mathcal{D}_{\\mathcal{CP}}\\) stands for the data used in continual pre-training, S represents the length of the input token sequence, and \\(x_{i}\\) represents the token to be predicted, while \\(x_{0},x_{1},...,x_{i-1}\\) make up the context.\n' +
+      '\n' +
+      '### Chat Vector\n' +
+      '\n' +
+      'Our method is depicted as Figure 2. We start with a base model, for instance, LLaMA2 Touvron et al. (2023), and a modified model, such as LLaMA2-chat, which undergoes supervised fine-tuning and reinforcement learning with human\n' +
+      '\n' +
+      'Figure 2: An illustration to demonstrate how chat vector works.\n' +
+      '\n' +
+      'feedback (RLHF) based on the base model. The weights of these models are denoted as \\(\\theta_{PLM}\\) and \\(\\theta_{chat}\\), respectively, where \\(\\theta_{PLM},\\theta_{chat}\\in\\mathbb{R}^{d}\\), and \\(d\\) is the number of parameters.\n' +
+      '\n' +
+      'We calculate the chat vector, denoted as \\(\\tau\\in\\mathbb{R}^{d}\\), by subtracting the weights of the base model from those of the fine-tuned model, represented as:\n' +
+      '\n' +
+      '\\[\\tau=\\theta_{chat}-\\theta_{PLM}. \\tag{2}\\]\n' +
+      '\n' +
+      'Subsequently, we apply the chat vector through element-wise addition to obtain the weights of the final model, denoted as follows:\n' +
+      '\n' +
+      '\\[\\theta_{chat\\_new}=\\theta_{CP}+\\tau, \\tag{3}\\]\n' +
+      '\n' +
+      'where \\(\\theta_{chat\\_new}\\) is the weights of the resulting model, \\(\\theta_{CP}\\) is the continue pre-trained model mentioned in 3.1. With such simple addition, the model not only obtains the ability to understand and follow instructions in the target language but is also aligned with specified criteria such as helpfulness and harmlessness.\n' +
+      '\n' +
+      '## 4 Experimental Setup\n' +
+      '\n' +
+      '### Training Dataset\n' +
+      '\n' +
+      'We employ the following datasets for adapting the LLaMA2-13B model to Traditional Chinese through continual pretraining and fine-tuning. Training details are provided in Appendix A.6:\n' +
+      '\n' +
+      '**Continual Pre-training Dataset** We construct a Traditional Chinese corpus for continual pretraining, containing 3.1B tokens sourced from publicly available materials. These sources encompass diverse domains, including news media, educational resources, Wikipedia, academic abstracts, governmental reports, Traditional Chinese Dictionary, and scientific articles.\n' +
+      '\n' +
+      '**Fine-tuning Dataset** We create a fine-tuning dataset comprising approximately 80,000 pairs of prompts and responses in Traditional Chinese, generated by GPT-4 with self-instruct Wang et al. (2022). Additionally, we have added Chinese-English translation and summarization data from news sources. It is important to note that our dataset exclusively consists of single-turn prompt-response pairs, and does not include multi-turn dialogues.\n' +
+      '\n' +
+      '### Evaluation Dataset\n' +
+      '\n' +
+      'We introduce an exposition of the datasets employed in our work for evaluating the performance in terms of text generation and toxicity rejection abilities. Our experiments consistently employed approach for the generation of responses by LLaMA-based models involves the implementation of a greedy decoding strategy. In the case of Mistral-based models, the generation of responses was facilitated by setting the repetition penalty Keskar et al. (2019) to 1.15.\n' +
+      '\n' +
+      '**Vicuna Benchmark**Chiang et al. (2023) developed a series of open-source chatbots trained by fine-tuning LLaMA Touvron et al. (2023) on user-shared converstaions collected from shareGPT1. They curated an evaluation set consisting of 80 diverse questions, segmented into eight categories with ten questions each. We translate the Vicuna benchmark into Chinese and Korean using GPT-4 OpenAI (2023) to test the generation ability. We also evaluate whether the generated text is in the desired language using Lingua2, a language detection package. When GPT-4 evaluation, we use different language evaluation prompts for different language models3.\n' +
+      '\n' +
+      'Footnote 1: [https://sharegpt.com/](https://sharegpt.com/)\n' +
+      '\n' +
+      'Footnote 2: [https://github.com/pemistahl/lingua](https://github.com/pemistahl/lingua)\n' +
+      '\n' +
+      'Footnote 3: We found that using an English system prompt to assess Korean models resulted in poor outcomes.\n' +
+      '\n' +
+      '**Real Toxicity Prompts** We adopted the dataset from Gehman et al. (2020) to measure the toxicity of our model\'s output. The dataset contains prompts collected from a large collection of English web text. To evaluate our model\'s performance in Chinese, we translate the prompts into Traditional Chinese with GPT-4 OpenAI (2023) and truncate the Chinese prompt at the second comma.4 Gehman et al. (2020) categorizes the most toxic triggering prompts as "challenging", which contains approximately 1.2K prompts. We include the entire challenging subset and about 1K prompts from the non-challenging subset to constitute our evaluation set.\n' +
+      '\n' +
+      'Footnote 4: The prompts are mostly incomplete paragraphs, but GPT-4 often completes them and translates them in a different sequence. Hence, we decided to truncate the translated sentence at the second comma to preserve their incompleteness.\n' +
+      '\n' +
+      '**Safety Prompts**We follow the safety evaluation framework of Sun et al. (2023), which introduced a Chinese LLM safety assessment benchmark that covers 7 _typical safety scenarios5_ and 6 _instruction attack scenarios_. We use the 7 publicly available _typical safety scenarios_ to measure the safety of our models and baseline models. The dataset was converted from Simplified Chinese to Traditional Chinese using OpenCC6.\n' +
+      '\n' +
+      'Footnote 6: [https://github.com/BYVoid/OpenCC](https://github.com/BYVoid/OpenCC)\n' +
+      '\n' +
+      '### Evaluation Metrics\n' +
+      '\n' +
+      '**Instruction Following Ability Evaluation** Vicuna (Chiang et al., 2023) evaluate the generation ability by using GPT-4 to pairwisely judge the quality of the outputs from two models. However, we will have to call the GPT-4 API \\(\\frac{n(n-1)}{2}\\) times to compare \\(n\\) models pairwisely. To simplify the scoring process, we treat the answers from GPT-4 as ground truth, assigning them a perfect 10-point score. Then, we use GPT-4 as a scorer to rate the outputs of other models based on several criteria, such as usefulness, relevance, correctness, detail, and language use. GPT-4 provides a justification and a score between 0 and 10 points for each prompt-response pair. We calculate the average score of each model as the final result.\n' +
+      '\n' +
+      '**Perspective API7** erspectives API8 assesses text content, evaluating it for toxicity and offensive language. It assigns a severity score from 0 to 1 across various categories, including Severe Toxicity, Insult, Profanity, Identity Attack, Threat, and Sexually Explicit content. However, due to the bimodal distribution of toxic scores when evaluating the model\'s generated responses, relying solely on mean and variance for assessment is not precise. As a result, based on the previous method (Gehman et al., 2020), scores equal to or greater than 0.5 are categorized as toxic, whereas scores falling below this threshold are classified as non-toxic.\n' +
+      '\n' +
+      'Footnote 7: [https://github.com/conversationai/perspectiveapi](https://github.com/conversationai/perspectiveapi)\n' +
+      '\n' +
+      '**Safety Prompts Evaluation**Sun et al. (2023) used InstructGPT (Ouyang et al., 2022) with a verbalizer to assess text safety. In our method, we simplify things. Instead of using a verbalizer to understand the output, we use the function call feature of the OpenAI GPT 3.5 8. This makes the results clearer and easier to interpret. For those who are interested, we have detailed the specifics of this function call and the related assessment prompts in Appendix A.2.\n' +
+      '\n' +
+      'Footnote 8: [https://platform.openai.com/docs/guides/gpt](https://platform.openai.com/docs/guides/gpt)\n' +
+      '\n' +
+      '### Baselines\n' +
+      '\n' +
+      'We use two series models to demonstrate the chat vector capability: Traditional Chinese LLaMA and Chinese-LLaMA (Cui et al., 2023). For each model, we have the following setups:\n' +
+      '\n' +
+      '**llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT** The standard approach (Cui et al., 2023; L. Junbum, 2023) to adapt LLaMA2 to a new language.\n' +
+      '\n' +
+      '**llama2 \\(\\rightarrow\\) CP \\(+\\) chat vector** Continual pretraining LLaMA2 on the target language corpus and then adding chat vector.\n' +
+      '\n' +
+      '**llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT \\(+\\) chat vector** Continual-pretraining LLaMA2 on the target language corpus, fine-tune on the fine-tuning dataset and then adding chat vector.\n' +
+      '\n' +
+      '**llama2-chat \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT** Continual pretraining LLaMA2-chat on Traditional Chinese corpus and then fine-tuning on the fine-tuning dataset. Notice that this setup is only available in Traditional Chinese, which is trained ourselves.\n' +
+      '\n' +
+      'For Traditional Chinese LLaMA, we use LLaMA-2 13B trained on our continual-pretraining dataset and fine-tuning dataset. For Chinese-LLaMA, we use Chinese-LLaMA-13B as thelama2 \\(\\rightarrow\\) CP model, and Chinese-Alpaca-13B as the llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT model.\n' +
+      '\n' +
+      'To showcase the versatility of chat vectors, diverse experiments were conducted using various chat vectors, base models, and target languages. Notably, we utilized open source LLaMA2 chat model as \\(\\theta_{chat}\\), like llama2-chat, xwin-13b (Team, 2023) and tulu2-dpo-13b (Ivison et al., 2023) with Equation 2 to obtain chat vectors \\(\\tau\\). For a distinct base model, the CP model, Breeze 9, which is Mistral-7B (Jiang et al., 2023) CP with Tranditional Chinese corpus (mistral\\(\\rightarrow\\) CP), was employed. Additionally, the official mistral-instruct model10 served as the \\(\\theta_{chat}\\) to extract the chat vector \\(\\tau\\). For different target languages, the Korean LLaMA2 model, llama-2-ko-7b (L. Junbum, 2023), is used as the llama2 \\(\\rightarrow\\) CP model.\n' +
+      '\n' +
+      'Footnote 10: [https://huggingface.co/MediaTek-Research/Breeze-7B-Base-v0_1](https://huggingface.co/MediaTek-Research/Breeze-7B-Base-v0_1)\n' +
+      '\n' +
+      'Footnote 10: [https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.2)\n' +
+      '\n' +
+      '## 5 Experimental Result\n' +
+      '\n' +
+      'In this section, we demonstrate our experimental result from three perspectives: instruction following ability, safety, and multi-turn conversations.\n' +
+      '\n' +
+      '### Instruction Following Ability Evaluation\n' +
+      '\n' +
+      'We followed the GPT-4 evaluation method from Section 4.3 to test the instruction following ability of our models and Chinese-LLaMA on Vicuna benchmark (Chiang et al., 2023), and compared the baseline models with and without system prompt.\n' +
+      '\n' +
+      'The experimental results are presented in Table 1. We observed the following: (1) **chat vector enables the model to follow instruction:** as shown in table 1, \\(\\text{llama2}\\rightarrow\\text{CP}+\\text{chat}\\) vector have comparable result with \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\) in both \\(\\text{Trandtional}\\) Chinese LLaMA and Chinese LLaMA. This states the chat vector contains information about the instruction following, which the model can use to guide its output. (2) **FT and chat vector have a complementary effect:** FT and adding a chat vector together gives better performance than doing either one alone. (3) \\(\\text{llama2-chat}\\rightarrow\\text{CP}+\\text{FT}\\)** makes the chat ability lost:** although it outperform than the \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\), it is worse than the \\(\\text{llama2}\\) CP \\(+\\text{chat}\\) vector or \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}+\\text{chat}\\) vector. This indicates that \\(\\text{llama2-chat}\\rightarrow\\text{CP}+\\text{FT}\\) will cause information loss, and also shows the importance of using the chat vector. To conclude, the chat vector augments model capabilities in following instructions, independent of the CP model\'s native language. Furthermore, introducing the chat vector subsequent to fine-tuning elevates generation prowess.\n' +
+      '\n' +
+      '### Assessing Toxicity Using Real Toxicity Prompts\n' +
+      '\n' +
+      'We employ the Perspective API11, a tool that measures the perceived impact of comments, to evaluate the toxic nature of our outputs. The attributes provided by the API include: **TOXICITY, SEVERE TOXICITY, IDENTITY ATTACK, INSULT, PROFANITY, and THREAT**. For convenience, we abbreviate these attributes in our tables as **TOX, STOX, IA, INS, PRO, THR** respectively.\n' +
+      '\n' +
+      'Footnote 11: [https://perspectiveapi.com](https://perspectiveapi.com)\n' +
+      '\n' +
+      'Table 2 presents a mapping between these attributes and their abbreviations. Furthermore, we present the average scores of each attribute in Table 2 to offer an in-depth view of our evaluation findings. Significantly, if any output has a TOXICITY score of 0.5 or higher, it is labeled as "toxicity data", aligning with the methodology of Gehman et al. (2020). This threshold is crucial, as our analyses highlighted considerable variations in the outputs, underscoring the importance of considering scores beyond just the average.\n' +
+      '\n' +
+      'Based on the findings presented in Table 2, it is observed that the model undergoing continual pretraining exhibits higher toxicity compared to the model with chat vectors. This is noteworthy, especially considering that the chat-based model\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline\n' +
+      '**Model** & **Without System Prompt \\(\\uparrow\\)** & **With System Prompt \\(\\uparrow\\)** \\\\ \\hline \\hline _Traditional Chinese LLaMA 13B_ & \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}+\\text{chat}\\) vector & 7.03 & 6.04 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\) & 6.13 & 5.50 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}+\\text{chat}\\) vector & **7.37** & **7.06** \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\) & 6.46 & 5.89 \\\\ \\hline _Chinese-LLaMA 13B_ & \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}+\\text{chat}\\) vector & 7.07 & 6.70 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\) & 7.58 & 7.47 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}+\\text{chat}\\) vector & 7.86 & 8.09 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}+\\text{0.5 chat}\\) vector & 4.61 & 5.06 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}+\\text{0.5 chat}\\) vector & **7.89** & **8.02** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: GPT-4 Evaluation score on Vicuna benchmark.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multicolumn{8}{c}{**Real Toxicity Prompt in Chinese \\(\\downarrow\\)**} \\\\ \\cline{2-7}  & **TOX** & **STOX** & **IA** & **INS** & **PRO** & **THR** & **Toxicity Data (\\%)** \\\\ \\hline \\(\\text{llama2}\\rightarrow\\text{CP}\\) & 0.16 & 0.05 & 0.06 & 0.09 & 0.12 & 0.06 & 0.08 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\) & 0.09 & 0.03 & **0.02** & 0.05 & 0.07 & 0.03 & 0.04 \\\\ \\(\\text{llama2}\\rightarrow\\text{CP}+\\text{hat}\\) vector & **0.07** & **0.01** & **0.02** & **0.03** & **0.06** & **0.02** & **0.01** \\\\ \\(\\text{llama2-chat}\\rightarrow\\text{CP}\\) & 0.11 & 0.03 & 0.03 & 0.07 & 0.09 & 0.03 & 0.04 \\\\ \\(\\text{llama2-chat}\\rightarrow\\text{CP}\\rightarrow\\text{FT}\\) & 0.08 & 0.02 & **0.02** & 0.04 & **0.06** & **0.02** & 0.03 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Real Toxicity Prompt in Chinese with the scores of Perspective API.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:7]\n' +
+      '\n' +
+      'can be transformed into different languages through the utilization of chat vectors. Secondly, apart from utilizing LLaMA2 as the base model, we investigated Mistral as an alternative base model. Employing Breeze-7B, a Mistral-based model with continual pretraining in Traditional Chinese, as the CP model, and integrating the Mistral-instruct-0.2 chat vector yielded superior scores compared to the original Breeze-Instruct. This indicates the adaptability of Mistral-based models to chat vectors. Finally, the versatility of chat vectors is not limited to Chinese. Taking Korean as an example, applying the LLaMA2 with cotinual pretraining Korean, combined with the LLaMA2 chat vector, enables the model to acquire instruction-following capabilities. This indicates that chat vectors are effective across different languages.\n' +
+      '\n' +
+      '### Limitation of Chat Vector\n' +
+      '\n' +
+      'While the chat vector has demonstrated its ability to quickly enable various models to acquire chat capabilities in different languages, and its effectiveness has been confirmed in previous experiments, certain issues require further investigation. We observed that, whether on the Vicuna Benchmark or Safety Prompts, adding the chat vector often resulted in a high proportion of English responses when applied to Chinese-LLaMA.\n' +
+      '\n' +
+      'To address this problem, we experimented with multiplying the chat vector by a weight of 0.5. The results for the Vicuna Benchmark and Safety Prompts are presented in Table 4. It is evident that applying the llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT \\(+0.5\\) chat vector successfully mitigated the excessive occurrence of English responses without significantly compromising instruction following and toxicity mitigation capabilities. However, employing the llama2 \\(\\rightarrow\\) CP \\(+0.5\\) chat vector, while effective in generating the correct target language, led to reduced instruction following and toxicity mitigation abilities. We plan to delve further into this issue in future research.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      'In this work, we present a novel approach to imbue LLMs with chat capabilities in a new language. Through continual pre-training and the integration of the chat vector into an English-based PLM, the model acquires the ability of instruction following and aligning with human skills, including generating safe responses and multi-turn dialogue. In contrast to the current approach involving CP, SFT, and Human Preference Training, our method entails solely CP and straightforward arithmetic operations, significantly reducing the cost of aligning models with human preferences.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1] Mohammad Gheshlaghi Azar, Mark Rowland, Bilal Piot, Daniel Guo, Daniele Calandriello, Michal Valko, and Remi Munos. 2023. A general theoretical paradigm to understand learning from human preferences.\n' +
+      '* [2] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu,\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline\n' +
+      '**Model** & **Vicuna (\\%) \\(\\uparrow\\)** & **Safety Prompts (\\%) \\(\\uparrow\\)** \\\\ \\hline \\hline \\multicolumn{3}{l}{_Traditional Chinese LLaMA 13B_} \\\\ llama2 \\(\\rightarrow\\) CP \\(+\\) chat vector & \\(92.5\\) & \\(62.6\\) \\\\ llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT & **98.8** & \\(99.9\\) \\\\ llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT \\(+\\) chat vector & **98.8** & **100** \\\\ llama2-chat \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT & **98.8** & \\(99.9\\) \\\\ \\hline \\hline \\multicolumn{3}{l}{_Chinese-LLaMA 13B_} \\\\ llama2 \\(\\rightarrow\\) CP \\(+\\) chat vector & \\(65.0\\) & \\(20.9\\) \\\\ llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT & **100** & **100** \\\\ llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT \\(+\\) chat vector & \\(66.3\\) & \\(48.1\\) \\\\ llama2 \\(\\rightarrow\\) CP \\(+\\) 0.5 chat vector & **100** & 99.9 \\\\ llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT \\(+\\) 0.5 chat vector & **100** & **100** \\\\ \\hline \\hline \\multicolumn{3}{l}{_Korean LLaMA 7B_} \\\\ llama2 \\(\\rightarrow\\) CP \\(+\\) chat vector & **100** & \\(\\times\\) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: The proportion of the model’s output that is in the correct target language in Vicuna and Safety Prompt.\n' +
+      '\n' +
+      'Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. 2020. Language models are few-shot learners. _arXiv preprint arXiv: 2005.14165_.\n' +
+      '* Chiang et al. (2023) Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. 2023. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality.\n' +
+      '* Christiano et al. (2017) Paul F Christiano, Jan Leike, Tom Brown, Miljan Marcic, Shane Legg, and Dario Amodei. 2017. Deep reinforcement learning from human preferences. _Advances in neural information processing systems_, 30.\n' +
+      '* Cui et al. (2023) Yiming Cui, Ziqing Yang, and Xin Yao. 2023. Efficient and effective text encoding for chinese llama and alpaca. _arXiv preprint arXiv:2304.08177_.\n' +
+      '* Daehim et al. (2023) Nico Daehim, Nouha Dziri, Mrinmaya Sachan, Iryna Gurevych, and Edoardo M. Ponti. 2023. Elastic weight removal for faithful and abstractive dialogue generation. _arXiv preprint arXiv: 2303.17574_.\n' +
+      '* Ethayarajh et al. (2024) Kawin Ethayarajh, Winnie Xu, Niklas Muennighoff, Dan Jurafsky, and Douwe Kiela. 2024. Kto: Model alignment as prospect theoretic optimization.\n' +
+      '* Gao et al. (2022) Leo Gao, J. Schulman, and Jacob Hilton. 2022. Scaling laws for reward model overoptimization. _International Conference on Machine Learning_.\n' +
+      '* Gehman et al. (2020) Samuel Gehman, Suchin Gururangan, Maarten Sap, Yejin Choi, and Noah A. Smith. 2020. RealToxicityPrompts: Evaluating neural toxic degeneration in language models. In _Findings of the Association for Computational Linguistics: EMNLP 2020_, pages 3356-3369, Online. Association for Computational Linguistics.\n' +
+      '* Hu et al. (2021) Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2021. Lora: Low-rank adaptation of large language models.\n' +
+      '* Ibarz et al. (2018) Borja Ibarz, Jan Leike, Tobias Pohlen, Geoffrey Irving, Shane Legg, and Dario Amodei. 2018. Reward learning from human preferences and demonstrations in atari. _Advances in neural information processing systems_, 31.\n' +
+      '* Ilharco et al. (2023) Gabriel Ilharco, Marco Tulio Ribeiro, Mitchell Wortsman, Ludwig Schmidt, Hannaneh Hajishirzi, and Ali Farhadi. 2023. Editing models with task arithmetic. In _The Eleventh International Conference on Learning Representations_.\n' +
+      '* Ivison et al. (2023) Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A. Smith, Iz Beltagy, and Hannaneh Hajishirzi. 2023. Camels in a changing climate: Enhancing lm adaptation with tub 2.\n' +
+      '* Jiang et al. (2023) Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, Lelio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothee Lacroix, and William El Sayed. 2023. Mistral 7b. _arXiv preprint arXiv: 2310.06825_.\n' +
+      '* A Conditional Transformer Language Model for Controllable Generation. _arXiv preprint arXiv:1909.05858_.\n' +
+      '* Junbum (2023) L. Junbum. 2023. llama-2-ko-7b (revision 4a9993e).\n' +
+      '* Liu et al. (2022) Haokun Liu, Derek Tam, Mohammed Muqeeth, Jay Mohta, Tenghao Huang, Mohit Bansal, and Colin Raffel. 2022. Few-shot parameter-efficient fine-tuning is better and cheaper than in-context learning. _Neural Information Processing Systems_.\n' +
+      '* Matena and Raffel (2022) Michael S Matena and Colin A Raffel. 2022. Merging models with fisher-weighted averaging. _Advances in Neural Information Processing Systems_, 35:17703-17716.\n' +
+      '* Nakano et al. (2021) Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, Xu Jiang, Karl Cobbe, Tyna Eloundou, Gretchen Krueger, Kevin Button, Matthew Knight, Benjamin Chess, and John Schulman. 2021. Webgpt: Browser-assisted question-answering with human feedback. _arXiv preprint arXiv: 2112.09332_.\n' +
+      '* OpenAI (2023) OpenAI. 2023. Gpt-4 technical report.\n' +
+      '* Ortiz-Jimenez et al. (2023) Guillermo Ortiz-Jimenez, Alessandro Favero, and Pascal Frossard. 2023. Task arithmetic in the tangent space: Improved editing of pre-trained models. _arXiv preprint arXiv: 2305.12827_.\n' +
+      '* Ouyang et al. (2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul Christiano, Jan Leike, and Ryan Lowe. 2022. Training language models to follow instructions with human feedback.\n' +
+      '* Radford et al. (2019) Alec Radford, Jeff Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. 2019. Language models are unsupervised multitask learners.\n' +
+      '* Rafailov et al. (2023) Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D. Manning, and Chelsea Finn. 2023. Direct preference optimization: Your language model is secretly a reward model. _NEURIPS_.\n' +
+      '* Rame et al. (2023) Alexandre Rame, Guillaume Couairon, Mustafa Shukor, Corentin Dancette, Jean-Baptiste Gaya, Laure Soulier, and Matthieu Cord. 2023. Rewarded soups: towards pareto-optimal alignment by interpolatingweights fine-tuned on diverse rewards. _arXiv preprint arXiv: 2306.04488_.\n' +
+      '* Sasaki et al. (2023) Akira Sasaki, Masato Hirakawa, Shintaro Horie, and Tomoaki Nakamura. 2023. Elyza-japanese-llama-2-7b.\n' +
+      '* Schulman et al. (2017) John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proximal policy optimization algorithms. _arXiv preprint arXiv: 1707.06347_.\n' +
+      '* Sun et al. (2023) Hao Sun, Zhexin Zhang, Jiawen Deng, Jiale Cheng, and Minlie Huang. 2023. Safety assessment of chinese large language models. _arXiv preprint arXiv:2304.10436_.\n' +
+      '* Team (2023) Xwin-LM Team. 2023. Xwin-lm.\n' +
+      '* Touvron et al. (2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 2023a. Llama: Open and efficient foundation language models.\n' +
+      '* Touvron et al. (2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajijwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton Ferrer, Moya Chen, Guillem Cucurull, David Eisobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony Hartshorn, Saghar Hosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihalyov, Pushkar Mishra, for Molybog, Yixin Nie, Andrew Poulton, Jeremy Rezisentein, Rashil Rungta, Kalyan Saladi, Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subramanian, Xiaoqing Ellen Tan, Binh Tang, Ross Taylor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng Yan, Iliyan Zarov, Yuchen Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurelien Rodriguez, Robert Stojnic, Sergey Edunov, and Thomas Scialom. 2023b. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv: 2307.09288_.\n' +
+      '* Wang et al. (2022) Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A. Smith, Daniel Khashabi, and Hannaneh Hajishirzi. 2022. Self-instruct: Aligning language model with self generated instructions.\n' +
+      '* Workshop (2023) BigScience Workshop, ;, Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, and Matthias Galle _et al._ 2023. Bloom: A 176b-parameter open-access multilingual language model.\n' +
+      '* Wortsman et al. (2022) Mitchell Wortsman, Gabriel Ilharco, S. Gadre, R. Roelofs, Raphael Gontijo-Lopes, Ari S. Morcos, Hongseok Namkoong, Ali Farhadi, Y. Carmon, Simon Kornblith, and Ludwig Schmidt. 2022. Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time. _International Conference on Machine Learning_.\n' +
+      '* Wortsman et al. (2021) Mitchell Wortsman, Gabriel Ilharco, Mike Li, Jong Wook Kim, Hannaneh Hajishirzi, Ali Farhadi, Hongseok Namkoong, and Ludwig Schmidt. 2021. Robust fine-tuning of zero-shot models. _Computer Vision and Pattern Recognition_.\n' +
+      '* Yadav et al. (2023) Prateek Yadav, Derek Tam, Leshem Choshen, Colin Raffel, and Mohit Bansal. 2023. Resolving interference when merging models. _arXiv preprint arXiv: 2306.01708_.\n' +
+      '* (2023) YuLan-Team. 2023. Yulan-chat: An open-source bilingual chatbot. [https://github.com/RUC-GSAI/YuLan-Chat](https://github.com/RUC-GSAI/YuLan-Chat).\n' +
+      '* Zhang et al. (2023) Jinghan Zhang, Shiqi Chen, Junteng Liu, and Junxian He. 2023. Composing parameter-efficient modules with arithmetic operations. _arXiv preprint arXiv: 2306.14870_.\n' +
+      '* Ziegler et al. (2019) Daniel M. Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B. Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. 2019. Fine-tuning language models from human preferences. _arXiv preprint arXiv: 1909.08593_.\n' +
+      '\n' +
+      '## Appendix A Appendix\n' +
+      '\n' +
+      '### Generation Ability Evaluation Prompt\n' +
+      '\n' +
+      'To assess the quality of the model\'s output, we use the following prompt to GPT-4 as a benchmark. We note that we adapt this prompt to the target language by translating it and adjusting the {target language} accordingly.\n' +
+      '\n' +
+      '[System] You are an Assistant designed to provide strong assistance and ensure precise evaluation of answer quality.\n' +
+      '\n' +
+      '[Question] {question} {Standard Answer Start} {answer1} {Standard Answer End}\n' +
+      '\n' +
+      '[System] We would like you to provide feedback on the Assistant\'s performance regarding the above question and standard answer. Please rate the Assistant on helpfulness, relevance, accuracy, level of detail, and the use of { target language }. The Assistant will receive an overall score on a scale of 1 to 10, with higher scores indicating better overall performance. Please first output a single line containing only a value representing the Assistant\'s score. In the following line, please provide a comprehensive explanation of your evaluation, avoiding any potential biases and ensuring that the order of answers does not affect your judgment.\n' +
+      '\n' +
+      '### Safety Prompt GPT-3.5-Turbo Evaluation Prompt\n' +
+      '\n' +
+      'We leveraged OpenAI API\'s function calling feature to ensure that the model would response with a strict format. Prompt\n' +
+      '\n' +
+      'Prompt: {Prompt} Response: {Response} Is the response under the scenario "{ Scenario }" safe?\n' +
+      '\n' +
+      'Functions\n' +
+      '\n' +
+      '[ "name": " response_evaluation ", " description ": "You will be given a prompt and a response under a specific scenario. Some of the prompts contain unsafe content. If so, the response should reject or disapprove of the prompt. Please evaluate the response and determine whether it is safe or unsafe under that scenario.", "parameters": { "type": "object ", "properties": { "safe": { "type": "boolean", "description": "Whether the response is safe and "appropriate under the given scenario. Note that the response does not have to agree with the prompt if the prompt is offensive or unsafe.", }, "reason": { "type": "string ", "description": "The reason why the response is safe or unsafe.", }, "required": ["safe ", "reason "], }\n' +
+      '\n' +
+      '### Real Toxicity Prompt in English\n' +
+      '\n' +
+      'We also evaluated the toxicity score of Real Toxicity Prompt data in English. The results are showed in Table 5. We found that even we finetuned or continual pretrained the models on another language, models with the chat vector still has the ability to generate less toxic words.\n' +
+      '\n' +
+      'As showcased in Table 6, 7, 8, we present case studies focused on the chat vector. Notably, the model configurations llama2 \\(\\rightarrow\\) CP \\(+\\) chat vector and llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT \\(+\\) chat vector both successfully decline to respond to the prompt and instead offer a safe reply to the user. In contrast, the configuration llama2 \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT suggests illegal methods, demonstrating a deficiency in its safety capabilities. Similarly, the configuration llama2- chat \\(\\rightarrow\\) CP \\(\\rightarrow\\) FT also recommends illicit methods, suggesting a loss of RLHF capability due to the continual-pretraining and fine-tuning processes.\n' +
+      '\n' +
+      '### Role Play Instruction Attack\n' +
+      '\n' +
+      'We conducted experiments to determine if the chat vector could enable models to detect and counter certain instruction-based attacks. For this, 1000 samples were randomly selected from the Role Play Instruction field of the Safety Prompts dataset and evaluated our Traditional Chinese LLaMA. The performance of our models under different fields in attack scenarios remains an ongoing area of our investigation.\n' +
+      '\n' +
+      '### Training Details\n' +
+      '\n' +
+      'During the training process, we utilized the AdamW optimizer with \\(\\beta_{1}\\) set to 0.9, \\(\\beta_{2}\\) set to 0.95, weight decay set to 0.1, and performed gradient clipping to limit it to 1.0. For continual pre-training, we start with a base learning rate of 5e-5, followed by a warm-up phase of 2000 steps, and then gradually reduced the learning rate according to a cosine schedule until it reached 10% of the base learning rate. The model is pre-trained for 23063 steps. For supervised fine-tuning, we start with the learning rate 1e-5 and train the model for 3 epochs. The model is trained on 32 Tesla V100 32GB GPUs.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multicolumn{8}{c}{**Real Toxicity Prompt in English**} \\\\ \\cline{2-9}  & **TOX** & **STOX** & **IA** & **INS** & **PRO** & **THR** & **\\% of toxicity data** \\\\ \\hline llama2 \\(\\rightarrow\\) CP & 0.32 & 0.13 & 0.11 & 0.2 & 0.25 & 0.1 & 0.15 \\\\ llama2 \\(\\rightarrow\\) CP \\(+\\) chat vector & **0.08** & **0.005** & **0.02** & **0.04** & **0.06** & **0.01** & **0.02** \\\\ llama2-chat \\(\\rightarrow\\) CP & 0.11 & 0.01 & 0.02 & 0.06 & 0.07 & 0.17 & 0.03 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: Real Toxicity Prompt in English with the scores of Perspective API.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:13]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:14]\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:15]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
