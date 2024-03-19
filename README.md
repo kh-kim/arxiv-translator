@@ -34,6 +34,7 @@
 | 2401.10225v1 | ChatQA Building GPT-4 Level Conversational QA Models | [arXiv](https://arxiv.org/abs/2401.10225v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.10225v1) |
 | 2401.08417v3 | Contrastive Preference Optimization Pushing the Boundaries of LLM Performance in Machine Translation | [arXiv](https://arxiv.org/abs/2401.08417v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.08417v3) |
 | 2401.05654v1 | Towards Conversational Diagnostic AI | [arXiv](https://arxiv.org/abs/2401.05654v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.05654v1) |
+| 2401.03129v1 | Examining Forgetting in Continual Pre-training of Aligned Large Language Models | [arXiv](https://arxiv.org/abs/2401.03129v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.03129v1) |
 | 2401.01055v2 | LLaMA Beyond English An Empirical Study on Language Capability Transfer | [arXiv](https://arxiv.org/abs/2401.01055v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.01055v2) |
 | 2312.05934v3 | Fine-Tuning or Retrieval? Comparing Knowledge Injection in LLMs | [arXiv](https://arxiv.org/abs/2312.05934v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2312.05934v3) |
 | 2311.13647 | Language Model Inversion | [arXiv](https://arxiv.org/abs/2311.13647) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.13647) |

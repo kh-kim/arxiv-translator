@@ -1,0 +1,214 @@
+# 정렬된 대용량 언어 모델의 연속 사전 학습에서 망각 검사
+
+천안리\({}^{1,2}\) 헝이이\({}^{1}\)
+
+대만의 타이베이국립대만대학
+
+대만 타이베이 오픈 클라우드 인프라 소프트웨어 센터
+
+b08902123@csie.ntu.edu.tw hungyilee@ntu.edu.tw
+
+###### Abstract
+
+최근 대규모 언어 모델(Large Language Model, LLM)의 발전은 다양한 작업에 걸쳐 놀라운 능력을 보여주었다. 수많은 분야에서 LLM이 강력하게 적용된다는 점을 감안할 때 LLM 개발이 급증했다. LLM을 개발할 때 일반적인 관행은 이전에 미세 조정된 모델에 대한 지속적인 사전 훈련을 포함한다. 그러나 이것은 재앙적인 망각으로 이어질 수 있다. 우리의 연구에서는 기존의 미세 조정된 LLM에 대한 지속적인 사전 훈련 중에 발생하는 망각의 현상을 조사한다. 지속적인 사전 훈련이 출력 형식, 지식 및 신뢰성을 포함한 다양한 차원에 걸쳐 미세 조정된 LLM에 미치는 영향을 평가한다. 실험 결과는 지속적인 사전 훈련, 특히 반복 문제 동안 치명적인 망각을 해결하는 데 있어 중요하지 않은 문제를 강조한다.
+
+## 1 Introduction
+
+LLM(Large Language Models)은 Brown 등(2020)의 다양한 작업에서 인상적인 성능을 보여주었다. 사전 훈련된 LLM 및 미세 조정된 변이체 Touvron 등(2023, 2023)을 출시하는 경향이 증가하고 있다. 이러한 미세 조정된 변형들 중 다수는 기존의 LLM Roziere 등(2023); Cui 등(2023)의 지식 또는 언어 능력을 증강하는 것을 목표로 한다.
+
+2. Supervised Fine-Tuning (SFT) 및 Reinforcement Learning from Human Feedback (RLHF)과 같은 후속 정렬 작업을 단계 1에서 얻은 모델에 대해 수행한다. 이러한 미세 조정 변형 중 많은 개발이 기존의 미세 조정 LLMs Cui et al.(2023); Lin and Chen(2023)에 대해 추가 연속 사전 훈련을 수행한다.
+
+이전 연구에서는 지속적인 사전 훈련이 모델의 특정 콘텐츠 Gupta 등(2023)을 이해하고 생성하는 능력을 크게 향상시킬 수 있음을 입증했다. 그러나, 지속적인 사전 훈련은 치명적인 망각의 프랑스어(1999)로 이어질 수 있으며, 제한된 연구는 기존의 미세 조정된 LLM에 대한 사전 훈련 동안 잊혀진 능력을 탐구했다.
+
+일부 연구에서는 언어 모델에 대한 지속적인 학습을 연구했다. Qin 등(2022)은 새로운 데이터에 대한 사전 훈련된 언어 모델에 대한 효율적인 평생 사전 훈련에 초점을 맞추었다. Ke et al.(2022)은 마스킹된 언어 모델에서 연속적인 도메인 적응적 사전 훈련 방법을 제안하였다. Song et al. (2023)은 LLMs의 지속적인 작업에 대한 지속적인 적응을 위한 지속적인 매개변수 효율적인 조정을 도입했다. Xie et al. (2023)은 도메인-특이적 LLMs를 개발하기 위한 연속적인 사전-훈련에 대한 대안적인 접근법을 조사한다. Qi et al. (2023)은 미세 조정이 LLM의 안전 정렬을 손상시킨다고 제안한다. Zhai et al. (2023)은 미세 조정된 다중 모드 LLM에서 망각을 평가한다.
+
+우리의 연구는 기존의 미세 조정된 LLM에 대한 지속적인 사전 훈련 중 망각 발생을 조사한다. 우리의 논문은 주로 중국 전통 말뭉치를 이용한 지속적인 사전 훈련에 초점을 맞추고 있다. 우리는 출력 형식, 지식 및 신뢰성을 포함한 다양한 차원에 걸쳐 지속적인 사전 훈련의 영향을 평가한다. 우리는 이 문제를 해결하기 위해 단순한 방법 이상의 방법이 필요하다는 것을 보여준다. 또한 전통적인 중국어 출력을 생성하는 경향이 있는 모델에서 반복 문제의 중요성이 증가했음을 관찰한다. 마지막으로, 지속적인 사전 훈련에도 불구하고, 우리의 연구 결과는 모델의 지식이 영향을 받지 않는 반면 신뢰성은 감소한다는 것을 시사한다.
+
+## 2 연속 사전 훈련 중 재난적 망각 관찰
+
+### 관찰에 대 한 설정
+
+SFT 및 RLHF를 포함하여 순차적 정렬 작업을 거친 약 70억 개의 매개변수로 구성된 모델인 라마-2-7b-chat에 대한 사전 훈련을 수행한다. 사전 훈련 프로세스는 중국 전통 데이터의 10억 토큰을 활용합니다. 우리는 지속적인 사전 훈련 후 모델을 라마-2-7b-chat-cp로 나타낸다. 우리는 두 모델에 의해 생성된 출력 간의 차이를 관찰하기 위해 특정 프롬프트를 사용한다.
+
+### Catastrophic Forgetting 관찰
+
+그림 1은 프롬프트에서 얻은 결과를 보여준다. 우리는 Llama-2-7b-chat-cp가 Llama-2-7b-chat에 비해 전통적인 중국어 텍스트를 생성하는 경향이 있음을 관찰했지만, 생성된 Llama-2-7b-chat 텍스트는 반복 문제를 나타낸다. 결과적으로 우리는 다양한 측면에 걸쳐 모델의 성능에 대해 보다 심층적인 조사를 수행했다. 부록 A에는 더 많은 프롬프트의 추가 결과가 포함되어 있습니다.
+
+## 3 바로 가기 접근법
+
+이 섹션에서는 이전 섹션에서 논의된 치명적인 망각 문제를 해결하기 위한 간단한 접근법을 소개한다.
+
+### Freeze layers
+
+이전 연구에서는 텍스트 정보 Ethayarajh(2019); Van Aken 등(2019)을 처리할 때 Transformer 기반 모델의 다른 계층에 뚜렷한 기능이 존재함을 보여주었다. 결과적으로, 우리는 지속적인 사전 훈련 동안 모델의 특정 층을 동결하는 것을 실험한다. 구체적으로, 우리는 각각 Freeze First 10과 Freeze Last 10으로 표시된 처음 10개의 층을 동결하고 마지막 10개의 층을 동결하는 것을 탐구한다.
+
+### Freeze modules
+
+또한 지속적인 사전 훈련 동안 모델의 특정 모듈을 동결하여 실험을 수행한다. 이러한 지정된 모듈이 정렬 작업 중에 획득한 능력을 보존하는지 여부를 조사하는 것을 목표로 한다. 우리는 네 가지 전략을 탐구합니다.
+
+* Attn을 동결합니다.: 모델의 각 계층에서 자체 주의 모듈을 동결합니다.
+* Attn.만: 모델의 자체 주의 모듈을 제외한 각 계층의 모든 모듈을 동결합니다.
+* MLP 동결: 각 모델 계층의 피드포워드 모듈을 동결합니다.
+* MLP만: 모델의 피드포워드 모듈을 제외한 각 계층의 모든 모듈을 동결합니다.
+
+### Adapter
+
+Adapters는 Transformer 기반 모델 Houlsby 등(2019)의 학습에 자주 사용된다. 우리 연구에서는 두 가지 유형의 어댑터를 실험합니다.
+
+* LoraHu 등(2022): Transformer 기반 모델의 각 계층에 훈련 가능한 저순위 분해 행렬을 통합하는 방법. 구현에서는 모델 내의 각 계층의 질의 행렬과 값 투영 행렬만을 선택적으로 적용한다.
+* (IA)\({}^{3}\)Liu et al. (2022): 모델의 활성화와 학습된 벡터의 요소별 곱셈을 포함하는 기법. 자기 주의 모듈의 키 및 값 행렬과 각 모델 레이어의 피드포워드 모듈의 내부 활성화를 다시 조정한다.
+
+## 4 Experiments
+
+### Setup
+
+우리는 일반적인 중국 전통 말뭉치의 10억 토큰 데이터를 사용하여 라마-2-7b-채팅에 대한 지속적인 사전 훈련을 위해 간단한 접근법을 사용했다. 지속적인 사전 훈련 동안의 학습률은 3e-5로 일정하게 유지되었으며, 어댑터 접근법에 대한 추가 학습률 3e-4를 실험했다. 자세한 내용은 부록 B에서 확인할 수 있습니다.
+
+그림 1: 모델의 출력 그림입니다. 우리 프롬프트의 번역은 “멕시코시티에 대해 말해주세요”입니다.
+
+[MISSING_PAGE_FAIL:3]
+
+를 포함하는 것을 특징으로 하는 언어 식별 실험 방법. 우리는 영어 프롬프트를 사용할 때 거의 모든 모델이 영어로 출력을 생성하는 경향이 있음을 관찰한다. 중국어 프롬프트를 제공했을 때, 우리는 라마-2-7b가 중국어로 출력되는 경향이 있는 반면, 라마-2-7b-채팅은 영어로 출력되는 경향이 있음을 관찰했다. 또한, 중국어 프롬프트를 사용하면 Freeze First 10 Layer 모델이 Freeze Last 10 Layer 모델보다 더 높은 비율의 중국어 텍스트 출력을 산출하는 경향이 있다. 냉동 모듈을 가진 모델은 비교적 유사한 결과를 보여주며, 출력의 약 \(60\%\)은 중국어로 되어 있다. 어댑터의 경우 학습률을 높이면 로라 모델이 중국어 출력을 더 많이 생산할 수 있는 반면 (Ia)\({}^{3}\) 모델은 영어 출력을 선호하는 경향이 있다.
+
+<표 2>는 반복 분석 실험의 결과를 나타낸 것이다. 우리는 주어진 중국어 또는 영어 프롬프트에 관계없이 Llama-2-7b가 Llama-2-7b-채팅에 비해 일관되게 중요한 반복 문제를 나타내는 것을 관찰했다. 또한, 전통적인 중국어 말뭉치에 대한 지속적인 사전 훈련 후 모델들은 영어 프롬프트에 비해 중국어 프롬프트에서 텍스트 반복이 눈에 띄게 증가했다. 또한 중국 프롬프트를 사용할 때 중국 출력을 생성하는 경향이 더 높은 모델은 반복 문제가 있을 가능성이 더 높다는 것을 발견했다.
+
+#### 4.3.2 Knowledge
+
+표 3은 우리의 지식 분석 실험의 결과를 보여준다. Lama-2-7b-chat은 Hellaswag 및 MULU에서 Lama-2-7b와 유사하게 수행하면서 ARC 및 C-eval-tw에서는 약간 더 나은 성능을 보인다. ARC 및 Hellaswag 벤치마크에서 거의 모든 사전 훈련 모델이 라마-2-7b-채팅을 능가한다. MULU 벤치마크에서 대부분의 연속 사전 훈련 모델은 라마-2-7b-채팅을 능가하는 경향이 있다. 그러나 C-eval-tw 벤치마크의 경우 Llama-2-7b-chat에 대한 지속적인 사전 훈련을 위해 간단한 방법을 활용하는 모델의 효율성을 비교할 때 명확한 패턴이 없다. 위에서 언급한 관찰된 차이는 미묘하다는 점에 주목할 필요가 있다.
+
+#### 4.3.3 Reliability
+
+<표 4>에서는 신뢰성 실험 결과를 제시한다. 라마-2-7b-채팅은 진실성 및 독성 벤치마크에서 라마-2-7b를 일관되게 능가한다. 특히, 지속적인 사전 훈련 후 모델들은 두 벤치마크에서 Llama-2-7b-chat에 비해 열등한 성능을 보여준다. 이러한 경향은 특히 영어에 대한 진실성 분석 벤치마크와 번체 중국어에 대한 독성 벤치마크에서 두드러진다. 또한, 중국 생산량 생성을 선호하는 모델이 독성 벤치마크에서 열등한 성능을 나타내는 것을 관찰했다. 편향 벤치마크와 관련하여, 우리는 Llama-2-7b-chat이 Llama-2-7b보다 긍정적인 텍스트를 더 많이 출력하는 것을 관찰할 수 있다. 지속적인 사전 훈련 후 모델의 출력은 라마-2-7b-채팅보다 상대적으로 부정적인 감정 점수가 더 많다.
+
+## 5 Conclusion
+
+이 작업은 지속적인 사전 훈련 중 치명적인 망각은 사소하지 않은 도전이며 간단한 방법을 통해 해결될 수 없음을 보여준다. 또한, 반복 문제는 모델이 연속 사전 훈련 후 생성하는 경향이 있을 때 더 두드러진다는 것을 발견했다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c|c} \hline \multirow{2}{*}{} & \multicolumn{2}{c|}{**truthful0A**} & \multicolumn{2}{c}{**Toxicen**} & \multicolumn{2}{c}{**bot0.D**} \\ \cline{2-6}  & \multicolumn{2}{c|}{**mc 2**} & \multicolumn{2}{c|}{**toxicity \(\downarrow\)**} & \multicolumn{2}{c}{**sentiment**} \\ \hline \multicolumn{1}{c|}{} & **EN** & **TW** & **EN** & **TW** & **EN** & **TW** \\ \hline \multicolumn{1}{c|}{} & 39.0 & 45.9 & 20.30 & 24.80 & 0.41\(\pm\)0.17 & 0.23\(\pm\)0.13 \\ \hline \multicolumn{1}{c|}{} & 44.6 & 49.7 & 0.03 & 0.22 & 0.66\(\pm\)0.24 & 0.69\(\pm\)0.19 \\ \hline \multicolumn{1}{c|}{} & 49.2 & 48.5 & 0.05 & 5.74 & 0.52\(\pm\)0.20 & 0.34\(\pm\)0.14 \\ \hline \hline Freeze First 10 & 41.7 & 48.5 & 0.08 & 7.12 & 0.55\(\pm\)0.22 & 0.34\(\pm\)0.12 \\ \hline Freeze Last 10 & 40.4 & 48.8 & 0.01 & 4.69 & 0.58\(\pm\)0.21 & 0.37\(\pm\)0.15 \\ \hline Freeze Attn. & 41.6 & 48.8 & 0.04 & 3.15 & 0.57\(\pm\)0.21 & 0.42\(\pm\)0.16 \\ \hline Only Attn. & 40.8 & 48.6 & 0.04 & 3.27 & 0.59\(\pm\)0.24 & 0.43\(\pm\)0.15 \\ \hline Freeze MLP & 40.9 & 48.8 & 0.0 & 3.31 & 0.60\(\pm\)0.22 & 0.42\(\pm\)0.14 \\ \hline Only MUL & 41.3 & 48.8 & 0.04 & 3.39 & 0.58\(\pm\)0.21 & 0.43\(\pm\)0.16 \\ \hline \hline Lora & 43.6 & 49.1 & 0.03 & 0.79 & 0.64\(\pm\)0.22 & 0.63\(\pm\)0.17 \\ \hline Lora (3e-4) & 42.5 & 48.9 & 0.07 & 7.97 & 0.57\(\pm\)0.22 & 0.35\(\pm\)0.10 \\ \hline (Ia)\({}^{3}\) & 44.2 & 49.8 & 0.0 & 0.17 & 0.66\(\pm\)0.24 & 0.69\(\pm\)0.19 \\ \hline (Ia)\({}^{3}\)(3e-4) & 43.0 & 49.9 & 0.0 & 0.11 & 0.66\(\pm\)0.23 & 0.68\(\pm\)0.18 \\ \hline \end{tabular}
+\end{table}
+표 4: 진실성, 편향성, 독성 측면 등 세 가지 벤치마크에 대한 신뢰성 분석 실험 결과이다. **EN** 은 영어로 된 원본 데이터 집합을 표시 하는 반면 **TW** 는 번체 중국어로 된 번역 데이터 집합을 표시 합니다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c} \hline  & **ARC** & **Hellaswag** & **MULU** & **C-eval-tw** \\ \cline{2-4}  & **ACC** & **ACC** & **ACC** & **ACC** \\ \hline \hline Llama-2-7b & 53.0 & 78.6 & 46.5 & 32.2 \\ \hline Llama-2-7b-chat & 53.6 & 78.6 & 46.6 & 32.9 \\ \hline \hline Llama-2-7b-chat-cp & 52.0 & 77.6 & 49.1 & 33.4 \\ \hline Freeze First 10 & 51.0 & 77.7 & 49.1 & 31.9 \\ \hline Freeze Last 10 & 51.5 & 77.6 & 49.4 & 33.5 \\ \hline \hline Freeze Attn. & 51.9 & 77.7 & 48.9 & 32.2 \\ \hline Only Attn. & 52.8 & 78.0 & 48.4 & 33.3 \\ \hline Freeze MLP & 53.2 & 77.8 & 49.4 & 32.6 \\ \hline Only MLP & 52.0 & 77.9 & 46.9 & 33.4 \\ \hline \hline Lora & 53.5 & 78.6 & 47.1 & 33.8 \\ \hline Lora (3e-4) & 52.8 & 78.2 & 47.4 & 33.0 \\ \hline (Ia)\({}^{3}\) & 53.7 & 77.9 & 47.0 & 32.6 \\ \hline (Ia)\({}^{3}\) (3e-4) & 53.8 & 77.3 & 46.2 & 31.8 \\ \hline \end{tabular}
+\end{table}
+표 3: 4개의 벤치마크를 가지고 지식분석 실험 결과.
+
+전통적인 중국식 산출물. 또한, 지속적인 사전 훈련 후에도 모델의 지식은 주로 영향을 받지 않지만 신뢰성은 감소한다.
+
+### Limitations
+
+한 가지 주목할 만한 한계는 연속 사전 훈련 LLM의 자원 집약적 특성으로 인해 이 작업에 설명된 모든 간단한 연속 사전 훈련 방법을 재현하기가 어렵다. 또 다른 중요한 한계는 중국 전통 말뭉치를 사용하여 지속적인 사전 훈련만 수행했다는 것이다. 그러나 우리는 또한 다른 언어의 리소스에 대한 사전 교육을 포함하도록 조사를 확장하는 데 관심이 있으며 우리의 방법론은 이러한 설정에 쉽게 적응할 수 있다.
+
+## Ethics Statement
+
+LLM의 지속적인 사전 훈련은 모델의 안전 정렬을 손상시켜 편향되고 독성 정보를 포함할 수 있는 텍스트를 생성할 수 있다. 안전 정렬의 손상을 완화하기 위한 탐색 방법은 향후 연구를 위한 전향적인 방법이 될 수 있다.
+
+## Acknowledgements
+
+우리는 귀중한 자원을 아낌없이 제공한 ASUS 오픈 클라우드 인프라 소프트웨어 센터에 감사를 표합니다. 스티브 청청천, 양성영, 젠하오 청, 샤오성 헝, 쯔셴 리, 다우청 류가 통찰력 있는 토론에 참여해 준 데 대해 특별한 감사를 표한다.
+
+## References
+
+* Brown 등(2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. 2020. Language models is few-shot learners. _ Advances in neural information processing systems_, 33:1877-1901.
+* Clark 등(2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 2018. 당신은 질문에 대한 답을 풀었다고 생각하나요? try arc, ai2 reasoning challenge. _ arXiv preprint arXiv:1803.05457_.
+* Cui et al.(2023) Yiming Cui, Ziqing Yang, and Xin Yao. 2023. 중국산 라마와 알파카를 위한 효율적이고 효과적인 텍스트 인코딩. _ arXiv preprint arXiv:2304.08177_.
+* Dhamala 등(2021) Jwala Dhamala, Tony Sun, Varun Kumar, Satyapriya Krishna, Yada Pruksachatkun, Kai-Wei Chang, and Rahul Gupta. 2021. Bold: 개방형 언어 생성에서 편향을 측정하기 위한 데이터 세트 및 메트릭. 공정성, 책임성 및 투명성에 대한 2021 ACM 회의 회보 862-872페이지입니다.
+* Ethayarajh (2019) Kawin Ethayarajh. 2019. 문맥화된 단어 표현은 어떻게 문맥화되어 있는가? BERT, ELMo 및 GPT-2 임베딩의 기하학을 비교한다. "2019년 자연 언어 처리 실증 방법에 관한 회의 및 제9차 자연 언어 처리에 관한 국제 공동 회의(EMNLP-IJCNLP)"에서 55-65페이지, 홍콩, 중국. 계산 언어학 협회
+*프랑스어(1999) Robert M French. 1999. Catastrophic forgetting in connectionist networks. _ Trends in cognitive sciences_, 3(4):128-135.
+* Gao 등(2021) Leo Gao, Jonathan Tow, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Kyle McDonell, Niklas Mueminghoff, Jason Phang, Laria Reynolds, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. 2021. A framework for few-shot language model evaluation.
+* Gupta 등(2023) Kshitij Gupta, Benjamin Therien, Adam Ibrahim, Mats Leon Richter, Quentin Gregory Anthony, Eugene Belliovsky, Irina Rish, and Timothee Lesort. 2023. 대형 언어 모델의 지속적인 사전 훈련: 모델을 다시 데우는 방법? [기본 모델을 위한 효율적인 시스템 워크샵 @ ICML2023]에서.
+* Hartvigsen et al. (2022) Thomas Hartvigsen, Saadia Gabriel, Hamid Palangi, Maarten Sap, Dipankar Ray, and Ece Kamar. 2022. ToxiGen: 적대적 및 암묵적 증오 음성 검출을 위한 대규모 기계 생성 데이터 세트. 계산 언어학 협회 제60차 연례 회의(제1권: 장문)에서, 3309-3326페이지, 아일랜드 더블린. 계산 언어학 협회
+* Hendrycks 등(2020) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2020. 대용량 멀티태스킹 언어 이해도 측정. _ arXiv preprint arXiv:2009.03300_.
+* Hosseini et al.(2023) Saghar Hosseini, Hamid Palangi, and Ahmed Hassan Awadallah. 2023. 사전 훈련된 언어 모델에서 대표적 해악을 측정하기 위한 메트릭에 대한 경험적 연구. 《신뢰할 수 있는 자연어 처리(TrustNLP 2023)에 관한 제3회 워크숍》에서, 캐나다 토론토의 121-134페이지. 계산 언어학 협회
+* Houlsby et al. (2019) Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. 2019. 파라미터-efficient transfer learning for nlp. 국제 기계 학습 회의 2790-2799 페이지. PMLR.
+* Hu et al.(2022) Edward J Hu, yelong shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: 대형 언어 모델의 저순위 적응. <학습 표현에 관한 국제 회의>에서.
+* Huang et al. (2023) Yuzhen Huang, Yuzhuo Bai, Zhihao Zhu, Junlei Zhang, Jinghan Zhang, Tangjun Su, Junteng Liu, Chancheng Lv, Yikai Zhang, Jiayi Lei, et al. 2023. C-eval: A multi-level multi-disc discipline chinese evaluation suite for foundation models. _ arXiv preprint arXiv:2305.08322_.
+* Hutto and Gilbert (2014) Clayton Hutto and Eric Gilbert. 2014. Vader: A parsimonious rule-based model for sentiment analysis of social media text. 웹 및 소셜 미디어에서 국제 AAAI 회의 회보 8권 216-225쪽입니다.
+* Joulin 등(2016a) Armand Joulin, Edouard Grave, Piotr Bojanowski, Matthijs Douze, Herve Jegou, and Tomas Mikolov. 2016a. Fasttext.zip: 텍스트 분류 모델을 압축합니다. _ arXiv preprint arXiv:1612.03651_.
+* Joulin et al.(2016b) Armand Joulin, Edouard Grave, Piotr Bojanowski, and Tomas Mikolov. 2016b. 효율적인 텍스트 분류를 위한 트릭 백입니다. _ arXiv preprint arXiv:1607.01759_.
+* Ke et al.(2022) Zixuan Ke, Yijia Shao, Haowei Lin, Tatsuya Konishi, Gyuhak Kim, and Bing Liu. 2022. 언어 모델의 지속적인 사전 훈련. <표상 학습에 관한 제11차 국제회의>에서.
+* Kwon et al. (2023) 우석 권, 주한 리, 시위안 장, 영성, 리안민 정, 코디 하오 유, 조셉 E. 곤잘레스, 하오 장, 및 이온 스토이카. 2023. 페이지 주의 집중을 제공하는 대용량 언어 모델에 대한 효율적인 메모리 관리. [운영 체제 원리에 관한 ACM SIGOPS 29회 심포지엄 진행]에서.
+* Lin et al.(2022) Stephanie Lin, Jacob Hilton, and Owain Evans. 2022년 진실 QA: 모델이 인간의 거짓을 어떻게 모방하는지 측정합니다. 《제60회 컴퓨터 언어학 협회 연례 회의(제1권: 장문)》에서 아일랜드 더블린 3214-3252쪽 계산 언어학 협회
+* Lin and Chen (2023) Yen-Ting Lin and Yun-Nung Chen. 2023년 대만: 언어적 분열을 문화적으로 정렬된 언어 모델로 연결합니다.
+* Liu et al.(2022) Haokun Liu, Derek Tam, Mohammed Muoeful, Jay Mohta, Tenghao Huang, Mohit Bansal, and Colin A Raffel. 2022. Few-shot parameter-efficient fine-tuning은 in-context learning보다 더 좋고 저렴하다. _ Advances in Neural Information Processing Systems_, 35:1950-1965.
+* Liu 등(2019) Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 2019. Roberta: Robustly optimized bert pretraining approach. _ arXiv preprint arXiv:1907.11692_.
+* Qi et al.(2023) Xiangyu Qi, Yi Zeng, Tinghao Xie, Pin-Yu Chen, Ruoxi Jia, Prateek Mittal, and Peter Henderson. 2023. 정렬된 언어 모델을 미세 조정하면 사용자가 의도하지 않은 경우에도 안전이 손상됩니다. _ arXiv preprint arXiv:2310.03693_.
+* Qi et al.(2018) Ye Qi, Devendra Sachan, Matthieu Felix, Sarguna Padmanabhan, and Graham Neubig. 2018. 사전 훈련된 단어 임베딩은 언제, 왜 신경망 기계 번역에 유용한가? <프로시빙스(Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 2(Short Papers)_), 페이지 529-535, 뉴올리언스, 루이지애나. 계산 언어학 협회
+* Qin et al.(2022) Yujia Qin, Jiajie Zhang, Yankai Lin, Zhiyuan Liu, Peng Li, Maosong Sun, and Jie Zhou. 2022년 새로운 데이터에 대한 효율적인 평생 사전 훈련 계산 언어학 협회의 발견: ACL 2022_, 2789-2810 페이지, 아일랜드 더블린. 계산 언어학 협회
+* Rasley et al.(2020) Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. 2020. 딥 스피드: 시스템 최적화는 1000억 개 이상의 파라미터를 갖는 딥 러닝 모델을 트레이닝할 수 있게 한다. 《제26회 ACM SIGKDD 국제 학술대회 지식 발견 및 데이터 마이닝》의 3505-3506 페이지.
+* Roziere et al.(2023) Baptiste Roziere, Jonas Gehring, Fabian Gloeckle, Sten Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi Adi, Jingyu Liu, Tal Remez, Jeremy Rapin, et al. 2023. Code llama: Open foundation models for code _ arXiv preprint arXiv:2308.12950_.
+*Song et al.(2023) Chenyang Song, Xu Han, Zheni Zeng, Kuai Li, Chen Chen, Zhiyuan Liu, Maosong Sun, and Tao Yang. 2023. Conpet: 대형 언어 모델에 대한 연속 매개변수 효율적인 튜닝 _ arXiv preprint arXiv:2309.14763_.
+* Tiedemann (2012) Jorg Tiedemann. 2012. 병렬 데이터, 도구 및 인터페이스 in opus. "언어 자원 및 평가에 관한 8개 국제 회의(LREC'12)"에서, 터키 이스탄불. 유럽 언어 자원 협회(ELRA).
+* Touvron 등(2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. 2023a. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ arXiv preprint arXiv:2302.13971_.
+* Touvron 등(2023b) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, et al. 2023b. 라마 2: 오픈 파운데이션과 미세 조정된 채팅 모델입니다. _ arXiv preprint arXiv:2307.09288_.
+* Van Aken et al.(2019) Betty Van Aken, Benjamin Winter, Alexander Loser, and Felix A Gers. 2019. 버트는 질문에 어떻게 대답하나요? 변압기 표현의 계층별 분석 정보 및 지식 관리에 관한 제28차 ACM 국제 회의 회보에서 1823-1832페이지입니다.
+* Wu et al. (2018) Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V Le, Mohammad Norouzi, Wolfgang Macherey, Maxim Krikun, Yuan Cao, Qin Gao, Klaus Macherey, et al.
+
+[MISSING_PAGE_FAIL:7]
+
+여기에서 어댑터 설정을 조사합니다. LoraHu et al.(2022)의 경우 모델 내 각 계층의 질의 및 값 투영 행렬만을 선택적으로 적용한다. 네트워크 랭크를 8로, 알파를 32로 설정하였다. (A)3Liu et al.(2022)의 경우 학습된 벡터를 통해 자기 주의 모듈의 키 및 값 행렬과 각 모델 레이어의 피드포워드 모듈의 내부 활성화를 재스케일한다. 이것은 이들 벡터와의 요소-와이즈 곱셈을 통해 달성된다.
+
+각주 3: [https://github.com/EleutherAI/lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)
+
+## 부록 C 실험 작업에 대한 추가 세부 정보
+
+### 출력 형식 분석
+
+우리는 출력 형식 분석에서 언어 식별과 반복 분석의 두 가지 작업을 수행한다. 효율성 향상을 위해 vLLM Kwon et al.(2023)을 활용하였다. 즉, 감독 미세 조정(Supervised Fine-Tuning, SFT) 및 인간 피드백으로부터의 강화 학습(Reinforcement Learning from Human Feedback,RLHF)과 같은 정렬 작업을 거친 모델에 대해, 프롬프트를 "[INST] <컨텍스트> [/INST]"로 설정하였다. 512의 max_tokens 설정으로 모델을 구성하고 온도를 0.1로 설정하고 top_p를 0.9로 설정하는 핵 샘플링을 활용한다.
+
+출력 형식 분석을 수행 하려면 다음 데이터 집합을 활용 합니다.
+
+* **NeuLab-TedTalks2**Qi 등 (2018): 글로벌 자원 봉사자 커뮤니티에 의해 수많은 낮은 리소스 언어로 번역된 TED 대화의 공통 코퍼스입니다. 출력 형식 실험을 위해 영어 및 번체 중국어 하위 집합에서 2000개의 정렬된 문장을 무작위로 선택했다. 우리는 OPUS Tiedemann (2012)로부터 코퍼스를 다운로드한다.
+
+각주 2: [https://opus.nlpl.eu/NeuLab-TedTalks-v1.php](https://opus.nlpl.eu/NeuLab-TedTalks-v1.php)
+
+언어 식별 분석을 위해 FastText Joulin 등(2016, 2016) 언어 식별 모델을 활용하여 생성된 토큰의 언어를 검출한다. 반복 분석의 경우 생성된 출력과 프롬프트의 조합 내에서 BPE 수준에서 복제된 n-그램 토큰의 비율을 평가한다.
+
+<표 6>은 우리 중국 전통 말뭉치에 대한 반복 통계를 제시하고, <표 7>은 반복 분석 실험의 전체 결과를 제시하고 있다. 특히, 비교적 적은 수의 반복 토큰을 포함하는 사전 훈련된 말뭉치에도 불구하고, 이 말뭉치에 사전 훈련된 모델은 특히 번체 중국어로 프롬프트될 때 텍스트 반복의 증가를 나타냈다.
+
+### Knowledge Analysis
+
+지식 분석에서 **ARC**, **Hellaswag**, **MLU** 및 **C-eval-tw** 의 4 가지 벤치마크에서 모델의 성능을 평가 합니다. 이러한 벤치마크에 대한 모델 성능을 평가하기 위해 EleutherAI/lm-evaluation-harness3**Gao 등(2021)을 사용한다. 이러한 벤치마크는 객관식 문항으로 구성되어 있다. 정확도 계산은 확률이 가장 높은 옵션을 선택하는 것을 기반으로 합니다.
+
+각주 3: [https://github.com/EleutherAI/lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness)
+
+* **ARC4**Clark 등 (2018): 자연스럽고 학년별 과학 질문 모음입니다. ARC 데이터 세트 내의 챌린지 세트에 대한 평가를 수행했다. 우리는 길이 정규화 정확도를 기반으로 성능을 평가하는 25샷 프롬프트를 사용하여 이 벤치마크를 수행했다. 각주 4: [https://allenai.org/data/arc](https://allenai.org/data/arc)
+* **Hellaswag5** Zellers 등 (2019): 상식 추론의 평가, 인간에게 간단하지만 최첨단 모델에 대한 도전을 제기합니다. 우리는 길이 정규화에 기반한 성능을 평가하는 10샷 프롬프트를 사용하여 이 벤치마크를 수행했다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c} \hline
+**rep-4** & **rep-8** & **rep-12** & **rep-16** & **rep-20** \\ \hline
+0.141 & 0.056 & 0.037 & 0.030 & 0.025 \\ \hline \end{tabular}
+\end{table}
+표 6: 중국 전통 말뭉치의 복제된 n-그램 토큰의 비율이다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c} \hline  & **Trainable params** & **All params** & **Trainable \%** \\ \hline Llama-2-7b-chat-cp & 6,738,415,616 & 6,738,415,616 & 100.000 \\ \hline Freeze First 10 & 4,714,582,016 & 6,738,415,616 & 69.966 \\ \hline Freeze Last 10 & 4,714,582,016 & 6,738,415,616 & 69.966 \\ \hline Freeze Attn. & 4,509,931,968 & 6,738,415,616 & 68.131 \\ \hline Only Attn. & 2,147,483,648 & 6,738,415,616 & 31.869 \\ \hline Freeze MLP & 2,409,893,888 & 6,738,415,616 & 35.764 \\ \hline Only MLP & 4,328,521,728 & 6,738,415,616 & 64.236 \\ \hline Lora & 4,194,304 & 6,742,609,920 & 0.062 \\ \hline (Ia)3 & 614,400 & 6,739,030,016 & 0.009 \\ \hline \end{tabular}
+\end{table}
+표 5: 다양한 간단한 접근법에 대한 훈련 가능한 파라미터.
+
+accuracy.
+* **MMLU**6 (Hendrycks et al., 2020): 초등 수학에서 미국 역사, 컴퓨터 과학, 법률 및 그 이상까지 57개의 작업을 포함하는 텍스트 모델의 멀티태스킹 정확도에 대한 테스트입니다. 우리는 개별 작업에 대한 정확도를 평균화하여 메트릭을 계산하는 5샷 프롬프트를 사용하여 이 벤치마크를 수행했다.
+* **C-eval-tw**: C-eval7(Huang 등, 2023)은 중국 컨텍스트에서 기본 모델의 고급 지식 및 추론 능력을 평가하는 테스트 역할을 합니다. 테스트는 처음에 단순화된 중국어에서 수행되었으며 딥-트랜슬레이터8 패키지의 Google Translate(Wu 등, 2016) API를 사용하여 번체 중국어로 번역했다. 우리는 개별 작업에 대한 정확도를 평균화하여 메트릭을 계산하는 0샷 프롬프트를 사용하여 이 벤치마크를 수행했다.
+
+각주 6: [https://github.com/hendrycks/test](https://github.com/hendrycks/test)
+
+각주 7: [https://cevalbenchmark.com](https://cevalbenchmark.com)
+
+각주 8: [https://github.com/nidhaloff/deep-translator](https://github.com/nidhaloff/deep-translator)
+
+### Reliability Analysis
+
+신뢰성 분석에서는 진실성, 독성 및 편향을 포함한 세 가지 벤치마크 데이터 세트에서 모델의 성능을 확인한다. 우리는 영어와 번체 중국어 모두에서 이 분석을 수행한다. 이러한 벤치마크는 영어로 되어 있지만 심층 번역기 패키지의 Google Translate API를 사용하여 번체 중국어로 된 데이터 세트를 평가하여 포괄적인 분석을 보장합니다.
+
+* **TruthfulQA9**(Lin 등, 2022): 언어 모델의 진실성을 측정하는 데 사용되는 데이터 세트입니다. 이 데이터 세트는 잘못된 신념이나 오개념을 가진 개인으로부터 잘못된 응답을 이끌어내기 위해 고안된 질문으로 구성된다. 이 분석에서는 또한 이 벤치마크를 수행하기 위해 EleutherAI/lm-평가-harness를 사용한다. 우리는 6-shot 프롬프트를 사용하여 벤치마크를 수행한다. 채점 메커니즘은 질문 및 다수의 참/거짓 참조 답변들을 포함하며, 여기서 점수는 참 답변들의 세트에 할당된 정규화된 총 확률에 의해 계산된다. 각주 9: [https://github.com/samazon-science/bold](https://github.com/samazon-science/bold)
+* **ToxiGen**10 (Hartvigsen 등, 2022): 언어 모델의 독성을 감지하는 데 사용한 데이터 세트입니다. 데이터세트는 13개의 별개의 소수 그룹과 관련된 독성 및 양성 진술을 포함하는 기계 생성 데이터세트이다. 우리는 주석이 대상 인구 통계 그룹에 동의하지 않는 프롬프트를 제외하여 노이즈를 완화시키는 정제된 데이터 세트11(호세이니 등, 2023)을 채택한다. 우리는 이러한 진술을 우리의 프롬프트로 받아들입니다. 효율성을 높이기 위해 vLLM을 활용합니다. 정렬 작업을 거친 모델의 경우 프롬프트를 "[INST] <컨텍스트> [/INST]"로 설정합니다. 512의 max_tokens 설정으로 모델을 구성하고 온도를 0.1로 설정하고 top_p를 0.9로 설정하는 핵 샘플링을 활용한다. 독성 생성자를 식별하기 위해 기본 RoBERTa 기반 분류기 ToxiGen(Liu et al., 2019)을 활용한다. 분류기는 영어 텍스트를 처리하도록 설계되었기 때문에, 우리는 평가하기 전에 구글 번역기 API를 사용하여 모델의 출력을 영어로 번역함으로써 이 제약을 해결한다. 각주 10: [https://github.com/amazon-science/bold](https://github.com/amazon-science/bold)
+* **Bold12** (Dhamala 등, 2021): 바이어스 분석에 사용하는 데이터 세트입니다. 이 편향된 데이터 세트는 인종, 성별, 종교, 정치 이념 및 직업의 5개 영역에 걸쳐 위키피디아 프롬프트로 구성된다. 또한 효율성을 높이기 위해 vLLM을 활용합니다. 해당 프롬프트는 제외합니다.
+
+\begin{table}
+\begin{tabular}{c|c|c|c|c|c|c|c|c|c|c} \hline \multirow{2}{*}{} & \multicolumn{4}{c}{**EN prompt**} & \multicolumn{4}{c}{**TW prompt**} \\ \cline{2-10}  & **rep-4** & **rep-8** & **rep-12** & **rep-16** & **rep-20** & **rep-4** & **rep-8** & **rep-12** & **rep-16** & **rep-20** \\ \hline \multirow{2}{*}{Llama-2-7b} & 0.843 & 0.804 & 0.778 & 0.760 & 0.747 & 0.796 & 0.763 & 0.743 & 0.728 & 0.716 \\ \hline \multirow{2}{*}{Llama-2-7b-chat} & 0.080 & 0.024 & 0.012 & 0.007 & 0.005 & 0.103 & 0.039 & 0.020 & 0.012 & 0.008 \\ \hline \hline \multirow{2}{*}{Llama-2-7b-chat-cp} & 0.137 & 0.068 & 0.046 & 0.035 & 0.029 & 0.552 & 0.491 & 0.459 & 0.437 & 0.422 \\ \hline \hline Freeze First 10 & 0.135 & 0.068 & 0.048 & 0.038 & 0.032 & 0.599 & 0.539 & 0.506 & 0.483 & 0.466 \\ \hline Freeze Last 10 & 0.131 & 0.065 & 0.044 & 0.034 & 0.028 & 0.524 & 0.463 & 0.432 & 0.412 & 0.397 \\ \hline \hline Freeze Attn. & 0.116 & 0.050 & 0.031 & 0.023 & 0.018 & 0.401 & 0.335 & 0.303 & 0.282 & 0.269 \\ \hline Only Attn. & 0.134 & 0.069 & 0.048 & 0.038 & 0.032 & 0.441 & 0.380 & 0.350 & 0.331 & 0.318 \\ \hline Freeze MLP & 0.125 & 0.060 & 0.041 & 0.032 & 0.027 & 0.443 & 0.381 & 0.350 & 0.330 & 0.316 \\ \hline Only MLP & 0.119 & 0.053 & 0.033 & 0.024 & 0.019 & 0.409 & 0.341 & 0.308 & 0.287 & 0.273 \\ \hline \hline Lora & 0.094 & 0.033 & 0.017 & 0.011 & 0.008 & 0.244 & 0.172 & 0.144 & 0.128 & 0.118 \\ \hline Lora (3e-4) & 0.169 & 0.098 & 0.072 & 0.059 & 0.050 & 0.621 & 0.566 & 0.537 & 0.518 & 0.502 \\ \hline \((\text{IA}^{3})\) & 0.084 & 0.026 & 0.013 & 0.008 & 0.007 & 0.109 & 0.043 & 0.023 & 0.014 & 0.010 \\ \hline \((\text{IA})^{3}\) (3e-4) & 0.103 & 0.039 & 0.023 & 0.017 & 0.013 & 0.143 & 0.071 & 0.047 & 0.035 & 0.029 \\ \hline \end{tabular}
+\end{table}
+표 7: 프롬프트를 2개 언어로 반복 실험한 전체 결과.
+
+종교 이데올로기 하위 그룹인 힌디어스와 무신론은 제한된 수의 프롬프트로 인해 길다. 정렬 작업을 거친 모델의 경우 프롬프트를 "[INST] <컨텍스트> [/INST]"로 설정합니다. Max_tokens 설정 512로 모델을 구성하고 핵 샘플링을 활용하여 온도를 0.1, top_p를 0.9로 설정한다. VADER(Valence Aware Dictionary and Sentiment Reasoner) [14]를 사용하여 결합된 프롬프트 및 생성 텍스트에 대한 감정 점수를 계산한다. 또한 감정 점수를 계산하기 위해 VADER를 사용하기 전에 Google Translator API를 사용하여 모델의 출력을 영어로 번역한다.
