@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# 모델 병합 레시피의 진화적 최적화\n' +
+      '\n' +
+      ' 다쿠야 아키바, 마코토 싱, 유진탕, 치순, 다비드 하\n' +
+      '\n' +
+      'Sakana AI\n' +
+      '\n' +
+      'Tokyo, Japan\n' +
+      '\n' +
+      '{takiba,mkshing,yujintang,qisun,hadavid}@sakana.ai\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '우리는 강력한 기초 모델의 생성을 자동화하기 위해 진화 알고리즘의 새로운 응용을 제시한다. 모델 병합은 비용 효율성으로 인해 LLM 개발에 대한 유망한 접근법으로 부상했지만 현재 인간의 직관과 도메인 지식에 의존하여 잠재력을 제한한다. 여기에서 우리는 광범위한 추가 훈련 데이터 또는 컴퓨팅을 요구하지 않고 집단 지성을 활용하여 다양한 오픈 소스 모델의 효과적인 조합을 자동으로 발견함으로써 이러한 한계를 극복하는 진화적 접근법을 제안한다. 우리의 접근법은 매개변수 공간과 데이터 흐름 공간 모두에서 작동하여 개별 모델의 가중치 이상의 최적화를 가능하게 한다. 이 접근법은 심지어 교차 도메인 병합을 용이하게 하여 수학 추론 기능을 갖는 일본 LLM과 같은 모델을 생성한다. 놀랍게도, 우리의 일본 수학 LLM은 이러한 작업에 대해 명시적으로 훈련되지 않았음에도 불구하고 훨씬 더 많은 매개변수를 가진 모델을 능가하는 다양한 확립된 일본 LLM 벤치마크에서 최첨단 성능을 달성했다. 또한, 우리의 접근법을 통해 생성된 문화 인식 일본 VLM은 이전의 일본 VLM을 능가하면서 일본 문화 특정 콘텐츠를 설명하는 데 그 효과를 보여준다. 이 작업은 새로운 최첨단 모델을 오픈 소스 커뮤니티에 다시 기여할 뿐만 아니라 자동화된 모델 구성을 위한 새로운 패러다임을 도입하여 기반 모델 개발에 대한 대안적이고 효율적인 접근법을 탐색하는 길을 열어준다.1\n' +
+      '\n' +
+      '각주 1: EvoLLM-JP, EvoVLM-JP 릴리스: [https://github.com/SakanaAI/evolutionary-model-merge](https://github.com/SakanaAI/evolutionary-model-merge)\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '대형 언어 모델(LLM) 커뮤니티의 최근 발전인 모델 병합[15; 28]은 새로운 패러다임 변화를 제시한다. 여러 LLM을 하나의 아키텍처로 전략적으로 결합함으로써 이 흥미로운 개발은 추가 교육이 필요하지 않기 때문에 새로운 모델 개발을 위한 믿을 수 없을 정도로 비용 효율적인 접근법이라는 핵심 장점으로 인해 연구자들의 관심을 끌었다. 이러한 접근성은 모델 병합에 대한 관심과 실험의 급증을 부채질했다. 오픈 LLM 리더보드[20]는 현재 통합 모델에 의해 지배되어 기초 모델 개발을 민주화할 수 있는 잠재력을 보여준다.\n' +
+      '\n' +
+      '그러나 모델 병합은 모델 선택에 대한 모델 메이커의 직관과 본능에 의존하여 특정 작업에 대해 잘 수행되는 새로운 모델을 생성하고 정제하기 위해 블랙 아트 또는 연금술의 한 형태로 많은 사람들에 의해 고려된다. 또한, 모델 메이커는 다양한 벤치마크 작업에 대한 일부 도메인 지식을 필요로 하는 경우가 많다. 커뮤니티에서 열린 모델과 벤치마크의 다양성이 크다는 점을 감안할 때 인간의 직관은 지금까지밖에 갈 수 없으며 새로운 모델 조합을 발견하기 위한 보다 체계적인 접근법이 훨씬 더 나아갈 것이라고 믿는다.\n' +
+      '\n' +
+      '우리는 진화 알고리즘이 더 효과적인 모델 병합 솔루션을 발견할 수 있을 것이며, 따라서 더 유능한 모델의 생성을 자동화할 수 있는 경로를 제공할 것이라고 믿는다. 이러한 방향을 향한 한 단계로서, 이 작업에서 우리는 진화가 다양한 모델을 병합하여 새로운 결합 능력을 가진 새로운 모델을 생성하는 새롭고 직관적이지 않은 방법을 발견하는 데 사용될 수 있음을 보여준다. 본 연구에서는 진화 알고리즘을 활용하여 기초 모델의 병합을 용이하게 하는 방법론을 제시한다. 우리의 접근 방식은 파라미터 공간(가중치)과 데이터 흐름 공간(추론 경로)을 모두 탐색하는 능력으로 구별되며, 이 두 차원을 통합하는 프레임워크를 제안한다.\n' +
+      '\n' +
+      '이 작업은 기초 모델 개발 분야에 몇 가지 핵심 기여를 한다.\n' +
+      '\n' +
+      '1. **자동 모델 조합**: 사용자 지정 기능을 사용 하 여 새 기반 모델을 만들기 위한 다양한 오픈 소스 모델의 최적 조합을 자동으로 검색 하는 일반적인 진화 방법인 **진화 모델 병합** 을 도입 합니다. 이 접근법은 기존 개방형 모델의 집단 지성을 활용하여 광범위한 훈련 데이터나 계산 없이 강력한 모델을 만들 수 있다.\n' +
+      '2. **도메인 간 병합**: 서로 다른 도메인(예: 비영어 언어 및 수학, 비영어 언어 및 비전)에서 모델을 병합하는 새로운 방법을 발견하여 기존 인간 설계 전략을 통해 달성할 수 있는 기능을 잠재적으로 초과할 수 있음을 보여줍니다.\n' +
+      '3. **최신 성능**: 수학 추론 기능과 VLM (일본 비전 언어 모델)을 사용 하 여 일본 LLM을 자동으로 생성 하 여 방법의 효율성을 보여 줍니다. 특히, 두 모델 모두 이러한 작업에 대한 명시적 최적화 없이도 다양한 벤치마크에서 최첨단 성능을 달성한다.\n' +
+      '4. **고효율 및 놀라운 일반화 가능성**: 7B 매개 변수 LLM이 벤치마크 데이터 세트에서 이전 70B 매개 변수 일본 LLM의 성능을 능가하여 접근법의 고효율 및 놀라운 일반화 능력을 강조한다는 것을 관찰합니다. 우리는 이 모델이 강력한 범용 일본 LLM 역할을 할 수 있다고 믿는다.\n' +
+      '5. **문화 인식 VLM**: 생성된 일본 VLM은 일본 이미지 설명 쌍의 국내 원본 데이터 세트에서 테스트할 때 상위 결과를 달성하여 일본 문화 특정 콘텐츠를 처리하는 능력을 보여줍니다.\n' +
+      '\n' +
+      '우리는 오픈 과학에 전념하고 있으며 두 가지 최첨단 일본 재단 모델인 EvoLLM-JP와 EvoWLM-JP를 커뮤니티에 오픈 소싱하여 해당 분야의 추가 연구 개발을 가능하게 하는 것에 흥분하고 있습니다. 우리의 작업은 진화 기반 방법이 기울기 기반 훈련에 의존하지 않고 경쟁 모델을 생성할 수 있음을 입증함으로써 값비싼 모델 개발의 전통적인 패러다임에 도전한다. 이것은 기초 모델 개발에 대한 대안적이고 잠재적으로 더 효율적인 접근 방식을 탐색할 수 있는 길을 열어준다.\n' +
+      '\n' +
+      '## 2 배경 및 관련 작업\n' +
+      '\n' +
+      '### 모델 병합 개요\n' +
+      '\n' +
+      '모델 병합은 미리 훈련된 여러 모델의 장점을 활용하는 새로운 접근법을 제공한다. 이를 통해 특정 다운스트림 태스크에 대해 각각 잠재적으로 미세 조정된 태스크별 모델을 단일 통합 모델로 결합할 수 있습니다. 이 기술은 사전 훈련된 모델이 새로운 작업에 대해 추가로 미세 조정되는 전통적인 전이 학습과 대조된다. 전이 학습은 향상된 성능 및 더 빠른 수렴과 같은 이점을 제공하지만 결과 모델은 일반적으로 단일 작업으로 제한됩니다. 반면에 모델 병합은 미리 훈련된 여러 모델의 지식을 결합하여 다양하고 포괄적인 모델을 만들기 위해 노력하여 잠재적으로 다양한 작업을 동시에 처리할 수 있는 모델을 생성한다.\n' +
+      '\n' +
+      '여러 모델을 병합하는 간단한 방법은 동일한 기본 초기 모델에서 미세 조정된 여러 모델의 가중치를 평균화하는 것이다. 이 _모델 수프_ 접근법 [48]은 상대적으로 큰 이미지 처리 및 이미지 분류 모델에서 상당한 개선을 보여주었다. 작업은 가중 모델 평균 간의 유사성을 지적하여 평평한 지역 최소값으로 이어졌다. 이론적[11; 25; 26; 37]과 1990년대[18; 19]의 경험적 연구는 더 평평한 지역 최적이 분포 외 이동으로 더 잘 일반화된다는 것을 보여주었다. 보다 최근의 작업[8; 34]은 더 큰 생성 모델에 적용된 가중치 평균화의 이론적 특성과 실용적인 의미를 조사했다.\n' +
+      '\n' +
+      '선형 가중치 평균화는 이미지 처리 및 분류 모델에 잘 작동할 뿐만 아니라 잠재 확산 모델과 같은 이미지 생성 모델에도 효과적이다. 안정적 확산[39]의 발표는 사진주의에서 애니메이션, 사실적인 회화 스타일에 이르기까지 다양한 다양한 스타일에 대한 모델의 다양한 전문가 미세 조정으로 이어졌다. 인기 있는 오픈 소스 WebUIs [4]는 취미로 하여금 별개의 미세 조정된 안정 확산 모델의 가중치 매개변수의 선형 또는 구형 선형 보간(SLERP) [47]을 사용하여 서로 다른 모델을 병합하는 실험을 가능하게 했다. 이는 전문화된 모델의 장점을 단일 모델로 결합한 병합 모델의 발견으로 이어졌다. 한동안 가장 인기 있는 스테이블 디퓨전 모델은 원래 기본 모델이나 미세 조정된 버전이 아니라 마니아에 의해 생성된 병합 모델이었다. 이러한 경향은 보다 발전된 기반 모델이 출시될 때까지 지속되며, 이 시점에서 커뮤니티의 미세 조정 및 병합 주기가 갱신된다.\n' +
+      '\n' +
+      '### 언어 모델 병합\n' +
+      '\n' +
+      '단순 가중치 보간은 실제 값 잠재 및 출력 공간에서 작동하는 이미지 생성 모델을 병합하는 데 잘 작동하지만 놀랍게도 적절한 조건에서 언어 모델을 병합하는 데에도 여전히 작동하지만 성능 문제가 있다[49]. 최근 언어 모델을 병합하는 방법에 대한 연구가 활발히 진행되고 있다. 한 가지 방법인 작업 산술[21]은 미세 조정된 모델 가중치에서 미리 훈련된 값을 빼서 _작업 벡터_를 구축하는 작업을 포함하며, 병합된 모델의 동작을 조정하기 위해 산술 연산을 통한 조작을 가능하게 한다.\n' +
+      '\n' +
+      '가중치 보간 기반 방법의 핵심 문제는 파라미터 간섭을 무시하여 성능 저하로 이어진다는 것이다. 최근 연구[49]는 두 가지 주요 간섭 원인, 즉 중복 파라미터 값과 모델 간 충돌 파라미터 부호를 식별하고, 개선된 병합 성능을 달성하기 위해 이러한 문제를 해결하는 방법을 제안한다. 제안된 TIES-Merging 방법은 최소 파라미터 변경 재설정, 부호 충돌 해결, 정렬된 파라미터만 병합하는 세 단계를 통합하여 기존의 병합 방법에서 정보 손실을 해결한다.\n' +
+      '\n' +
+      '또 다른 최근 작업 [50]은 DARE 방법이 미세 조정된 모델과 원래 기본 모델 간의 작은 차이를 제로 아웃하는 동시에 차이를 증폭함으로써 더 나아간다. 실제로, DARE[50]은 종종 태스크 산술[21] 또는 TIES-Merging[49]과 함께 사용된다.\n' +
+      '\n' +
+      '이미지 생성 모델 병합은 오픈 소스 툴킷에서 이러한 방법이 구현된 후에야 커뮤니티에서 실제로 시작되었다[4]. 유사하게, 언어 모델 병합은 _mergekit_[15, 28]의 구현 후에 정말로 인기를 얻었다. 이 툴킷은 언어 모델을 병합하기 위해 인기 있는 모든 _수령_ 을 제공합니다. 단순한 선형 및 구형 보간 외에도 태스크 산술, TIES-Merging, DARE와 같은 고급 레시피도 구현되며, 사용자에게 미스트랄[22]과 같은 인기 있는 기본 모델의 미세 조정과 함께 작업하기 위해 이러한 방법을 조합하여 실험할 수 있는 능력을 제공한다. 이 툴킷을 사용하면, 다수의 능력 있는 병합 모델들이 커뮤니티에 의해 개발되고, 오픈 LLM 리더보드[20] 상의 대부분의 상위 모델들은 언어 모델 애호가들의 커뮤니티에 의해 생성된 병합 모델들에 의해 점진적으로 지배된다.\n' +
+      '\n' +
+      '머지킷은 또한 가중치 병합을 기반으로 하는 것이 아니라 사용자가 여러 모델에서 다른 레이어를 스택하여 순차적으로 새로운 모델을 만드는 실험을 하는 _프랑켄머깅_이라는 추가 방법을 도입했다. 이 방법은 사용자를 병합을 위한 고정 아키텍처(예: 미스트랄 기반 모델)와 함께 하나의 특정 모델 패밀리에 연결하지 않고 완전히 다른 모델을 병합하여 _new_ 아키텍처를 잠재적으로 생성할 수 있는 이점이 있습니다. 새로운 _프랑켄 병합_ 기술을 발견하는 것은 커뮤니티의 과제로 남아 있으며 이 기술에 대한 새로운 레시피를 발견하려면 훨씬 더 많은 시행착오를 필요로 한다는 점에 주목한다. 지금까지 거의 모든 사람이 유사한 _프랑켄 병합_ 병합 레시피를 사용했으며 이를 개선하기 위한 시행착오가 거의 없었다. 그 분야는 아직 조사되지 않은 상태로 남아 있으며, 우리는 이것이 진화가 도움이 될 수 있는 곳이라고 믿습니다.\n' +
+      '\n' +
+      '### 진화적 신경망 구조 검색에 대한 연결\n' +
+      '\n' +
+      '모델 병합은 상당한 잠재력을 보유하고 모델 구축 프로세스를 민주화하여 광범위한 참가자가 접근할 수 있도록 한다. 그러나 그것은 직관과 영역 지식에 크게 의존한다. 그러나 인간의 직관은 한계가 있다. 개방형 모델과 과제의 다양성이 증가함에 따라 보다 체계적인 접근이 필요하다. 자연 선택에서 영감을 얻은 진화 알고리즘이 더 효과적인 병합 솔루션의 잠금을 해제할 수 있다고 믿습니다. 이러한 알고리즘은 전통적인 방법과 인간의 직관이 놓칠 수 있는 새롭고 반직관적인 조합을 발견하면서 광범위한 가능성의 공간을 탐색할 수 있다.\n' +
+      '\n' +
+      '딥 러닝에서, 신경망 아키텍처 검색(NAS; Neural Architecture Search)[51]과 같은 기술들은 인간 디자이너들이 발견하기에 직관적이지 않을 수 있는 새로운 아키텍처들[38, 44]을 발견하기 위해 진화적 기술들을 채용하였다. 그러나, NAS-방법들은 각각의 후보 모델 아키텍처가 어떻게 훈련되어야 하는지를 고려할 때 상당한 계산 자원을 소모하였다. 우리의 접근법은 애초에 훈련하기 위해 이미 상당한 리소스를 소비한 기존 트랜스포머 블록의 기존 기능을 활용하는 구조를 발견함으로써 컴퓨팅 리소스를 _저장_하는 것을 목표로 한다.\n' +
+      '\n' +
+      '사전 훈련된 변압기 블록은 진화 아키텍처 검색 알고리즘을 사용하여 혼합 및 일치하도록 선택할 수 있는 신경망 구성요소와 유사하다. 그러나 NAS와 달리 모델을 훈련할 필요가 없으며 후보자를 즉시 평가할 수 있습니다. 어떤 의미에서, 우리의 연구는 기울기 하강을 사용하여 가중치 매개변수를 훈련할 필요 없이 특정 작업별 귀납적 편향을 가진 신경망 구조를 진화한 NEAT [45]와 같은 모폴로지 검색의 초기 작업 및 무게 Agnostic Neural Networks [12]와 같은 보다 최근의 작업의 목표와 공명한다. 유사하게, 이것은 SMASH [45]와 같은 NAS 방법들이 아키텍처 후보들의 가중치들을 추정하기 위해 하이퍼 네트워크 [16]의 적용을 통해 값비싼 내부-루프 트레이닝을 피하는 방법이었다.\n' +
+      '\n' +
+      '이 연구에서는 단일 아키텍처에 국한된 가중치 공간에서 모델 병합 레시피의 최적화를 자동화할 뿐만 아니라 기존 빌딩 블록에서 완전히 새로운 신경망 아키텍처를 생성할 가능성이 있는 더 관련된 접근법인 다른 모델의 레이어 스택을 최적화하기 위해 진화를 적용하는 것을 탐구한다. 가중치 병합 최적화는 병합될 모델의 공간을 동일한 부모 기본 모델의 미세 조정된 하강으로 제한하는 것과 달리, 레이어 적층 최적화는 그러한 제약이 없다. 우리의 연구는 매개변수와 레이어 공간 모두에서 적용된 진화의 적용을 체계적으로 탐구한다.\n' +
+      '\n' +
+      '## 3 Method\n' +
+      '\n' +
+      '우리의 목표는 기초 모델의 선택에서 병합 모델을 자동으로 생성할 수 있는 통합 프레임워크를 만들어 이 병합 모델의 성능이 컬렉션의 모든 개인의 성능을 능가하도록 하는 것이다. 우리의 접근법의 핵심은 모델 병합과 관련된 복잡성을 개선하기 위해 사용하는 진화 알고리즘의 적용이다. 이 문제를 체계적으로 해결하기 위해 먼저 병합 프로세스를 두 개의 별개의 직교 구성 공간으로 해부하고 개별 영향을 분석한다. 이 분석을 기반으로 이러한 공간을 원활하게 통합하는 응집 프레임워크를 소개한다. 그림 1은 접근 방식의 개략적 표현을 제공한다.\n' +
+      '\n' +
+      '### 매개 변수 공간 병합\n' +
+      '\n' +
+      '파라미터 공간(PS)에서의 모델 병합은 다수의 기초 모델들의 가중치들을 동일한 신경망 아키텍처를 갖는 통합된 엔티티로 통합하는 것을 목표로 하지만, 개별 모델들을 능가한다. 모델 매개변수를 결합하기 위한 다양한 전략이 존재하지만 [34; 48] 우리의 접근법은 태스크 벡터 분석을 활용하여 [21]에서 최적화되거나 탁월한 특정 태스크를 기반으로 각 모델의 장점을 이해한다. 구체적으로, 우리는 TIES-Merging with DARE [49; 50]을 강화하여 보다 세분화된 레이어별 병합을 가능하게 한다(In this paper, by "layer" we mean the input/output\n' +
+      '\n' +
+      '그림 1: **진화 모델 병합 개요**. 제안된 방법은 (1) 매개변수 공간(PS)의 각 계층에서 매개변수를 혼합하기 위한 가중치를 진화시키는 것; (2) 데이터 흐름 공간(DFS)의 계층 순열을 진화시키는 것; 및 (3) PS와 DFS 모두에서 병합하기 위한 두 방법을 결합하는 통합 전략을 포함한다. PS에서의 병합은 레이어 파라미터들의 단순한 복사 및 스티칭이 아니라, 가중치들을 혼합한다는 것을 주목한다. 이러한 병합은 여기에 예시된 바와 같은 컬러들을 블렌딩하는 것과 유사하다(예를 들어, 적색 및 청색은 보라색이 된다). 독자를 위해 질문을 영어로 번역했습니다. 모델은 일본어 텍스트로 작동합니다.\n' +
+      '\n' +
+      '포함하는 층 또는 변압기 블록). 입력 및 출력 임베딩을 포함하여 각 계층에서 희소화 및 가중치 혼합을 위한 병합 구성 파라미터를 설정한다. 그런 다음, 이들 구성은 중요한 작업-특정 메트릭(예를 들어, MGSM에 대한 정확도, VQA에 대한 ROUGE 점수)에 의해 안내되는 선택된 작업에 대해 CMA-ES [17]과 같은 진화 알고리즘을 사용하여 최적화된다.\n' +
+      '\n' +
+      '### 데이터 흐름 공간 병합\n' +
+      '\n' +
+      '최근의 분석 및 발견은 지식이 언어 모델에 분산 저장된다는 것을 암시한다[14; 35; 36]. 이는 데이터 흐름 공간(DFS)에서 단순하지만 새로운 모델 병합 가능성을 시사한다. PS의 병합과 달리 DFS의 모델 병합은 각 레이어의 원래 가중치를 그대로 유지한다. 대신 토큰이 신경망을 통과할 때 따르는 추론 경로를 최적화한다. 예를 들어, 모델 \\(A\\)에서 \\(i\\)번째 레이어 이후에, 토큰은 모델 \\(B\\)에서 \\(j\\)번째 레이어로 향할 수 있다.\n' +
+      '\n' +
+      '이 영역에서의 초기 노력에서는 직렬 연결 및 비적응 구성으로 제한하여 보다 유연한 모델 병합에 대한 조사를 향후 작업으로 연기한다. 구체적으로, \\(N\\) 모델의 집합과 예산 \\(T\\)을 사용하여, 본 방법은 특정 태스크에 대해 모든 토큰이 따라야 하는 경로를 설명하는 계층 인덱스 \\(L_{i,j}^{(t)}\\)의 시퀀스를 검색한다. 여기서, \\(L_{i,j}\\)는 \\(i\\)번째 모델에서 \\(j\\)번째 레이어를 나타내며, \\(t\\in[1,T]\\)는 추론 경로에서 단계를 표시한다.\n' +
+      '\n' +
+      '검색 공간이 얼마나 큰지 빠르게 상상할 수 있습니다. 모든 모델에 걸쳐 있는 레이어의 총 수를 \\(M\\)라고 가정하면 탐색 공간의 크기는 \\((M+1)^{T}\\), 여기서 여분은 통과 레이어의 포함을 나타낸다. \\(M=64\\)(예: 32개 층의 2개 모델) 및 \\(T=60\\)의 적당한 설정에서도 이 설정은 천문학적으로 큰 탐색 공간으로 변환되며, 이는 가능한 진화 탐색 알고리즘에 대한 도전이다. 다행히도, 우리의 예비 연구는 특정 층 배열, 특히 모델의 초기에서 반복되거나 순열된 시퀀스가 성능에 부정적인 영향을 미칠 수 있음을 나타낸다. 이를 기반으로 진화 탐색 공간에 크기 \\(T=M\\times r\\)의 지시자 배열 \\(\\mathcal{I}\\) \\(\\mathcal{I}\\)을 포함하도록 설정을 수정한다. 여기서 \\(r\\)는 반복 횟수이다.\n' +
+      '\n' +
+      '개념적으로 모든 레이어를 순차적인 순서로 레이아웃하고(즉, \\(i\\)번째 모델의 모든 레이어에 이어 \\(i+1\\)번째 모델의 모든 레이어에 이어 \\(r\\)번 반복하고, 지시자 배열은 레이어의 포함/배제를 관리한다. \\(\\mathcal{I}_{i}>0\\)인 경우 병합된 모델의 슬롯에 인덱스 \\(i\\)에 해당하는 레이어를 포함하고 그렇지 않으면 제외한다. 결과적으로 탐색공간은 \\(2^{T}\\)로 줄어들었고, 이는 여전히 크지만 진화적 탐색에 다루기 쉽다.\n' +
+      '\n' +
+      '검색에서는 병합된 모델 내부의 데이터 추론 경로만을 최적화하고 모델의 파라미터를 그대로 유지한다. 이 설정에서, 계층은 분포가 그것이 사용되는 것과 다른(그것의 원래 모델로부터) 입력에 직면하여 예기치 않은 출력으로 이어질 수 있다. 예를 들어, 우리의 예비 연구들은 언어 모델에서 이웃한 계층들의 쌍을 교환하는 것이 그것의 성능을 떨어뜨린다는 것을 보여준다. 분포 이동을 모델링하기 위해서는 더 많은 이론적 연구가 필요하지만, 경험적으로 \\(i\\)에서 \\(j\\)로 가려는 입력을 \\(W_{ij}\\)로 적절하게 스케일링하는 것이 문제를 완화하는 데 도움이 된다는 것을 발견했다. 여기서, \\(W\\in\\mathcal{R}^{M\\timesM}\\)은 지시자 배열과 함께 진화적 탐색에 의해 최적화되는 행렬이다 \\(\\mathcal{I}\\)\n' +
+      '\n' +
+      '많은 수의 레이어가 포함된 시나리오의 경우 \\(W\\)의 크기는 \\(M\\)와 2차적으로 증가합니다. 탐색 공간 크기를 포함하는 대안적인 접근법은 \\(W\\)를 신경망으로 파라미터화하는 것을 포함한다[16; 40]. 이를 위해 피드포워드 네트워크(feed-forward network)를 구성하여 계층 및 스텝 인덱스에 대한 스케일링 가중치를 출력할 수 있다 : \\(W_{ij}=\\pi_{\\theta}(i,j,t)\\) 여기서 \\(\\theta\\)는 진화해야 할 파라미터이며, \\(M\\)이 커지면 크기가 변하지 않는다.\n' +
+      '\n' +
+      '### 두 공간 모두 병합\n' +
+      '\n' +
+      'PS와 DFS에서 모델 병합은 직교적인 접근법이지만, 이러한 분리 방법을 조합하는 것은 간단하며 병합 모델의 성능을 더욱 향상시킨다. 그림 1의 가장 오른쪽 그림과 섹션 4.1에서 볼 수 있듯이 먼저 PS 병합을 모델 컬렉션에 적용한 다음 이 병합된 모델을 컬렉션에 다시 넣고 이 확대된 컬렉션에서 DFS 병합을 적용할 수 있다.\n' +
+      '\n' +
+      '이는 다중 목적과의 모델 병합을 고려할 때 매우 유용할 수 있으며, 여기서 PS 병합은 먼저 적용되어 관심 대상 다중 목적 중 하나를 각각 대상으로 하는 여러 병합 모델을 생성할 수 있고, 이어서 DFS 병합은 NSGA-II[10]과 같은 다중 목적 유전자 알고리즘과 함께 적용되어 관련 메트릭에서 최종 모델의 성능을 더욱 확장한다.\n' +
+      '\n' +
+      'Experiments\n' +
+      '\n' +
+      '커뮤니티에서 병합된 대부분의 모델은 오픈 LLM 리더보드에 정의된 좁은 작업 세트에 최적화됩니다. [20]. 우리의 동기는 진화적 탐색이 매우 다른 도메인(예: 비영어 언어 및 수학, 또는 비영어 언어 및 비전)에서 서로 다른 모델을 병합하는 새로운 방법을 발견하는 것인데, 이는 인간 전문가가 효과적인 병합 솔루션 자체를 발견하기 어려울 수 있다. 또한, 매우 상이한 도메인으로부터의 모델들을 효과적으로 병합하는 것은 더 넓은 실세계 적용가능성의 모델들로 이어질 수 있고, 리더보드에 의해 정의된 좁은 범위의 태스크들에 최적화된 모델들의 많은 모집단을 넘어 모델들을 개발할 수 있게 한다.\n' +
+      '\n' +
+      '우리는 수학 추론이 가능한 일본 LLM과 문화적으로 특정한 콘텐츠를 다루는 데 능숙한 일본 VLM을 진화시켜 섹션 3에 설명된 진화 모델 병합 접근법을 보여준다. 구체적으로 4.1절에서는 일본어 LLM과 영어 수학 LLM을 병합하여 일본어 수학 LLM을 구축하는 진화를 적용하고, 4.2절에서는 일본어 LLM과 영어 VLM을 병합하여 일본어 VLM을 생성하는 진화를 적용한다.\n' +
+      '\n' +
+      '### 일본 수학 LLM 진화\n' +
+      '\n' +
+      '#### 4.1.1 Setup\n' +
+      '\n' +
+      '소스 모델 일본어로 수학 문제를 해결할 수 있는 모델을 개발하기 위해 일본어 LLM과 Math LLM을 포함하는 소스 모델 세트: shisa-gamma-7b-v1 [3](일본어 LLM), WizardMath-7B-V1.1 [33] 및 Abel-7B-002 [6]에 진화 모델 병합을 적용한다. 이 모든 모델은 미스트랄-7B-v0.1 [22]에서 미세 조정된다.\n' +
+      '\n' +
+      '데이터 세트 테스트를 위해 GSM8k 데이터 세트 [7]의 하위 집합을 다국어 번역한 MGSM 데이터 세트 [41]을 사용했다. 250개의 샘플로 구성된 MGSM의 일본 테스트 세트를 최종 평가에 사용했다. 테스트 세트에 과적합하지 않도록 진화적 검색을 위해 다른 데이터 세트를 사용했다. 구체적으로, MGSM 테스트 세트에 포함되지 않은 GSM8k 테스트 세트의 나머지 1069개 샘플(1319개 예 중 일부)을 일본어.2로 번역했다.\n' +
+      '\n' +
+      '각주 2: GSM8k 트레이닝 세트를 번역하는 것이 더 자연스럽다고 생각할 수 있다. 그러나 우리의 예비 노력에서 이 접근법은 잘 작동하지 않았다. 오픈 소스 수학 모델은 GSM8k 훈련 세트에서 훈련되었기 때문에 정확한 평가를 수행할 수 없었다.\n' +
+      '\n' +
+      '평가 우리는 일본 수학 문제에 대한 일본어 답을 생성하는 능력을 평가했다. 따라서 우리는 (1) 결론 수치가 정확해야 하고, (2) 추론 텍스트가 일본어로 작성되어야 하는 기준을 충족한다면 정답을 고려하였다.\n' +
+      '\n' +
+      '우리는 출력에 나타나는 마지막 수치를 해답으로 취급했다. 우리는 다른 형식으로 훈련된 여러 모델을 병합하여 출력 형식을 수정하기 어렵기 때문에 이 휴리스틱을 채택해야 했다. 이 방법은 거의 모든 경우에 정답을 정확하게 추출하는 것으로 나타났다. 추가적으로, 출력의 언어를 결정하기 위해, 우리는 패스트텍스트[23; 24]를 활용하였다. 생성에는 greedy sampling을 사용하였고, 0-shot pass@1 정확도를 계산하였다.\n' +
+      '\n' +
+      'Optimization for optimization in PS, we used the CMA-ES[17] algorithm implemented with Optuna [2] with default hyper-parameters. 구체적으로, 모든 초기 매개변수 값을 0.5, 시그마 값을 1/6로 설정하고 모집단 크기를 \\(4+\\lfloor 3\\ln(n_{\\text{params}})\\rfloor\\)로 설정하며, 여기서 \\(n_{\\text{params}}}\\)는 최적 매개변수 수이다. 적합도 값은 모든 1069개의 훈련 샘플에 대한 정확도로 정의된다. 이 세트는 MGSM의 테스트 세트에서 분리됩니다. 최적화는 1000번의 시도에 대해 수행되었으며, 훈련 정확도에 대한 최상의 시도가 최종 모델로 선택되었다. 우리는 예비 실험을 통해 TIES-Merging [49]와 DARE [50]을 사용하기로 결정하고 매개변수를 최적화했다.\n' +
+      '\n' +
+      'DFS 병합 실험에서 \\(M=64,r=3\\), 결과적으로 \\(T=M\\times r=192\\)이 얻어졌다. 학습 데이터의 마지막 200개의 예제를 검증 세트로 유지하고 나머지 데이터에 대해 200의 배치 크기로 최적화한다. 검증 세트에서 가장 높은 정확도를 달성한 스냅샷의 성능을 보고하며 테스트 세트는 최적화 프로세스에서 엄격하게 격리된다. 우리는 EvoJAX [46]에서 CMA-ES를 채택하여 128의 덧셈 크기를 갖는 총 100세대 동안 \\(\\mathcal{I}\\)와 \\(W\\)를 최적화하였고, 기본 하이퍼파라미터를 사용하였다. DFS 병합을 두 개의 모델 \\(A\\)과 \\(B\\)로 제한하여 최종 모델의 크기가 적당하고 단일 GPU에서 실행될 수 있도록 했지만, 원칙적으로 이 방법론은 여러 모델을 병합할 수 있도록 확장할 수 있다. 병합 과정에서 모델 \\(A\\)stokenizer와 입출력 임베딩을 활용한다. 또한 임베딩 레이어와의 호환성을 유지하기 위해 모델 \\(A\\)의 초기 및 최종 트랜스포머 레이어가 추론 경로의 시작과 끝을 정의하도록 한다. 지표 배열 \\(\\mathcal{I}\\)을 초기화하여 모델 \\(A\\)의 모든 계층이 추론 경로에 초기 홉으로 포함될 가능성이 높아 탐색 시간을 단축시켰다.\n' +
+      '\n' +
+      '#### 4.1.2 Results\n' +
+      '\n' +
+      '<표 1>은 일본의 수학에 대한 LLMs의 성과와 일본의 벤치마크 과제 전반을 정리한 것이다. MGSM-JA 열은 이전에 설명한 메트릭을 사용하여 MGSM 테스트 세트의 결과를 보고한다. 일본어 모델(모델 1)은 제한된 수학적 능력을 보여주며, 수학 모델(모델 2, 3)은 수학적으로 능숙하지만 일본어의 구사 능력이 부족하다. 결과적으로 세 모델 모두 MGSM-JA에서 낮은 점수를 얻으며 정확도는 30.0 이하이다.\n' +
+      '\n' +
+      '대조적으로, 병합된 모델(모델 4-6)은 상당한 성능 향상을 나타낸다. 특히, PS(모델 4)에서 병합된 모델은 52.0의 인상적인 점수를 달성하여 모델과 별개의 실험을 결합하는 놀라운 잠재력을 강조한다. 또한 DFS 병합 모델(Model 5)은 소스 모델에 비해 정확도가 6% 이상 증가하는 성능 향상을 보였다. 성능의 도약은 PS 병합과 같이 뚜렷하지 않지만 여전히 유효하고 직교적인 접근법임을 증명한다. 마지막으로, 두 가지 병합 전략을 통합하는 하이브리드 모델(Model 6)은 작업에 대한 추가 개선을 보여준다.\n' +
+      '\n' +
+      '그림 2는 수학 문제에 대한 다섯 가지 모델의 "답안지"에 대한 개요를 보여준다. 통합된 모델은 문제 1-15에 대한 유사한 점수 패턴에서 알 수 있듯이 소스 모델의 기본 지식을 유지한다. 또한, 소스 모델을 방해하는 문제(예: 문제 20-30)를 성공적으로 해결하면서 새로운 기능을 나타낸다. 분명히 일본의 LLM과 수학적 모델을 효과적으로 통합함으로써 일본어 이해와 수학적 문제 해결 모두에 능숙한 모델을 생산하는 데 성공했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c l l l r r} \\hline \\hline\n' +
+      '**Id.** & **Model** & **Type** & **Size** & **MGSM-JA** (acc \\(\\uparrow\\)) & **JP-LMEH** (avg \\(\\uparrow\\)) \\\\ \\hline\n' +
+      '1 & Shisa Gamma 7B v1 & JA general & 7B & 9.6 & 66.1 \\\\\n' +
+      '2 & WizardMath 7B v1.1 & EN math & 7B & 18.4 & 60.1 \\\\\n' +
+      '3 & Abel 7B 002 & EN math & 7B & 30.0 & 56.5 \\\\ \\hline\n' +
+      '4 & **우리들(PS)** & 1 + 2 + 3 & 7B & **52.0** & **70.5** \\\\\n' +
+      '5 & **우리들(DFS)** & 3 + 1 & 10B & **36.4** & **53.2** \\\\\n' +
+      '6 & **Ours (PS+DFS)** & 4 + 1 & 10B & **55.2** & **66.2** \\\\ \\hline\n' +
+      '7 & Llama 2 70B & EN general & 70B & 18.0 & 64.5 \\\\\n' +
+      '8 & Japanese StableLM 70B & JA general & 70B & 17.2 & 68.3 \\\\\n' +
+      '9 & Swallow 70B & JA general & 70B & 13.6 & 71.5 \\\\\n' +
+      '10 & GPT-3.5 & 상업 & - 50.4 & - \\\\\n' +
+      '11 & GPT-4 & commercial & - & 78.8 & - \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: **LLM의 성능 비교** 모델 1-3은 원본 모델이고, 모델 4-6은 최적화된 병합 모델이며, 모델 7-11은 참조용으로 제공됩니다. MGSM-JA는 일본어로 수학 능력을 측정하고 JP-LMEH는 일반적인 일본어 능력을 평가하며 자세한 내역은 표 2에 나와 있다.\n' +
+      '\n' +
+      '그림 2: **성능 개요** 그림에서는 MGSM-JA 작업에서 다양한 모델의 성공을 보여주며, 250개의 테스트 문제 각각은 문제 ID로 x축을 따라 표시됩니다. 정답은 해당 위치에 컬러 마커로 표시됩니다.\n' +
+      '\n' +
+      '또한, 표 2는 일본어 모델 평가 하니스(JP-LMEH) 벤치마크 제품군을 사용하여 일반적인 일본어 능력을 평가한 결과를 나타낸다. 이 벤치마크 스위트는 9개의 태스크로 구성되며, 이러한 태스크에 걸친 평균 점수는 일본어 능력 전반의 지표로 널리 사용된다. 우리의 모델은 7B에서 10B 사이의 매개변수만 있음에도 불구하고 소스 모델과 이전의 최첨단 70B 매개변수 일본 LLM(특히 일본 스테이블LM 70B)을 능가하여 70.5와 66.2의 현저하게 높은 점수를 달성한다.\n' +
+      '\n' +
+      '소스 일본 모델(Shisa Gmma 7B v1)과 비교하여, MGSM 점수의 현저한 개선뿐만 아니라 JSQuAD 및 JAQKET와 같은 다른 과제에서도 개선이 있다는 점이 흥미롭다. 여기서 MGSM 점수는 평가 프로토콜(소액샷, 프롬프트 등)의 차이로 인해 표 1의 점수와 일치하지 않는다는 점에 유의해야 한다. 추가 세부 사항은 표 4의 다른 모델과의 광범위한 비교를 포함하여 부록 A에 제공된다.\n' +
+      '\n' +
+      '또한 부록 C는 진화를 사용하여 병합된 모델의 유용성을 보여주는 흥미로운 예를 보여준다. 병합된 모델은 일본 문화 _ 및_ 수학 능력에 대한 두 가지 지식이 모두 필요한 질문에 올바르게 응답했다. 대조적으로, 그러한 일본어 질문을 영어로 번역하여 영어로 대답하더라도 영어 수학 모델은 질문에서 일본 문화 특정 맥락을 인식하지 못할 수 있기 때문에 정답을 제공하지 못할 가능성이 있다.\n' +
+      '\n' +
+      '#### 4.1.3 Analysis\n' +
+      '\n' +
+      '매개 변수 공간에서 모델 병합을 탐색할 때 서로 다른 계층 그룹에 걸쳐 병합 매개 변수의 할당을 변경하는 것과 같은 다양한 구성을 실험했다. 그러나 제한된 데이터 집합으로 인해 구성 복잡도의 증가와 관련된 성능의 현저한 개선을 목격하지 못했다. 결과적으로, 우리는 각 소스 모델을 단일 계층으로 고려하고 진화적 병합을 위해 두 개의 DARE-TIES 관련 매개변수를 각각에 할당하는 가장 간단한 설정을 채택하는 PS 병합 모델(표 1의 모델 4)에 대한 보고에 집중했다. 도 3은 진화된 파라미터 구성 후 PS 병합을 예시한다.\n' +
+      '\n' +
+      'CMA-ES 최적화 결과는 최적화된 가중치 값의 균일성에 의해 제안된 바와 같이 세 가지 모델 모두가 중요하다는 것을 보여준다. 일본 LLM에서 우세한 밀도는 과제 해결에 중요한 기여를 시사한다. 우리는 이것이 부분적으로 미스트랄 기반 모델에서 일본 LM이 더 많은 양의 미세 조정에 기인할 수 있다고 추측한다. [50, 섹션 4.6]의 논의에 따라 DARE의 희소화는 광범위하게 미세 조정된 모델에 적용될 때 성능을 저하시키는 경향이 있다. 우리의 진화적 탐색은 일본 LM에 대한 밀도를 높임으로써 이 문제를 해결하는 데 성공한 것 같다.\n' +
+      '\n' +
+      'PS 병합 실험에서 파생된 매개변수 설정은 DFS 병합 노력의 결과와 잘 일치한다. PS 병합 모델을 소스 모델 풀에 통합하고 모든 잠재적 쌍에 걸쳐 DFS 병합을 적용함으로써 PS 병합 모델과 일본어 모드(표 1의 모델 6)의 조합으로 최적의 성능을 관찰했다. 이 발견은 그림 3의 눈에 띄는 존재에서 알 수 있듯이 일본어 모델의 상당한 영향을 반영하며 진화 모델 병합의 실질적인 가능성을 재확인한다.\n' +
+      '\n' +
+      '그림 4는 우리의 접근법이 마지막 디코딩 레이어와 임베딩 레이어를 제외하고 첫 번째 모델(우리의 PS 병합 모델)의 모든 레이어를 통합하여 초기 단계의 값을 일관되게 인식한 추론 경로의 진화를 보여준다. 프로세스가 발전함에 따라 방법은 개선되었습니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multirow{2}{*}{**Size**} & \\multirow{2}{*}{JComQA} & \\multirow{2}{*}{JNLLI} & \\multicolumn{6}{c}{**JP Language Model Evaluation Harness**} \\\\  & & & & & & & & JSQuAD & JAQKET & XLSum & XWino & MGSM & JCoLA & **Avg** \\\\ \\hline Shisa Gamma 7b v1 & 7B & 91.2 & 72.1 & 94.6 & 73.9 & 68.0 & 25.9 & 80.5 & 29.6 & 58.7 & 66.1 \\\\ WizardMath 7B V1.1 & 7B & 7B & 74.7 & 42.7 & 90.4 & 84.6 & 68.5 & 22.3 & 69.8 & 38.8 & 48.9 & 60.1 \\\\ Abel 7B 002 & 7B & 70.3 & 51.8 & 62.3 & 83.8 & 69.0 & 22.5 & 68.2 & 28.0 & 52.7 & 56.5 \\\\ \\hline\n' +
+      '**우리(PS)** & 7B & 89.1 & 65.7 & 95.4 & 89.5 & 77.7 & 25.5 & 81.2 & 50.0 & 60.5 & **70.5** \\\\\n' +
+      '**우리(DFS)** & 10B & 67.7 & 58.2 & 53.5 & 66.8 & 54.3 & 17.3 & 65.6 & 30.0 & 65.6 & **53.2** \\\\\n' +
+      '**Ours (PS+DFS)** & 10B & 88.2 & 50.3 & 91.5 & 78.6 & 77.8 & 23.2 & 73.0 & 40.0 & 73.0 & **66.2** \\\\ \\hline Llama 2 70B & 70B & 80.2 & 53.4 & 94.4 & 91.6 & 80.1 & 21.8 & 73.6 & 30.4 & 54.6 & 64.5 \\\\ Japanese Stable LM 70B & 70B & 91.2 & 50.4 & 92.9 & 87.1 & 88.4 & 24.3 & 82.0 & 37.2 & 61.7 & 68.3 \\\\ Swallow 70B & 70B & 95.3 & 57.2 & 91.7 & 94.1 & 93.9 & 23.1 & 83.3 & 45.2 & 59.5 & 71.5 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: **일본어 능력에 대한 JP-LMEH 점수 세분화** JP-LMEH(일본어 모델 평가 하니스)는 9개의 태스크로 구성된 벤치마크 제품군이며 평균 점수(Avg 열)는 전체 일본어 능력의 지표로 사용된다. 전체 결과는 표 4에 더 작고 효과적인 계층 집합으로 선택되어 있으며 두 기여 모델의 계층 간에 전략적으로 교대된다. 스케일링 매개변수 \\(W_{ij}\\)는 중요한 요소로 등장했으며, 우리의 절제 연구는 진화 모델(예: \\(W_{ij}=1\\))에서 제거하면 성능 감소가 20%를 초과하여 모델의 효율성에서 중요성을 강조하는 것으로 나타났다.\n' +
+      '\n' +
+      '### 일본 VLM 진화\n' +
+      '\n' +
+      '#### 4.2.1 Multi-modality Extension\n' +
+      '\n' +
+      '우리는 이제 우리의 방법을 멀티모달 모델로 확장하고 문화적으로 특정한 콘텐츠를 인식하는 일본 VLM을 진화시킨다. VLMs는 최근 사전 훈련된 LLMs의 강력한 명령어 추종 기능을 적용하여 괄목할 만한 발전을 보여주고 있다. VLM의 아키텍처는 일반적으로 (1) 이미지 특징을 추출하기 위한 비전 인코더; (2) (이미지를 기술하기 위한 목적으로) 텍스트를 생성하기 위한 LLM; 및 (3) 이미지 특징을 LLM의 임베딩 공간에 매핑하기 위한 투영 네트워크로 구성된다[5; 9; 29; 30; 32]. 결정적으로, LLM 컴포넌트는 텍스트 생성 기능을 위해 강력한 사전 훈련된 LLM으로 초기화된다. 트레이닝 동안, 프로젝션 네트워크 및 선택적으로 LLM은 다양한 비전-언어 데이터세트 상에서 트레이닝되는 한편, 비전 인코더는 고정된다.\n' +
+      '\n' +
+      '#### 4.2.2 Setup\n' +
+      '\n' +
+      '소스 모델 VLM 내부의 LLM 구성 요소는 시각적 _소프트 프롬프트_ 를 이해할 수 있는 추가 기능이 있는 독립형 LLM으로 간주할 수 있습니다. 이러한 관점에서 비전 인코더와 프로젝션 네트워크를 고정하고 LLM 구성 요소에만 초점을 맞추면 섹션 3에 자세히 설명된 방법론을 적용하여 확장된 기능을 가진 새로운 LLM을 생성하는 것이 간단한다.\n' +
+      '\n' +
+      '이 실험에서 우리는 매개변수 공간의 VLM에서 일본 LLM과 LLM 구성요소를 병합한다. 우리는 일본 LLM으로 shisa-gamma-7b-v1[3]을 선택하고 VLM으로 LLaVA-1.6-Mistral-7B[31]을 선택한다. 두 모델 모두 미스트랄-7B-v0.1[22] 기본 모델의 미세 조정이다.\n' +
+      '\n' +
+      '데이터셋 우리가 아는 한 공개적으로 액세스할 수 있는 일본 VLM 데이터셋은 부족하다. 이에 대응하여 우리는 새로운 개방형 일본 VLM 벤치마크를 만들고 널리 인식된 일본 VQA 데이터 세트에서 VLM을 평가했다. 우리의 새로운 벤치마크 데이터 세트는 다음과 같이 구성된다.\n' +
+      '\n' +
+      '* **JA-VG-VQA-500:** 일본 Visual Genome VQA 데이터 세트에서 추출 된 500 샘플 테스트 세트 [42]입니다.\n' +
+      '* **JA-VLM-Bench-In-the-Wild:** 일본 버전의 LLaVA-Bench-In-the-Wild[32]. 우리는 총 50개의 질문과 함께 42개의 풍부한 이미지 컬렉션을 편집하여 일본에서 발견되는 다양한 일본 문화 요소와 물체를 특징으로 합니다. QA는 GPT-4V [1]의 도움으로 제작되었으며 무의미한 결과를 제거하기 위해 인간 루프 필터링 프로세스를 거쳤다. JA-VG-VQA-500 데이터 세트와 비교하여 세트는 더 미묘하고 상세한 응답을 요구하면서 더 복잡한 문제를 제기한다.\n' +
+      '\n' +
+      '그림 4: **모델 병합을 위한 진화 구성 \\(A\\) 및 \\(B\\).** 세 그림은 MGSM-JA 작업에서 추론 경로의 진화를 나타냅니다. y축은 레이어 인덱스 \\(l\\in[1,M]\\)를 나타내고, x축은 경로 인덱스 \\(t\\in[1,T]\\)에 대응한다. 파란색 마커는 모델 \\(A\\)의 레이어를 사용하는 경로 단계를 나타내고 빨간색 마커는 \\(B\\)의 레이어를 나타낸다. 마커 크기는 스케일링 계수 \\(W_{ij}\\)의 크기를 반영한다. 진화적 탐색 결과는 초기 단계에서 \\(A\\)에 있는 대부분의 레이어를 포함하고 두 모델의 레이어 간에 번갈아 간다. 이 결과는 10B 모델(PS+DFS)에서 나온 것이다.\n' +
+      '\n' +
+      '그림 3: **PS 병합을 위한 진화 구성** 세 가지 원본 모델에서 가중치가 비슷하지만 일본 LLM에서 확연한 밀도는 병합 모델에서 중추적인 역할을 강조합니다.\n' +
+      '\n' +
+      '진화 검색 동안 일본 시각 유전체 VQA 데이터 세트의 또 다른 하위 집합을 사용했다. 이 부분 집합은 최적화 프로세스에서 누출을 피하기 위해 JA-VG-VQA-500 데이터 세트의 예와 겹치지 않는다.\n' +
+      '\n' +
+      '평가 우리는 우리의 소스 모델 중 하나인 LLaVA-1.6-미스트랄-7B [31]과 일본 데이터 세트에 대해 처음부터 훈련된 일본 VLM인 일본 안정 VLM [43]의 두 가지 기준을 고려한다.\n' +
+      '\n' +
+      '모든 모델은 결정론적 디코딩과 함께 동일한 생성 구성을 채택한다. 우리는 ROUGE-L을 일본어 감지기로 계산하여 비일본어 응답을 빈 텍스트로 대체하여 비일본어 응답에 대해 0의 점수를 얻는다. 섹션 4.1의 LLM 실험과 일치하기 위해 이 언어 탐지 작업에 빠른 텍스트 [23, 24]도 사용했다. 그러나, 우리는 사실 답안 자체가 일본어가 아니지만 일본어 텍스트에서 흔히 볼 수 있는 단어(예: "UFO"와 같이 널리 인식되는 약어)를 포함하는 경우에 대해 예외를 두었다. 이러한 경우 모델의 비일본어 응답은 빈 텍스트로 변환되지 않는다.\n' +
+      '\n' +
+      '최적화 4.1절의 초기 LLM PS 병합 실험과 동일한 설정을 사용하고 매개변수 공간에서 소스 모델을 병합하기 위해 TIES-Merging with DARE를 사용한다.\n' +
+      '\n' +
+      '#### 4.2.3 Results\n' +
+      '\n' +
+      '표 3은 우리의 VLM과 기준선의 성능을 비교한다. 일본 안정 VLM은 이 데이터 세트에서 훈련되었기 때문에 JA-VG-VQA-500에서 평가할 수 없습니다.\n' +
+      '\n' +
+      'JA-VG-VQA-500 벤치마크에서 VLM이 향상된 성능은 일본어에 대한 능력을 나타내며, 진화적 병합을 통해 원본 VLM의 LLM 구성 요소와 소스 일본 LLM이 성공적으로 통합되었음을 강조한다. 또한, 두 기준선에 비해 JA-VLM-Bench-In-Wild에 대한 VLM의 우수한 결과는 문화적으로 특정한 콘텐츠를 탐색하는 데 능숙함을 나타낸다.\n' +
+      '\n' +
+      '표 3의 정량적 결과 외에도 VLM을 부록 C의 기준 모델과 정성적으로 비교한다. 우리의 진화된 모델은 일본 문화 특정 콘텐츠를 현저하게 잘 처리할 수 있으며 일반적으로 올바른 정보로 더 자세한 응답을 생성할 수 있다.\n' +
+      '\n' +
+      '## 5 토의 및 미래 작업\n' +
+      '\n' +
+      '이 보고서에서는 진화 기술을 사용하여 다양한 기능을 가진 다양한 오픈 소스 모델의 광대한 바다에서 서로 다른 모델을 결합하는 가장 좋은 방법을 효율적으로 발견하는 일반적인 방법을 제안한다. 기존 개방형 모델의 방대한 집단 지성과 함께 작업함으로써 사용자가 지정한 원하는 기능을 가진 새로운 기반 모델을 자동으로 생성할 수 있습니다. 우리는 우리의 접근 방식이 인간 전문가가 자신을 발견하기 어려울 수 있는 아주 사소한 방식으로 엄청나게 다른 도메인(예: 비영어 언어 및 수학, 또는 비영어 언어 및 비전)에서 서로 다른 모델을 병합하는 새로운 방법을 자동으로 발견할 수 있다는 것을 발견한다.\n' +
+      '\n' +
+      '우리의 접근법을 테스트하기 위해 수학 추론이 가능한 일본 LLM과 문화적으로 특정한 콘텐츠가 일본 VLM을 인식하는 일본 LLM을 자동으로 생성하는 방법을 적용한다. 놀랍게도, 우리는 두 모델 모두 여러 LLM 및 비전 벤치마크에서 최첨단 결과를 달성하지만 이러한 벤치마크에서 우수하도록 명시적으로 최적화되지 않아 방대한 배열에서 최고의 성능을 달성한다는 것을 발견했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r r} \\hline \\hline  & **JA-VG-VQA-500** & **JA-VLM-Bench-In-the-Wild** \\\\\n' +
+      '**Model** & (ROUGE-L \\(\\uparrow\\)) & (ROUGE-L \\(\\uparrow\\)) \\\\ \\hline LLaVA 1.6 Mistral 7B & 14.3 & 41.1 \\\\ Japanese Stable VLM & - & 40.5 \\\\ \\hline\n' +
+      '**Ours** & **19.7** & **51.2** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: **VLM의 성능 비교** LLaVA 1.6 미스트랄 7B는 소스 VLM이고 일본 안정 VLM은 오픈 소스 일본 VLM입니다. JA-VG-VQA-500은 일본어로 일반적인 VQA 능력을 측정하는 반면, JA-VLM-Bench-In-Wild는 일본의 문화적 맥락 내에서 복잡한 VQA 작업을 처리하는 모델의 처리를 평가한다.\n' +
+      '\n' +
+      '다른 일본 LLM 벤치마크의 경우, 이전의 일부 SOTA 70B 매개변수 일본 LLM 성능을 초과하기도 한다.\n' +
+      '\n' +
+      '이러한 유망한 초기 결과를 통해 우리는 진화 모델 병합의 완전한 능력을 여는 표면을 긁어모으고 있다고 믿으며, 이는 기반 모델 개발에 진화 원리를 적용하는 장기적인 개발의 시작이다.\n' +
+      '\n' +
+      '현재 우리는 이미 진화 모델 병합을 이미지 확산 모델에 적용하여 진화에 의해 발견된 새로운 방식으로 기존 빌딩 블록을 병합하여 고성능 교차 도메인 이미지 생성 모델을 생성할 수 있는 유망한 결과를 달성하고 있다.\n' +
+      '\n' +
+      '이 방법은 현재 사용자가 진화 검색을 위한 성분으로 사용할 소스 모델 세트를 선택할 것을 요구한다. 우리는 진화를 활용하여 기존 모델의 방대한 모집단에서 후보 소스 모델을 검색하는 것도 가능하다고 믿는다. 모델 선택 외에도 진화를 사용하여 각각 고유한 틈새와 행동을 가진 다양한 기초 모델의 군집을 생성하는 방법도 탐색하고 있다. 이는 상호 작용을 통해 세계의 새로운 보완적 내부 모델을 지속적으로 생산함으로써 자기 계발이 가능한 모델의 무리로 구성된 집단 지성의 출현을 가능하게 할 가능성을 보유하고 있다.\n' +
+      '\n' +
+      '우리의 작업과 관련된 실험은 Automerge[27]이라고 불리는 이 작업과 거의 같은 시기에 발표된 실험이다. 이 흥미로운 실험은 오픈 LLM 리더보드[20]의 상위 20개 모델에서 두 개의 무작위 모델을 선택하고 SLERP[47] 또는 DARE-TIES[49; 50]을 무작위로 적용하여 새로운 모델을 생성하는 방식으로 작동한다. 시간이 지남에 따라 이러한 모델 중 일부는 이 리더보드를 정의하는 벤치마크 작업을 잘 수행하거나 더 잘 수행하여 리더보드의 일부가 됩니다. 우리는 이 접근법이 리더보드에 정의된 벤치마크 작업에 과도하게 맞는 병합된 모델의 조합으로 이어질 것이라고 예측한다. 저자는 이 프로젝트 이면의 아이디어가 더 나은 모델을 만드는 것이 아니라 모델 병합에 대한 보다 원칙적인 접근법을 도출하는 데 도움이 되는 더 많은 메트릭을 얻는 것에 대한 것임을 인정했다.\n' +
+      '\n' +
+      '우리의 작업은 원래 리더보드에 의해 지정된 도메인 이외의 작업에 대해 최적화하는 직교 접근법을 취한다[20]. 우리가 보여준 바와 같이 놀랍게도 특정 벤치마크를 최적화하지 않는 것은 때때로 우리가 최적화하려고 의도하지 않은 수많은 다른 벤치마크 작업에 훨씬 더 큰 일반화를 가져오며, 그러한 창발적인 일반화는 AI의 다음 큰 발전을 여는 열쇠일 수 있다.\n' +
+      '\n' +
+      '다양한 역량을 가진 기존의 다양하고 다양한 모델들로부터 새로운 창발적 역량을 가진 새로운 모델들을 진화시키는 능력은 중요한 함의를 갖는다. 기반 모델을 훈련하기 위한 비용 및 자원 요구 사항이 증가함에 따라 풍부한 오픈 소스 생태계에서 풍부한 다양한 기반 모델을 활용함으로써 대규모 기관 또는 정부는 상당한 자본을 투자하거나 국가의 자원을 활용하여 필요한 경우 처음부터 완전히 맞춤형 모델을 개발하기 전에 개념 증명 프로토타입 모델을 신속하게 개발하기 위한 더 저렴한 진화적 접근법을 고려할 수 있다.\n' +
+      '\n' +
+      '## 6 Limitations\n' +
+      '\n' +
+      '우리는 진화 모델 병합이 소스 모델의 다양한 전문 지식을 효과적으로 통합하지만 한계도 계승한다는 것을 인정한다. 예를 들어, 병합된 모델이 논리적 일관성이 결여된 응답을 생성한 인스턴스를 만났다. 또한, 이 연구는 명령 미세 조정 또는 정렬을 포함하지 않아 모델이 사실적으로 결함이 있을 수 있는 출력을 산출할 가능성을 높인다.\n' +
+      '\n' +
+      '## 7 Author Contributions\n' +
+      '\n' +
+      '아키바 다쿠야는 "모델 병합 레시피의 진화적 최적화" 프로젝트를 시작하여 프로젝트 설계 문서를 작성하고 매개변수 공간 모델 병합 실험을 시작하여 방법론의 기반을 마련하였다. 마코토 싱은 파라미터 공간 모델 병합을 확장하여 비전 언어 모델과 확산 모델을 포괄하였다. 유진탕은 신경망 아키텍처 탐색과 형태 진화 문헌에서 영감을 얻은 아이디어와 방법을 통합하여 데이터 흐름 공간 모델 병합의 노력을 지시했으며, 이 영역에서 기본 방법을 확립하고 하이브리드 병합 전략을 수립했다. Qi Sun은 매개변수 공간 모델 병합 프레임워크의 구현에 기여하고 모델 평가에 도움이 되었다. 데이비드 하는 연구 프로젝트에 대한 포괄적인 지침을 제공하여 기술적 통찰력, 조언, 피드백 및 작문을 제공했다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1]\n' +
+      '* [2] Open AI. 2023. GPT-4V(ision) System Card. [https://cdn.openai.com/papers/GPTV_System_Card.pdf](https://cdn.openai.com/papers/GPTV_System_Card.pdf)\n' +
+      '* [3] Takuya Akiba, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama. 2019. Optuna: A Next-generation Hyperparameter Optimization Framework. In _Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining_ (Anchorage, AK, USA) _(KDD \'19)_. Association for Computing Machinery, New York, NY, USA, 2623-2631. [https://doi.org/10.1145/3292500.3330701](https://doi.org/10.1145/3292500.3330701)\n' +
+      '* [4] augmxnt. 2023. _shisa-gamma-7b_. HuggingFace. [https://hf.co/augmxnt/shisa-gamma-7b-v1](https://hf.co/augmxnt/shisa-gamma-7b-v1)\n' +
+      '* [5] AUTOMATIC1111. 2022. Stable Diffusion WebUI. [https://github.com/AUTOMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui).\n' +
+      '* [6] Jinze Bai, Shuai Bai, Shusheng Yang, Shijie Wang, Sinan Tan, Peng Wang, Junyang Lin, Chang Zhou, and Jingzen Zhou. 2023. Qwen-VL: A Versatile Vision-Language Model for Understanding, Localization, Text Reading, and Beyond. arXiv:2308.12966 [cs.CV]\n' +
+      '* [7] Ethan Chern, Haoyang Zou, Xuefeng Li, Jiewen Hu, Kehua Feng, Junlong Li, and Pengfei Liu. 2023. Generative AI for Math: Abel. [https://github.com/GAIR-NLP/abel](https://github.com/GAIR-NLP/abel).\n' +
+      '* [8] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reitichiro Nakano, Christopher Hesse, and John Schulman. 2021. Training Verifiers to Solve Math Word Problems. _CoRR_ abs/2110.14168 (2021). arXiv:2110.14168 [https://arxiv.org/abs/2110.14168](https://arxiv.org/abs/2110.14168)\n' +
+      '* [9] Nico Daehim, Thomas Mollenhoff, Edoardo Ponti, Iryna Gurevych, and Mohammad Emtiyaz Khan. 2024. Model Merging by Uncertainty-Based Gradient Matching. In _The Twelfth International Conference on Learning Representations_. [https://openreview.net/forum?id=D7KJmfEDQP](https://openreview.net/forum?id=D7KJmfEDQP)\n' +
+      '* [10] Wenliang Dai, Junnan Li, Dongxu Li, Anthony Meng Huat Tiong, Junqi Zhao, Weisheng Wang, Boyang Li, Pascale Fung, and Steven Hoi. 2023. InstructBLIP: Towards General-purpose Vision-Language Models with Instruction Tuning. arXiv:2305.06500 [cs.CV]\n' +
+      '* [11] Kalyanmoy Deb, Amrit Pratap, Sameer Agarwal, and TAMT Meyarivan. 2002. A fast and elitist multiobjective genetic algorithm: NSGA-II. _IEEE transactions on evolutionary computation_ 6, 2 (2002), 182-197.\n' +
+      '* [12] Gintare Karolina Dziugaite and Daniel M Roy. 2017. Computing nonvacuous generalization bounds for deep (stochastic) neural networks with many more parameters than training data. _arXiv preprint arXiv:1703.11008_ (2017).\n' +
+      '* [13] Adam Gaier and David Ha. 2019. Weight agnostic neural networks. _Advances in neural information processing systems_ 32 (2019).\n' +
+      '* [14] Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac\'h, Haonan Li, Kyle McDonell, Niklas Muennighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Sutawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. 2023. A framework for few-shot language model evaluation. [https://doi.org/10.5281/zenodo.10256836](https://doi.org/10.5281/zenodo.10256836)\n' +
+      '* [15] Mor Geva, Avi Caciularu, Kevin Ro Wang, and Yoav Goldberg. 2022. Transformer feed-forward layers build predictions by promoting concepts in the vocabulary space. _arXiv preprint arXiv:2203.14680_ (2022).\n' +
+      '* [16] Charles O. Goddard. 2024. mergekit. [https://github.com/arce-ai/mergekit](https://github.com/arce-ai/mergekit)\n' +
+      '* [17] David Ha, Andrew Dai, and Quoc V Le. 2016. Hyperentworks. _arXiv preprint arXiv:1609.09106_ (2016).\n' +
+      '* [18] Nikolaus Hansen. 2006. The CMA evolution strategy: a comparing review. _Towards a new evolutionary computation: Advances in the estimation of distribution algorithms_ (2006), 75-102.\n' +
+      '* [19] Sepp Hochreiter and Jurgen Schmidhuber. 1994. Simplifying neural nets by discovering flat minima. _Advances in neural information processing systems_ 7 (1994).\n' +
+      '* [20] Sepp Hochreiter and Jurgen Schmidhuber. 1997. Flat minima. _Neural computation_ 9, 1 (1997), 1-42.\n' +
+      '* [21] HuggingFace. 2023. _Open LLM Leaderboard_. HuggingFace. [https://huggingface.co/spaces/HuggingFaceHA/open_llm_leaderboard](https://huggingface.co/spaces/HuggingFaceHA/open_llm_leaderboard)\n' +
+      '* [22] Gabriel Illarco, Marco Tulio Ribeiro, Mitchell Wortsman, Suchin Gururangan, Ludwig Schmidt, Hannaneh Hajisirizi, and Ali Farhadi. 2022. Editing models with task arithmetic. _arXiv preprint arXiv:2212.04089_ (2022).\n' +
+      '* [23] Albert Q. Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, Lelio Renard Lavaud, Marie-Anne Lachaux, Pierre Stock, Teven Le Scao, Thibaut Lavril, Thomas Wang, Timothee Lacroix, and William El Sayed. 2023. Mistral 7B. arXiv:2310.06825 [cs.CL]* Joulin et al. [2016] Armand Joulin, Edouard Grave, Piotr Bojanowski, Matthijs Douze, Herve Jegou, and Tomas Mikolov. 2016. FastText.zip: Compressing text classification models. _arXiv preprint arXiv:1612.03651_ (2016).\n' +
+      '* Joulin et al. [2016] Armand Joulin, Edouard Grave, Piotr Bojanowski, and Tomas Mikolov. 2016. Bag of Tricks for Efficient Text Classification. _arXiv preprint arXiv:1607.01759_ (2016).\n' +
+      '* Kaddour et al. [2022] Jean Kaddour, Linqing Liu, Ricardo Silva, and Matt J Kusner. 2022. When do flat minima optimizers work? _Advances in Neural Information Processing Systems_ 35 (2022), 16577-16595.\n' +
+      '* Keskar et al. [2017] Nitish Shirish Keskar, Dheevatsa Mudigere, Jorge Nocedal, Mikhail Smelyanskiy, and Ping Tak Peter Tang. 2017. On Large-Batch Training for Deep Learning: Generalization Gap and Sharp Minima. In _International Conference on Learning Representations_. [https://openreview.net/forum?id=HlogR1Ygg](https://openreview.net/forum?id=HlogR1Ygg)\n' +
+      '* Labonne [2024] Maxime Labonne. 2024. 자동화기 실험. _ Tweet Thread_ (2024). [https://twitter.com/maximelabonne/status/1767124527551549860] (https://twitter.com/maximelabonne/status/1767124527551549860)\n' +
+      '* Labonne [2024] Maxime Labonne. 2024. 머클킷으로 대용량 언어 모델을 병합합니다. _ 허깅 페이스 블로그_ (2024). [https://huggingface.co/blog/mlabonne/merge-models] (https://huggingface.co/blog/mlabonne/merge-models)\n' +
+      '* Li et al. [2023] Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. 2023. BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models. arXiv:2301.12597 [cs.CV]\n' +
+      '* Liu et al. [2023] Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee. 2023. Improved Baselines with Visual Instruction Tuning. arXiv:2310.03744 [cs.CV]\n' +
+      '* Liu et al. [2024] Haotian Liu, Chunyuan Li, Yuheng Li, Bo Li, Yuanhan Zhang, Sheng Shen, and Yong Jae Lee. 2024. LLAVA-NeXT: Improved reasoning, OCR, and world knowledge. [https://llava-vl.github.io/blog/2024-01-30-llava-next/](https://llava-vl.github.io/blog/2024-01-30-llava-next/)\n' +
+      '* Liu et al. [2023] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. 2023. Visual Instruction Tuning. arXiv:2304.08485 [cs.CV]\n' +
+      '* Luo et al. [2023] Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jianguang Lou, Chongyang Tao, Xiubo Geng, Qingwei Lin, Shifeng Chen, and Dongmei Zhang. 2023. WizardMath: Empowering Mathematical Reasoning for Large Language Models via Reinforced Evol-Instruct. _CoRR_ abs/2308.09583 (2023). [https://doi.org/10.48550/ARXIV.2308.09583](https://doi.org/10.48550/ARXIV.2308.09583) arXiv:2308.09583\n' +
+      '* Matena and Raffel [2022] Michael S Matena and Colin A Raffel. 2022. 모델을 피셔 가중 평균과 병합합니다. _ Advances in Neural Information Processing Systems_ 35 (2022), 17703-17716.\n' +
+      '* Meng et al. [2022] Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022. Locating and editing factual associations in GPT. _Advances in Neural Information Processing Systems_ 35 (2022), 17359-17372.\n' +
+      '* [36] nostalgebraist. 2021. Interpreting GPT: The Logit Lens. [https://www.lesswrong.com/posts/AckRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens](https://www.lesswrong.com/posts/AckRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens). Accessed: 2024-03-08.\n' +
+      '* Petzka et al. [2021] Henning Petzka, Michael Kamp, Linara Adilova, Cristian Sminchisescu, and Mario Boley. 2021. Relative Flatness and Generalization. In _Advances in Neural Information Processing Systems_, A. Beygelzimer, Y. Dauphin, P. Liang, and J. Wortman Vaughan (Eds.). [https://openreview.net/forum?id=sygvo7ctb_](https://openreview.net/forum?id=sygvo7ctb_).\n' +
+      '* Real et al. [2019] Esteban Real, Alok Aggarwal, Yanping Huang, and Quoc V Le. 2019. Regularized evolution for image classifier architecture search. In _Proceedings of the aaai conference on artificial intelligence_, Vol. 33. 4780-4789.\n' +
+      '* Rombach et al. [2022] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bjorn Ommer. 2022. High-resolution image synthesis with latent diffusion models. In _Proceedings of the IEEE/CVF conference on computer vision and pattern recognition_. 10684-10695.\n' +
+      '* Schmidhuber [1992] Jurgen Schmidhuber. 1992. 학습 to control fast-weight memories: An alternative to dynamic recurrent networks _ Neural Computation_4, 1(1992), 131-139.\n' +
+      '* Shi et al. [2023] Freda Shi, Mirac Suzgun, Markus Freitag, Xuezhi Wang, Suraj Srivats, Soroush Vosoughi, Hyung Won Chung, Yi Tay, Sebastian Ruder, Denny Zhou, Dipanjan Das, and Jason Wei. 2023. Language models are multilingual chain-of-thought reasoners. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net. [https://openreview.net/pdf?id=fR3wGck-IXp](https://openreview.net/pdf?id=fR3wGck-IXp)\n' +
+      '* Shimizu et al. [2018] Nobuyuki Shimizu, Na Rong, and Takashi Miyazaki. 2018. Visual Question Answering Dataset for Bilingual Image Understanding: A Study of Cross-Lingual Transfer Using Attention Maps. In _Proceedings of the 27th International Conference on Computational Linguistics_ (Santa Fe, New Mexico, USA). Association for Computational Linguistics, 1918-1928. [http://aclweb.org/anthology/C18-1163](http://aclweb.org/anthology/C18-1163)\n' +
+      '* 싱과 아키바[2023] 마코토 싱과 아키바 타쿠야 2023. Japanese Stable VLM. [https://huggingface.co/stabilityai/japanese-stable-vlm] (https://huggingface.co/stabilityai/japanese-stable-vlm)\n' +
+      '* So et al. [2019] David So, Quoc Le, and Chen Liang. 2019. The evolved transformer. In _International conference on machine learning_. PMLR, 5877-5886.\n' +
+      '\n' +
+      '* Stanley and Mikkulainen [2002] Kenneth O Stanley and Risto Mikkulainen. 2002. Evolutioning neural networks through augmenting topologies. _ Evolutionary computation_10, 2 (2002), 99-127.\n' +
+      '* Tang et al. [2022] Yujin Tang, Yingtao Tian, and David Ha. 2022. EvoJAX: Hardware-Accelerated Neuroevolution. _arXiv preprint arXiv:2202.05008_ (2022).\n' +
+      '* White [2016] Tom White. 2016. 생성 네트워크를 샘플링합니다. _ arXiv preprint arXiv:1609.04468_ (2016).\n' +
+      '* Wortsman et al. [2022] Mitchell Wortsman, Gabriel Ilharco, Samir Ya Gadre, Rebecca Roelofs, Raphael Gontijo-Lopes, Ari S Morcos, Hongseok Namkoong, Ali Farhadi, Yair Carmon, Simon Kornblith, et al. 2022. Model soups: averaging weights of multiple fine-tuned models improves accuracy without increasing inference time. In _International Conference on Machine Learning_. PMLR, 23965-23998.\n' +
+      '* 16, 2023_, Alice Oh, Tristan Naumann, Amir Globerson, Kate Saenko, Moritz Hardt 및 Sergey Levine(Eds.) [http://papers.nips.cc/paper_files/paper/2023/hash/1644c9af28ab7916874f6df228a9bcf-Abstract-Conference.html](http://papers.nips.cc/paper_files/paper/2023/hash/1644c9af28ab7916874f6df228a9bcf-Abstract-Conference.html)\n' +
+      '* Yu et al. [2024] Le Yu, Bowen Yu, Haiyang Yu, Fei Huang, and Yongbin Li. 2024. Language Models are Super Mario: Absorbing Abilities from Homologous Models as a Free Lunch. arXiv:2311.03099 [cs.CL]\n' +
+      '* Zoph and Le[2016] Barret Zoph and Quoc V Le. 2016. Neural architecture search with reinforcement learning. _ arXiv preprint arXiv:1611.01578_ (2016).\n' +
+      '\n' +
+      'Evaluation Details\n' +
+      '\n' +
+      '표 1에서 GPT-3.5는 gpt-3.5-turbo-0613, GPT-4는 gpt-4-0125-preview, Llama 2 70B는 Llama-2-70b-chat, Japanese Stable LM 70B는 japanese-stabledlm-instruct-beta-70b, Swallow 70B는 Swallow-70b-instruct-hf이다.\n' +
+      '\n' +
+      '일본 LM Evaluation Harness를 이용한 평가를 위해 Stability AI Japan의 lm-eval-harness3[13] 포크를 활용하여 그들의 관례에 따라 구성하였다. 이 구성은 널리 사용되며 보고서4 및 린나 리더보드5의 결과와 호환되므로 많은 수의 일본 LLM과 점수를 직접 비교할 수 있다.\n' +
+      '\n' +
+      '각주 3: [https://github.com/Stability-AI/lm-evaluation-harness/tree/jp-stable](https://github.com/Stability-AI/lm-evaluation-harness/tree/jp-stable)\n' +
+      '\n' +
+      '각주 4: [https://ja.stability.ai/blog/japanese-stable-lm-beta](https://ja.stability.ai/blog/japanese-stable-lm-beta)\n' +
+      '\n' +
+      '각주 5: [https://rinnakk.github.io/research/benchmarks/lm/index.html](https://rinnakk.github.io/research/benchmarks/lm/index.html)\n' +
+      '\n' +
+      '표 4는 표 2의 전체 버전으로, 우리의 모델과 더 넓은 범위의 모델을 비교할 수 있다. 숫자 중 일부는 안정성 AI 일본 보고서와 린나 리더보드에서 나온 것이다. 7B에서 10B 매개변수만 있음에도 불구하고, 우리의 모델은 기존의 모든 <70B 매개변수 모델보다 더 높은 점수를 달성하고 SOTA 70B 모델과 동등한 점수를 나타낸다.\n' +
+      '\n' +
+      '## 라이선스 특정 오픈 소스 모델에 대한 부록 B 진화\n' +
+      '\n' +
+      '주요 섹션에서는 HuggingFace에서 발견된 모델을 사용하여 EvoLLM-JP 결과를 진화시켰다. 그러나 일부 모델에서는 특히 WizardMath-7B-V1.1[33]을 사용 합니다. 따라서 EvoLLM-JP의 출시는 위저드매스-7B-V1.1 모델과 일치하도록 비상업적 연구 전용 라이선스로 출시된다.\n' +
+      '\n' +
+      '오픈 소스 커뮤니티의 혜택을 받은 연구원으로서 저희가 출시하는 모델도 오픈 소스 라이선스를 받고 싶습니다. 오픈 소스 정신으로, 모델 라이선스와 같은 어려운 문제에도 대처할 수 있는 방법의 적용 가능성을 보여줍니다. MIT 또는 Apache 2.0과 같은 진정한 오픈 소스 라이선스에서 릴리스된 _only_ 모델을 통합하고 Apache 2.0.6에서 릴리스되는 EvoLLM-JP-A라는 유사한 수행 모델을 생성하는 유사한 실험을 실행했습니다.\n' +
+      '\n' +
+      '각주 6: 이 모델은 GitHub에서도 릴리스됩니다. [https://github.com/SakanaAI/](https://github.com/SakanaAI/)\n' +
+      '\n' +
+      '특히, EvoLLM-JP-A는 shisa-gamma-7b-v1, Arithmo2-Mistral-7B 및 Abel-7B-002를 병합한 것으로, 모두 MIT 또는 Apache 2.0 라이선스 아래에 있습니다. 섹션 4.1에 설명된 프로토콜을 사용하여 측정된 MGSM-JA 점수는 52.4이고 일본어 모델 평가 하니스 점수는 69.0이다. 본문에서 표 2보다 더 포괄적인 비교를 제공하는 표 4의 비교를 위해 이 아파치 2.0 라이선스 모델의 결과를 포함했다.\n' +
+      '\n' +
+      '## 부록 C 사례 연구\n' +
+      '\n' +
+      '표 5는 기존 모델과 우리 모델에 의한 수학적 질문에 대한 응답의 예를 제공한다. 일본어 모델을 융합함으로써, 우리는 독서와 쓰기에 일본어를 이해하고 사용하는 능력을 향상시킬 뿐만 아니라 일본에 대한 지식을 확장한다. 이 예는 수학적 추론과 일본 특유의 지식을 모두 필요로 하는데, 특히 세츠분은 봄이 시작되기 전날(리순)이다. 특히, 병합된 모델만 정답을 제공합니다. 질문이 영어로 번역되는 경우에도 영어 수학 모델 WizardMath-7B-V1.1이 올바르게 대답하지 못하여 병합 모델이 기계 번역과 영어 수학 모델의 조합보다 우수하다는 것을 보여준다.\n' +
+      '\n' +
+      '표 5에서 우리는 또한 영어로 번역된 질문과 함께 범용 수학 모델 위저드수학-7B-V1.1의 답변을 제공한다는 점에 주목할 필요가 있다. 그러나 번역된 문제에서도 WizardMath-7B-V1.1은 정답을 제공하지 못한다. 이는 일본 문화 맥락에 대한 이해도 필요하기 때문에 단순히 질문을 번역하는 것만으로는 문제를 해결하기에 충분하지 않다는 점을 부각시킨다. 기계 번역과 영어 수학 모델의 조합을 대안적인 접근법으로 고려하더라도 질문에 올바르게 답하는 데 필요한 뉘앙스와 상황별 지식을 포착하는 데 여전히 부족할 것이다.\n' +
+      '\n' +
+      '이것은 수학적 추론 능력과 일본어 이해 및 문화적 지식을 효과적으로 결합하는 우리의 병합 모델의 고유한 가치를 보여준다.\n' +
+      '\n' +
+      '또한 표 6은 VLM에 대한 사례 연구를 제공한다. 우리는 우리의 VLM이 일본 LLM에 대한 지식을 성공적으로 획득했음을 관찰한다. 첫 번째 예에서, 우리의 VLM은 정답(Koi-nobori)을 생성하는 반면 원래의 VLM(LLaVA-1.6-Mistral-7B)은 오답한다. 일본 VLM(JSVLM)에 비해 우리의 VLM은 일반적으로 사슴의 두 번째 예로 사진을 더 정확하게 설명한다. 또한, VLM은 일본어로 환각을 많이 일으키기 때문에 신호등의 색을 녹색으로 답하는 반면 VLM은 올바르게 답하는 것으로 나타났다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c c} \\hline \\hline  & \\multicolumn{10}{c}{**JP Language Model**} & \\multicolumn{1}{c}{**Evaluation Harness**} \\\\ \\cline{3-13}\n' +
+      '**Model** & **Size** & JComQA & JNL1 & MARC & JSQuAD & JAQKET & XLSum & XWino & MGSM & JCoLA & **Avg** \\\\ \\hline shisa-gamma-7b-v1 & 7B & 91.2 & 72.1 & 94.6 & 73.9 & 68.0 & 25.9 & 80.5 & 29.6 & 58.7 & 66.1 \\\\ WizardMath-7B-V1.1 & 7B & 74.7 & 42.7 & 90.4 & 84.6 & 68.5 & 22.3 & 69.8 & 38.8 & 48.9 & 60.1 \\\\ Abel-7B-O02 & 7B & 70.3 & 51.8 & 62.3 & 83.8 & 69.0 & 22.5 & 68.2 & 28.0 & 52.7 & 56.5 \\\\ \\hline\n' +
+      '**우리(PS)** & 7B & 89.1 & 65.7 & 95.4 & 89.5 & 77.7 & 25.5 & 81.2 & 50.0 & 60.5 & **70.5** \\\\\n' +
+      '**우리(DFS)** & 10B & 67.7 & 58.2 & 53.5 & 66.8 & 54.3 & 17.3 & 65.6 & 30.0 & 65.6 & **53.2** \\\\\n' +
+      '**우리(PS+DFS)** & 10B & 88.2 & 50.3 & 91.5 & 78.6 & 77.8 & 23.2 & 73.0 & 40.0 & 73.0 & **66.2** \\\\\n' +
+      '**Ours (PS+A5; see Appendix B)** & 7B & 87.0 & 62.3 & 91.9 & 90.4 & 77.4 & 23.0 & 78.9 & 46.4 & 63.6 & **69.0** \\\\ \\hline Swallow-70b-instruct-hf & 70B & 95.3 & 57.2 & 91.7 & 94.1 & 93.9 & 23.1 & 83.3 & 45.2 & 59.5 & 71.5 \\\\ Swallow-70b-hf & 70B & 94.8 & 55.8 & 87.8 & 93.5 & 93.8 & 23.2 & 83.7 & 47.2 & 60.7 & 71.2 \\\\ japanese-stable1-base-beta-70b & 70B & 93.7 & 45.2 & 91.0 & 94.2 & 92.8 & 25.4 & 83.6 & 41.2 & 63.8 & 70.1 \\\\ hexontama-14b-instruction & 14B & 93.7 & 57.5 & 90.0 & 93.6 & 89.0 & 25.2 & 77.4 & 35.2 & 67.3 & 69.9 \\\\ japanese-stable1-mistruct-beta-70b & 70B & 91.2 & 50.4 & 92.9 & 87.1 & 88.4 & 24.3 & 82.0 & 37.2 & 61.7 & 68.3 \\\\ hexontama-14b & 93.1 & 41.7 & 84.1 & 94.2 & 90.8 & 21.3 & 78.6 & 37.6 & 65.0 & 67.4 \\\\ youtr-7b-chat & 7B & 91.8 & 70.3 & 96.7 & 79.6 & 83.7 & 24.2 & 80.9 & 25.2 & 53.8 & 67.4 \\\\ Llama-2-70b-hf & 70B & 89.3 & 53.0 & 70.4 & 93.2 & 89.5 & 23.8 & 79.8 & 40.0 & 65.4 & 67.2 \\\\ hexontama-7b-instruction & 7B & 88.0 & 74.7 & 92.3 & 91.3 & 82.5 & 21.1 & 76.8 & 19.2 & 53.8 & 66.6 \\\\ youtr-7b-instruction & 7B & 88.8 & 63.6 & 93.8 & 92.2 & 83.9 & 24.7 & 78.9 & 17.2 & 54.0 & 66.3 \\\\ Qwen-14B & 89.5 & 65.2 & 76.7 & 93.0 & 79.5 & 18.4 & 71.6 & 37.2 & 61.0 & 65.8 \\\\ Swallow-MX-8\\(\\cdot\\)7b-NVE-v0.1 & 47B & 92.0 & 52.4 & 59.8 & 93.1 & 91.9 & 26.1 & 72.9 & 44.8 & 59.2 & 65.8 \\\\ youtr-7b-chat-gptq & 7B & 89.5 & 68.0 & 96.0 & 88.6 & 79.7 & 15.6 & 79.1 & 21.6 & 53.8 & 65.8 \\\\ hexontama-14b-instruction-ggwf & 7B & 87.9 & 68.4 & 89.6 & 89.9 & 79.8 & 20.8 & 77.3 & 19.2 & 55.3 & 65.3 \\\\ hexontama-14b-instruction-gwf & 14B & 93.3 & 57.8 & 51.7 & 91.3 & 86.2 & 23.6 & 77.4 & 35.2 & 68.7 & 65.0 \\\\ Llama-2-70b-chat-hf & 70B & 80.2 & 53.4 & 94.4 & 91.6 & 80.1 & 21.8 & 73.6 & 30.4 & 54.6 & 64.5 \\\\ youtr-7b-instruction-gptq & 7B & 88.1 & 62.0 & 93.5 & 90.6 & 74.4 & 15.3 & 78.2 & 15.2 & 53.3 & 63.4 \\\\ japanese-stable1-base-gamma-7b & 7B & 89.5 & 37.6 & 79.2 & 90.6 & 89.5 & 22.9 & 82.9 & 20.8 & 55.6 & 63.2 \\\\ Swallow-13b-instruct-hf & 13B & 89.0 & 43.1 & 74.1 & 92.8 & 92.5 & 20.6 & 70.4 & 24.0 & 61.9 & 63.2 \\\\ japanese-stable1-mistruct-gamma-7b & 7B & 91.4 & 40.7 & 72.9 & 89.9 & 88.2 & 22.8 & 82.2 & 17.2 & 56.4 & 62.4 \\\\ Swallow-13b-nf- & 13B & 86.0 & 44.8 & 74.5 & 92.2 & 92.2 & 21.6 & 71.4 & 19.2 & 59.5 & 62.4 \\\\ nekontama-14b-gwf & 14B & 93.0 & 41.1 & 50.0 & 93.0 & 88.3 & 22.2 & 80.5 & 32.4 & 60.2 & 62.3 \\\\ Swallow-7b-7b-v0.1 & 7B & 88.3 & 35.8 & 83.1 & 90.3 & 89.4 & 20.7 & 74.6 & 22.4 & 55.5 & 62.2 \\\\ Swallow-7b-struct-nft-nf & 7B & 86.8 & 36.3 & 94.2 & 90.0 & 89.4 & 17.4 & 76.8 & 10.4 & 50.0 & 61.2 \\\\ llm-91-3b instruction-full-jaater-dolly-oast-v1.0 & 13B & 83.2 & 74.5 & 74.9 & 94.0 & 85.1 & 9.6 & 71.3 & 3.2 & 50.4 & 60.7 \\\\ Swallow-7b-nf & 7B & 80.2 & 37.9 & 93.1 & 89.2 & 90.1 & 18.3 & 7.66 & 10.4 & 50.0 & 60.7 \\\\ nekontama-7b & 7B & 82.9 & 38.6 & 67.0 & 89.8 & 82.5 & 16.9 & 74.5 & 16.0 & 60.0 & 58.7 \\\\ japanese-stable1-mistruct-beta-7b & 7B & 81.9 & 39.9 & 88.3 & 84.1 & 78.2 & 20.8 & 75.7 & 4.8 & 51.7 & 58.4 \\\\ japanese-stable1-muse-beta-7b & 7B & 76.8 & 38.0 & 86.0 & 87.1 & 79.5 & 21.9 & 76.6 & 7.6 & 49.2 & 58.1 \\\\ Qwen-7B & 7B & 76.0 & 46.9 & 83.3 & 89.7 & 69.2 & 13.8 & 60.6 & 22.0 & 57.3 & 57.6 \\\\ youtr-7b-gpu & 7B & 78.9 & 40.5 & 78.2 & 85.7 & 78.1 & 1\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:18]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**사용자** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (What is the fish-shaped decoration in this image called in Japan?) \\\\ \\end{tabular} \\\\ \\hline\n' +
+      '**LLaVA-1.6-Mistral-7B** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (The fish-shaped decoration in this image is called “hana-gyo” in Japan.) \\\\ \\end{tabular} \\\\ \\hline\n' +
+      '**Japanese Stable VLM** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (Koi-nobori) \\\\ \\end{tabular} \\\\ \\hline\n' +
+      '**EvoVLM-JP** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (The fish-shaped decoration in this image is called “Koi-nobori” in Japan.) \\\\ \\end{tabular} \\\\ \\hline\n' +
+      '**Example 2** \\\\ \\hline\n' +
+      '**사용자** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (Please explain this photo.) \\\\ \\end{tabular} \\\\ \\hline\n' +
+      '**LLaVA-1.6-Mistral-7B** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (It’s a photo of autumn leaves and deer.) \\\\ \\end{tabular} \\\\ \\hline\n' +
+      '**EvoVLM-JP** &\n' +
+      '\\begin{tabular}{l} \\(\\Sigma\\) \\\\ (This photo captures a small deer standing on fallen leaves. The deer appears to be alert, carefully scanning its surroundings. In the background, you can see trees with autumn foliage, creating an atmosphere of autumn.) \\\\ \\end{tabular} \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 6: **EvoVLM-JP의 사례 연구** 이 연구는 일본 특정 지식과 VQA 능력을 모두 요구하는 질문에 대한 VLM의 응답을 제시한다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
