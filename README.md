@@ -49,6 +49,7 @@
 | 2110.03215 | Towards Continual Knowledge Learning of Language Models | [arXiv](https://arxiv.org/abs/2110.03215) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2110.03215) |
 | 2107.06499 | Deduplicating Training Data Makes Language Models Better | [arXiv](https://arxiv.org/abs/2107.06499) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2107.06499) |
 | 2104.13478 | Geometric Deep Learning Grids Groups Graphs Geodesics and Gauges | [arXiv](https://arxiv.org/abs/2104.13478) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2104.13478) |
+| 2103.13630 | A Survey of Quantization Methods for Efficient Neural Network Inference | [arXiv](https://arxiv.org/abs/2103.13630) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2103.13630) |
 
 ## Procedure
 
