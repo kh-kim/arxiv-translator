@@ -17,6 +17,7 @@
 | 2403.13187v1 | Evolutionary Optimization of Model Merging Recipes | [arXiv](https://arxiv.org/abs/2403.13187v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13187v1) |
 | 2403.10131v1 | RAFT Adapting Language Model to Domain Specific RAG | [arXiv](https://arxiv.org/abs/2403.10131v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.10131v1) |
 | 2403.09629 | Quiet-STaR Language Models Can Teach Themselves to Think Before Speaking | [arXiv](https://arxiv.org/abs/2403.09629) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.09629) |
+| 2403.08763 | Simple and Scalable Strategies to Continually Pre-train Large Language Models | [arXiv](https://arxiv.org/abs/2403.08763) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.08763) |
 | 2403.07816v1 | Branch-Train-MiX Mixing Expert LLMs into a Mixture-of-Experts LLM | [arXiv](https://arxiv.org/abs/2403.07816v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.07816v1) |
 | 2403.06634 | Stealing Part of a Production Language Model | [arXiv](https://arxiv.org/abs/2403.06634) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.06634) |
 | 2403.06563v1 | Unraveling the Mystery of Scaling Laws Part I | [arXiv](https://arxiv.org/abs/2403.06563v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.06563v1) |
