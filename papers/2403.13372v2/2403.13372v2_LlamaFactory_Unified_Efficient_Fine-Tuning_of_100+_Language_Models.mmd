@@ -1,0 +1,251 @@
+# LlamaFactory: Unified Efficient Fine-Tuning of 100+ Language Models
+
+ Yaowei Zheng1, Richong Zhang1, Junhao Zhang1, Yanhan Ye1, Zheyan Luo1, Yongqiang Ma2
+
+1School of Computer Science and Engineering, Beihang University, China
+
+2School of Software and Microelectronics, Peking University, China
+
+hiyouoga@buaa.edu.cn, zhangrc@act.buaa.edu.cn, {zhang.jh,yeyanhan, akanya}@buaa.edu.cn, codingma@pku.edu.cn
+
+###### Abstract
+
+Efficient fine-tuning is vital for adapting large language models (LLMs) to downstream tasks. However, it requires non-trivial efforts to implement these methods on different models. We present LlamaFactory, a unified framework that integrates a suite of cutting-edge efficient training methods. It allows users to flexibly customize the fine-tuning of 100+ LLMs without the need for coding through the built-in web UI LlamaBoard. We empirically validate the efficiency and effectiveness of our framework on language modeling and text generation tasks. It has been released at [https://github.com/hiyouga/LLMaMa-Factory](https://github.com/hiyouga/LLMaMa-Factory) and already received over 13,000 stars and 1,600 forks.
+
+## 1 Introduction
+
+Large language models (LLMs) (Zhao et al., 2023) present remarkable reasoning capabilities and empower a wide range of applications, such as question answering (Jiang et al., 2023), machine translation (Wang et al., 2023; Jiao et al., 2023), and information extraction (Jiao et al., 2023). Subsequently, a substantial number of LLMs are developed and accessible through open-source communities. For example, Hugging Face's open LLM leaderboard (Beeching et al., 2023) boasts over 5,000 models, offering convenience for individuals seeking to leverage the power of LLMs.
+
+Fine-tuning extremely large number of parameters with limited resources becomes the main challenge of adapting LLM to downstream tasks. A popular solution is efficient fine-tuning (Houlsby et al., 2019; Hu et al., 2022; Ben Zaken et al., 2022; Dettmers et al., 2023; Zhao et al., 2024), which reduces the training cost of LLMs when adapting to various tasks. However, the community contributes various methods for efficient fine-tuning LLMs, lacking a systematic framework that adapts and unifies these methods to different LLMs and provides a friendly interface for user customization.
+
+To address the above problems, we develop LlamaFactory, a framework that democratizes the fine-tuning of LLMs. It unifies a variety of efficient fine-tuning methods through scalable modules, enabling the fine-tuning of hundreds of LLMs with minimal resources and high throughput. In addition, it streamlines commonly used training approaches, including generative pre-training (Radford et al., 2018), supervised fine-tuning (SFT) (Wei et al., 2022), reinforcement learning from human feedback (RLHF) (Ouyang et al., 2022), and direct preference optimization (DPO) (Rafailov et al., 2023). Users can leverage command-line or web interfaces to customize and fine-tune their LLMs with minimal or no coding effort.
+
+LlamaFactory consists of three main modules: _Model Loader_, _Data Worker_ and _Trainer_. We minimize the dependencies of these modules on specific models and datasets, allowing the framework to flexibly scale to hundreds of models and datasets. Concretely, we first establish a model registry where the Model Loader can precisely attach adapters to the pre-trained models by identifying exact layers. Then we develop a data description specification that allows the Data Worker to gather datasets by aligning corresponding columns. Furthermore, we provide plug-and-play implementations of efficient fine-tuning methods that enable the Trainer to active by replacing default ones. Our design allows these modules to be reused across different training approaches, significantly reducing integration cost of new methods.
+
+LlamaFactory is implemented with PyTorch (Paszke et al., 2019) and significantly benefits from open-source libraries, such as Transformers (Wolf et al., 2020), PEFT (Mangrulkar et al., 2022), and TRL (von Werra et al., 2020). On the basis, we provide an out-of-the-box framework with a higher level of abstraction. Additionally, we build LlamaBoard with Gradio (Abid et al., 2019), enabling fine-tuning LLMs with no coding efforts required.
+
+LlamaFactory is open-sourced under the Apache-2.0 license. It has already garnered over 13,000 stars and 1,600 forks on the GitHub1, and hundreds of open-source models have been built upon LlamaFactory on the Hugging Face Hub2. For example, the well-known GemSUra-7B (Nguyen et al., 2024) is built based on LlamaFactory, which first reveals the cross-lingual abilities of Gemma (Mesnard et al., 2024). Furthermore, dozens of research studies utilize our framework to explore new methods in LLMs, such as Wang et al. (2023); Yu et al. (2023); Bhardwaj et al. (2024).
+
+Footnote 1: [https://github.com/hiyouga/LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory)
+
+Footnote 2: [https://huggingface.co/models?other=llama-factory](https://huggingface.co/models?other=llama-factory)
+
+## 2 Efficient Fine-Tuning Techniques
+
+Efficient LLM fine-tuning techniques can be divided into two main categories: those focused on optimization and those aimed at computation. The primary objective of efficient optimization techniques is to adjust the parameters of LLMs while keeping costs to a minimum. On the other hand, efficient computation methods seek to decrease the time or space for the required computation in LLMs. The methods included in LlamaFactory are listed in Table 1. We will present these efficient fine-tuning techniques and show the substantial efficiency improvement achieved by incorporating them into our framework in the following sections.
+
+### Efficient Optimization
+
+Firstly, we provide an overview of the efficient optimization techniques utilized in LlamaFactory. The freeze-tuning method (Houlsby et al., 2019) involves freezing a majority of parameters while fine-tuning the remaining parameters in a small subset of decoder layers. Another method called gradient low-rank projection (GaLore) (Zhao et al., 2024) projects gradients into a lower-dimensional space, facilitating full-parameter learning in a memory-efficient manner. On the contrary, the low-rank adaptation (LoRA) (Hu et al., 2022) method freezes all pre-trained weights and introduces a pair of trainable low-rank matrices to the designated layer. When combined with quantization, this approach is referred to as QLoRA (Dettmers et al., 2023), which additionally reduces the memory usage. The weight-decomposed low-rank adaptation (DoRA) (Liu et al., 2024) method breaks down pre-trained weights into magnitude and direction components, applying LoRA solely on the directional components to enhance the fine-tuning of LLMs. LoRA+ (Hayou et al., 2024) is proposed to overcome the sub-optimality of LoRA.
+
+### Efficient Computation
+
+In LlamaFactory, we integrate a range of efficient computational techniques. Commonly utilized techniques encompass mixed precision training (Micikevicius et al., 2018) and activation checkpointing (Chen et al., 2016). Drawing insights from the examination of the input-output (IO) expenses of the attention layer, flash attention (Dao et al., 2022) introduces a hardware-friendly approach to enhance attention computation. S\({}^{2}\) attention (Chen et al., 2024) tackles the challenge of extending context in block-sparse attention, thereby diminishing memory usage in fine-tuning long-context LLMs. Various quantization strategies (Dettmers et al., 2022; Frantar et al., 2023; Lin et al., 2023; Egiazarian et al., 2024) decrease memory requirements in large language models (LLMs) by utilizing lower-precision representations for weights. Nevertheless, the fine-tuning of quantized models is restricted to the adapter-based techniques like LoRA (Hu et al., 2022). Unsloth (Han and Han, 2023) incorporates Triton (Tillet et al., 2019) for implementing the backward propagation of LoRA, which reduces floating-point operations (FLOPs) during gradient descent and leads to expedited LoRA training.
+
+LlamaFactory effectively combines these techniques into a cohesive structure that greatly enhances the efficiency of LLM fine-tuning. This results in a reduction of the memory footprint from 18 bytes per parameter during mixed precision training (Micikevicius et al., 2018) or 8 bytes per parameter in bfloat16 training (Le Scao et al., 2022) to only 0.6 bytes per parameter. Further elaboration on our framework will be provided in the subsequent section.
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline  & Freeze-tuning & GaLore & LoRA & DoRA \\ \hline Mixed precision & ✓ & ✓ & ✓ & ✓ \\ Checkpointing & ✓ & ✓ & ✓ & ✓ \\ Flash attention & ✓ & ✓ & ✓ & ✓ \\ S\({}^{2}\) attention & ✓ & ✓ & ✓ & ✓ \\ Quantization & ✗ & ✗ & ✓ & ✓ \\ Unsloth & ✗ & ✗ & ✓ & ✗ \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: Efficient fine-tuning techniques featured in LlamaFactory. Techniques that are compatible with each other are marked with ✓, while those that are not compatible are marked with ✗.
+
+## 3 LlamaFactory Framework
+
+LlamaFactory consists of three main modules: Model Loader, Data Worker, and Trainer. The Model Loader prepares various architectures for fine-tuning, which supports over 100 LLMs. The Data Worker processes data from different tasks through a well-designed pipeline, which support more than 50 datasets. The Trainer unifies efficient fine-tuning methods to adapt these models on different tasks and datasets, which offers four training approaches. LlamaBoard provides a friendly visual interface for the above modules, enabling users to configure and launch individual LLM fine-tuning process in a codeless way and monitor the training status on the fly. We illustrate the overall architecture of LlamaFactory in Figure 1.
+
+### Model Loader
+
+This section initially presents the four components in Model Loader: Model Initialization, Model Patching, Model Quantization, and Adapter Attaching, followed by a description of our approach of adapting to a wide range of devices by handling the parameter float-point precision when fine-tuning.
+
+Model InitializationWe employ the AutoModel API of Transformers (Wolf et al., 2020) for loading models and initializing parameters. In order to make our framework compatible with different model architectures, we establish a model registry to store the type of each layer, thereby facilitating the utilization of efficient fine-tuning techniques more straightforward. In cases where the vocabulary size of the tokenizer exceeds the capacity of the embedding layer, we resize the layer and initialize new parameters with noisy mean initialization. To determine the scaling factor for RoPE scaling (Chen et al., 2023), we compute it as the ratio of the maximum input sequence length to the context length of the model.
+
+Model PatchingTo enable flash attention and S\({}^{2}\) attention, we employ a monkey patch to replace the forward computation of models. Nevertheless, since flash attention has been supported since Transformers 4.34.0, we use the API to enable flash attention. To prevent excessive partitioning of the dynamic modules, we set the mixture-of-experts (MoE) blocks as leaf modules when we optimize it under DeepSpeed ZeRO-3 (Rasley et al., 2020).
+
+Model QuantizationDynamically quantizing models to 8 bits or 4 bits with LLM.int8 (Dettmers et al., 2022) can be performed through the bitsand-bytes library (Dettmers, 2021). For 4-bit quantization, we utilize the double quantization and 4-bit normal float as QLoRA (Dettmers et al., 2023). We also support fine-tuning the models quantized by the post-training quantization (PTQ) methods, including GPTQ (Frantar et al., 2023), AWQ (Lin et al., 2023), and AQLM (Egiazarian et al., 2024). Note that we cannot directly fine-tune the quantized weights; thus, the quantized models are only compatible with adapter-based methods.
+
+Adapter AttachingWe automatically identify the appropriate layers using the model registry to attach adapters. Adapters are attached to a subset of layers by default to save memory, but attaching them to all linear layers may yield better performance (Dettmers et al., 2023). The PEFT (Mangrulkar et al., 2022) library offers an extremely convenient way to attach adapters such as LoRA (Hu et al., 2022), rsloRA (Kalajdzievski, 2023), and DoRA (Liu et al., 2024). We replace the backward computation with the one of Unsloth (Han and Han, 2023) to accelerate LoRA. To perform reinforcement learning from human feedback (RLHF), we add a value head upon the model, a linear layer that maps the representation of each token to a scalar.
+
+Precision AdaptationWe handle the floating-point precision of pre-trained models based on the
+
+Figure 1: The architecture of LlamaFactory.
+
+capabilities of devices. For NVIDIA GPUs, we use bfloat16 precision if the computation capability is 8.0 or higher. Otherwise, float16 is adopted. We use float16 for Ascend NPUs and AMD GPUs and float32 for non-CUDA devices. Note that loading bfloat16 models with float16 precision may lead to overflow issues. In mixed precision training, we set all trainable parameters to float32. Nevertheless, we retain the trainable parameters as bfloat16 in bfloat16 training.
+
+### Data Worker
+
+We develop a data processing pipeline, including dataset loading, dataset aligning, dataset merging and dataset pre-processing. It standardizes datasets of different tasks into a unified format, enabling us to fine-tune models on datasets in various formats.
+
+Dataset LoadingWe utilize the datasets (Lhoest et al., 2021) library to load the data, which allows the users to load remote datasets from the Hugging Face Hub or read local datasets via scripts or through files. The datasets library significantly reduces memory overhead during data processing and accelerates sample querying using Arrow (Apache, 2016). By default, the whole dataset is downloaded to local disk. However, if a dataset is too large to be stored, our framework provides dataset streaming to iterate over it without downloading.
+
+Dataset AligningTo unify the dataset format, we design a data description specification to characterize the structure of datasets. For example, the alpaca dataset has three columns: instruction, input and output (Taori et al., 2023). We convert the dataset into a standard structure that is compatible with various tasks according to the data description specification. Some examples of dataset structures are shown in Table 2.
+
+Dataset MergingThe unified dataset structure provides an efficient approach for merging multiple datasets. For the datasets in non-streaming mode, we simply concatenate them before the datasets are shuffled during training. However, in streaming mode, simply concatenating the datasets impedes data shuffling. Therefore, we offer methods to alternately read the data from different datasets.
+
+Dataset Pre-processingLlamaFactory is designed for fine-tuning the text generative models, which is primarily used in chat completion. Chat template is a crucial component in these models, because it is highly related to the instruction-following abilities of these models. Therefore, we provide dozens of chat templates that can be automatically chosen according to the model type. We encode the sentence after applying the chat template using the tokenizer. By default, we only compute loss on the completions, while the prompts are disregarded (Taori et al., 2023). Optionally, we can utilize sequence packing (Krell et al., 2021) to reduce the training time, which is automatically enabled when performing generative pre-training. Appendix C shows details of our template design.
+
+### Trainer
+
+Efficient TrainingWe integrate state-of-the-art efficient fine-tuning methods, including LoRA+ (Hayou et al., 2024) and GaLore (Zhao et al., 2024) to the trainer by replacing the default component. These training approaches are independent of the trainer, making them easily applicable to various tasks. We utilize the trainer of Transformers (Wolf et al., 2020) for pre-training and SFT, while adopting the trainers of TRL (von Werra et al., 2020) for RLHF and DPO. The tailored data collators are leveraged to differentiate trainers of various training approaches. To match the input format of the trainer for preference data, we build \(2n\) samples in a batch where the first \(n\) samples are chosen examples and the last \(n\) samples are rejected examples.
+
+Model-Sharing RLHFAllowing RLHF training on consumer devices is a useful property for LLM fine-tuning. However, it is difficult because RLHF training requires four different models. To address this problem, we propose model-sharing RLHF, enabling entire RLHF training with no more than one pre-trained model. Concretely, we first train an adapter and a value head with the objective function for reward modeling, allowing the model to compute reward scores. Then we initialize another adapter and value head and train them with the PPO algorithm (Ouyang et al., 2022). The adapters and value heads are dynamically switched
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline Plain text & [[’text’: ”...’], [’text’: ”...’]] \\ Alpaca-like data & [[’instruction’: ”...’, "input’: ”...’, "output’: ”...’]] \\ ShareGPT-like data & [’conversations’: [’from’: ’human’, ”value’: "...’], [’from’: “gpt’, “value’: ”...’]]] \\ Preference data & [[’instruction’: ”...’, ”input’: ”...’, “output’: [’...’, ”...’]]] \\ \hline Standardized data & [’prompt’: [’[’role’: ”...’, ‘content’: ”...’]], \\  & "response’: [’role’: ”...’, ‘content’: ”...’]]. \\  & "system’: [’...’, ‘tools’: ”...’] \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: Dataset structures in LlamaFactory.
+
+through the set_adapter and disable_adapter APIs of PEFT (Mangrulkar et al., 2022) during training, allowing the pre-trained model to serve as policy, value, reference, and reward models simultaneously. To the best of our knowledge, this is the first method that supports RLHF training on consumer devices.
+
+Distributed TrainingWe can combine the above trainers with DeepSpeed (Rasley et al., 2020) for distributed training. Leveraging the DeepSpeed ZeRO optimizer, the memory consumption can be further reduced via partitioning or offloading.
+
+### Utilities
+
+Accelerated InferenceDuring inference time, we reuses the chat template from the data worker to build the model inputs. We offer support for sampling the model outputs using Transformers (Wolf et al., 2020) and vLLM (Kwon et al., 2023), both of which support stream decoding. Additionally, we implement an OpenAI-style API that utilizes the asynchronous LLM engine and paged attention of vLLM to provide high-throughput concurrent inference services, facilitating the deployment of fine-tuned LLMs into various applications.
+
+Comprehensive EvaluationWe include several metrics for evaluating LLMs, including multiple-choice tasks such as MMLU (Hendrycks et al., 2021), CMMLU (Li et al., 2023), and C-Eval (Huang et al., 2023), as well as calculating text similarity scores like BLEU-4 (Papineni et al., 2002) and ROUGE (Lin, 2004).
+
+### LlamaBoard: A Unified Interface for LlamaFactory
+
+LlamaBoard is a unified user interface based on Gradio (Abid et al., 2019) that allows users to customize the fine-tuning of LLMs without writing any code. It offers a streamlined model fine-tuning and inference service, enabling users to easily leveraging 100+ LLMs and 50+ datasets in their practice. LlamaBoard has the following notable features: **Easy Configuration**LlamaBoard allows users to customize fine-tuning arguments through interaction with the web interface. We provide default values for many arguments that are recommended for most users, simplifying the configuration process. Moreover, users can preview datasets on the web UI to check their customized format.
+
+**Monitorable Training** During the training process, the training logs and loss curves are visualized and updated in real time, allowing users to monitor the training progress. This feature provides valuable insights to analyze the fine-tuning process.
+
+**Flexible Evaluation**LlamaBoard supports calculating the text similarity scores on the datasets to automatically evaluate the model or performing human evaluation by chatting with the model.
+
+**Multilingual Support**LlamaBoard provides localization files, facilitating the integration of new languages for rendering the interface. Currently we support three languages: English, Russian and Chinese, which allows a broader range of users to utilize LlamaBoard for fine-tuning LLMs.
+
+## 4 Empirical Study
+
+We systematically evaluate LlamaFactory from two perspectives: 1) the training efficiency in terms of memory usage, throughput and perplexity. 2) the effectiveness of adaptation to downstream tasks.
+
+### Training Efficiency
+
+Experimental SetupWe utilize the PubMed (Canese and Weis, 2013) dataset, which comprises over 36 million records of biomedical literature. We extract around 400,000 tokens from the abstract of the literature to construct the training examples. We fine-tune the Gemma-2B (Mesnard et al., 2024), Llama2-7B and Llama2-13B (Touvron et al., 2023) models using the generative pre-training objective with various efficient fine-tuning methods. We compare the results of full-tuning, freeze-tuning, GaLore, LoRA and 4-bit QLoRA. After fine-tuning, we calculate the perplexity on the training examples to evaluate the efficiency of different methods. We also incorporate the perplexities of the pre-trained models as baselines. More experimental details can be found in Appendix D.1.
+
+ResultsThe training efficiency results are presented in Table 3, where memory refers to the peak memory consumed during training, throughput is calculated as the number of tokens trained per second, and PPL represents the perplexity of the model on the training examples. Since full-tuning Llama2-13B lead to a memory overflow, the results are not recorded. We observe that QLoRA consistently has the lowest memory footprint because the pre-trained weights are represented in lower precision. LoRA exhibits higher throughput leveraging the optimization in LoRA layers by Unsloth. GaLore achieves lower PPL on large models while LoRA advantages on smaller ones.
+
+### Fine-Tuning on Downstream Tasks
+
+Experimental SetupTo evaluate the effectiveness of different efficient fine-tuning methods, we compare the performance of various models after fine-tuning on downstream tasks. We construct the training set and test set using 2,000 examples and 1,000 examples from three representative text generation tasks, including CNN/DM (Nallapati et al., 2016), XSum (Narayan et al., 2018) and AdGen (Shao et al., 2019), respectively. We select several instruction-tuned models and fine-tune them following the sequence-to-sequence task using different fine-tuning methods. We compare the results of full-tuning (FT), GaLore, LoRA and 4-bit QLoRA. After fine-tuning, we calculate the ROUGE score (Lin, 2004) on the test set of each task. We also incorporate the scores of the original instruction-tuned models as baselines. More experimental details can be found in Appendix D.2.
+
+ResultsThe evaluation results on downstream tasks are shown in Table 4. We report the averaged scores over ROUGE-1, ROUGE-2 and ROUGE-L for each LLM and each dataset. Some results of Gemma-7B are not included in the table because the GaLore method is not applicable to this model. An interesting finding from the results is that LoRA and QLoRA achieve the best performance in most cases, except for the Llama2-7B and ChatGLM3-6B models on the CNN/DM and AdGen datasets. This phenomenon highlights the effectiveness of these efficient fine-tuning methods in adapting LLM models to specific tasks. Additionally, we observe that the Mistral-7B model performs better on English datasets while the Qwen1.5-7B model achieves higher scores on Chinese dataset. These results suggest that the performance of the fine-tuned models is also associated with their inherent capabilities on specific languages.
+
+## 5 Conclusion and Future Work
+
+In this paper, we demonstrate LlamaFactory, a unified framework for the efficient fine-tuning of LLMs. Through a modular design, we minimize dependencies between the models, datasets and training methods and provide an integrated approach to fine-tune over 100 LLMs with a diverse range of efficient fine-tuning techniques. Additionally, we offer a flexible web UI LlamaBoard, enabling customized fine-tuning and evaluation of LLMs without coding efforts. We empirically validate the efficiency and effectiveness of our framework on language modeling and text generation tasks.
+
+In the future, we will consistently keep LlamaFactory synchronous with the state-of-the-art models and efficient fine-tuning techniques. We also welcome contributions from the open-source community. In future versions, we will explore more advanced parallel training strategies and multimodal efficient fine-tuning of LLMs.
+
+\begin{table}
+\begin{tabular}{l|c c c c c c c c c c c c c c} \hline \hline  & \multicolumn{4}{c|}{CNN/DM} & \multicolumn{4}{c}{XSum} & \multicolumn{4}{c}{AdGen} \\ Model & Baseline & FT & GaLore & LoRA & QLoRA & Baseline & FT & GaLore & LoRA & Baseline & FT & GaLore & LoRA & QLoRA \\ \hline Llama2-7B & 12.94 & 22.87 & 22.40 & 22.70 & 22.61 & 13.89 & 27.69 & 27.64 & 28.80 & 28.05 & 0.61 & 20.51 & 19.61 & 20.29 & 20.45 \\ Mistral-7B & 14.39 & 22.03 & 22.99 & **24.27** & 23.28 & 15.87 & 23.57 & 28.00 & 30.41 & **28.44** & 7.82 & 20.14 & 20.90 & 20.29 & 20.56 \\ Gemma-7B & 15.97 & 22.07 & / & 22.41 & 22.44 & 15.31 & 25.13 & / & 28.67 & 29.02 & 11.57 & 19.99 & / & 20.62 & 19.81 \\ Qwen1.5-7B & 15.40 & 22.46 & 21.76 & 22.71 & 22.52 & 19.27 & 26.68 & 26.64 & 27.27 & 27.60 & 14.49 & 20.42 & 21.08 & 20.13 & **21.34** \\ Yi-6B & 16.85 & 22.40 & 22.68 & 22.98 & 22.97 & 18.24 & 27.09 & 28.25 & 28.71 & 29.21 & 13.34 & 19.68 & 20.06 & 20.97 & 20.31 \\ ChatGLM3-6B & 18.51 & 22.00 & 22.16 & 21.68 & 21.70 & 16.14 & 26.25 & 26.34 & 26.50 & 26.78 & 14.53 & 19.91 & 20.57 & 20.47 & 20.49 \\ \hline \hline \end{tabular}
+\end{table}
+Table 4: Comparison of the performance (in terms of ROUGE) on specific tasks using different fine-tuning methods in LlamaFactory. The best result of each model is underlined, and the best result of each task is in **bold**.
+
+\begin{table}
+\begin{tabular}{l|r r r|r r|r r|r r} \hline \hline  & \multicolumn{4}{c|}{Gamma-2B} & \multicolumn{4}{c|}{Llama2-7B} & \multicolumn{4}{c}{Llama2-13B} \\ \hline Method & Memory & Throughput & PPL & Memory & Throughput & PPL & Memory & Throughput & PPL \\  & (GB) & (Tokens/s) & & & (GB) & (Tokens/s) & & (GB) & (Tokens/s) & \\ \hline Baseline & / & & / & 11.83 & / & / & 7.53 & / & / & 6.66 \\ Full-tuning & 17.06 & 3090.42 & 10.34 & 38.72 & 1334.72 & 5.56 & / & / & / & / \\ Freeze-tuning & 8.10 & 5608.49 & 11.33 & 15.69 & 2904.98 & 6.59 & 29.02 & 1841.46 & 6.56 \\ GaLore & 10.16 & 2483.05 & 10.38 & 15.43 & 1583.77 & 5.88 & 28.91 & 956.39 & **5.72** \\ LoRA & 7.91 & **3521.05** & **10.19** & 16.32 & **1954.07** & **5.81** & 30.09 & **1468.19** & 5.75 \\ QLoRA & **5.21** & 3158.59 & 10.46 & **7.52** & 1579.16 & 5.91 & **12.61** & 973.53 & 5.81 \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: Comparison of the training efficiency using different fine-tuning methods in LlamaFactory. The best result among GaLore, LoRA and QLoRA of each model is in **bold**.
+
+## 6 Broader Impact and Responsible Use
+
+LlamaFactory has attracted a large number of individuals interested in LLMs to explore the possibility of fine-tuning their own models. This contributes significantly to the growth of the open-source community. It is gaining increasing attention and is being featured in Awesome Transformers3 as a representative of efficient fine-tuning frameworks for LLMs. We anticipate that practitioners build their LLMs upon our framework that bring benefits to society. Adherence to the model license is mandatory when using LlamaFactory for fine-tuning LLMs, thus preventing from any potential misuse.
+
+Footnote 3: [https://github.com/huggingface/transformers/blob/v4.39.0/awesome-transformers.md](https://github.com/huggingface/transformers/blob/v4.39.0/awesome-transformers.md)
+
+## References
+
+* A. Abid, A. Abdalla, A. Abid, D. Khan, A. Alfozan, and J. Zou (2019)Grado: Hassle-free sharing and testing of ml models in the wild. arXiv preprint arXiv:1906.02569. Cited by: SS1.
+* L. AI (2023)Lit-gpt. Cited by: SS1.
+* E. Almazrouei, H. Alobeidli, A. Alshamsi, A. Cappelli, R. Cojocaru, M. Debbah, E. Goffinet, D. Hesslow, J. Launay, Q. Malartic, et al. (2023)The falcon series of open language models. arXiv preprint arXiv:2311.16867. Cited by: SS1.
+* Y. Anand, Z. Nussbaum, B. Duderstadt, B. Schmidt, and A. Mulyar (2023)GPT4All: training an assistant-style chatbot with large scale data distillation from GPT-3.5-turbo. Cited by: SS1.
+* A. (2016)Arrow. Cited by: SS1.
+* J. Bai, S. Bai, Y. Chu, Z. Cui, K. Dang, X. Deng, Y. Fan, W. Ge, Y. Han, F. Huang, et al. (2023)Qwen technical report. arXiv preprint arXiv:2309.16609. Cited by: SS1.
+* E. Beeching, C. Fourrier, N. Habib, S. Han, N. Lambert, N. Rajani, O. Sanseviero, L. Tunstall, and T. Wolf (2023)Open LLM leaderboard. Cited by: SS1.
+* E. B. Zaken, Y. Goldberg, and S. Ravfogel (2022)BitFit: simple parameter-efficient fine-tuning for transformer-based masked language-models. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers), Dublin, Ireland, pp. 1-9. Cited by: SS1.
+* R. Bhardwaj, D. D. Anh, and S. Poria (2024)Language models are homer simpson! safety re-alignment of fine-tuned language models through task arithmetic. arXiv preprint arXiv:2402.11746. Cited by: SS1.
+* X. Bi, D. Chen, G. Chen, S. Chen, D. Dai, C. Deng, H. Ding, K. Dong, Q. Du, Z. Fu, et al. (2024)DeepSeek LLM: scaling open-source language models with longtermism. arXiv preprint arXiv:2401.02954. Cited by: SS1.
+* K. Canese and S. Weis (2013)PubMed: the bibliographic database. The NCBI handbook2 (1). Cited by: SS1.
+* D. Chen, Y. Huang, X. Li, Y. Li, Y. Liu, H. Pan, L. Xu, D. Zhang, Z. Zhang, and K. Han (2024)Orion-14b: open-source multilingual large language models. arXiv preprint arXiv:2401.12246. Cited by: SS1.
+* S. Chen, S. Wong, L. Chen, and Y. Tian (2023)Extending context window of large language models via positional interpolation. arXiv preprint arXiv:2306.15595. Cited by: SS1.
+* T. Chen, B. Xu, C. Zhang, and C. Guestrin (2016)Training deep nets with sublinear memory cost. arXiv preprint arXiv:1604.06174. Cited by: SS1.
+* Y. Chen, S. Qian, H. Tang, X. Lai, Z. Liu, S. Han, and J. Jia (2024)LongLoRA: efficient fine-tuning of long-context large language models. In International Conference on Learning Representations, Cited by: SS1.
+* Y. Cui, Z. Yang, and X. Yao (2023)Efficient and effective text encoding for chinese llama and alpaca. arXiv preprint arXiv:2304.08177. Cited by: SS1.
+* D. Dai, C. Deng, C. Zhao, R. Xu, H. Gao, D. Chen, J. Li, W. Zeng, X. Yu, Y. Wu, et al. (2024)DeepSeek-MoE: towards ultimate expert specialization in mixture-of-experts language models. arXiv preprint arXiv:2401.06066. Cited by: SS1.
+* T. Dao, D. Fu, S. Ermon, A. Rudra, and C. Re (2022)Flashattention: fast and memory-efficient exact attention with io-awareness. Advances in Neural Information Processing Systems35, pp. 16344-16359. Cited by: SS1.
+* T. Dettmers, M. Lewis, Y. Belkada, and L. Zettlemoyer (2022)GPT3.int8(): 8-bit matrix multiplication for transformers at scale. Advances in Neural Information Processing Systems35, pp. 30318-30332. Cited by: SS1.
+* T. Dettmers, M. Lewis, S. Shleifer, and L. Zettlemoyer (2022)8-bit optimizers via block-wise quantization. In International Conference on Learning Representations, Cited by: SS1.
+
+Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. 2023. QLoRA: Efficient finetuning of quantized llms. _Advances in Neural Information Processing Systems_, 36:10088-10115.
+* Diao et al. (2023) Shizhe Diao, Rui Pan, Hanze Dong, Ka Shun Shum, Jipeng Zhang, Wei Xiong, and Tong Zhang. 2023. LMFlow: An extensible toolkit for finetuning and inference of large foundation models. _arXiv preprint arXiv:2306.12420_.
+* Du et al. (2022) Zhengxiao Du, Yujie Qian, Xiao Liu, Ming Ding, Jiezhong Qiu, Zhilin Yang, and Jie Tang. 2022. GLM: General language model pretraining with autoregressive blank infilling. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 320-335, Dublin, Ireland. Association for Computational Linguistics.
+* Egiazarian et al. (2024) Vage Egiazarian, Andrei Panferov, Denis Kuzmedelev, Elias Frantar, Artem Babenko, and Dan Alistarh. 2024. Extreme compression of large language models via additive quantization. _arXiv preprint arXiv:2401.06118_.
+* Frantar et al. (2023) Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. 2023. GPTQ: Accurate post-training quantization for generative pre-trained transformers. In _International Conference on Learning Representations_.
+* Groeneveld et al. (2024) Dirk Groeneveld, Iz Beltagy, Pete Walsh, Akshita Bhagia, Rodney Kinney, Oyvind Tafjord, Ananya Harsh Jha, Hamish Ivison, Ian Magnusson, Yizhong Wang, et al. 2024. OLMo: Accelerating the science of language models. _arXiv preprint arXiv:2402.00838_.
+* the rise of code intelligence. _arXiv preprint arXiv:2401.14196_.
+* Han and Han (2023) Daniel Han and Michael Han. 2023. unsloth.
+* Hayou et al. (2024) Soufiane Hayou, Nikhil Ghosh, and Bin Yu. 2024. LoRA+: Efficient low rank adaptation of large models. _arXiv preprint arXiv:2402.12354_.
+* Hendrycks et al. (2021) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 2021. Measuring massive multitask language understanding. In _International Conference on Learning Representations_.
+* Houlsby et al. (2019) Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. 2019. Parameter-efficient transfer learning for nlp. In _International conference on machine learning_, pages 2790-2799. PMLR.
+* Hu et al. (2022) Edward J Hu, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. 2022. LoRA: Low-rank adaptation of large language models. In _International Conference on Learning Representations_.
+* Huang et al. (2023) Yuzhen Huang, Yuzhuo Bai, Zhihao Zhu, Junlei Zhang, Jinghan Zhang, Tangjun Su, Junteng Liu, Chuancheng Lv, Yikai Zhang, Yao Fu, et al. 2023. C-Eval: A multi-level multi-discipline chinese evaluation suite for foundation models. _Advances in Neural Information Processing Systems_, 36.
+* Jiang et al. (2023a) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. 2023a. Mistral 7b. _arXiv preprint arXiv:2310.06825_.
+* Jiang et al. (2023b) Jinhao Jiang, Kun Zhou, Wayne Xin Zhao, Yaliang Li, and Ji-Rong Wen. 2023b. ReasoningLM: Enabling structural subgraph reasoning in pre-trained language models for question answering over knowledge graph. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 3721-3735, Singapore. Association for Computational Linguistics.
+* Jiao et al. (2023a) Wenxiang Jiao, Jen-tse Huang, Wenxuan Wang, Zhiwei He, Tian Liang, Xing Wang, Shuming Shi, and Zhaopeng Tu. 2023a. ParroT: Translating during chat using large language models tuned with human translation and feedback. In _Findings of the Association for Computational Linguistics: EMNLP 2023_, pages 15009-15020, Singapore. Association for Computational Linguistics.
+* Jiao et al. (2023b) Yizhu Jiao, Ming Zhong, Sha Li, Ruining Zhao, Siru Ouyang, Heng Ji, and Jiawei Han. 2023b. Instruct and extract: Instruction tuning for on-demand information extraction. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 10030-10051, Singapore. Association for Computational Linguistics.
+* Kalajdziievski (2023) Damjan Kalajdziievski. 2023. A rank stabilization scaling factor for fine-tuning with LoRA. _arXiv preprint arXiv:2312.03732_.
+* Kim et al. (2023) Dahyun Kim, Chanjun Park, Sanghoon Kim, Wonsung Lee, Wonho Song, Yunsu Kim, Hyeonwoo Kim, Yungi Kim, Hyeonju Lee, Jihoo Kim, et al. 2023. SOLAR 10.7B: Scaling large language models with simple yet effective depth up-scaling. _arXiv preprint arXiv:2312.15166_.
+* Krell et al. (2021) Mario Michael Krell, Matej Kosec, Sergio P Perez, and Andrew Fitzgibbon. 2021. Efficient sequence packing without cross-contamination: Accelerating large language models without impacting performance. _arXiv preprint arXiv:2107.02027_.
+* Kwon et al. (2023) Woosuk Kwon, Zhuohuan Li, Siyuan Zhuang, Ying Sheng, Liaminin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. 2023. Efficient
+
+[MISSING_PAGE_FAIL:9]
+
+Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. 2020. DeepSpeed: System optimizations enable training deep learning models with over 100 billion parameters. In _Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining_, pages 3505-3506.
+* Shao et al. (2019) Zhihong Shao, Minlie Huang, Jiangtao Wen, Wenfei Xu, and Xiaoyan Zhu. 2019. Long and diverse text generation with planning-based hierarchical variational model. In _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, pages 3257-3268, Hong Kong, China. Association for Computational Linguistics.
+* Shao et al. (2024) Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Mingchuan Zhang, YK Li, Y Wu, and Daya Guo. 2024. DeepSeeKMath: Pushing the limits of mathematical reasoning in open language models. _arXiv preprint arXiv:2402.03300_.
+* Taori et al. (2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsumori B. Hashimoto. 2023. Stanford alpaca: An instruction-following llama model.
+* Team (2023) InternLM Team. 2023. InternLM: A multilingual language model with progressively enhanced capabilities.
+* Tillet et al. (2019) Philippe Tillet, Hsiang-Tsung Kung, and David Cox. 2019. Triton: an intermediate language and compiler for tiled neural network computations. In _Proceedings of the 3rd ACM SIGPLAN International Workshop on Machine Learning and Programming Languages_, pages 10-19.
+* Touvron et al. (2023a) Hugo Touvron, Thibaut Lavril, Gautier Izzard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. 2023a. LLAMA: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_.
+* Touvron et al. (2023b) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, et al. 2023b. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_.
+* Tunstall et al. (2023) Lewis Tunstall, Edward Beeching, Nathan Lambert, Nazneen Rajani, Kashif Rasul, Younes Belkada, Shengyi Huang, Leandro von Werra, Clementine Fourrier, Nathan Habib, et al. 2023. Zephyr: Direct distillation of LM alignment. _arXiv preprint arXiv:2310.16944_.
+* Werra et al. (2020) Leandro von Werra, Younes Belkada, Lewis Tunstall, Edward Beeching, Tristan Thrush, Nathan Lambert, and Shengyi Huang. 2020. TRL: Transformer reinforcement learning.
+* Wang et al. (2023a) Chenglong Wang, Hang Zhou, Yimin Hu, Yifu Huo, Bei Li, Tongran Liu, Tong Xiao, and Jingbo Zhu. 2023a. Esrl: Efficient sampling-based reinforcement learning for sequence generation. _arXiv preprint arXiv:2308.02223_.
+* Wang et al. (2023b) Guan Wang, Sijie Cheng, Xianyuan Zhan, Xiangang Li, Sen Song, and Yang Liu. 2023b. OpenChat: Advancing open-source language models with mixed-quality data. _arXiv preprint arXiv:2309.11235_.
+* Wang et al. (2023c) Longyue Wang, Chenyang Lyu, Tianbo Ji, Zhirui Zhang, Dian Yu, Shuming Shi, and Zhaopeng Tu. 2023c. Document-level machine translation with large language models. In _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pages 16646-16661, Singapore. Association for Computational Linguistics.
+* Wang et al. (2023d) Yizhong Wang, Hamish Ivison, Pradeep Dasigi, Jack Hessel, Tushar Khot, Khyathi Chandu, David Wadden, Kelsey MacMillan, Noah A Smith, Iz Beltagy, et al. 2023d. How far can camels go? exploring the state of instruction tuning on open resources. _Advances in Neural Information Processing Systems_, 36.
+* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. 2022. Finetuned language models are zero-shot learners. In _International Conference on Learning Representations_.
+* Wei et al. (2023) Tianwen Wei, Liang Zhao, Lichang Zhang, Bo Zhu, Lijie Wang, Haihua Yang, Biye Li, Cheng Cheng, Weiwei Lu, Rui Hu, et al. 2023. Skywork: A more open bilingual foundation model. _arXiv preprint arXiv:2310.19341_.
+* Wolf et al. (2020) Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Remi Louf, Morgan Funtowicz, Joe Davison, Sam Shleifer, Patrick von Platen, Clara Ma, Yacine Jernite, Julien Plu, Canwen Xu, Teven Le Scao, Sylvain Gugger, Mariama Drame, Quentin Lhoest, and Alexander Rush. 2020. Transformers: State-of-the-art natural language processing. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations_, pages 38-45, Online. Association for Computational Linguistics.
+* Wu et al. (2023) Shaohua Wu, Xudong Zhao, Shenling Wang, Jiangang Luo, Lingjun Li, Xi Chen, Bing Zhao, Wei Wang, Tong Yu, Rongguo Zhang, et al. 2023. YUAN 2.0: A large language model with localized filtering-based attention. _arXiv preprint arXiv:2311.15786_.
+* Yang et al. (2023) Aiyuan Yang, Bin Xiao, Bingning Wang, Borong Zhang, Ce Bian, Chao Yin, Chenxu Lv, Da Pan, Dian Wang, Dong Yan, et al. 2023. Baichuan 2: Open large-scale language models. _arXiv preprint arXiv:2309.10305_.
+* Yao et al. (2023) Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R Narasimhan, and Yuan Cao. 2023. ReAct: Synergizing reasoning and acting in language models. In _International Conference on Learning Representations_.
+* Young et al. (2024) Alex Young, Bei Chen, Chao Li, Chengen Huang, Ge Zhang, Guanwei Zhang, Heng Li, Jiangcheng Zhu, Jianqun Chen, Jing Chang, et al. 2024. Yi: Open foundation models by 01.ai. _arXiv preprint arXiv:2403.04652_.
+* Yu et al. (2023) Hao Yu, Zachary Yang, Kellin Pelrine, Jean Francois Godbout, and Reihaneh Rabbany. 2023. Open, closed, or small language models for text classification? _arXiv preprint arXiv:2308.10092_.
+* Zhang et al. (2022) Renrui Zhang, Jiaming Han, Aojun Zhou, Xiangfei Hu, Shilin Yan, Pan Lu, Hongsheng Li, Peng Gao, and Yu Qiao. 2022. LLaMA-Adapter: Efficient fine-tuning of language models with zero-init attention. In _International Conference on Learning Representations_.
+* Zhao et al. (2024) Jiawei Zhao, Zhenyu Zhang, Beidi Chen, Zhangyang Wang, Anima Anandkumar, and Yuandong Tian. 2024. GaLore: Memory-efficient llm training by gradient low-rank projection. _arXiv preprint arXiv:2403.03507_.
+* Zhao et al. (2023) Wayne Xin Zhao, Kun Zhou, Junyi Li, Tianyi Tang, Xiaolei Wang, Yupeng Hou, Yingqian Min, Beichen Zhang, Junjie Zhang, Zican Dong, Yifan Du, Chen Yang, Yushuo Chen, Zhipeng Chen, Jinhao Jiang, Ruiyang Ren, Yifan Li, Xinyu Tang, Zikang Liu, Peiyu Liu, Jian-Yun Nie, and Ji-Rong Wen. 2023. A survey of large language models. _arXiv preprint arXiv:2303.18223_.
+* Zheng et al. (2023) Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. 2023. Judging LLM-as-a-jaduge with mt-bench and chatbot arena. _Advances in Neural Information Processing Systems_, 36.
+
+## Appendix A Related Work
+
+In this section, we enumerate existing frameworks for fine-tuning LLMs, especially highlight those for efficient fine-tuning.
+
+LLaMA-Adapter (Zhang et al., 2022) efficiently fine-tunes the Llama model (Touvron et al., 2023a) for instruction-following abilities using zero-init attention. FastChat (Zheng et al., 2023) is a framework focused on training and evaluating LLMs for chat completion purposes. LitGPT (AI, 2023) provides the implementation of generative models and supports various training methods. Open-Instruct (Wang et al., 2023d) is a fine-tuning framework that supports efficient fine-tuning. Colossal AI (Li et al., 2023b) takes advanced parallelism strategies for distributed training. LMFlow (Diao et al., 2023) is an extensible and efficient fine-tuning framework that supports decoder-only models, supporting both full-tuning and adapter tuning. GPT4All (Anand et al., 2023) allows LLMs to run on consumer devices, while also providing fine-tuning capabilities.
+
+In contrast to the frameworks presented above, LlamaFactory supports a broader range of efficient fine-tuning methods. We compare our framework with existing work in Table 5.
+
+## Appendix B Supported Models in LlamaFactory
+
+We select the popular pre-trained models supported by LlamaFactory and list them in Table 6, ranging from dense models to sparse mixture-of-expert (MoE) models.
+
+\begin{table}
+\begin{tabular}{l l l} \hline \hline Model & Variant & Organization \\ \hline Llama (Touvron et al., 2023a) & 78/13B3/68B & Meta AI \\ Llama 2 (Touvron et al., 2023b) & 78/13B/70B & Meta AI \\ Bakuchan (Yang et al., 2023) & 78/13B & Bakuchan Inc \\ Bakuchan (Zung et al., 2023) & 78/13B & Bakuchan Inc \\ BLOOM (Le Scano et al., 2022) & 560M/3B/7.1B & BigScience \\ BLOMOM (Le Scano et al., 2022) & 560M/3B/7.1B & BigScience \\ ChaMiZ (Du et al., 2022) & 68B & THUIMM \\ ChatGLM3 (Du et al., 2022) & 68 & THUIM \\ ChineseLAM(Li et al., 2023) & 38/7B/13B & HFL \\ DeepSetL-ILM (Bi et al., 2024) & 78/67B & DeepSeek \\ DeepSetL-Math (Diao et al., 2024) & 78 & DeepSeek \\ DeepSetL-Soft (Dui et al., 2024) & 168 & DeepSeek \\ DeepSet-Coder (Gu et al., 2024) & 6.7B/7B/33B & DeepSeek \\ Falcon (Llamaertov et al., 2023) & 78/40B/180B & TII \\ Gemma (Measard et al., 2024) & 28/7B & Google \\ InternalM (Team, 2023) & 78/20B & Shanghai AI Lab \\ InternalM (Team, 2023) & 1.8B/7B/20B & Shanghai AI Lab \\ Mineral (Zhang et al., 2023a) & 78 & Mineral AI \\ Mixtal (Jiang et al., 2023a) & 8/7B & MistAI AI \\ MXM (Groeneveld et al., 2024) & 18/7B & Allen AI \\ OpenCharM (Wang et al., 2023b) & 78 & OpenCharM \\ Open (Chen et al., 2024a) & 14B & Oriosciar \\ Phi-15 (Li et al., 2023a) & 1.3B & Microsoft \\ Phi-2 (Li et al., 2023c) & 2.7B & Microsoft \\ Open (Biai et al., 2023) & 1.8B/7B/14B/7B & Albashus Cloud \\ OpenJ (Biai et al., 2023) & 1.8B/7B/14B/7B & Albashus Cloud \\ SOLAR (Kim et al., 2023) & 10.7B & Upstage AI \\ Skywork (Wei et al., 2023) & 13B & Skywork \\ SunCoder (Zenlowlowk et al., 2024) & 38/7B/13B & DeGoc \\ Viciani (Zheng et al., 2023) & 78/13B & LMSYS \\ Yi (Young et al., 2024) & 68/9B/43B & 0.1A \\ Yuan2 (Wu et al., 2023) & 2B/5B/18/10B & BIT \\ Zephyr (Tunstull et al., 2023) & 7B & Hugging Face H4 \\ \hline \hline \end{tabular}
+\end{table}
+Table 6: List of supported models.
+
+\begin{table}
+\begin{tabular}{c c c c c c} \hline \hline Methods & LlamaFactor & FastChat & LitGPT & LMFlow & Open \\ \hline LoRa & ✓ & ✓ & ✓ & ✓ & ✓ \\ QLoRa & ✓ & ✓ & ✓ & & ✓ \\ LoRa\(\star\) & ✓ & ✓ & & & ✓ \\ DoRa\(\star\) & ✓ & & & & \\ Galore & ✓ & & & & \\ \hline STF & ✓ & ✓ & ✓ & ✓ & ✓ \\ RLHF & ✓ & & & ✓ & \\ DPO & ✓ & & & & ✓ \\ \hline Flash attention & ✓ & ✓ & ✓ & ✓ & ✓ \\ Unskoth & ✓ & ✓ & ✓ & ✓ & ✓ \\ DeepSpeed & ✓ & ✓ & ✓ & ✓ & ✓ \\ \hline \hline \end{tabular}
+\end{table}
+Table 5: Comparison of features in LlamaFactor with existing LLM fine-tuning
+
+[MISSING_PAGE_FAIL:12]
