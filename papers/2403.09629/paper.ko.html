@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Quiet-STaR: 언어 모델이 말하기 전에 스스로 생각할 수 있도록 가르칠 수 있음\n' +
+      '\n' +
+      ' 에릭 젤릭맨\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      'Georges Harik\n' +
+      '\n' +
+      '(주)노트배드아이\n' +
+      '\n' +
+      'Yijia Shao\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      'Varuna Jayasiri\n' +
+      '\n' +
+      '(주)노트배드아이\n' +
+      '\n' +
+      'Nick Haber\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      '노두굿만\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '글을 쓰고 이야기할 때, 사람들은 가끔씩 생각을 멈추곤 한다. 추론 중심 작품들은 종종 질문에 답하거나 에이전틱 과제를 완성하는 방법으로 추론을 프레임화했지만, 추론은 거의 모든 서면 텍스트에서 암묵적이다. 예를 들어, 이것은 증명의 선들 사이에 명시되지 않은 단계들 또는 대화의 기초가 되는 정신 이론에 적용된다. 자체 학습 추론기(STaR, Zelikman et al., 2022)에서 유용한 사고는 질문 응답에서 소수의 샷 예제로부터 근거를 추론하고 정답으로 이어지는 예제로부터 학습을 통해 학습된다. 이것은 매우 제한된 설정이다. 이상적으로는 언어 모델이 대신 임의의 텍스트에서 비연속적인 근거를 추론하는 것을 학습할 수 있다. 우리는 LMs가 미래의 텍스트를 설명하기 위해 각 토큰에서 근거를 생성하는 것을 학습하는 STaR의 일반화, 예측을 개선하는 **Quiet-STaR** 을 제시한다. 1) 연속체를 생성하는 계산 비용, 2) LM이 처음에 내부 생각을 생성하거나 사용하는 방법을 알지 못한다는 사실, 3) 개별 다음 토큰을 넘어서는 예측 필요성 이를 해결하기 위해 본 논문에서는 사고의 시작과 끝을 나타내는 학습 가능한 토큰을 이용한 토큰 병렬 샘플링 알고리즘과 확장된 교사 강제 기법을 제안한다. 권장적으로, 생성된 근거는 예측하기 어려운 토큰을 모델링하고 어려운 질문에 직접 답하는 LM의 능력을 향상시키는 데 불균형적으로 도움이 된다. 특히, GSM8K(5.9%\\(\\rightarrow\\)10.9%)와 CommonsenseQA(36.3%\\(\\rightarrow\\)47.2%)에서 LM을 Quiet-STaR로 인터넷 텍스트 코퍼스에 계속 사전 훈련한 후 제로샷 개선 효과를 발견하였고, 자연 텍스트에서 어려운 토큰의 복잡성 개선을 관찰하였다. 결정적으로, 이러한 개선은 이러한 작업에 대한 미세 조정을 필요로 하지 않는다. 조용한 STaR은 보다 일반적이고 확장 가능한 방식으로 추론하는 법을 배울 수 있는 LMs를 향한 단계를 표시한다.\n' +
+      '\n' +
+      '\'인생은 거꾸로만 이해될 수 있다\' \'앞으로 살아야 한다\'\n' +
+      '\n' +
+      '-- Sren Kierkegaard\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '텍스트의 의미 중 많은 부분이 행 사이에 숨겨져 있는데, 왜 문장이 문서에 나타나는지를 이해하지 못한 채 독자는 얕은 이해만을 가지고 있다. 더욱이, 이는 상식 추론에서 정리 증명에 이르기까지 프로그래밍에 이르는 태스크의 맥락에서 LMs에 대해서도 동일한 것으로 반복적으로 나타났다(Wei et al., 2022; Nye et al., 2021; Zelikman et al., 2022; 2023; Kojima et al., 2022). 나중에 텍스트를 예측하기 위한 텍스트의 함의에 대한 추론은 다양한 태스크들에 대한 LM 성능을 향상시키는 것으로 일관되게 보여졌지만, LMs들이 그들의 추론으로부터 학습하도록 하기 위한 방법들(예를 들어, Zelikman 등, 2022)은 개별 태스크들 또는 미리 정의된 태스크들의 세트들(예를 들어, Wei 등, 2021)을 해결하는 데 초점을 맞추었다. 이러한 작업은 특정 추론 작업 또는 경우에 따라 추론 자체를 제공하기 위해 신중하게 선별된 데이터 세트에 의존한다. 우리는 대신 추론이 모든 텍스트에 내재되어 있다면, 왜 우리는 추론을 가르치기 위해 언어 모델링의 과제를 활용하지 말아야 하는가? 특히, 자율 학습 추론기(STaR, Zelikman et al., 2022)는 LMs가 질문에 답하기 위해 근거를 샘플링하고, 최종 정답으로 이어질 경우 근거를 훈련한 다음 이를 반복하여 더 어려운 문제를 반복적으로 해결함으로써 질문 응답(QA) 데이터 세트에 추론 능력을 부트스트랩할 수 있음을 보여주었다. 그러나 선별된 QA 데이터 세트로부터의 훈련은 근거의 규모와 일반화 가능성을 제한한다. QA 데이터 세트, 특히 고품질 데이터 세트는 사려 깊은 큐레이션을 필요로 하며 본질적으로 추론 작업의 하위 집합만 다룰 것이다. 따라서, 우리는 수학적 질의응답과 같은 특정 과제에 대한 추론에 LM 학습 대신에, 대규모 인터넷 텍스트 코퍼스에서 미래의 텍스트를 추론하는 데 도움이 되는 추론을 생성하기 위해 LM을 훈련한다. 결과적으로, 우리는 LM이 언어에 존재하는 다양한 작업으로부터 학습할 수 있게 한다(Weber et al., 2021). 이것은 현재의 언어 모델링 패러다임에 필수적인 직관, 즉 "언어 모델은 감독되지 않은 멀티태스킹 학습자"에 기초한다(Radford et al., 2019). 따라서 STaR에서와 같이 LM의 기존 추론 능력을 활용하여 근거를 생성하고 REINFORCE 기반 보상(Williams, 1992)으로 LM을 훈련시킨다. 우리는 이 기술을 "조용하게" STaR을 적용하여 모델이 말하기 전에 생각하도록 훈련하는 것으로 이해할 수 있으므로 Quiet-STaR이라고 한다.\n' +
+      '\n' +
+      '일반적으로 Quiet-STaR은 미래 텍스트를 설명하기 위해 모든 토큰 후에 근거(_think_)를 생성하고, 근거(_talk_)가 있거나 없는 미래 텍스트 예측을 혼합한 다음 REINFORCE(_learn_)를 사용하여 더 나은 근거 생성을 학습하는 방식으로 진행된다. 웹 텍스트 데이터셋 OpenWebMath(Paster 등, 2023)와 Colossal Clean Crawled Corpus(C4, Raffel 등, 2020)를 이용하여 Quiet-STaR을 Mistral 7B(Jiang 등, 2023)에 적용한다. 데이터 세트별 미세 조정 없이, Quiet-STaR이 CommonsenseQA(36.3%\\(\\rightarrow\\)47.2%) 및 GSM8K(5.9%\\(\\rightarrow\\)10.9%)에서 제로샷 직접 추론 능력을 향상시켰으며, 이러한 개선은 LM 내부 생각에서 사용되는 토큰의 수에 따라 일관되게 증가한다는 것을 발견했다. 마지막으로, 생성된 근거의 패턴을 정성적으로 조사한다.\n' +
+      '\n' +
+      '이 과제를 해결하는 데 있어 다음과 같은 기여를 한다.\n' +
+      '\n' +
+      '1. STaR을 일반화하여 다양한 비정형 텍스트 데이터로부터 추론을 학습한다. 알고 있는 범위 내에서는, 이것은 큐레이트된 추론 작업 또는 추론 작업의 모음이 아닌 텍스트에서 LMs를 **일반적으로 추론** 으로 명시적으로 훈련하는 첫 번째 작업이다.\n' +
+      '2. 주어진 문자열의 모든 토큰 위치에서 근거를 생성하는 훈련 절차를 확장 가능하게 만드는 **병렬 샘플링 알고리즘** 을 제안하고 구현합니다.\n' +
+      '3. 각 생각의 시작과 끝에서 사용자 지정 **메타 토큰** 을 소개 하 여 LM이 근거를 생성 해야 하며 해당 근거를 기반으로 언제 예측을 해야 하는지 알 수 있습니다.\n' +
+      '4. **혼합 헤드** 를 적용 하 여 주어진 생각의 다음 토큰 예측을 현재 다음 토큰 예측에 포함 하는 양을 후향적으로 결정 합니다.\n' +
+      '5. 언어 모델링을 위해 앞에 있는 여러 토큰을 포함하여 **근시안적이지 않은 손실** 이 사고의 효과를 향상시킨다는 것을 보여 줍니다.\n' +
+      '6. 여러 태스크들에서, 우리는 사고가 LM이 동일한 웹 텍스트 상에서 트레이닝된 것보다 어려운 토큰들을 더 잘 예측할 수 있게 하여, 더 긴 생각들로 개선된다는 것을 입증한다.\n' +
+      '\n' +
+      '그림 1: **Quiet-STaR**. 우리는 단일 사고에 대한 훈련 중에 적용된 알고리즘을 시각화한다. 우리는 텍스트(생각)의 모든 토큰을 따라 생각을 병렬로 생성합니다. 이 모델은 사고(대화)가 있는 경우와 없는 경우의 다음 단어 예측의 혼합을 생성한다. STaR에서와 같이 REINFORCE를 적용하여 모델이 미래 텍스트를 예측하는 데 도움이 되는 생각의 가능성을 높이는 동시에 미래 텍스트를 덜 가능성 있게 만드는 생각(학습)을 폐기합니다.**\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      '### 언어 모델에서 추론\n' +
+      '\n' +
+      '언어 모델을 통해 추론하도록 먼저 훈련시켜 어려운 과제를 해결하기 위해 언어 모델을 훈련하고 활용하는 연구가 많이 있었다. 예를 들어, Rajani 등(2019)은 객관식 상식 추론 질문에 답하기 전에 인간 추론 트레이스에 출력하도록 미세 조정된 사전 훈련된 언어 모델이 답변에 대해 직접 훈련된 것보다 우수하다는 것을 입증했다. Shwartz et al. (2020)은 언어 모델이 일부 스캐폴딩과 함께 제공될 때 추가적인 감독 없이 이러한 유용한 사고 연쇄 솔루션을 생성할 수 있음을 입증했다. 나중에 Nye 등(2021)은 언어 모델이 더 능력이 있을 때 "스크래치패드"가 더 적은 스캐폴딩을 필요로 한다는 것을 보여주었고, 나중에 Wei 등(2022)에 의해 강화되고 비공식 작업을 강조하며 Kojima 등(2022)에 의해 더욱 강화되어 이러한 행동이 제로 샷을 달성할 수 있음을 보여주었다. 가장 최근에 Wang과 Zhou(2024)는 상식 질문 답변의 경우, 언어 모델이 자신이 아닌 한 유효한 답변 토큰을 방출하는 것을 방지함으로써 생각 사슬 추론을 활용하도록 강요할 수 있음을 보여주었다. 그러나 다시 한 번 이러한 접근법은 질문 응답 데이터 세트에 대해서만 작동하며 Wang 및 Zhou(2024)는 모델이 출력 응답 토큰을 갖는 시기를 식별하기 위해 휴리스틱에 의존한다. TRICE(Phan et al., 2023)와 마찬가지로 우리는 근거에 걸쳐 대상 텍스트의 로그 우도의 상대적 개선을 품질의 추정치로 사용하지만 평균 보상을 단순히 빼고 더 복잡한 제어 변량을 통합하지 않는다.\n' +
+      '\n' +
+      '### 추론에 대한 언어 모델 학습\n' +
+      '\n' +
+      '연구자들이 그들의 추론을 추론하거나 개선하기 위해 언어 모델들을 훈련시키기 위해 사용한 하나의 방향은 채굴된 추론 트레이스들 또는 추론-유사 데이터 상에서 언어 모델을 훈련시키는 것이다(Rajani et al., 2019; Wei et al., 2021; Lewkowycz et al., 2022; Chung et al., 2022; Gunasekar et al., 2023). 이 접근법이 효과적인 것으로 입증되었지만 단점이 있다. 이는 주석자의 능력에 민감하고 언어 모델에 대한 오프 정책(즉, 추론의 분포는 언어 모델이 그렇지 않으면 생성했을 가능성이 있는 텍스트가 아님)인 수동 주석을 필요로 한다. 이 접근법은 또한 비용이 많이 들고 확장하기 어려우며 주석자가 해결할 수 있는 것보다 더 어려운 문제를 해결하는 명확한 경로를 제공하지 않는다.\n' +
+      '\n' +
+      '추론을 가르치기 위한 또 다른 방향은 언어 모델 자신의 생성된 추론에 의존하는데, 이는 자기 놀이에 관한 많은 문헌을 기반으로 구축되는 것으로 볼 수 있다(Silver et al., 2017; Anthony et al., 2017; Polu and Sutskever, 2020). 여기에는 다음과 같은 방법이 포함됩니다.\n' +
+      '\n' +
+      '그림 2: **일반화 결과**. 우리는 Quiet-STaR로 훈련된 모델이 추론이 필요한 문제에 직접 답하기 위해 일반화되는 정도를 평가한다. 왼쪽 플롯(a)은 GSM8K에서 제로 샷 정확도를 나타내는 반면 오른쪽 플롯(b)는 미세 조정 없이 커먼센스QA에서 제로 샷 정확도를 나타낸다. 두 플롯에서 x축은 훈련 단계를 나타내며 각 라인은 Quiet-STaR 훈련 중에 사용되는 서로 다른 수의 사고 토큰에 해당한다. y축은 각 데이터 세트에 대한 제로샷 직접 정확도를 측정한다. 또한 그림 6에 이 플롯의 추론 정규화 버전을 포함합니다.**독학 추론기(Zelikman et al., 2022)는 정답으로 이어지는 추론에 대해 반복적으로 훈련된 언어 모델이 점점 더 어려운 문제를 해결할 수 있음을 보여주었습니다. 이후 작업은 Huang 등(2022)과 같은 추가 정보 또는 가정을 활용하는 것을 목표로 했으며, 이는 StaR에서 제안된 알고리즘이 다수 투표 응답이 정확하다고 가정하더라도 여전히 작동할 수 있음을 보여주었다. 추가 작업은 잘못된 추론 트레이스가 필터링되는 "프로세스 기반" 감독에 추가적인 유용성을 입증한 Uesato et al. (2022), 생성을 안내하기 위해 검증자를 훈련시키는 것도 성능을 향상시킨다는 것을 입증한 V-StaR (Hosseini et al., 2024), 문제당 여러 추론 트레이스가 주어졌을 때 정답의 한계 가능성을 최대화하는 TRICE (Hoffman et al., 2024) 등의 Zelikman et al. (2022)의 결과를 일반화시켰다. 마지막으로, 관련 작업은 또한 모델의 중간 추론에서 진술이 유효한 수학적 진술로만 제한될 수 있는 수학적 진술을 만드는 제한된 설정에서 중간 추론을 학습하는 것을 탐구했다(Poesia et al., 2023). 우리는 부록 F에서 관련 추론 작업에 대한 추가 논의를 포함한다.\n' +
+      '\n' +
+      '### Meta-tokens\n' +
+      '\n' +
+      '최근에, 점점 더 많은 작업이 신경망의 맥락에서 특정 기능들을 수행하도록 최적화된 커스텀 토큰들의 유용성을 입증했다 - 이러한 이유로, 이들은 또한 "기능 벡터들"로 지칭되었다(Todd et al., 2023). 이것의 원래 인스턴스화들 중 하나는 프롬프트-튜닝(Lester et al., 2021)(및 관련 프리픽스-튜닝(Li and Liang, 2021))이었고, 프롬프트의 토큰들에 대응하는 임베딩들은 태스크를 더 잘 달성하도록 최적화될 수 있었다. 다른 사람들은 효율성을 위해 긴 프롬프트를 압축하기 위해 메타 토큰을 적용했다(Li 등, 2023; Jung and Kim, 2023). 이 작업과 가장 관련이 있는 Mu 등(2024)은 이후 토큰이 이전 토큰(즉, 컨텍스트 압축 토큰)에 참석할 수 없는 경우 향후 토큰에 충분한 정보를 제공하도록 토큰을 최적화했다. 압축에 초점을 맞추지는 않지만 주의력에 영향을 미치는 토큰을 학습하고 복잡한 다운스트림 동작을 제어하는 문제를 공유한다. 하나의 관련 작업에서, Goyal et al.(2023)은 단일 "일시정지" 토큰(본질적으로 각 토큰을 두 개의 토큰으로 나타냄)을 학습하는 것이 LM 성능을 향상시킨다는 것을 보여준다. 그러나 우리 작업의 사고 토큰과 달리 이 일시 중지 토큰은 사고를 초기화하지 않습니다. 대신 사고의 전체로 작용하는 것으로 볼 수 있습니다. 우리는 언어에서의 추론이 훨씬 더 도움이 된다는 것을 발견한다.\n' +
+      '\n' +
+      '## 3 문제 문장\n' +
+      '\n' +
+      '이 작업에서 우리는 시퀀스의 관찰된 토큰의 각 쌍 사이에 보조 \'합리성\' 변수를 도입한다. 그런 다음 중간 생각(또는 근거)을 생성할 수 있는 용량으로 매개변수 \\(\\theta\\)가 있는 언어 모델을 최적화하는 것을 목표로 한다.\n' +
+      '\n' +
+      '\\[\\theta^{*}=\\arg\\max_{\\theta}E_{x}\\left[logp_{\\theta}\\left(x_{i:n}|x_{0:i}, \\text{rationale}_{\\theta}\\left(x_{0:i}\\right)\\right)\\right]\\]\n' +
+      '\n' +
+      '원칙적으로, 이것은 문자열에 대한 언어의 분포를 이미 올바르게 모델링하는 최적의 언어 모델에 비해 어떠한 이점도 제공하지 않는다는 점에 유의한다. 그러나, 실제로, 광범위한 선행 연구는 언어 모델이 추론 작업에 대한 중간 근거로부터 이익을 얻는다는 것을 보여주었다(Nye et al., 2021; Zelikman et al., 2022; Wei et al., 2022). 일부 연구는 연쇄적 사고 추론의 효과, 즉 "경험의 지역성"에 귀속시키는 것을 설명하는 것을 목표로 했다(Prystawski et al., 2024). 보다 광범위하게, 추론은 모델이 도전적인 계산을 더 작은 단계들로 분해할 수 있게 한다. 실제로, 우리는 어떤 분해 및 계획 단계가 미래의 텍스트를 예측하는 데 효과적인지 학습하도록 모델을 훈련시킨다. 또한 우리는 목표를 다음 토큰만이 아니라 나머지 시퀀스를 정확하게 예측하는 것으로 공식화한다는 점에 유의한다. 다시 한번, 최적의 LM에 대해서는 이것들이 동등할 것이다. 그러나 비근시안 공식은 학습 근거에 더 효과적인 손실로 이어진다는 것을 발견했다.\n' +
+      '\n' +
+      '## 4 Quiet-STaR\n' +
+      '\n' +
+      '### Overview\n' +
+      '\n' +
+      'Quiet-STaR은 세 가지 주요 단계로 작동한다(도 1):\n' +
+      '\n' +
+      '1. **병렬 근거 생성(사고, 하위 섹션 4.2)**: 입력 시퀀스 \\(x_{0:n}\\)에서 \\(n\\) 토큰 \\(x_{i}\\)에 걸쳐 병렬로 \\(r\\) 길이의 근거 \\(t\\): \\(c_{i}=(c_{i1},\\dots,c_{it})\\를 생성하여 \\(n\\times r\\)의 근거 후보를 생성합니다. 학습된 \\(<\\)\\(\\mid\\)start\\(\\mid\\)\\(>\\)와 \\(<\\)\\(\\mid\\)end\\(\\mid\\)\\(>\\) 토큰을 삽입하여 각 근거의 시작과 끝을 표시한다.\n' +
+      '2. **합리 후 및 기본 예측 혼합(토크, 하위 섹션 4.3)**: 각 근거 이후의 숨겨진 상태 출력에서 "혼합 헤드" - 기본 언어 모델 예측 로짓과 비교하여 합리 후 다음 토큰 예측 로짓이 얼마나 통합되어야 하는지를 결정하는 가중치를 생성하는 얕은 MLP를 훈련합니다. 이 접근법은 근거를 도입하기 때문에 미세 조정 초기에 분포 이동을 완화한다.\n' +
+      '3. **근거 생성 최적화(학습, 하위 섹션 4.4)**: 근거 생성 매개 변수(시작/끝 토큰 및 LM 가중치)를 최적화하여 미래 텍스트를 더 확률적으로 만드는 근거의 가능성을 높입니다. 우리는 REINFORCE를 사용하여 미래 토큰 예측에 미치는 영향을 기반으로 추론에 대한 학습 신호를 제공한다. 분산 감소를 위해 교사 강제 트릭을 적용하여 사고 후 토큰뿐만 아니라 나중에 토큰을 예측할 가능성을 손실에 포함시킨다.\n' +
+      '\n' +
+      '### Parallel Generation\n' +
+      '\n' +
+      'Quiet-STaR의 핵심 과제는 입력 시퀀스의 각 토큰 위치에서 근거를 효율적으로 생성하는 것이다. 순진하게, 이것은 각 토큰에 대해 별도의 순방향 패스가 필요할 것이며, 이는 긴 시퀀스에 대해 계산적으로 다루기 어렵게 된다.\n' +
+      '\n' +
+      '먼저 언어 모델의 추론 패스가 모든 입력 토큰에 대한 다음 토큰에 대한 확률 분포를 생성한다는 것을 관찰함으로써 매우 병렬적인 생성을 허용한다. 자연스럽게, 이것은 우리가 입력의 각 토큰으로부터 하나의 다음 토큰을 샘플링할 수 있게 한다. 각 토큰에서 상속자를 생성한 경우 원래 시퀀스로 단순히 계속할 수 없습니다. 예를 들어, "\\(<bos>\\) cat sat"의 각 토큰 후에 다음 토큰을 예측하는 것을 상상해 보세요. 하나는 "yes orange saw down"을 생성할 수 있습니다. - 각 계승자는 그 자체로 서열의 접두사에 대한 합리적인 다음 토큰이지만 토큰 목록은 이러한 접두사의 "반사실적" 연속체 집합입니다. 그러나 이러한 연속체를 활용하여 관찰된 각 토큰에 대한 숨겨진 생각을 생성할 수 있습니다.\n' +
+      '\n' +
+      '이를 효율적으로 수행하기 위해, 우리는 각각의 순방향 패스를 캐싱하고 대각선 어텐션 마스크를 이전의 어텐션 마스크에 연결한다: 각각의 생성된 토큰은 이제 그것을 생성하는 데 사용된 모든 토큰들뿐만 아니라 그 자체(그러나 다른 "반사실적" 경로들 상의 토큰에는 참여하지 않음)에도 참여한다. 더욱이, 이러한 병렬화된 다음-샘플링 토큰 절차는 임의적으로 여러 번 반복될 수 있다(또는 적어도, 메모리가 소진될 때까지). 그림 3에서 이 절차를 시각화하고 부록 B에서 이 알고리즘을 더 빠르게 만드는 추가 방법을 강조한다.\n' +
+      '\n' +
+      '### "Mixing"(Residual) Heads\n' +
+      '\n' +
+      '사전 훈련된 모델로 시작할 때, 생각들은 처음에 분배되지 않을 것이고, 따라서 언어 모델링 성능에 해를 끼칠 것이다. 사고로의 전환을 원활하게 하기 위해, 우리는 사고가 있는 경우와 없는 경우 LM 예측 사이의 학습된 보간법을 도입한다. 사고 종료 토큰의 숨겨진 상태 및 원본 텍스트 토큰의 숨겨진 상태가 주어지면, 믹싱 헤드는 사고 후 예측 로짓이 사용될 정도를 결정하는 가중치를 출력한다. 우리는 이 헤드에 얕은 다층 퍼셉트론을 사용하여 각 토큰에 대해 스칼라(scalar)를 출력한다. 우리는 부록 A에 구현 세부 사항을 포함한다.\n' +
+      '\n' +
+      '### 합리화 생성 최적화\n' +
+      '\n' +
+      '#### 4.4.1 Start-of-Thought 및 End-of-Thought Tokens 최적화\n' +
+      '\n' +
+      '\\(<\\)\\(|\\)startofthought\\(|>\\) 및 \\(<\\)\\(|\\)endofthought\\(|>\\) 토큰은 모델의 이론적 생성을 제어하는 학습된 메타 토큰 역할을 한다. 이러한 토큰, 특히 \\(<\\)\\(|\\)startofthought\\(|>\\) 토큰의 표현을 최적화하는 것은 이론적 토큰의 이산적 특성으로 인해 중요하지만 도전적이다. 시작 및 종료 토큰 임베딩을 Em dash, "---"에 해당하는 임베딩으로 초기화하며, 이는 종종 일시 중지 또는 생각을 나타내기 위해 텍스트 데이터에 나타난다. 이것은 언어 모델의 기존 지식을 활용합니다. 또한 이러한 임베딩이 보다 빠르게 최적화될 수 있도록 업데이트 단계에서 이러한 임베딩의 기울기에 (하이퍼파라미터) 가중치를 적용한다. 직관적으로, 시작 사고 토큰은 모델을 "사고 모드"에 넣는 것으로 이해될 수 있고, 종료 사고 토큰은 모델이 사고를 마쳤을 때 이를 알려주는 것으로 이해될 수 있다.\n' +
+      '\n' +
+      '#### 4.4.2 Non-myopic Scoring and Teacher-forcing\n' +
+      '\n' +
+      '우리는 생각이 모든 토큰을 예측하는 데 유용할 것으로 기대하지 않기 때문에, 우리는 모델의 보상이 생각의 다음 텍스트에서 정확한 다음 단어에 덜 의존하고 다음 의미 내용에 더 의존하는 것을 선호할 것이다. 여기에는 두 가지 주요 과제가 있다. 첫째, 트랜스포머를 사용한 일반적인 언어 모델링과 달리, 해당 사고에 해당하는 생각만\n' +
+      '\n' +
+      '그림 3: **병렬 생성** 입니다. 모든 사고 토큰이 자신에게 주의를 기울일 수 있는 어텐션 마스크, 동일한 사고 내의 모든 선행 사고 토큰, 선행 텍스트를 구성함으로써 모든 사고의 연속체를 병렬적으로 생성할 수 있다. 각각의 추론 호출은 모든 텍스트 토큰들에 대한 하나의 추가적인 생각 토큰을 생성하는 데 사용된다.\n' +
+      '\n' +
+      '주어진 다음 토큰 예측은 병렬 샘플링 전략의 결과인 해당 예측에서 기울기를 받는다. 우리는 이전에 토큰을 샘플링하여 미래의 토큰에 대한 손실 항을 추가하여 이를 해결할 수 있다. 그러나 이는 일반적으로 언어 모델링에 대한 엔트로피가 훨씬 더 높고 품질이 낮은 생성된 텍스트를 초래할 것이며, 이는 LM이 선행 토큰들을 부분적으로 무시하도록 훈련시킬 것이기 때문이다. 대신, 우리는 병렬 어텐션 마스크를 사용하여 실제 다음 토큰의 로그 확률을 계산하며, 모델이 올바른 다음 그라운드-진실 토큰을 선택했다고 가정함으로써 교사 강제력을 적용한다(변환기를 사용한 정상 언어 모델링에서 암묵적으로). 각 미래 토큰에 대한 손실은 또한 최종 생각 토큰 및 이전에 관찰된 토큰으로부터 계산된 혼합 가중치에 의존한다는 점에 유의한다. 손실에 포함된 미래 토큰의 수는 하이퍼-파라미터이다. 우리는 시작 토큰과 끝 토큰을 삽입하기 위해 동일한 교사 강제 기법을 적용한다. 이 절차를 그림 4에서 시각화합니다.\n' +
+      '\n' +
+      '#### 4.4.3 Objective\n' +
+      '\n' +
+      'REINFORCE를 사용하여 근거의 유용성에 기초하여 근거의 우도를 최적화한다: 이전에 관찰된 토큰이 주어진 언어 모델에서 \\(n_{true}\\) 참 다음 토큰 \\(X_{j+1:j+n_{true}+1}\\)의 로그 우도와 사고 후 혼합 예측 확률의 속기로 \\(p^{\\text{talk}}_{j+n_{true}}\\)를 참조한다. 분산 감소를 위해 입력 시퀀스에서 각 토큰에 대해 다중 근거 연속체를 생성한다(TRICE, Phan et al. (2023)). 따라서 우리는 각 근거 \\(T_{j}\\)에 대한 보상 \\(r_{j}\\)을 \\(p^{\\text{talk}}_{j+n_{true}}}\\)와 해당 토큰에 대한 근거 간 평균(\\(\\overline{p}^{\\text{talk}}_{j+n_{true}}}\\)의 차이로 정의한다:\n' +
+      '\n' +
+      '\\[r_{j}=\\log p^{\\text{talk}}_{j:j+n_{true}}(X_{j+1:j+n_{true}+1})-\\log\\overline{ p}^{\\text{talk}}_{j:j+n_{true}}(X_{j+1:j+n_{true}+1})\\]\n' +
+      '\n' +
+      '그런 다음 REINFORCE 손실 항에서 이 보상을 사용하여 언어 모델 매개변수 \\(\\theta\\)를 업데이트하여 평균보다 성능이 좋은 근거의 가능성을 높입니다.\n' +
+      '\n' +
+      '\\[\\nabla_{\\theta}\\mathcal{L}^{\\text{REINFORCE}}_{j}=-r_{j}\\cdot\\nabla_{\\theta} \\log p_{\\theta}(T_{j}|[X_{:j};<\\mid\\texttt{startofthought}\\mid>])\\]\n' +
+      '\n' +
+      '일부 편향을 도입할 수 있지만 보다 안정적인 훈련으로 이어졌기 때문에 REINFORCE 손실 항에서 부정적인 보상을 제외하는 것이 유용하다는 것을 발견했다.\n' +
+      '\n' +
+      '이 손실 항은 모델이 해당 토큰에 대해 생성된 모든 근거에 걸친 평균 예측과 비교하여 미래 토큰의 예측을 개선하는 근거를 생성하도록 권장한다. 이 손실로부터의 구배는 LM 파라미터 및 사상 시작 및 사상 종료 토큰 임베딩을 모두 업데이트하는 데 사용되며, (초파라미터) 가중치는 그들의 최적화를 가속화하기 위해 사상 시작 및 사상 종료 토큰 임베딩의 구배들에 적용된다. 이러한 매개변수를 반복적으로 최적화함으로써, Quiet-STaR은 훈련 전반에 걸쳐 보다 유용한 근거를 생성하도록 모델을 훈련시킨다. 마지막으로 로그 우도 손실 \\(\\mathcal{L}^{\\text{NLL}}_{j}\\)을 포함하여 LM이 발화 헤드를 최적화하도록 학습하고 기본 LM 헤드1에 대한 다음 토큰 예측 신호를 수신하도록 한다.\n' +
+      '\n' +
+      '각주 1: 선형 혼합으로 인해 혼합 중량을 기본 예측으로 이동시키는 것과 동일합니다.\n' +
+      '\n' +
+      '그림 4: **Forward Pass and Teacher Forcing**. 알고리즘의 한 번의 전진 패스를 시각화합니다. 실선은 언어 모델 계산을 나타내고, 점선은 토큰이 교사 강제력을 통해 삽입되고 믹서는 믹싱 헤드를 나타낸다. 특히 3개의 토큰을 미리 예측하는 것을 시각화합니다. 사상 생성은 그림 1과 그림 3에 더 자세히 나타나 있다.\n' +
+      '\n' +
+      '실험 및 결과\n' +
+      '\n' +
+      '직관적으로 모든 토큰이 동일한 양의 생각을 필요로 하는 것은 아니다. 예를 들어, "사람이 실행됨-"이라는 문장을 고려하자. 토큰이 "ing"2가 아닌 무언가가 될 확률이 불가피하게 존재하지만, 문맥이 없는 독립형 문장으로서, 추가적인 사고는 잘 훈련된 모델의 예측을 개선시킬 가능성이 낮다. 실제로, 우리는 대부분의 온라인 텍스트의 대부분의 덩어리에 대해 추가 생각이 거의 또는 전혀 영향을 미치지 않는다고 추측한다. 실제로, 탐색 초기에 우리는 Quiet-STaR이 모든 토큰에 동등하게 혜택을 주지 않는다는 것을 관찰했다. 따라서 우리는 우리의 접근 방식이 생각을 필요로 하는 토큰을 예측하는 데 유용한지 여부를 조사하기 위해 실험을 설계한다. 우리는 1) Quiet-STaR이 추론이 필요한 데이터 세트에서 답변을 직접 예측하는 언어 모델의 능력을 향상시키는지, 2) 사고 토큰으로 인한 영향의 분포를 평가한다. 우리는 모든 실험을 미스트랄 7B의 기본 버전으로 시작한다(Jiang et al., 2023).\n' +
+      '\n' +
+      '각주 2: 예를 들어, 바로 이 텍스트에서, "실행" 다음의 토큰은 "-"이다.\n' +
+      '\n' +
+      '우리는 더 기술적인 웹 페이지를 강조하는 크롤인 OpenWebMath(Paster et al., 2023)에 대한 훈련을 통해 대부분의 실험을 수행한다. 우리는 OpenWebMath가 추론의 혜택을 받는 토큰의 밀도가 더 높을 것으로 예상했기 때문에 OpenWebMath를 선택했으며, 이는 우리의 실험이 뒷받침합니다. 또한 보다 다양한 텍스트를 가진 널리 사용되는 LM 사전 훈련 말뭉치인 C4(Raffel et al., 2020)에 대한 Quiet-STaR을 평가하고 더 작은 이점에도 불구하고 상당한 이점을 다시 보여준다.\n' +
+      '\n' +
+      '### Downstream Performance\n' +
+      '\n' +
+      '이 서브섹션에서, 우리는 Quiet-STaR이 CommonsenseQA(Talmor et al., 2018) 및 GSM8K(Cobbe et al., 2021) 상의 언어 모델의 제로 샷 추론 능력을 향상시키는 정도를 평가한다. CommonsenseQA에서 Quiet-STaR이 기본 언어 모델에 비해 10.9%의 성능 향상을 보였다. 그림 2와 같이 이러한 개선은 모형의 근거에 사용된 토큰의 수에 따라 일관되게 증가하며, 이는 사고형 토큰을 통한 보다 철저한 추론이 보다 나은 직접적인 질의 응답 성능으로 번역되고 있음을 나타낸다. 유사하게, GSM8K에서 Quiet-STaR은 기본 모델에 비해 5.0%의 부스트를 초래하고, 다시 한 번 Quiet-STaR 훈련 동안 생성된 근거의 길이에 따라 성능이 조정된다. 참고로 그림 2에서는 사고 토큰이 없는 동일한 데이터 세트에 동일한 모델을 훈련시키는 것에 해당하는 기준선을 포함한다. 우리는 여러 곡선에서 성능이 결국 악화되는 것으로 보인다는 것을 관찰합니다. 이는 우리가 이러한 다운스트림 작업에 대해 훈련하고 있지 않기 때문에 생각 토큰의 역할이 시간이 지남에 따라 변할 수 있기 때문일 것으로 예상합니다. 우리는 또한 부록 D에서 논의하는 우리의 비근시안적 목표의 이점을 찾는다.\n' +
+      '\n' +
+      'C4에서 Quiet-STaR (Raffel et al., 2020)을 사용한 훈련은 GSM8K (5.9% \\(\\rightarrow\\) 8.1%)와 CommonsenseQA (36.3% \\(\\rightarrow\\) 42.6%)의 성능을 향상시키지만 더 작은 마진만큼 향상시켰다. 특히, C4 평가를 위해 16개의 생각 토큰과 4개의 참 토큰을 앞에 두고 그렇지 않으면 동일한 설정으로 미스트랄 7B를 훈련한다.\n' +
+      '\n' +
+      '이러한 개선 사항을 일시 중지 토큰(Goyal et al., 2023)이 제공하는 개선 사항과 비교할 수 있으며, 이는 각 토큰이 두 개의 토큰으로 표시되고 두 번째 "일시 중지" 토큰이 생각의 전체로 작용하는 Quiet-STaR의 제한된 버전으로 볼 수 있다. 특히 사전 훈련된 모델도 미세 조정하기 때문에 우리의 설정은 일시 중지 토큰 미세 조정과 가장 유사하다. 그들의 결과는 일시 정지 토큰 미세 조정이 또한 CommonsenseQA에서 기본 모델에 비해 약간의 이득을 제공한다는 것을 보여주었고, 그들은 26.9%에서 28.8%로 개선된 것을 관찰했으며, GSM8K에서 Goyal 등(2023)은 일시 정지 토큰 미세 조정이 성능에 해를 끼친다는 것을 발견했다. 또한 두 작업 모두에서(그리고 대부분의 평가된 작업에서) 추가 생각 토큰이 성능에 부정적인 영향을 미친다는 것을 관찰했다. 더욱이, 그들은 "일시정지-프리트레이닝의 미온적 효과 - 표준-프리트레이닝된 모델"(Goyal et al., 2023)에 대해 논의한다. 이는 모델이 다중-토큰 근거들을 생성하도록 허용하는 것이 단일-토큰 "일시 정지"에 비해 더 효과적인 추론으로 이어진다는 것을 시사한다. 그러나 Goyal 등(2023)과 달리 우리는 다운스트림 작업에 대해 미세 조정하지 않습니다.\n' +
+      '\n' +
+      '전반적으로, 이러한 다운스트림 결과는 일반 텍스트 데이터의 라인 사이의 서브텍스트를 예측하기 위해 언어 모델을 훈련시키는 것이 명시적으로 훈련되지 않은 데이터 세트에서도 추론 능력을 실질적으로 향상시킬 수 있음을 검증한다. 더 긴 근거는 일관되게 더 나은 결과를 가져오고 Quiet-STaR이 제한된 일시 중지 토큰 접근법을 능가한다는 사실은 Quiet-STaR이 입력에 대해 더 철저하게 추론하기 위해 자체 생성된 생각을 활용하도록 모델을 성공적으로 가르치고 있다는 개념을 뒷받침한다.\n' +
+      '\n' +
+      '### Improvement Distribution\n' +
+      '\n' +
+      '부록 그림 7에서 시각화한 바와 같이, 우리는 평균적으로 임의의 토큰을 예측하는 LM 능력의 향상이 거의 없음을 발견한다. 그러나 상대적 개선의 분포를 시각화하면 더 어려운 토큰에 불균형적인 개선이 있습니다. 이것은 일부 텍스트 토큰이 실질적으로 더 어렵고 신중한 생각으로부터 더 많은 이익을 얻는다는 생각을 반영한다.\n' +
+      '\n' +
+      '부록 그림 8에서는 개선이 발생하는 토큰의 종류에 대한 통찰력을 제공하는 것을 목표로 한다. 즉, 예시에서 사고가 많은 토큰에 도움이 되는 것처럼 보이지만 검사는 해당 정리의 이름이나 증명의 다음 단계의 시작과 같이 관련 정보를 회상하는 것이 유용한 토큰을 예측하는 데 불균형적으로 도움이 된다고 제안한다. 특히, 이것은 Prystawski 등에 의해 제안된 프레임(2024)과 잘 일치할 것이다.\n' +
+      '\n' +
+      '### Quiet-STaR 및 Chain-of-Thought\n' +
+      '\n' +
+      '사고 연쇄 프롬프트와 우리의 접근법 사이에는 자연스러운 유사점이 있지만 직교적이고 보완적이다. zero-shot chain-of-thought에서, 사용자는 모델이 \'큰 소리로\' 생각하도록 적극적으로 프롬프트하고, 그렇지 않으면 그의 통상의 프로덕션 분배를 사용한다(Kojima et al., 2022); Quiet-STaR은 대신에 모델이 모든 토큰에서 조용히 생각하도록 허용하고, 분배는 유용하도록 훈련된다. 우리는 명시적 CoT 추론을 생성하면서 묵음, Quiet-STaR, 근거를 사용하여 조사한다. 우리의 목표는 태스크별 입력이 전혀 필요하지 않은 일반주의 추론이기 때문에, 우리는 맥락 내 예시 없이 제로 샷 프롬프트("차근차근 생각해보자")를 사용했다. 우리의 실험은 내부 근거를 통해 모델이 부록 E에 표시되고 그림 5에 시각화된 보다 구조화되고 일관된 사고 사슬을 생성할 수 있음을 나타낸다. 128개의 GSM8K 테스트 항목의 샘플에 대해 평가된 바와 같이 8개의 샘플(cot-maj@8)에 대한 다수 투표 정확도는 Quiet-STaR로 40.6%에서 47.7%로 증가한다. 각 사상 연쇄 용액은 온도 0.7로 샘플링된다.\n' +
+      '\n' +
+      '### Examples\n' +
+      '\n' +
+      'Quiet-STaR에는 인간이 해석할 수 있는 사고에 대한 명시적인 정규화가 없지만 모델 언어로 훈련된 동일한 변압기에서 생성되므로 적어도 부분적으로 이해할 수 있다. 부록 I에서 이러한 디자인 선택이 훈련 안정성에 도움이 되는 이유에 대해 논의한다. 참고로, OpenWebMath에서 미래 토큰을 예측하는 데 모델에 도움이 된 생각의 예를 포함한다. 첫째, 한 가지 경우에 마그네슘으로 시작하여 마그네슘 질화물을 생성해야 한다는 것을 상기하면 절차의 첫 번째 단계가 마그네슘을 가열하는 것을 포함한다는 것을 더 잘 예측할 수 있다.\n' +
+      '\n' +
+      '그림 5: **Quiet-STaR의 제로 샷 성능은 GSM8K의 연쇄 사고에 적용되었습니다. 우리는 Quiet-STaR 훈련된 미스트랄 모델을 사용하여 사고 연쇄 성능을 개선할 수 있는 방법을 시각화한다. 우리는 8-사고-토큰-훈련된 모델을 사용하고 그 내부 생각을 사용하여 제로-샷 사고 연쇄에서 토큰을 개선한다(Kojima et al., 2022)**\n' +
+      '\n' +
+      '#마그네슘이 질소와 반응하여 질화마그네슘을 형성한다. 이 반응의 화학식은 Mg+N_2->MgN_2이다. 이 반응의 생성물, 즉 생성물은 무엇인가? 이 반응의 화학식은 Mg+N_2->MgN_2이다. 이 반응의 화학식은 SM(g)_{3}{N_{2}}$.n\\n### 설명:\\n\\nAs 많은 활성 금속도 마찬가지로 질화마그네슘은 <|startofthought|>1 --, 따라서 질화마그네슘을 형성하는 반응의 방정식은 금속(fier\'\n' +
+      '\n' +
+      '일부 경우들에서, 가장 유용한 생각들은 예를 들어 타겟 텍스트에 더 가깝게 대응하는 거의 연속인 것으로 보인다.\n' +
+      '\n' +
+      '일부 정수 $k$.n\\n$에 대해 sn = 2k+1$이면 정수 sns는 홀수이다. $A = B임을 증명하기 위해서는 $A \\subseteq B$와 $B \\subseteq A$임을 증명해야 한다. 이들 중 첫 번째는 어떤 의미에서는 <|startthought|> - 학생들에게 더 어려운 <|endthought|>가 되는 경향이 있다.\n' +
+      '\n' +
+      '마지막으로, 우리는 CommonsenseQA에 답한 예를 포함한다. 특히, 이 생각은 질문을 읽는 동안 발생하여 최종 답변을 예측하는 데 사용되지 않았다.\n' +
+      '\n' +
+      '\'Q: 동일한 사람에 대해 동일한 것에 대해 반복적으로 말하는 것은 <|startofthought|>n\\n(a) a 일대일 상관관계\\n\\n(b) a 일대일<|endofthought|> 어떤 사람이 무엇을 할 수 있는가?\'\n' +
+      '\n' +
+      '## 6 Limitations\n' +
+      '\n' +
+      '이 연구는 이성에 대한 학습을 위한 새로운 프레임워크를 제안하고, 이를 통해 다양한 메타 학습 과제에 대한 솔루션을 탐구한다. 그러나 이러한 과제를 해결하기 위해서는 특정 단순화가 필요했다. 예를 들어, 모델이 처음부터 훈련될 때 이러한 기술이 작동하는지 여부를 이해하는 것은 가치가 있을 것이다. 우리는 또한 강력한 모델이지만 70억 개의 매개변수 모델에 콰이어트-STaR만 적용했다. 추론의 이득에 대해 종종 관찰된 바와 같이, 더 나은 모델에 적용된 동일한 기술은 불균형적으로 더 나은 결과를 산출할 가능성이 있다(Wei et al., 2022).\n' +
+      '\n' +
+      'Quiet-STaR은 상당한 오버헤드를 초래하여, 모든 추가 토큰을 생성하기 전에 많은 토큰을 생성한다. (계산 조정된 성능 결과에 대한 부록 C 참조) 그러나, 이것은 또한 장점으로 볼 수 있다: 통상적으로, 언어 모델은 현재 컨텍스트에 기초하여 다음 토큰을 생성할 수 있고, 샘플링 품질을 향상시키는 기술들이 있지만, 다음-토큰 예측을 향상시키기 위해 추가적인 계산을 활용하는 일반적인 방법은 없다. 현재 구현에서 우리는 근거를 생성하거나 종료할 시기를 동적으로 예측하는 것을 지원하지 않는다. 그러나 이것은 자연스러운 확장일 것입니다. 예를 들어, 믹싱 헤드가 기본 언어 모델의 예측인 경우, 사고 후가 아니라 사고 전에 임계값을 적용하여 통합되지 않는 생각을 생성하는 것을 방지할 수 있다. 우리는 이미 사고를 생성했을 때 사고의 유용성을 예측하는 것이 더 간단하기 때문에 이것이 더 어려운 과제라고 기대한다.\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      'Quiet-STaR은 일반적이고 확장 가능한 방식으로 추론하는 법을 배울 수 있는 언어 모델을 향한 단계를 나타낸다. Quiet-STaR은 특정 데이터 세트에 대해 좁게 전문화하기보다는 다양한 웹 텍스트에 내재된 풍부한 추론 작업 스펙트럼에 대해 훈련함으로써 보다 강력하고 적응 가능한 언어 모델로 가는 길을 제시한다. 우리의 결과는 Qiet-STaR이 질적으로 의미 있는 근거를 생성하면서 다운스트림 추론 성능을 향상시키는 이 접근법의 가능성을 보여준다. 우리는 이것이 또한 미래의 많은 잠재적인 방향을 열어준다고 믿습니다. 예를 들어, 미래의 토큰에 대한 예측을 더욱 향상시키기 위해 생각을 앙상블하는 것을 목표로 할 수 있습니다. 더욱이, 언어 모델이 예를 들어 예측 전에 믹싱 헤드를 넣는 것에 의해 언제 생각이 유용할지를 예측할 수 있다면, 예측된 믹싱 가중치는 생성 동안 컴퓨팅을 동적으로 할당하는 데 사용될 수 있다. 향후 연구는 언어 모델과 인간 유사 추론 능력 사이의 격차를 더욱 좁히기 위해 이러한 통찰력을 기반으로 할 수 있다.\n' +
+      '\n' +
+      '## Ethics Statement\n' +
+      '\n' +
+      '이 작업은 STaR에도 적용되는 몇 가지 중요한 윤리적 질문을 제기한다. 예를 들어, 언어로 모델이 표현하는 추론이 모델의 내부 처리(즉, 충실성)를 정확하게 나타낸다는 것을 알 수 없다. 또한, 충실성에 관계없이, 모델이 유용하다고 발견하면 유해하거나 편향된 추론 패턴에 대한 안전장치가 없다. 이와 관련하여, CommonsenseQA는 편향된 질문과 질 낮은 답변을 많이 가지고 있는 것으로 알려져 있으나(Geva et al., 2019), 선행 작업(Zelikman et al., 2022; Goyal et al., 2023)에 맞추어 사용하고 있다. 따라서 언어 모델링을 개선하는 것 외에도 근거 자체가 어떤 능력을 사용해야 하는지 불분명하다.\n' +
+      '\n' +
+      '## Acknowledgements\n' +
+      '\n' +
+      '우리는 특히 도움이 되고 상세한 언급에 대해 신디 우, 마이클 리, 첸 황과 쉬에첸 리, 얀 필리프 프랑켄, 유후이 우, 가브리엘 포에시아, 위니 쉬, 오마르 샤이크, 판윤 선, 조이 허유야, 오마르 카타브, 윌리엄 인에게 유익한 토론을 위해 감사드린다. 또한 이 작업이 NSF Grant #2302701에 의해 지원되었음을 인정한다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Anthony 등(2017) Thomas Anthony, Zheng Tian, and David Barber. 딥러닝과 트리 검색으로 빠르고 느리게 생각합니다. _ 신경 정보 처리 시스템의 발전_, 30, 2017.\n' +
+      '* Chen et al. (2023) Baian Chen, Chang Shu, Ehsan Shareghi, Nigel Collier, Karthik Narasimhan, and Shunyu Yao. 직격: 언어 에이전트 미세 조정. _ arXiv preprint arXiv:2310.05915_, 2023.\n' +
+      '* Chung et al.(2022) Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Yunxuan Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. _ arXiv preprint arXiv:2210.11416_, 2022.\n' +
+      '* Cobbe 등(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 수학 단어 문제 해결을 위한 검증자 훈련 arXiv_, 2021. _eprint: 2110.14168_.\n' +
+      '* Gandhi et al. (2023) Kanishk Gandhi, Dorsa Sadigh, and Noah D Goodman. 언어 모델을 사용한 전략적 추론입니다. _ arXiv preprint arXiv:2305.19165_, 2023.\n' +
+      '* Geva et al.(2019) Mor Geva, Yoav Goldberg, and Jonathan Berant. 작업을 모델링하는 건가요, 주석을 만드는 건가요? 자연어 이해 데이터 세트의 주석자 편향에 대한 조사 _ arXiv preprint arXiv:1908.07898_, 2019.\n' +
+      '* Goyal et al. (2023) Sachin Goyal, Ziwei Ji, Ankit Singh Rawat, Aditya Krishna Menon, Sanjiv Kumar, and Vaishnavh Nagarajan. 말하기 전에 생각하십시오. 일시 중지 토큰이 있는 언어 모델을 교육합니다. _ arXiv preprint arXiv:2310.02226_, 2023.\n' +
+      '* Gulcehre et al.(2023) Caglar Gulcehre, Tom Le Paine, Srivatsan Srinivasan, Ksenia Konyushkova, Lotte Weerts, Abhishek Sharma, Aditya Siddhant, Alex Ahern, Miaosen Wang, Chenjie Gu, et al. Reinforced self-training(rest) for language modeling. _ arXiv preprint arXiv:2308.08998_, 2023.\n' +
+      '* Gunasekar et al. (2023) Suriya Gunasekar, Yi Zhang, Jyoti Aneja, Caio Cesar Teodoro Mendes, Allie Del Giorno, Sivakanth Gopi, Mojan Javaheripi, Piero Kauffmann, Gustavo de Rosa, Olli Saarikivi, et al. 교재만 있으면 됩니다. _ arXiv preprint arXiv:2306.11644_, 2023.\n' +
+      '* Haluptzok 등(2023) Patrick Haluptzok, Matthew Bowers, and Adam Tauman Kalai. 언어 모델은 스스로 더 잘 프로그래밍하도록 가르칠 수 있습니다. _The Eleventh International Conference on Learning Representations_, 2023. URL [https://openreview.net/forum?id=SaRj2ka1XZ3](https://openreview.net/forum?id=SaRj2ka1XZ3)입니다.\n' +
+      '* Haluptzok et al. (2023)John Hewitt, John Thickstun, Christopher D Manning, and Percy Liang. 배낭 언어 모델. _ arXiv preprint arXiv:2305.16765_, 2023.\n' +
+      '*Ho et al.(2022) Nangyu Ho, Laura Schmid, and Se-Young Yun. 큰 언어 모델은 추론 교사입니다. _ arXiv preprint arXiv:2212.10071_, 2022.\n' +
+      '*호프만 등(2024) Matthew Douglas Hoffman, Du Phan, David Dohan, Sholto Douglas, Tuan Anh Le, Aaron Parisi, Pavel Sountsov, Charles Sutton, Sharad Vikram, and Rif A Saurous. 잠재 변수 추론을 통한 훈련 연쇄 사상_ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Hosseini 등(2024) Arian Hosseini, Xingdi Yuan, Nikolay Malkin, Aaron Courville, Alessandro Sordoni, and Rishabh Agarwal. V-star: 독학한 추론자를 위한 검증자 훈련. _ arXiv preprint arXiv:2402.06457_, 2024.\n' +
+      '*Hsieh et al. (2023) Cheng-Yu Hsieh, Chun-Liang Li, Chih-Kuan Yeh, Hootan Nakhost, Yasuhisa Fujii, Alexander Ratner, Ranjay Krishna, Chen-Yu Lee, and Tomas Pfister. 차근차근 증류! 더 적은 훈련 데이터와 더 작은 모델 크기로 더 큰 언어 모델을 수행하는 것을 능가합니다. _ arXiv preprint arXiv:2305.02301_, 2023.\n' +
+      '* Huang et al.(2022) Jiaxin Huang, Shixiang Shane Gu, Le Hou, Yuexin Wu, Xuezhi Wang, Hongkun Yu, and Jiawei Han. 대형 언어 모델은 자체 개선할 수 있습니다. _ arXiv preprint arXiv:2210.11610_, 2022.\n' +
+      '* Jang et al.(2016) Eric Jang, Shixiang Gu, and Ben Poole. gumbel-softmax를 사용한 범주형 재매개 변수화입니다. _ arXiv preprint arXiv:1611.01144_, 2016.\n' +
+      '* Jiang 등(2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7b. _ arXiv preprint arXiv:2310.06825_, 2023.\n' +
+      '* Jung and Kim (2023) Hoyoun Jung and Kyung- Joong Kim. 강화 학습을 통해 신속하게 압축할 수 있습니다. _ arXiv preprint arXiv:2308.08758_, 2023.\n' +
+      '* Khattab 등(2022) Omar Khattab, Keshav Santhanam, Xiang Lisa Li, David Hall, Percy Liang, Christopher Potts, and Matei Zaharia. 시범 검색 예측: 지식 집약적인 nlp에 대한 검색 및 언어 모델을 구성합니다. _ arXiv preprint arXiv:2212.14024_, 2022.\n' +
+      '* Khattab 등(2023) Omar Khattab, Arnav Singhvi, Pardhi Maheshwari, Zhiyuan Zhang, Keshav Santhanam, Sri Vardhamanan, Saiful Haq, Ashutosh Sharma, Thomas T Joshi, Hanna Moazam, et al. Dspy: Compiling declarative language model calls into self-enhving pipelines. _ arXiv preprint arXiv:2310.03714_, 2023.\n' +
+      '* Kojima et al.(2022) Takeshi Kojima, Shixiang Shane Gu, Machel Reid, Yutaka Matsuo, and Yusuke Iwasawa. 대용량 언어 모델은 제로 샷 추론기, 2022입니다. URL [https://arxiv.org/abs/2205.11916](https://arxiv.org/abs/2205.11916).\n' +
+      '* Lampinen 등(2022) Andrew K Lampinen, Ishita Dasgupta, Stephanie CY Chan, Kory Matthewsson, Michael Henry Tessler, Antonia Creswell, James L McClelland, Jane X Wang, and Felix Hill. 언어 모델은 문맥에서 설명을 통해 배울 수 있습니까? _ arXiv preprint arXiv:2204.02329_, 2022.\n' +
+      '* Lanchant 등(2024) Jack Lanchant, Shubham Toshniwal, Jason Weston, Sainbayar Sukhbaatar, et al. Learning to reasoning and memorize with self-notes _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Lester et al.(2021) Brian Lester, Rami Al-Rfou, and Noah Constant. 매개 변수 효율적인 프롬프트 튜닝을 위한 스케일 힘입니다. _ arXiv preprint arXiv:2104.08691_, 2021.\n' +
+      '* Lewkowycz 등(2022) Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, et al. Solving quantitative reasoning problems with language models. _ Advances in Neural Information Processing Systems_, 35:3843-3857, 2022.\n' +
+      '* Lester 등(2021)Michael Y Li, Emily B Fox, and Noah D Goodman. 언어 모델을 사용하여 자동화된 통계 모델 검색 _ arXiv preprint arXiv:2402.17879_, 2024.\n' +
+      '* Li et al.(2022) Shiyang Li, Jianshu Chen, Yelong Shen, Zhiyu Chen, Zhiyu Chen, Xinlu Zhang, Zekun Li, Hong Wang, Jing Qian, Baolin Peng, Yi Mao, et al. 큰 언어 모델로부터의 설명은 작은 추론자를 더 좋게 만든다. _ arXiv preprint arXiv:2210.06726_, 2022.\n' +
+      '* Li and Liang (2021) Xiang Lisa Li and Percy Liang. 접두사 조정: 생성을 위해 연속 프롬프트를 최적화합니다. _ arXiv preprint arXiv:2101.00190_, 2021.\n' +
+      '* Li et al.(2023) Yucheng Li, Bo Dong, Chenghua Lin, and Frank Guerin. 대용량 언어 모델의 추론 효율성을 향상시키기 위해 컨텍스트를 압축합니다. _ arXiv preprint arXiv:2310.06201_, 2023.\n' +
+      '* Liu et al. (2023) Jiacheng Liu, Ramakanth Pasunuru, Hannaneh Hajishirzi, Yejin Choi, and Asli Celikyilmaz. 결정: 자기피드백으로 강화된 내성적인 추론자들. _ arXiv preprint arXiv:2310.04921_, 2023.\n' +
+      '* Luo et al. (2023) Haipeng Luo, Qingfeng Sun, Can Xu, Pu Zhao, Jianguang Lou, Chongyang Tao, Xiubo Geng, Qingwei Lin, Shifeng Chen, and Dongmei Zhang. 마법사: 강화된 evol-instruct를 통해 대규모 언어 모델에 대한 수학적 추론을 강화합니다. _ arXiv preprint arXiv:2308.09583_, 2023.\n' +
+      '* Madaan 등(2023) Aman Madaan, Niket Tandon, Prakhar Gupta, Skyler Hallinan, Luyu Gao, Sarah Wiegreffe, Uri Alon, Nouha Dziri, Shrimai Prabhumoye, Yiming Yang, et al. Self-refine: Iterative refinement with self. _ Feedback_, 2023.\n' +
+      '* Mnih 등(2013) Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Alex Graves, Ioannis Antonoglou, Daan Wierstra, and Martin Riedmiller. 심층 강화 학습으로 아타리 게임을 합니다. _ arXiv preprint arXiv:1312.5602_, 2013.\n' +
+      '* Mnih 등(2016) Volodymyr Mnih, Adria Puigdomenech Badia, Mehdi Mirza, Alex Graves, Timothy Lillicrap, Tim Harley, David Silver, and Koray Kavukcuoglu. 딥 강화 학습을 위한 비동기식 방법. In _International conference on machine learning_, pp. 1928-1937. PMLR, 2016.\n' +
+      '* Mu et al.(2024) Jesse Mu, Xiang Li, and Noah Goodman. 요지 토큰으로 프롬프트를 압축하는 방법을 배웁니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Nye 등(2021) Maxwell Nye, Anders Johan Andreassen, Guy Gur-Ari, Henryk Michalewski, Jacob Austin, David Bieber, David Dohan, Aitor Lewkowycz, Maarten Bosma, David Luan, et al. Show your work: Scratchpads for intermediate computation with language models. _ arXiv preprint arXiv:2112.00114_, 2021.\n' +
+      '* Pan et al.(2024) Alexander Pan, Erik Jones, Meena Jagadeesan, and Jacob Steinhardt. 언어 모델을 사용한 피드백 루프는 컨텍스트 내 보상 해킹을 유도합니다. _ arXiv preprint arXiv:2402.06627_, 2024.\n' +
+      '*Paster et al.(2023) Keiran Paster, Marco Dos Santos, Zhangir Azerbayev, and Jimmy Ba. Openwebmath: 고품질 수학 웹 텍스트의 열린 데이터 세트입니다. _ arXiv preprint arXiv:2310.06786_, 2023.\n' +
+      '* Phan 등(2023) Du Phan, Matthew Douglas Hoffman, Sholto Douglas, Tuan Anh Le, Aaron T Parisi, Pavel Sountsov, Charles Sutton, Sharad Vikram, Rif A Saurous, et al. Training chain-of-thought via latent-variable inference. 《신경 정보 처리 시스템에 관한 제37차 회의》 2023년.\n' +
+      '* Poesia et al. (2023) Gabriel Poesia, Kanishk Gandhi, Eric Zelikman, and Noah D Goodman. 언어 모델을 사용한 인증된 추론입니다. _ arXiv preprint arXiv:2306.04031_, 2023.\n' +
+      '* Polu and Sutskever (2020) Stanislas Polu and Illya Sutskever. 자동 정리 증명을 위한 생성 언어 모델링 _ CoRR_, abs/2009.03393, 2020. URL [https://arxiv.org/abs/2009.03393](https://arxiv.org/abs/2009.03393). _ eprint: 2009.03393.\n' +
+      '* Prystawski 등(2024) Ben Prystawski, Michael Li, and Noah Goodman. 왜 차근차근 생각해? 추론은 경험의 지역성에서 나온다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* P*Qiao 등(2024) Shuofei Qiao, Ningyu Zhang, Runnan Fang, Yujie Luo, Wangchunshu Zhou, Yuchen Eleanor Jiang, Chengfei Lv, and Huaijun Chen. 자동 실행: 자체 계획을 통해 에이전트 학습을 처음부터 자동으로 수행합니다. _ arXiv preprint arXiv:2401.05268_, 2024.\n' +
+      '* Qiu et al. (2023) Linlu Qiu, Liwei Jiang, Ximing Lu, Melanie Sclar, Valentina Pyatkin, Chandra Bhagavatula, Bailin Wang, Yoon Kim, Yejin Choi, Nouha Dziri, et al. Phenomenal yet puzzling: Testing inductive reasoning capabilities of language models with hypothesis refinement. _ arXiv preprint arXiv:2310.08559_, 2023.\n' +
+      '* Radford et al.(2019) Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. Language models are unsupervised multitask learners. _ OpenAI blog_, 1(8):9, 2019.\n' +
+      '* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 통합 텍스트 대 텍스트 변환기를 사용하여 전이 학습의 한계를 탐색합니다. _ Journal of machine learning research_, 21(140):1-67, 2020.\n' +
+      '* Rajani 등(2019) Nazneen Fatema Rajani, Bryan McCann, Caiming Xiong, and Richard Socher. 설명해 봐! 상식 추론을 위한 언어 모델을 확장합니다. <Proceedings of the 57th Annual Meeting of the Association for Computational Linguistics>, pp. 4932-4942, 2019.\n' +
+      '* Schick 등(2024) Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Railenau, Maria Lomeli, Eric Hambro, Luke Zettlemoyer, Nicola Cancedda, and Thomas Scialom. 도구 형성기: 언어 모델은 도구를 사용하는 방법을 스스로 가르칠 수 있습니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Schulman 등(2017) John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 근위 정책 최적화 알고리즘 _ arXiv preprint arXiv:1707.06347_, 2017.\n' +
+      '* Schuster 등(2021) Tal Schuster, Ashwin Kalyan, Alex Polozov, and Adam Tauman Kalai. 퍼즐 프로그래밍 2021년 _신경 정보 처리 시스템에 대한 30-fifth Conference_ 에서 URL [https://openreview.net/forum?id=fe_hCc4RBrg](https://openreview.net/forum?id=fe_hCc4RBrg)입니다.\n' +
+      '* Shinn et al. (2023) Noah Shinn, Federico Cassano, Beck Labash, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. 반사: 언어 강화 학습을 하는 언어 에이전트입니다. _ arXiv preprint arXiv:2303.11366_, 2023.\n' +
+      '* Shwartz et al.(2020) Vered Shwartz, Peter West, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 감독되지 않은 상식적인 질문은 자기 대화로 대답한다. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pp. 4615-4629, 2020.\n' +
+      '* Silver 등(2017) David Silver, Thomas Hubert, Julian Schrittwieser, Ioannis Antonoglou, Matthew Lai, Arthur Guez, Marc Lanctot, Laurent Sifre, Dharshan Kumaran, Thore Graepel, et al. Mastering chess and shogi by self-play with a general reinforcement learning algorithm. _ arXiv preprint arXiv:1712.01815_, 2017.\n' +
+      '* Talmor 등(2018) Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. 상식 지식: 상식 지식을 대상으로 하는 질문 응답 도전입니다. _ arXiv preprint arXiv:1811.00937_, 2018.\n' +
+      '* Todd et al.(2023) Eric Todd, Millicent L Li, Arnab Sen Sharma, Aaron Mueller, Byron C Wallace, and David Bau. 큰 언어 모델의 함수 벡터입니다. _ arXiv preprint arXiv:2310.15213_, 2023.\n' +
+      '* Uesato et al.(2022) Jonathan Uesato, Nate Kushman, Ramana Kumar, Francis Song, Noah Siegel, Lisa Wang, Antonia Creswell, Geoffrey Irving, and Irina Higgins. 과정 및 결과 기반 피드백으로 수학 단어 문제를 해결합니다. _ 신경 정보 처리 시스템(NeurIPS 2022) 워크샵 on MATH-AI_, 2022.\n' +
+      '* Wang et al.(2023) Ruocheng Wang, Eric Zelikman, Gabriel Poesia, Yewen Pu, Nick Haber, and Noah D Goodman. 가설 탐색: 언어 모델을 사용한 귀납적 추론 _ arXiv preprint arXiv:2309.05660_, 2023.\n' +
+      '* Wang and Zhou (2024) Xuezhi Wang and Denny Zhou. 프롬프트 없이 사고 연쇄 추론입니다. _ arXiv preprint arXiv:2402.10200_, 2024.\n' +
+      '* Wang et al.(2020)* Weber et al.(2021) Lucas Weber, Jaap Jumelet, Elia Bruni, and Dieuwke Hupkes. 언어 모델링은 다중 작업 문제입니다. _ arXiv preprint arXiv:2101.11287_, 2021.\n' +
+      '* Wei et al.(2021a) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. 파인튜닝 언어 모델은 제로샷 학습자입니다. 2021a에서 _학습 표현에 대한 국제 회의_ 에서.\n' +
+      '* Wei et al.(2021b) Jason Wei, Maarten Bosma, Vincent Y Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. 파인튜닝 언어 모델은 제로샷 학습자입니다. _ arXiv preprint arXiv:2109.01652_, 2021b.\n' +
+      '* Wei et al.(2022a) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. 2022년 10월, 대규모 언어 모델의 출현 능력. URL [http://arxiv.org/abs/2206.07682](http://arxiv.org/abs/2206.07682). arXiv:2206.07682 [cs].\n' +
+      '* Wei et al.(2022b) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc Le, and Denny Zhou. 대용량 언어 모델에서 추론하는 생각의 사슬, 2022b. URL [https://arxiv.org/abs/2201.11903](https://arxiv.org/abs/2201.11903).\n' +
+      '* Williams (1992) Ronald J Williams. 연결주의 강화 학습을 위한 간단한 통계적 기울기 추종 알고리즘입니다. _ Machine learning_, 8:229-256, 1992.\n' +
+      '* Yao et al.(2022) Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. 반응: 언어 모델에서 추론과 행동을 활성화합니다. _ International Conference on Learning Representations (ICLR 2023)_, 2022.\n' +
+      '* Zelikman et al.(2022) Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Goodman. 스타: 추론과 함께 부트스트래핑 추론. _ Advances in Neural Information Processing Systems_, 35:15476-15488, 2022.\n' +
+      '* Zelikman 등(2023a) Eric Zelikman, Qian Huang, Gabriel Poesia, Noah D. Goodman, and Nick Haber. 파셀: 분해들을 구성하여 언어 모델들을 갖는 알고리즘 추론, 2023a.\n' +
+      '* Zelikman et al.(2023b) Eric Zelikman, Eliana Lorch, Lester Mackey, and Adam Tauman Kalai. 독학 최적화기(중지): 코드 생성을 재귀적으로 자체 개선합니다. _ arXiv preprint arXiv:2310.02304_, 2023b.\n' +
+      '* Zhang and Parkes (2023) Hugh Zhang and David C Parkes. 연쇄 사고 추론은 정책 개선 연산자입니다. _ arXiv preprint arXiv:2309.08589_, 2023.\n' +
+      '*Zhang et al.(2024) Tianjun Zhang, Aman Madaan, Luyu Gao, Steven Zheng, Swaroop Mishra, Yiming Yang, Niket Tandon, and Uri Alon. 실수로 인한 상황별 원리 학습입니다. _ arXiv preprint arXiv:2402.05403_, 2024.\n' +
+      '* Zhang et al.(2022) Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex Smola. 대규모 언어 모델에서 자동 사고 연쇄 프롬프트입니다. _ arXiv preprint arXiv:2210.03493_, 2022.\n' +
+      '* Zhao et al.(2023) Wenting Zhao, Justin T Chiu, Claire Cardie, and Alexander M Rush. 홉, 유니온, 생성: 합리적 감독 없이 설명 가능한 다중 홉 추론 _ arXiv preprint arXiv:2305.14237_, 2023.\n' +
+      '* Zhou et al.(2022) Hattie Zhou, Azade Nova, Hugo Larochelle, Aaron Courville, Behnam Neyshabur, and Hanie Sedghi. 상황 내 학습을 통해 알고리즘 추론을 가르칩니다. _ arXiv preprint arXiv:2211.09066_, 2022.\n' +
+      '* Zhu et al. (2023) Zhaocheng Zhu, Yuan Xue, Shinun Chen, Denny Zhou, Jian Tang, Dale Schuurmans, and Hanjun Dai. 대형 언어 모델은 규칙을 학습할 수 있습니다. _ arXiv preprint arXiv:2310.07064_, 2023.\n' +
+      '\n' +
+      '## 부록 A Hyperparameter Choices\n' +
+      '\n' +
+      '최적화 및 평가 최적화를 위해 워밍업 20단계, 학습률 \\(1e-6\\), 무게 감쇠 0.001, 배치 크기 8(실행 전반에 걸쳐 고정 상태를 유지하기 위해 필요한 기울기 축적과 함께)의 AdamW 최적화기를 사용한다. 또한, <!startofthought|>와 <!endofthought|> 임베딩 기울기 가중치는 \\(1e2\\)이고, 정책 가중치는 \\(1e6\\)이다. 훈련 시 온도 \\(T=1\\)로 샘플링하고, 평가 시 생각들에 대해 탐욕적 디코딩을 사용한다. 우리는 온도 \\(T=3\\)에서 REINFORCE 손실을 계산하여 샘플을 중요 샘플로 취급한다. 우리는 어떤 예제로도 모델을 프롬프트하지 않기 때문에 정답을 생성할 때 조건화된 정답 확률을 직접 계산합니다. 예를 들어, \\(A\\cdots E\\) 사이의 객관식 질문에 대해서는 \\(A\\cdots E\\)에 해당하는 토큰에 대한 로짓에 대한 정확도를 계산합니다. 마지막으로 교육을 위해 각 샘플(또는 256개 미만의 토큰이 있는 경우 패드)에서 256개 토큰의 랜덤 범위를 선택합니다.\n' +
+      '\n' +
+      'Mixing Head의 경우 ReLU 활성화와 함께 3층 MLP를 사용하여 언어 모델의 숨겨진 상태 크기의 두 배 크기의 벡터를 취하고(두 예측을 연결하여 가중치를 결정함에 따라), 스칼라로 출력한다. 이 스칼라는 주어진 토큰에서 예측을 하기 위해 생각 없이 LM 헤드의 로짓에 가중치를 부여하는 데 사용됩니다.\n' +
+      '\n' +
+      '계산 우리는 8개의 80GB H100의 단일 노드에서 모든 모델을 훈련한다.\n' +
+      '\n' +
+      '## 부록 B 빠른 병렬 샘플링\n' +
+      '\n' +
+      '이 절에서는 병렬 생성 알고리즘을 더욱 가속화하기 위한 몇 가지 간단한 방법을 강조한다. 예를 들어, 대각선 어텐션을 단순히 요소적(쌍별이 아닌) 도트 곱으로 계산함으로써 어텐션의 메모리 비용을 줄일 수 있다는 점에 유의하라. 즉, 형태 \\((b,t,l,d)\\)와 \\((b,1,l,d)\\)의 두 입력 임베딩 시퀀스가 주어졌을 때, \\(t\\)는 앞의 시간 간격 수, \\(b\\)는 배치 크기, \\(l\\)는 시퀀스 길이, \\(d\\)는 임베딩 차원이므로, 형태 \\((b,t,l,l)\\)의 쌍별 어텐션을 계산할 필요가 없으며, 형태 \\((b,t,l,l)\\)의 대각선을 따라 쌍을 이루는 요소에 대해서만 어텐션을 계산하면 된다. 추가적으로, 모든 토큰들에 대한 연속체들을 생성하는 것을 피하기 위해(예를 들어, 생각들이 가장 유용할 곳을 결정하기 위해 값 함수를 적용하고자 하는 경우), 이 생성된 어텐션 마스크에 인덱싱할 수 있다. 그러나, 특히, 이것은 또한 위치 임베딩들과 같은 순방향 패스 동안 다른 입력들의 조작을 필요로 한다.\n' +
+      '\n' +
+      '## 부록 C Compute 조정 플롯\n' +
+      '\n' +
+      '우리는 또한 훈련에 사용되는 생각과 대화 토큰의 수로 정규화하는 그림 2를 시각화한다.\n' +
+      '\n' +
+      '## 부록 D 시퀀스당 여러 생각과 미리 설정된 여러 토큰의 영향 측정\n' +
+      '\n' +
+      '우리는 12-생각-토큰-4-미리 기준선에서 간단한 절제, 즉 시퀀스당 여러 생각을 샘플링하는 것이 필요한지 여부를 묻는다. 우리는 단순히 보상을 생각이 있는 손실과 없는 손실 사이의 차이로 계산하는 것이 강력한 기준선임이 입증되지만 여러 생각을 사용하는 것이 일관되게 이를 능가한다는 것을 발견했다(GSM8K 일반화에서는 약 0.5%, 커먼센스QA 일반화에서는 3%). 그러나 정확한 생각 수는 거의 영향을 미치지 않았으며, 시퀀스당 2, 3, 4개의 생각 사이에서 변하는 것은 추가 생각과 일관된 개선을 초래하는 것으로 나타났지만, 시퀀스당 추가 생각은 GSM8K 및 커먼센스QA 모두에서 0.1-0.3%만 향상된 성능을 보였다. 유사하게, 우리는 하나 이상의 토큰을 예측하는 것이 GSM8K에서 0.3%, 커먼센스QA에서 3.1%에 도움이 된다는 것을 발견했지만 12-생각 토큰의 경우 두 개 이상의 추가 토큰이 성능을 향상시킨다는 것을 발견하지 못했다. 그러나 질적으로 감독 전에 추가 토큰과 더 일관성이 있는 것으로 나타났다. 이는 향후 작업에서 세대 품질에 대한 보다 구체적인 평가가 필요함을 시사한다.\n' +
+      '\n' +
+      '## 부록 E Rationale-Augmented Rationales\n' +
+      '\n' +
+      '언어 모델은 어디에서나 생각을 삽입할 수 있기 때문에, 언어 모델이 문제를 해결하기 위해 외부적 근거(즉, 사고 사슬)를 생성하는 동안 내부적 근거에 접근할 때 언어 모델에 의해 생성된 추론을 조사하는 예비 연구를 수행한다. 이러한 사고 사슬은 그 자체로 사고 사슬에 의해 생성되기 때문에, 우리는 이것을 사고 그물(또는 NoT)이라고 부를 수 있다. 우리는 기본 미스트랄 7B의 출력, OpenWebMath(Paster 등, 2023)에서 동일한 수의 단계에 대해 미세 조정된 미스트랄의 출력 및 최상의 Quiet-STaR 모델의 근거를 조사하여 모델의 5가지 솔루션을 GSM8K의 고정 무작위 질문과 비교한다. 온도 \\(t=1\\)에서 직접 샘플을 채취한다.\n' +
+      '\n' +
+      '### Base Mistral 7B\n' +
+      '\n' +
+      'First Response:\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자. 3명이 아침을 먹고 4명이 친구들을 위해 머핀 믹스에 들어간 후 얼마나 많은 신선한 계란이 남아 있나요? 우리는 16-3-4로 계산할 수 있다. 그 양은 9개의 신선한 계란과 같다. 그래서, 그것이 매일 만드는 달러는 2달러를 곱한 것과 같습니다. 12 x 2. 답은 24달러입니다.\n' +
+      '\n' +
+      'Second Response:\n' +
+      '\n' +
+      'Q: 재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽는다. 그녀는 신선한 오리알 한 개당 2달러에 나머지를 매일 농산물 직판장에서 판다. 그녀는 매일 농산물 직판장에서 얼마나 많은 돈을 벌까?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자. 그녀는 아침으로 매일 3개씩 먹는다. 그녀는 친구들을 위해 매일 4번 머핀에 굽는다. 그러면 9가 남습니다. 그녀는 9를 \\(\\(2\\)), 그래서 \\(\\(9\\)times 2=\\(518\\)\\()\\에 판매합니다. 그래서 재닛은 매일 오리알을 팔아서 18달러를 번다.\n' +
+      '\n' +
+      '그림 6: **Compute-Normalized Generalization Results**. 사용된 추론 호출의 수로 정규화된 성능 곡선을 시각화한다.\n' +
+      '\n' +
+      '66. 재닛은 매일 농산물 직판장에서 평균 12개의 신선한 오리알을 판매한다. 그녀가 매일 농산물 직판장에서 가장 많이 판매한다고 가정하면, 그녀가 일주일에 얼마나 많은 돈을 벌까?: 만약 재닛이 매일 농산물 직판장에서 평균 12개의 신선한 오리알을 판매한다면. 이것은 \\(\\{12\\)times 7\\}과 같으므로 12 \\(\\{\\)\\(\\{\\)times\\(\\(\\}\\)\\(\\(\\}\\)\\(7\\)\\(7\\)\\(8\\(\\}\\)\\(\\backslash\\). 그런 다음 그녀가 벌어들일 총 금액은 \\(\\{\\)84배 2\\(\\}\\))달러 또는 주당 168달러가 될 것입니다. 그래서 재닛은 일주일에 오리알을 팔아서 168달러를 번다.\n' +
+      '\n' +
+      'Third Response:\n' +
+      '\n' +
+      'Q: 재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽는다. 그녀는 신선한 오리알 한 개당 2달러에 나머지를 매일 농산물 직판장에서 판다. 그녀는 매일 농산물 직판장에서 얼마나 많은 돈을 벌까?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자.\n' +
+      '\n' +
+      '그녀는 매일 몇 개의 달걀을 남기나요?\n' +
+      '\n' +
+      '이것은 그녀가 하루에 몇 개의 계란을 판매하는지 찾는 데 도움이 될 것이기 때문에 중요합니다.\n' +
+      '\n' +
+      '우리가 그 질문에 답하기 위해 무엇을 할 수 있을까요?\n' +
+      '\n' +
+      '자넷이 얼마나 많은 오리알을 남겼는지, 얼마나 많이 먹었는지, 머핀에 몇 개를 구웠는지 관계를 적으면 그녀가 농산물 직판장에서 팔 수 있는 알이 얼마나 남았는지 알 수 있다.\n' +
+      '\n' +
+      '우리의 딜레마를 풀 수 있는 방정식을 쓰자.\n' +
+      '\n' +
+      '먹힌 계란에 대한 방정식과 구운 계란에 대한 방정식을 빼서 남은 계란을 찾아라. 뭐 좀 찾아보자\n' +
+      '\n' +
+      '우리는 재닛이 매일 6개의 달걀을 남기는 것을 볼 수 있다. 1일 6회 \\(\\$2\\) = \\(\\$125\\).\n' +
+      '\n' +
+      '따라서 재닛은 농산물 시장에서 계란에 대해 하루에 12달러를 추가로 받는다.\n' +
+      '\n' +
+      '기억하세요, 이것은 단 하루만입니다. 그래서 그녀는 하루에 12달러를 추가수입으로 벌고 있습니다. 왜냐하면 그녀는 매일 직판장에서 달걀을 팔기 때문입니다.\n' +
+      '\n' +
+      '### Answer\n' +
+      '\n' +
+      '$12\n' +
+      '\n' +
+      'Fourth Response:\n' +
+      '\n' +
+      'Q: 재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽는다. 그녀는 신선한 오리알 한 개당 2달러에 나머지를 매일 농산물 직판장에서 판다. 그녀는 매일 농산물 직판장에서 얼마나 많은 돈을 벌까?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자. 먼저, 당신은 재닛이 매일 모으는 총 계란의 수를 알고 싶어한다. 3에 이 많은 달러를 취하고 그녀가 계란 한 개당 받는 돈에서 2달러를 빼세요. 그 질문에 대한 답은 5달러입니다.\n' +
+      '\n' +
+      '다섯 번째 응답 Q: 재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽는다. 그녀는 신선한 오리알 한 개당 2달러에 나머지를 매일 농산물 직판장에서 판다. 그녀는 매일 농산물 직판장에서 얼마나 많은 돈을 벌까?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자.\n' +
+      '\n' +
+      '첫 번째 단계에서는 알의 수를 추적하기 위해 몇 가지 변수를 사용하여 하루를 전체적으로 생각해 봅시다. $n$ = 재닛의 오리가 하루에 낳는 알의 수입니다. 그러면 그녀가 하루에 먹는 계란의 수는 $(3)$ =가 될 것이다.\n' +
+      '\n' +
+      '다음으로, 그녀는 $n$ = 머핀을 만듭니다. 각각의 머핀에 대해, 그녀는 $45 = 알을 사용하므로, 우리는 그녀가 사용하는 숫자인 $4(n)를 나타내기 위해 재닛의 오리가 낳은 알에서 얻을 수 있습니다. 달걀의 시작 개수로 돌아가려면 이 달걀을 다시 넣어야 해요 재닛이 매일 파는 달걀은 그녀에게 $2$(n)$ = $를 가져다준다. 이것은 우리를 다음 단계로 이끕니다.\n' +
+      '\n' +
+      '이제 우리는 시작 번호인 $n$ =에서 이전에 설정한 조각으로 모든 달걀을 분해할 것입니다. 시작 번호에 대해, 우리는 다음과 같이 가지고 있습니다: 이것은 우리를 시작 번호로 되돌리고, 우리는 이 표현을 단순화할 수 있습니다.\n' +
+      '\n' +
+      '맨 위 줄에서 두 번째 줄로 이동하여 각 줄 내의 숫자를 곱합니다.\n' +
+      '\n' +
+      '부모 집단. 두 번째 줄에서 세 번째 줄로 이동하면\n' +
+      '\n' +
+      '합계를 구하기 위해 제품을 함께 찾습니다. 마지막으로, 우리는 분배하고 결정할 수 있다.\n' +
+      '\n' +
+      '최종 제품: $= 360.$\n' +
+      '\n' +
+      '그래서 자넷의 오리가 하루에 낳는 알의 총 수는 360달러입니다.\n' +
+      '\n' +
+      '계란 한 개에 2달러, 농산물 직판장에서 벌어들인 총 수입은 $boxed($\n' +
+      '\n' +
+      '720).$\n' +
+      '\n' +
+      '### OpenWebMath-Trained Mistral 7B\n' +
+      '\n' +
+      'First Response:\n' +
+      '\n' +
+      '재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹는다.\n' +
+      '\n' +
+      '친구들을 위해 매일 네 개씩 머핀을 굽습니다. 그녀는 나머지를 팔았다.\n' +
+      '\n' +
+      '신선한 오리 알당 2달러에 매일 농부들의 시장. 얼마나?\n' +
+      '\n' +
+      '농산물 시장에서 매일 돈을 벌어요?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자. 그녀는 매일 얼마를 벌어요? 질문에 따라\n' +
+      '\n' +
+      '그것은 오리알 하나에 2달러이다. 자, 그녀는 하루에 몇 개의 오리알을 파나요? 그게...\n' +
+      '\n' +
+      '그것은 16 빼기 그녀가 먹는 계란 빼기 그녀가 엄마에게 사용하는 계란이다.\n' +
+      '\n' +
+      'ke muffins.\n' +
+      '\n' +
+      '그녀는 매일 아침 계란 3개를 먹기 때문에 $16-3 = 13입니다.\n' +
+      '\n' +
+      '그녀는 네 개의 계란을 사용하는 네 개의 머핀을 만듭니다. 16-3-4= $5.\n' +
+      '\n' +
+      '따라서 그녀가 판매하고 있는 오리알의 수는 55달러입니다.\n' +
+      '\n' +
+      '분명히, 오리알 1개는 2달러입니다. 따라서, 그녀가 달걀을 팔기 위해 버는 총 금액은\n' +
+      '\n' +
+      '$10$ $2$. 자, 이것은 분수 "10 2달러"로 표기될 수 있습니다. 그래서 102달러입니다.\n' +
+      '\n' +
+      'bucks.$\n' +
+      '\n' +
+      '분수, 즉 "10분의 10"으로 환산하면 $102 - bucks$ = $1$ $10 - bucks$\n' +
+      '\n' +
+      '[reveal-answer q="fs-id1165135856725"]Show Solution[/reveal-answer]\n' +
+      '\n' +
+      '[hidden-answer a="fs-id1165135856725"]\n' +
+      '\n' +
+      'Second Response:\n' +
+      '\n' +
+      '재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹는다.\n' +
+      '\n' +
+      '친구들을 위해 매일 네 명씩 머핀을 굽죠 그녀는 나머지를 …에 판다.\n' +
+      '\n' +
+      '신선한 오리 알당 2달러에 매일 농산물 시장. 그녀는 얼마나 많은 돈을 벌고 있는가?\n' +
+      '\n' +
+      '매일 농산물 직판장에서 만드시나요?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자. 어떤 근거로 우리는 고민한 후에 질문에 답할 수 있는가?\n' +
+      '\n' +
+      '질문? 주어진 것과 주어진 것을 어떻게 사용할 수 있습니까?\n' +
+      '\n' +
+      '답으로. 3이 주어지고, 4가 주어지고, 16이 주어지고, 생각나는 사람 있나요?\n' +
+      '\n' +
+      'A: 음 16 빼기 3 빼기 4는 9와 같고, 9에서 1을 빼면 4가 추가된다.\n' +
+      '\n' +
+      '달걀 5개 더\n' +
+      '\n' +
+      'M: 그리고 우리는 2 곱하기 5가 얼마라는 것을 알고 있나요?\n' +
+      '\n' +
+      'A: Ten\n' +
+      '\n' +
+      'M: Yes.\n' +
+      '\n' +
+      'A: 만약 그녀가 아침식사로 오리알 3개를 먹는다면, 아침에는 \\((3\\) 곱하기 2 = 6\\)와 같다. If\n' +
+      '\n' +
+      '그녀는 친구들을 위해 머핀을 굽는 오리알 4개를 먹습니다.((4\\) 곱하기 2 = 8\\)\n' +
+      '\n' +
+      '총 돈과 그녀가 얻은 돈은 6달러 더하기 8달러이고 14와 같다. 체중 증가는 5이다.\n' +
+      '\n' +
+      '왜냐하면 5는 당신이 거기에 5 곱하기 2의 오리를 올려서 빼는 것이기 때문이다.\n' +
+      '\n' +
+      '16살 때랑 7살 때랑 뭐 적었어? 당신은 알 수 있나요?\n' +
+      '\n' +
+      '이제 질문이 무엇인지, 질문이 실제로 무엇인지 알 수 있습니다. 14점\n' +
+      '\n' +
+      '당신은 체중 감량을 16에서 2, 14에서 2를 뺀다.\n' +
+      '\n' +
+      '잔류자가 뭐?\n' +
+      '\n' +
+      'A: 12.\n' +
+      '\n' +
+      'M: 문제는 재닛 오리가 16개의 알을 낳고, 그녀는 12개를 팔려고 먹는다는 거야. 너\n' +
+      '\n' +
+      '3 더하기 4 빼기 5이므로 머핀을 먹을 때 5는 5, 곱하기 2, 12\n' +
+      '\n' +
+      'minus money so 5 times 2, $-125. So \\((2\\)times 9 = 18\\) minus $10, so 4 더\n' +
+      '\n' +
+      '달걀... 여전히 2달러 곱하기, 총액은 20달러가 된다.\n' +
+      '\n' +
+      '첫째 날, 셋째 날, 넷째 날, 셋째 날, 넷째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날, 다섯째 날\n' +
+      '\n' +
+      'M: 하지만 정답을 맞히기 위해서는 조금 더 가까이 보여야 할 것 같아. 전형적인\n' +
+      '\n' +
+      '그들이 먼저 제공하는 절차에서 어떻게 하는지 알려드릴 수 있습니다.\n' +
+      '\n' +
+      'M: 이제 16을 늘리면 16 마이너스 3 마이너스 4를 결정해야 하고 나머지를 합하면 9가 됩니다. 그러면 1을 빼면 5가 됩니다. 그러면 다음 답은 이제 5 곱하기 2인 10입니다 M: 10이고, 14는 나머지 M: 6과 8이고 총 14입니다, 이제 2를 빼면 16 마이너스 5가 됩니다, 11입니다 M: 다음 것은 두 번째 상황의 수익률에 대한 것입니다 16 마이너스 3 더하기 4가 있고 9가 됩니다. 이것은 첫 번째 부분인 16, 3, 4, 9까지 순간적으로 쉽게 할 수 있고, 어떤 것이 살고 있는지 알 수 있으며, 그냥 세고 5와 5를 가지고 계속 진행합니다. 5 곱하기 2는 10이 되고, 16은 4.5를 더하면, 이제 총액은 16 더하기 2가 됩니다. 그러나 이제 여기에 10 더하기 2는 12가 됩니다. 그래서 16에서 얼마를 팔고, 그 다음에 마이너스 12는 4가 됩니다. M: 그럼 나머지 16 빼기 3 더하기 4 빼기 5는 얼마일까요? 세 가지가 누락되었습니다. 네 개야 달걀 5개 그래서 5 곱하기 2, 그러니까 10은 10달러로 남아 있습니다. 그래서 줄여서 이제 일어난 일에 무슨 일이 일어났는지 더하기 다음 질문은 16미너스 3 더하기 4입니다. 그리고 아마도 당신은 이것을 전에 했었을 것입니다. 만약 그렇지 않다면 16미너스 3 더하기 4를 더하면 9가 되고 나머지 5를 더하면 얼마가 될까요? 그래서 5 곱하기 2? 그래서 10. 2, 3, 더하기 2 = 5입니다. 그래서 당신의 대답은 16미너스 3 더하기 4이고 바구니 마이너스 2를 더하면 9가 되고 이제 당신은 이제 두 번째 부분의 총합을 결정해야 합니다. 당신은\n' +
+      '\n' +
+      'Third Response:\n' +
+      '\n' +
+      '```\n' +
+      '<s>Q:Janetstduckslay16eggsperday.Sheeatsthreeforbreakfasteverymorningandbakesmuffinsforherfriendseverydaywithfour.Shesellsthemreaninderathefarmers\'marketdailyforS2prefreshduckegg.Howmuchinodlarsdoesshemakeeverydayatthefarmers\'market?A:Let\'sthinkstepbystep.The"howmuchinodlars"partmeansthatoneeggisworthonedollar.So,twelveduckslay16eggs,whichmeansthatJanetets$20fromsellingthem.$16muffinswillgiveus4eggs,whichnetsus$8.So,wepaid$108forouringredientstomake16muffins.Hence,welov196dollars.Hello,beroine,wehavetodobetterthanthat!Loothavages.Let\'ssaythatwepay5dollarsforoneegg.Now,$12isourproductand$5isourintesment.Ournetwealthwillbe$12-$*12=24dollars.Isthatcorrect?\n' +
+      '```\n' +
+      '\n' +
+      'Fourth Response:\n' +
+      '\n' +
+      '```\n' +
+      '<s>Q:Janetstduckslay16eggsperday.Sheeatsthreeforebreakfasteverymorningandbakesmuffinsforherfriendseverydaywithfour.Shesellsthemreaninderathefarmers\'marketdailyfor$2perfreshduckegg.Howmuchinodlarsdoesshemakeeverydayatthefarmers\'market?A:Let\'sthinkstepbystep.First,Jane\'sduckslay16eggsperday.Sothereare16eggs Monday,16Tuesday,16Thursday,16Friday,andsoon.Second,Janetetas3ofthe16eggsthattheduckagypdayforebreakfast.Sheonlyeatstheduckeggs,notherbakedgoods(muffins)orotherfood.Therefore,sheeats3Monday,3Tuesday,3Thversday,andso.Third,sheonlybakesthefirst4non-eateneggsintodiffins.Therefore,shesellsthemreaniting12non-eateneggsHonday,12Tuesday,12Wednesday,12Thursday,andsoon.Fourth,JanetsellsduckeggsMonday,Tuesday,Wednesday,Thursday,Fridayatthe2each.Third,sheeats3Monday,3Tuesday,3Wednesday,3Thursday,Fridayatthefarmers\'market.Lastly,shemakes12Monday,12Tuesday,12Wednesday,12Thursday,andsooninodlarseverydayatthefarmers\'market.Theworksheetbelowsummarizesthesestypes.Thenumberformedbytheintersectionofcorrespondingrowandcolumntermswillbethecorrectanswer.Theproductofthe(3,J)termandthe(J,8)termis1,150.So,Janetmakes$1,150perday!(Note:Step3andStep8arerepeating,butthe(3,7)terminStep8isnotthesameasthe(3,7)terminStep3.)\n' +
+      '```\n' +
+      '\n' +
+      'Fifth Response\n' +
+      '\n' +
+      '```\n' +
+      '<s>Q:Janetstduckslay16eggsperday.Sheeatsthreeforbreakfasteverymorningandbakesmuffinsforherfriendseverydaywithfour.Shesellsthemreaninderathefarmers\'marketdailyfor$2perfreshduckegg.Howmuchinodlarsdoesshemakeeverydayatthefarmers\'market?A:Let\'sthinkstepbystep.First,Jane\'sduckslay16eggsperday.Sothereare16eggsMonday,16Tuesday,16Thursday,16Friday,andsoon.Second,Janetetas3ofthe16eggsthattheduckagypdayforebreakfast.Sheonlyeatstheduckeggs,notherbakedgoods(muffins)orotherfood.Therefore,sheeats3Monday,3Tuesday,3Thursday,andsoon.Third,sheonlybakesthefirst4non-eateneggsintodiffins.Therefore,thesellsthemreaniting12non-eateneggsintodiffins.Therefore,thesellsduckeggsMonday,Tuesday,Wednesday,Thursday,Fridayatthe2each.Third,sheeats3Monday,3Tuesday,3Wednesday,3Thursday,Fridayatthefarmers\'market.Lastly,shemakes12Monday,12Tuesday,12Wednesday,12Thursday,andsooninodlarseverydayatthefarmers\'market.Theworksheetbelowsummarizesthesestypes.Thenumberformedbytheintersectionofcorrespondingrowandcolumntermswillbethecorrectanswer.Theproductofthe(3,J)termandthe(J,8)termis1,150.So,Janetmakes$1,150perday!(Note:Step3andStep8arerepeating,butthe(3,7)terminStep8isnotthesameasthe(3,7)terminStep3.)\n' +
+      '```\n' +
+      '\n' +
+      'Fifth Response\n' +
+      '\n' +
+      '```\n' +
+      '<s>Q:Janetstduckslay16eggsperday.Sheeatsthreeforbreakfasteverymorningandbakesmuffinsforherfriendseverydaywithfour.Shesellsthemreaninderathefarmers\'marketdailyfor$2perfreshduckegg.Howmuchinodlarsdoesshemakeeverydayatthefarmers\'market?A:Let\'sthinkstepbystep.First,Jane\'sduckslay16eggsperday.Sothereare16eggsMonday,16Tuesday,16Thursday,16Friday,andsoon.Second,Janetetas3ofthe16eggsthattheduckagypdayforebreakfast.Sheonlyeatstheduckeggs,notherbakedgoods(muffins)orotherfood.Therefore,sheeats3Monday,3Tuesday,3Thursday,andsoon.Third,sheonlybakesthefirst4non-eateneggsintodiffins.Therefore,thesellsduckeggsMonday,12Tuesday,12Wednesday,12Thursday,andsoon.Fourth,JanetsellsduckeggsMonday,Tuesday,Wednesday,Thursday,Fridayatthe2each.Third,sheeats3Monday,3Tuesday,3Wednesday,3Thursday,Fridayatthefarmers\'market.Lastly,shemakes12Monday,12Tuesday,12Wednesday,12Thursday,andsooninodlarseverydayatthefarmers\'market.Theworksheetbelowsummarizesthesestypes.Thenumberformedbytheintersectionofcorrespondingrowandcolumntermswillbethecorrectanswer.Theproductofthe(3,J)termandthe(J,8)termis1,150.So,Janetmakes$1,150perday!(Note:Step3andStep8arerepeating,butthe(3,7)terminStep8isnotthesameasthe(3,7)terminStep3.)\n' +
+      '```\n' +
+      '\n' +
+      'Fifth Response\n' +
+      '\n' +
+      '``` Q:Janetstduckslay16eggsperday.Sheeatsthreeforbreakfasteverymorningandbakesmuffinsforherfriendseverydaywithfour.Shesellsthemreaninderathefarmers\'marketdailyfor$2perfreshduckegg.Howmuchinodlarsdoesshemakeeverydayatthefarmers\'market?A:Let\'sthinkstepbystep.First,Jane\'sduckslay16eggsperday.Sheeatsthreeforbreakfasteverymorningandbakesmuffinsforherfriendseverydaywithfour.Shesellsthemreaninderathefarmers\'marketdailyfor$2perfreshduckegg.Howmuchinodlarsdoesshemakeeverydayatthefarmers\'market?A:Let\'sthinkstepbystep.First,Jane\'sduckslay16eggsperday.Sheeatshere16eggsMonday,16화요일,16목요일,16금요일,순.Second,Jan 그녀는 농산물 시장에서 매일 얼마나 많은 달러를 벌어요? A: 차근차근 생각해 보자. 우리가 아는 건?\n' +
+      '\n' +
+      '재닛의 오리는 하루에 16개의 알을 낳습니다\n' +
+      '매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽죠\n' +
+      '\n' +
+      '이 두 가지 사실로부터 우리는 적어도 재닛이 하루에 최소 7개의 달걀을 소비해야 한다는 결론을 내릴 수 있다. 정확히 뭘 찾아야 하죠?\n' +
+      '\n' +
+      '재닛이 매일 농산물 시장에서 벌어들인 돈을 찾아야 해\n' +
+      '\n' +
+      '방정식을 써서 풀어서 답을 찾아보자. 우리도 알아\n' +
+      '\n' +
+      '- \\(\\{\\)(16-3-4=9\\)\\(\\}\\) 그래서 우리의 일 수익은 9배 $2, 또는 \\(\\{\\)(9times\\()$2=\\$18\\(\\}\\))이므로 주어진 날에 시장에서 그녀의 수익은 \\(\\{\\)$18\\(\\}\\)이다. 정답: \\(\\{\\)$18\\(\\}\\).\n' +
+      '\n' +
+      '### Quiet-STaR-Trained Mistral 7B\n' +
+      '\n' +
+      'First Response:\n' +
+      '\n' +
+      '재닛의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽는다. 그녀는 신선한 오리알 한 개당 2달러에 나머지를 매일 농산물 직판장에서 판다. 그녀는 매일 농산물 직판장에서 얼마나 많은 돈을 벌까? A: 차근차근 생각해 보자.\n' +
+      '\n' +
+      '오리는 하루에 16개의 알을 낳습니다.\n' +
+      '\n' +
+      '이것은 계란의 총 수입니다.\n' +
+      '\n' +
+      '계란 중 3개는 아침 식사로 먹는다.\n' +
+      '\n' +
+      '이것은 아침 식사로 먹는 계란의 수입니다.\n' +
+      '\n' +
+      '계란 4개는 머핀을 만드는 데 사용됩니다.\n' +
+      '\n' +
+      '이것은 머핀을 만드는 데 사용되는 계란의 수입니다.\n' +
+      '\n' +
+      '16 - 3 - 4 - 9\n' +
+      '\n' +
+      '9는 농산물 직판장에서 판매되는 계란의 개수입니다.\n' +
+      '\n' +
+      '계란 중 9개는 농산물 직판장에서 판매됩니다.\n' +
+      '\n' +
+      '$2\n' +
+      '\n' +
+      '계란 한 개당 가격은 2달러입니다.\n' +
+      '\n' +
+      '$2 \\times 9 = 18$\n' +
+      '\n' +
+      '18은 계란의 총 가격입니다.\n' +
+      '\n' +
+      '계란의 총 가격은 18달러입니다.\n' +
+      '\n' +
+      '두 번째 응답:A: 차근차근 생각해 봅시다.\n' +
+      '\n' +
+      '1. 오리는 하루에 16개의 알을 낳는다.\n' +
+      '2. 그녀는 매일 아침 3개를 아침으로 먹는다.\n' +
+      '3. 그녀는 매일 4로 친구들을 위해 머핀을 굽습니다.\n' +
+      '4. 그녀는 신선한 오리 알당 2달러에 매일 농산물 시장에서 나머지를 판매합니다.\n' +
+      '5. 그녀가 농산물 직판장에서 파는 계란의 수는 16 - 3 - 4이다.\n' +
+      '6. 그녀가 농산물 직판장에서 파는 계란의 수는 16 - 3 - 4이다.\n' +
+      '7. 그녀가 농산물 직판장에서 파는 계란의 수는 16 - 3 - 4이다.\n' +
+      '8. 그녀가 농산물 직판장에서 파는 계란의 수는 16 - 3 - 4이다.\n' +
+      '9. 그녀가 농산물 직판장에서 파는 계란의 수는 16 - 3 - 4이다.\n' +
+      '10. 그녀가 농산물 직판장에서 파는 계란의 수는 16 - 3 - 4이다.\n' +
+      '11. 개수\n' +
+      '\n' +
+      'Third Response:\n' +
+      '\n' +
+      '<<> Q: 자넷의 오리는 하루에 16개의 알을 낳습니다. 그녀는 매일 아침 세 끼를 먹고 매일 네 끼로 친구들을 위해 머핀을 굽는다. 그녀는 신선한 오리알 한 개당 2달러에 나머지를 매일 농산물 직판장에서 판다. 그녀는 매일 농산물 직판장에서 얼마나 많은 돈을 벌까?\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자.\n' +
+      '\n' +
+      '오리는 하루에 16개의 알을 낳습니다.\n' +
+      '\n' +
+      '이것은 계란의 총 수입니다.\n' +
+      '\n' +
+      '3은 매일 아침 자넷이 아침으로 먹는 계란의 수이다.\n' +
+      '\n' +
+      '4는 그녀가 매일 친구들을 위해 굽는 머핀에 사용하는 계란의 수입니다.\n' +
+      '\n' +
+      '16 - 3 - 4 - 9\n' +
+      '\n' +
+      '9는 그녀가 신선한 오리 알당 2달러에 매일 농산물 시장에서 판매하는 알의 수이다.\n' +
+      '\n' +
+      '9 $2 = 9 $2\n' +
+      '\n' +
+      '=9 $2\n' +
+      '\n' +
+      '= 18\n' +
+      '\n' +
+      '그래서 18은 그녀가 매일 농산물 시장에서 버는 달러로 된 금액입니다.\n' +
+      '\n' +
+      '그녀가 농산물 시장에서 매일 버는 달러는 18달러이다.\n' +
+      '\n' +
+      'A: 18</s>\n' +
+      '\n' +
+      'Fourth Response:\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자.\n' +
+      '\n' +
+      '재닛의 오리가 하루에 낳는 알의 수는 16개입니다.\n' +
+      '\n' +
+      '이 중, 그녀는 매일 아침 3개를 아침으로 먹는다.\n' +
+      '\n' +
+      '이게 3이야.\n' +
+      '\n' +
+      '이 중, 그녀는 4명으로 친구들을 위해 머핀을 굽습니다.\n' +
+      '\n' +
+      '이것은 4입니다.\n' +
+      '\n' +
+      '남은 알의 수는 16 - 3 - 4입니다.\n' +
+      '\n' +
+      '16-7입니다\n' +
+      '\n' +
+      '9시입니다\n' +
+      '\n' +
+      '그녀가 매일 농부 시장에서 계란 한 개당 2달러에 판매하는 계란의 수는 9개이다.\n' +
+      '\n' +
+      '그녀가 농산물 시장에서 매일 버는 총 달러는 9달러 2센트이다.\n' +
+      '\n' +
+      '9 2입니다.\n' +
+      '\n' +
+      '이건 18살이야\n' +
+      '\n' +
+      '그녀가 농산물 시장에서 매일 버는 총 달러는 18달러입니다.\n' +
+      '\n' +
+      'A: 18\n' +
+      '\n' +
+      'Fifth Response\n' +
+      '\n' +
+      'A: 차근차근 생각해 보자.\n' +
+      '\n' +
+      '오리는 하루에 16개의 알을 낳습니다.\n' +
+      '\n' +
+      '이것은 계란의 총 수입니다.\n' +
+      '\n' +
+      '3+4+16=23\n' +
+      '\n' +
+      '매일 아침 3개의 계란을 아침 식사로 먹는다.\n' +
+      '\n' +
+      '달걀 4개는 매일 그녀의 친구들을 위해 머핀을 만드는 데 사용됩니다.\n' +
+      '\n' +
+      '16개의 계란은 매일 2달러에 농산물 직판장에서 판매됩니다.\n' +
+      '\n' +
+      '농산물 직판장에서 파는 16개의 계란은 남은 계란이다.\n' +
+      '\n' +
+      '16 - 3 - 4 - 9\n' +
+      '\n' +
+      '9개의 계란은 매일 2달러에 농산물 직판장에서 판매됩니다.\n' +
+      '\n' +
+      '9(2) = 18\n' +
+      '\n' +
+      '18은 그녀가 농산물 시장에서 매일 버는 총 달러입니다.\n' +
+      '\n' +
+      '18이 정답입니다.\n' +
+      '\n' +
+      'A: 18\n' +
+      '\n' +
+      '## 부록 F 추론 학습에 대한 추가 작업\n' +
+      '\n' +
+      '완전성을 위해 우리는 다른 많은 작품이 자신의 근거, 환경과의 상호 작용 또는 손으로 만든 데이터 세트에서 추론하기 위한 언어 모델(종종 STAR과 유사하거나 영감을 받은 알고리즘으로)을 탐구했음을 강조한다. 예를 들어, 작업들은 멀티홉 질의 응답(Zhao et al., 2023), 수학(Luo et al., 2023; Uesato et al., 2022), 기계 번역(Gulcehre et al., 2023)의 맥락에서 이것을 탐구한다.\n' +
+      '\n' +
+      '**여러 작업은 계획에서 추론하기 위한 언어 모델 에이전트를 조사합니다(Chen 등, 2023; Gandhi 등, 2023; Qiao 등, 2024), 또는 특정 도구 또는 메모리를 사용하기 위해(Yao 등, 2022; Lanchantin 등, 2024; Schick 등, 2024), 다른 작업은 큰 언어 모델에서 더 작은 언어 모델로 추론을 증류할 수 있는 방법을 조사합니다. Ho 등(2022); Li 등(2022); Hsieh 등(2023). 그러나 특히 Pan 등(2024)은 이러한 피드백 루프가 보상 해킹을 초래할 수 있음을 보여준다. Zelikman et al. (2023)은 모델이 동일한 코드 개선기를 사용하여 코드 개선기를 반복적으로 개선하는 부트스트래핑 루프가 구현될 수 있는 방법을 보여주고, Haluptzok et al. (2023)은 언어 모델이 프로그래밍 퍼즐 Schuster et al. (2021)로 프로그래밍 능력을 부트스트래핑할 수 있는 방법을 보여준다. 다른 작업들은 귀납적 추론 태스크들을 해결하기 위해 또는 실세계 시스템들을 모델링하기 위해 언어 모델들을 사용하기 위한 유사한 전략을 채택하였다(Wang et al., 2023; Qiu et al., 2023; Zhu et al., 2023; Li et al., 2024).\n' +
+      '\n' +
+      '일부 작업들은 모델들이 그들의 추론 실수들로부터 부정확하게 학습할 수 있는 방법을 조사했다(Shinn et al., 2023; Madan et al., 2023; Zhang et al., 2024; Liu et al., 2023). 많은 연구들이 또한 문맥 내 추론 예들로부터 학습하는 LMs의 능력에 초점을 맞추고 있다(Lampinen et al., 2022; Zhou et al., 2022). 이에 대응하여, Khattab et al.(2022) 및 Khattab et al.(2023)는 추론에 대한 모델을 프롬프트하기 위해 사용되는 예들의 세트들이 다단계 추론 파이프라인의 문맥에서 어떻게 최적화될 수 있는지를 보여준다. 또한, Zhang et al.(2022)은 추론에 다양한 제로샷 프롬프트를 사용함으로써 언어 모델에서 제로샷 질의 응답을 개선할 수 있음을 보여주었다.\n' +
+      '\n' +
+      '## 부록 G 개선 사항 배포\n' +
+      '\n' +
+      '또한 훈련 세트의 토큰에 대한 개선 사항 분포를 시각화합니다.\n' +
+      '\n' +
+      '그림 7: **로그 확률의 변경 내용 배포** 입니다. 평가 데이터 세트에 걸쳐 생성된 생각으로 인한 로그 확률의 변화 분포를 시각화한다. 우리는 로그 밀도를 기반으로 채색된 생각이 없는 LM에 대한 로그 확률 변화의 밀도를 시각화한다. 분포가 왜곡되어 대부분의 토큰이 영향을 받지 않는 반면, 하드 토큰의 일부는 생각에서 상당한 개선을 봅니다. 이것은 일반적인 웹 텍스트의 대부분의 토큰이 예측하기 위해 유의미한 추론을 필요로 하지 않지만, 생각은 도전적인 토큰에 불균형적으로 유익하다는 우리의 직관과 일치한다.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:25]\n' +
+      '\n' +
+      '언어 모델이 그렇지 않았다면 생성했을 것과 유사한 예측. 그러나 우리는 모든 경우에 앞서 언급한 불안정성이 학습을 방해한다는 것을 관찰했다. 결과적으로, 우리는 언어 모델의 근거와 근거 없이 언어 모델의 출력을 변환할 수 있는 모든 구성요소를 제거하거나 최소화하는 것을 목표로 했다. 우리는 또한 (우리의 혼합 헤드에 의해 행해진 바와 같이) 다수의 상태들을 결합하는 가중치를 출력하기 위해 언어 모델을 사용하기로 하는 우리의 선택은 본질적으로 모델이 그 사고에 주의를 기울일 수 있게 하는 주의 메커니즘이라는 점에 주목한다. 이것은 백팩 언어 모델(Hewitt et al., 2023)에서 취해진 접근법과의 유사성을 가지며, 이는 또한 언어 모델이 임의의 임베딩을 출력하도록 하는 것이 아니라, 미래의 텍스트를 모델링하기 위해 합산된 입력 임베딩에 적용할 가중치를 예측하는 것을 학습한다. 이러한 제약에도 불구하고, Backpack 언어 모델들은 전통적인 언어 모델들과 유사한 성능을 갖는 것으로 보인다(Hewitt et al., 2023).\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
