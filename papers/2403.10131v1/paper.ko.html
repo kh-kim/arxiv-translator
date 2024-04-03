@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# RAFT: 도메인 특정 RAG에 언어 모델 적용\n' +
+      '\n' +
+      ' Tianjun Zhang Shishir G. Patil Naman Jain Sheng Shen Matei Zaharia  Ion Stoica  Joseph E. Gonzalez\n' +
+      '\n' +
+      'tianjunz@berkeley.edu, shishirpati1@berkeley.edu\n' +
+      '\n' +
+      'UC Berkeley\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '텍스트 데이터의 대규모 코퍼라에 대한 대규모 언어 모델(LLM) 사전 훈련은 이제 표준 패러다임이다. 이러한 LLM을 많은 다운스트림 애플리케이션에 사용할 때 RAG 기반 촉진 또는 미세 조정을 통해 사전 학습된 모델에 새로운 지식(예: 시간 중요 뉴스 또는 개인 도메인 지식)을 추가로 베이크하는 것이 일반적이다. 그러나 이러한 새로운 지식을 얻기 위한 모델의 최적 방법론은 여전히 미해결 문제로 남아 있다. 본 논문에서는 "Open-book" 인 도메인 환경에서 모델의 질문에 대한 답변 능력을 향상시키는 훈련 레시피인 RFT(Retrieval Augmented Fine Tuning)를 제시한다. RAFT에서 질문과 검색된 문서 집합이 주어진 경우, 우리는 질문에 응답하는 데 도움이 되지 않는 문서를 무시하도록 모델을 훈련시키고, 이를 우리는 문서 주의를 분산시킨다. RAFT는 질문에 답하는 데 도움이 될 관련 문서의 올바른 순서를 그대로 인용함으로써 이를 달성한다. 이것은 RAFT의 연쇄 사고 방식 반응과 결합되어 모델의 추론 능력을 향상시키는 데 도움이 된다. 도메인별 RAG에서 RAFT는 PubMed, HotpotQA 및 고릴라 데이터 세트에 걸쳐 모델의 성능을 일관되게 개선하여 사전 훈련된 LLM을 도메인 내 RAG로 개선하기 위한 사후 훈련 레시피를 제시한다. RAFT의 코드 및 데모는 [https://github.com/ShishirPatial/gorilla](https://github.com/ShishirPatial/gorilla)에서 공개 원본입니다.\n' +
+      '\n' +
+      '머신러닝, ICML\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '방대한 양의 공공 데이터에 대해 훈련된, 대형 언어 모델 LLMs은 광범위한 일반 지식 추론 작업에서 상당한 발전을 이루었다(Brown et al., 2020; Wei et al., 2022).\n' +
+      '\n' +
+      '그러나, 점점 더 많은 LLMs들이 특정 소프트웨어 프레임워크들에 대한 코드 완성에서부터 특정 문서 컬렉션들(예를 들어, 법적 또는 의학적 문서들)에 대한 질의 응답에 이르는 태스크들을 지원하기 위해 전문 도메인들에서 채용되고 있다. 이러한 설정에서 일반적인 지식 추론은 덜 중요하지만 대신 주어진 문서 세트를 기반으로 정확도를 최대화하는 것이 주요 목표이다. 실제로, LLM을 특수 도메인(예를 들어, 트레이닝 컷오프 후에 구성된 최근 뉴스, 기업 사설 문서 또는 프로그램 리소스)에 적응시키는 것은 많은 새로운 애플리케이션(Vu 등, 2023; Lazaridou 등, 2022)에 필수적이며 이 작업의 초점이다.\n' +
+      '\n' +
+      '이 논문은 다음 질문에 대해 연구합니다. _전문 도메인에서 사전 훈련된 검색 증강 생성 LLM(RAG)을 어떻게 적용할 수 있습니까?_\n' +
+      '\n' +
+      'LLM을 특화 도메인에 적용할 때, 우리는 검색-증강 생성(RAG)을 통한 상황 내 학습과 감독 미세 조정이라는 두 가지 후보를 고려한다. RAG 기반 메서드는 LLM이 질문에 답할 때 문서를 참조할 수 있도록 합니다. 그러나 이러한 방법들은 고정된 도메인 설정과 테스트 문서에 대한 조기 접근에 의해 제공되는 학습 기회를 활용하지 못한다. 대안적으로, 감독된 미세-조정(supervised fine-tuning)은 문서들에서 보다 일반적인 패턴들을 학습하고 최종 태스크들 및 사용자 선호도들에 더 잘 정렬할 기회를 제공한다(Zhou et al., 2023). 그러나 기존의 미세 조정 기반 방법은 테스트 시 문서를 활용하지 못하거나(RAG를 통합하지 않음) 학습 중 검색 프로세스의 불완전성을 고려하지 못한다.\n' +
+      '\n' +
+      '우리는 공개 시험에 비유할 수 있다. 기존의 인맥 검색 방법은 공부를 하지 않고 오픈북 시험을 보는 것과 같다. 대안적으로, 기존의 미세 조정 기반 접근법들은 입력 문서들을 직접 "기억"하거나(Xiong 등, 2023) 문서를 참조하지 않고 연습 질문들에 답하는 것(Wang 등, 2022)에 의해 "학습"을 구현한다. 이러한 접근법은 도메인 내 학습을 활용하지만 테스트 설정의 공개 문서 특성에 대비하지 못한다.\n' +
+      '\n' +
+      '본 논문에서는 지도 미세 조정(supervised fine-tuning, SFT)과 검색 증강 생성( retrieval augmented generation, RAG)을 결합하는 방법에 대해 연구한다. 본 논문에서는 새로운 적응 전략인 RFT(Retrieval-Augmented Fine Tuning)를 제안한다. RAFT는 도메인 지식을 통합하는 동시에 도메인 내 RAG 성능을 개선하기 위해 LLM을 미세 조정하는 문제를 구체적으로 다룬다. RAFT는 모델이 미세 조정을 통해 도메인 특정 지식을 학습할 수 있도록 할 뿐만 아니라 부정확한 검색에 대한 견고성을 보장하는 것을 목표로 한다. 이것은 제기된 질문(즉시), 검색된 도메인 특정 문서 및 적절한 답변 간의 역학을 이해하도록 모델을 훈련함으로써 달성된다. 다시 우리의 비유로 돌아가서, 우리의 접근법은 관련되고 관련이 없는 검색 문서를 인식하여 공개 도서 시험을 공부하는 것과 유사하다.\n' +
+      '\n' +
+      'RAFT에서는 문서(들)(D*)에서 질문(Q)에 답하도록 모델을 훈련시켜 답변(A*)을 생성하는데, 여기서 A*는 연쇄 사상(Wei et al., 2022; Anthropic, 2023)을 포함하고, 분산기 문서가 있는 경우(\\(D_{k}\\))를 포함한다. 3절에서 방법론에 대해 자세히 설명하고 5절에서 열차 및 테스트 시간에 분산기 문서 수(\\(k\\))에 대한 민감도를 분석한다. RAFT는 PubMed(Dernoncourt and Lee, 2017), HotpotQA(Yang et al., 2018), HuggingFace Hub, Torch Hub 및 Tensorflow Hub 고릴라 데이터 세트(Patil et al., 2023)에서 RAG 유무에 관계없이 감독-핀튜닝을 일관되게 능가하며 도메인 내 RAG에 대해 사전 훈련된 LLM을 개선하기 위한 새롭고 간단한 기술을 제시한다.\n' +
+      '\n' +
+      '## Open-Book 테스트를 위한 2 LLMs\n' +
+      '\n' +
+      '우리의 목표를 더 잘 이해하기 위해, 우리는 시험을 준비하는 실제 환경에서 LLM을 훈련하는 것의 비유를 확장한다.\n' +
+      '\n' +
+      '폐쇄형 도서 시험 A 폐쇄형 도서 시험은 종종 LLM이 시험 중에 질문에 답하기 위한 추가 문서 또는 참조에 액세스할 수 없는 시나리오를 지칭한다. LLM의 경우, 이는 예를 들어 LLM을 챗봇으로 사용하는 시나리오와 동일하다. 이 시나리오에서 LLM은 사전 훈련 및 감독된 미세 조정 중에 구워진 지식에서 파생되어 프롬프트에 응답한다.\n' +
+      '\n' +
+      '대조적으로, 우리는 오픈 북 시험 설정을 LLM이 외부 정보 소스(예: 웹 사이트 또는 책 장)를 참조할 수 있는 시나리오와 비교한다. 이러한 시나리오에서 일반적으로 LLM은 프롬프트에 추가되는 \'k\' 문서(또는 문서의 특정 세그먼트)를 검색하는 검색기와 페어링됩니다. LLM이 "새로운 지식"에 대한 액세스를 얻는 것은 검색된 이러한 문서를 통해서만 가능하다. 결과적으로 범용 LLM으로 훈련되는 이러한 환경에서 LLM의 성능은 리트리버의 품질과 리트리버가 가장 관련된 정보를 얼마나 정확하게 식별할 수 있는지에 크게 달려 있다고 주장한다.\n' +
+      '\n' +
+      '도메인 특정 공개 도서 시험 본 논문에서는 도메인 특정 공개 도서 시험이라고 불리는 일반 공개 도서 시험보다 좁지만 점점 더 인기 있는 도메인에 초점을 맞췄다. 도메인 특정 공개 도서 시험에서 우리는 추론에 사용되는 LLM이 테스트될 영역을 아프리오리로 알고 있다. LLM은 이 특정 도메인의 모든 정보를 사용하여 프롬프트에 응답할 수 있으며, 이 정보는 미세 조정되었습니다. 도메인 특정 예시의 예는 기업 문서, 최신 뉴스, 조직에 속하는 코드 리포지토리 등을 포함한다. 이러한 모든 시나리오에서 LLM은 질문에 응답하는 데 사용되며, 그 답변은 문서 모음(작은 실용적인 영역) 내에서 찾을 수 있다. 검색 기술 자체는 (정확도에 영향을 미칠 수 있지만) 메커니즘에 거의 또는 전혀 영향을 미치지 않는다. 본 논문에서는 이러한 도메인별 오픈북 설정과 미리 학습된 LLM을 이 도메인에 적응시키는 방법에 대해 주로 연구한다. 예를 들어, 다양한 검색 문서 및 분산 장치에 보다 강건하게 하는 방법을 포함한다.\n' +
+      '\n' +
+      '## 3 Raft\n' +
+      '\n' +
+      '이 섹션에서는 도메인 특정 오픈 북 테스트를 위한 LLM을 훈련하는 새로운 방법인 RAFT를 제시한다. 우리는 먼저 감독 미세 조정, fol의 고전적 기술을 소개한다.\n' +
+      '\n' +
+      '그림 1: **시험을 준비하는 데 가장 좋은 방법** (a) 미세 조정 기반 접근법은 입력 문서를 직접 "기억"하거나 문서를 참조하지 않고 응답 연습 QA를 통해 "학습"을 구현한다. (b) 대안적으로, 인컨텍스트 검색 방법들은 고정된 도메인에서 제공되는 학습 기회를 활용하지 못하고, 공부하지 않고 오픈북 시험을 보는 것과 동등하다. 이러한 접근법은 도메인 내 학습을 활용하지만 오픈북 테스트를 준비하지 못한다. 대조적으로, 우리의 접근 방식 (c) RAFT는 시뮬레이션된 불완전한 검색 설정에서 문서를 참조하는 동안 질문-답변 쌍으로 미세 조정을 활용하여 오픈 북 테스트 설정을 효과적으로 준비합니다.**\n' +
+      '\n' +
+      '우리의 실험에서 얻은 주요 결과에 의해 낮아졌다. 그런 다음 일반적인 명령어 튜닝을 수정한 RAFT를 소개한다. 마지막으로, 우리는 후기 섹션에서 기대할 수 있는 실험의 개요를 제공한다.\n' +
+      '\n' +
+      '### Supervised Finetuning\n' +
+      '\n' +
+      '질의 응답 데이터 세트에 대한 감독 미세 조정(SFT) 설정을 고려합니다. 제형은 질문(\\(Q\\)) 및 대응하는 답변(\\(A\\)) 쌍이 도출되거나 이미 이용 가능한 데이터 세트(\\(D\\))로 구성된다. 클래식 SFT 설정에서 모델은 사전 훈련 중 또는 SFT 훈련 단계에서 얻은 지식을 기반으로 질문에 답하는 능력을 향상시키도록 훈련된다. 이렇게 훈련된 모델은 또한 검색 증강 생성(RAG) 설정으로 테스트 시간에 사용될 수 있으며, 여기서 프롬프트에 추가 문서가 도입되어 모델이 질문에 답하는 것을 도울 수 있다. 이는 다음과 같이 나타낼 수 있다:\n' +
+      '\n' +
+      '* 열차: \\(\\mathbf{Q}\\rightarrow\\mathbf{A}\\)\n' +
+      '* 0-shot 추론: \\(\\mathbf{Q}\\rightarrow\\mathbf{A}\\)\n' +
+      '* RAG 추론: \\(\\mathbf{Q}\\) + \\(\\mathbf{D}\\rightarrow\\mathbf{A}\\)\n' +
+      '\n' +
+      '### Raft\n' +
+      '\n' +
+      '검색 인식 미세 조정(Retrieval Aware Fine-Tuning, RAFT)은 도메인 내 RAG와 동등한 도메인 특정 오픈 북 설정에 대한 모델을 맞춤화하는 미세 조정 데이터를 준비하는 새로운 레시피를 제시한다. RAFT에서 우리는 각 데이터 포인트에 질문(\\(Q\\)), 문서 세트(\\(D_{k}\\)), 문서 중 하나(\\(D^{*}\\))로부터 생성된 대응하는 연쇄 사상 스타일 답변(\\(A^{*}\\))이 포함되도록 훈련 데이터를 준비한다. 우리는 두 가지 유형의 문서, 즉 질문에 대한 답을 추론할 수 있는 문서(\\(D*\\))와 답과 관련된 정보를 포함하지 않는 \'분산기\' 문서(\\(D_{i}\\))를 구별한다. 구현 세부사항으로서, \'오클\' 문서는 단일 문서일 필요는 없고, HotpotQA(Yang et al., 2018)의 경우와 같이 둘 이상의 문서가 될 수 있다. 그런 다음, 데이터 세트의 질문(\\(q_{i}\\))의 \\(P\\) 부분에 대해, 우리는 주의 분산 문서(\\(d_{k-1}\\))와 함께 오라클 문서(\\(d_{i}^{*}\\))를 유지한다. 데이터 세트의 질문(\\(q_{i}\\))의 \\((1-P)\\) 부분에 대해서는 오라클 문서를 포함하지 않고 분산기 문서(\\(d_{k}\\))만 포함한다. 그런 다음 표준 지도 학습(SFT) 기법을 사용하여 언어 모델을 미세 조정하고 제공된 문서 및 질문에서 답변을 생성하도록 학습한다. 도. 도 2는 RAFT에 대한 상위 레벨 설계 주체를 예시한다.\n' +
+      '\n' +
+      '우리는 우리의 접근법이 모델이 _즉, 도메인 내에서 훈련된 문서 집합에서 더 나은 RAG를 수행하도록 모델을 훈련시킨다는 것을 보여준다. 어떤 경우에는 오라클 문서를 제거함으로써, 우리는 모델이 문맥에서 답을 도출하는 대신 답을 암기하도록 강요하고 있다. RAFT에 대한 학습 데이터는 다음과 같으며, 학습 데이터의 예는 Fig. 3:\n' +
+      '\n' +
+      '* \\(\\mathbf{P}\\) % of data: \\(\\mathbf{Q}+\\mathbf{D}^{*}+\\mathbf{D}_{2}+\\ldots+\\mathbf{D}_{k}\\rightarrow \\mathbf{A}*\\)\n' +
+      '* \\((1-\\mathbf{P})\\) % of data: \\(\\mathbf{Q}+\\mathbf{D}_{1}+\\mathbf{D}_{2}+\\ldots+\\mathbf{D}_{k}\\rightarrow \\mathbf{A}*\\)\n' +
+      '\n' +
+      '이어서, 테스트 시나리오에 대해, 모델은 RAG 파이프라인에 의해 검색된 Q 및 top-k 문서들을 제공한다. RAFT는 사용된 리트리버와 무관합니다.\n' +
+      '\n' +
+      '훈련 품질을 높이는 핵심 요소는 속이다.\n' +
+      '\n' +
+      '그림 2: **RAFT 메서드의 개요입니다. 왼쪽 상단 그림은 암기와 읽기의 혼합인 리트리버 출력을 기반으로 모델이 훈련되는 표준 RAG 설정과 대조적으로 긍정 및 부정 문서 집합의 _읽기_ 솔루션에 LLM을 적용하는 접근법을 보여준다. 테스트 시 모든 메서드는 컨텍스트에서 상위 k 개의 검색된 문서와 함께 표준 RAG 설정을 따릅니다.**\n' +
+      '\n' +
+      '제시된 답을 설명하기 위해 연쇄적 사고와 같은 추론 과정을 설명한다.RAFT 접근 방식은 유사하다: 우리는 완전한 추론 사슬을 만들고 또한 명확하게 출처를 인용하는 것이 질문에 대한 모델의 정확성을 향상시킨다는 것을 보여준다. 를 포함할 수 있다. 도 3에서는 이러한 설정을 설명한다. 이러한 방식으로 학습 데이터를 생성하는 것은 질문, 컨텍스트 및 검증된 답변으로 모델을 제시한 다음 원래의 컨텍스트를 적절하게 참조하는 추론 체인을 형성하도록 요청하는 것을 포함한다.\n' +
+      '\n' +
+      '실험의 모든 데이터 세트에 대해 위에서 설명한 기술을 사용하여 답변을 생성한다. 고릴라 APIBench 데이터 세트에는 이미 답변에 추론이 포함되어 있습니다. 우리는 그림 1의 생성 단계의 예를 제공한다. 3, 자세한 추론 답변에는 #begin_quote## 및 ##end_quote## 내부의 원래 컨텍스트의 인용과 인용을 기반으로 결론에 도달하는 방법에 대한 자세한 설명이 포함됩니다. 우리는 상세한 추론 문단을 추가하는 것이 실험 섹션에서 모델의 성능을 향상시키는 데 도움이 된다는 것을 보여준다.\n' +
+      '\n' +
+      '## 4 Evaluation\n' +
+      '\n' +
+      '다양한 기준선과 비교하여 RAFT가 얼마나 잘 수행되는지 연구하기 위해 실험을 설계한다. RAFT-7B 모델(LlaMA-2의 미세 조정 버전)은 도메인 특정 미세 조정 모델 및 RAG를 사용한 범용 모델보다 도메인 문서로부터 정보를 읽고 추출하는 데 더 우수하다는 것을 발견했다. 절제술로서, 우리는 또한 모델이 사고 연쇄 반응으로 학습하는 것이 얼마나 중요한지 보여준다. 이 섹션에서는 먼저 실험에 사용한 모든 데이터 세트를 소개하고 벤치마킹하는 모든 기본 모델/미세 조정 기술을 소개한다.\n' +
+      '\n' +
+      '### Datasets\n' +
+      '\n' +
+      '실험에서는 다음 데이터 세트를 사용하여 모델과 모든 기준선을 평가합니다. 위키피디아, 코딩/API 문서, 의료 문서에 대한 질의 응답을 포함한 인기 있는 도메인과 다양한 도메인을 나타내기 위해 이러한 데이터 세트를 선택했다.\n' +
+      '\n' +
+      '* NQ(Natural Questions)(Kwiatkowski et al., 2019), Trivia QA(Joshi et al., 2017) 및 HotpotQA(Yang et al., 2018)는 주로 상식(예: 영화, 스포츠 등)에 초점을 맞춘 위키피디아를 기반으로 한 개방형 질문 답변이다.\n' +
+      '* HuggingFace, Torch Hub 및 TensorFlow Hub는 고릴라 논문에서 제안한 APIBench(Patil et al., 2023)에서 가져온 것입니다. 이러한 벤치마크는 설명서를 기반으로 올바른 기능 및 실행 가능한 API 호출을 생성하는 방법을 측정합니다.\n' +
+      '* PubMed QA (Jin et al., 2019)는 생물의학-연구 질문-답변에만 맞춰진 질문-답변 데이터 세트입니다. 주로 주어진 문서 세트를 기반으로 의학 및 생물학 질문에 답하는 데 중점을 둡니다.\n' +
+      '\n' +
+      '데이터 세트의 첫 번째 범주(NQ, 트리비아 QA 및 핫팟 QA)는 비교적 일반적인 도메인인 반면 후자의 두 도메인은 매우 도메인 특정 문서에 있다.\n' +
+      '\n' +
+      '기준선 실험을 위해 다음과 같은 기준선을 고려합니다.\n' +
+      '\n' +
+      '* 0-shot 프롬프트가 있는 LlaMA2-7B-chat 모델: 이것은 QA 작업에 일반적으로 사용되는 명령어 세분화 모델이며, 여기에서 명확하게 작성된 지침을 제공하지만 참조 설명서는 제공하지 않습니다.\n' +
+      '* RAG를 사용 하는 LlaMA2-7B-chat 모델 (Llama2 + RAG): 참조 문서를 포함 하는 경우를 제외 하 여 이전 설정과 유사 합니다. 이것은 도메인별 QA 작업을 처리할 때 인기 있는 기술이다.\n' +
+      '* 0-shot 프롬프트 (DSF)를 사용 하 여 도메인 특정 미세 조정: 컨텍스트에서 문서 없이 표준 감독 미세 조정을 수행 합니다. 우리는 모델의 응답 스타일을 정렬하고 도메인 컨텍스트에 익숙해지는 것이 대부분 유용하다는 것을 발견했다.\n' +
+      '* RAG를 사용한 도메인 특정 파인튜닝(DSF + RAG): RAG를 사용하여 외부 지식으로 도메인 특정 파인튜닝 모델을 입력합니다. 따라서 모델이 알지 못하는 "지식"에 대해서는 여전히 맥락을 참조할 수 있다.\n' +
+      '\n' +
+      '### Results\n' +
+      '\n' +
+      '위의 데이터 세트와 기준선을 사용하여 모델 RAFT를 평가하고 탭 1에서 RAFT의 효과를 입증한다. 1. RAFT가 기준선보다 일관되고 상당히 우수함을 알 수 있다. 기본 Llama-2 명령어 조정 모델과 비교하여 RAG를 사용한 RAFT는 정보 추출과 산만 장치에 대한 견고성 측면에서 훨씬 더 우수하다. 이득은 핫팟 QA에서 35.25%, 토치 허브 평가에서 76.35%까지 클 수 있습니다. 특정 데이터 세트에 대한 DSF와 비교하여, 우리 모델은 문제를 해결하기 위해 제공된 컨텍스트에 더 잘 의존한다. RAFT는 HotpotQA 및 HuggingFace 데이터 세트(HotpotQA에서 30.87%, HuggingFace에서 31.41%)와 같은 작업에서 훨씬 더 잘 수행합니다. PubMed QA의 경우 이진 예/아니오 질문이기 때문에 모델을 DSF + RAG와 비교할 때 상당한 이득을 관찰하지 못한다. 훨씬 더 크고 더 나은 모델 GPT-3.5와 비교하더라도 RAFT는 상당한 이점을 보여준다.\n' +
+      '\n' +
+      '전반적으로, RAG가 있거나 없는 LLaMA-7B 모델은 응답 스타일이 그라운드 트루스와 일치하지 않아 성능이 좋지 않다. 도메인 특정 튜닝을 적용하여 성능을 크게 향상시켰습니다. 이 과정을 통해 모델은 적절한 답변 스타일을 학습하고 채택할 수 있다. 그러나 도메인 특정 미세 조정(DSF) 모델에 RAG를 도입하는 것은 항상 더 나은 결과로 이어지지 않는다. 이는 모델이 컨텍스트 처리 및 유용한 정보 추출에 대한 훈련이 부족함을 나타낼 수 있다. 제안하는 기법인 RAFT를 이용하여 응답 스타일을 필요한 응답 스타일과 일치시킬 뿐만 아니라 문서 처리 능력을 향상시킬 수 있도록 학습한다. 결과적으로, 우리의 접근법은 다른 모든 접근법보다 우수하다.\n' +
+      '\n' +
+      '### CoT 효과\n' +
+      '\n' +
+      '또한 모델의 성능을 향상시키는 데 있어 연쇄적 사고 접근법의 효과를 평가하기 위한 분석을 수행한다. 표 2에 표시된 것처럼 질문에 대한 답변을 단순히 제공하는 것이 항상 적절한 것은 아닐 수 있다. 이러한 접근은 손실의 급격한 감소로 이어져 훈련 과정이 분기될 수 있다. 모델을 해답에 안내할 뿐만 아니라 모델의 이해를 풍부하게 하는 추론 체인을 통합하면 전체 정확도를 향상시킬 수 있다. 우리의 실험에서 연쇄 사고를 통합하면 훈련 견고성이 크게 향상된다. GPT-4-1106을 사용하여 사고 사슬 프롬프트를 생성합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c} \\hline \\hline  & PubMed & HotpotQA & HuggingFace & Torch Hub & TensorFlow Hub \\\\ \\hline GPT-3.5 + RAG & 71.60 & **41.5** & 29.08 & 60.21 & 65.59 \\\\ \\hline LLaMA2-7B & 56.5 & 0.54 & 0.22 & 0 & 0 \\\\ LLaMA2-7B + RAG & 58.8 & 0.03 & 26.43 & 08.60 & 43.06 \\\\ DSF & 59.7 & 6.38 & 61.06 & 84.94 & 86.56 \\\\ DSF + RAG & 71.6 & 4.41 & 42.59 & 82.80 & 60.29 \\\\ \\hline RAFT (LLaMA2-7B) & **73.30** & 35.28 & **74.00** & **84.95** & **86.86** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: **RAFT는 모든 전문 도메인에 대한 RAG 성능을 향상시킵니다.**: PubMed, HotpotQA, HuggingFace, Torch Hub 및 Tensorflow Hub를 통해 도메인 특정 Finetuning이 기본 모델의 성능을 크게 향상시키지만 RAFT는 RAG가 있거나 없는 기존 도메인 특정 Finetuning 방법을 일관되게 능가합니다. 이는 문맥을 가지고 모델을 훈련시킬 필요성을 시사한다. 모델과 LLaMA 미세 조정 레시피를 비교하고 참조용으로 GPT-3.5를 제공한다.\n' +
+      '\n' +
+      '그림 3: RAFT 프롬프트는 LLM이 자체 생성된 추론 및 답변을 평가할 수 있도록 도와 올바른 추론 및 답변과 대조한다. LLM은 추론의 오류를 식별하고 개선을 위한 주요 통찰력을 추출하도록 촉구된다. 이 도면은 RAFT 알고리즘(섹션 3)에서의 \'GenerateExplanation\' 단계를 구체적으로 나타낸다.\n' +
+      '\n' +
+      '그리고 그림 3에서 사용한 프롬프트의 예를 포함합니다.\n' +
+      '\n' +
+      '### Qualitative Analysis\n' +
+      '\n' +
+      '도메인 특정 미세 조정(DSF) 접근법에 비해 RAFT의 잠재적인 이점을 설명하기 위해 그림 4에 비교 예를 제시한다. 이 예는 DSF 모델이 시나리오 작성자의 신원을 묻는 질문에 의해 혼란스러워지는 시나리오를 정성적으로 보여준다. 정확한 이름을 제공하는 대신, 그것은 시나리오 작가가 쓴 영화 중 하나를 잘못 인용한다. 대조적으로, RAFT 모델은 질문에 정확하게 대답한다. 이러한 불일치는 질문-응답 쌍만으로 모델을 훈련하는 것이 제공된 문서로부터 관련 컨텍스트를 도출하는 능력을 손상시킬 수 있음을 시사한다. 비교는 텍스트를 효과적으로 처리하는 모델의 능력을 보존하고 향상시키기 위해 표준 수업 조정과 상황 이해를 훈련 데이터 세트에 통합하는 것의 중요성을 강조한다.\n' +
+      '\n' +
+      '### RAG에 대 한 oracle 컨텍스트를 사용 하 여 LLM을 항상 교육 해야 하나요?\n' +
+      '\n' +
+      '대규모 언어 모델(LLM)이 항상 검색 증강 생성(RAG)을 위한 오라클 컨텍스트로 훈련되어야 하는지에 대한 탐색에서, 우리는 핵심 질문을 다룬다: 훈련 데이터의 어떤 비율(p%)이 오라클 문서를 포함해야 하는가? 직관적으로, 컨텍스트(예를 들어, RAG 작업)로부터 정보를 읽고 추출하는 효과적인 훈련을 위해, 오라클 문서는 훈련 동안 항상 포함되어야 한다고 가정할 수 있다(P = 100%). 그러나, 우리의 연구 결과는 이러한 가정에 도전한다: 컨텍스트(P = 80%)에서 오라클 문서 없이 훈련 데이터의 일부를 통합하는 것은 RAG 태스크에 대한 모델의 성능을 향상시키는 것으로 보인다.\n' +
+      '\n' +
+      '도. 도 5는 오라클 문서를 포함해야 하는 훈련 사례의 비율을 나타내는 하이퍼파라미터 P%에 대한 조사를 나타낸다. 우리의 분석에서는 최적 비율이 40%, 60% 및 100% 범위의 수치로 데이터 세트에 따라 다르다는 것을 보여준다. 이는 때때로 올바른 해당 컨텍스트 없이 LLM을 교육하는 것이 문서와 관련된 질문에 답하는 다운스트림 작업에 도움이 될 수 있음을 나타냅니다. 훈련 설정에서는 오라클 문서와 함께 4개의 산만기 문서를 포함하고 테스트 시간에는 오라클 문서에 4개의 산만기를 제공하여 이 형식을 유지한다. 우리의 연구 결과는 도메인 특정 RAG 작업의 경우 컨텍스트에 오라클 문서가 없는 특정 비율의 훈련 데이터를 포함하는 것이 유리하다는 것을 시사한다.\n' +
+      '\n' +
+      '## 5 RAFT Generalizes to Top-K RAG\n' +
+      '\n' +
+      '다양한 벤치마크에서 RAFT의 성능을 입증한 후, 우리는 이제 또 다른 중요한 문제를 연구한다: RAFT의 분산기 문서 수가 평가 중에 Top-k 리트리버 증강 생성(RAG) 결과로 증강될 때 모델의 성능에 어떻게 영향을 미치는가? 이전 연구는 관련 없는 텍스트에 대한 LLM의 취약성을 강조했다(연구들 참조(Shi et al., 2023; Weston and Sukhbaatar, 2023; Liu et al., 2023)). 이 문제는 높은 리콜을 보장하기 위해 top-k RAG가 테스트 시간에 자주 사용되기 때문에 LLM + RAG에 특히 중요하다. 그러한 시나리오는 모델이 관련 정보에만 초점을 맞추어 관련 없는 내용을 식별하고 무시할 수 있는 능력을 필요로 한다.\n' +
+      '\n' +
+      '### Top-K RAG에 강건한 모델 만들기\n' +
+      '\n' +
+      '대용량 언어 모델(LLM)이 검색 파이프라인 내에서 관련 없는 텍스트를 걸러내는 능력을 향상시키는 문제를 해결하기 위해, 분석 결과, 오라클(고관련) 문서만으로 훈련하는 것은 무의식적으로 모델의 관련 없는 정보를 식별 및 무시하는 능력을 감소시킬 수 있음을 보여주었다. 이를 해결하기 위해, 우리의 알고리즘인 RAFT는 오라클 문서와 무관한 문서들을 통합하는 전략을 채택한다. 이 방법론은 학습 과정 전반에 걸쳐 통합할 부정(관련되지 않은) 문서의 이상적인 부분을 조사하고 이 학습 접근법이 테스트 단계에서 검색 증강 생성(RAG)이 직면하는 다양한 양의 문서에 얼마나 잘 적응하는지 평가하도록 촉구한다. 우리의 목표는 관련 정보와 관련 없는 정보 사이의 균형을 개선하여 관련 콘텐츠를 식별하고 활용하는 모델의 효율성을 강화하는 것이다. 섹 4.5는 훈련 데이터의 P%에 산만기가 포함되어야 하는 것을 살펴보았지만 이 섹션에서는 테스트 시간 시나리오를 연구한다.\n' +
+      '\n' +
+      '**부정 문서를 사용한 교육** 검색된 문서의 관련 없는 텍스트에 대한 대규모 언어 모델(LLM)의 견고성을 향상시키기 위해 골든(고관련) 문서와 산만(관련 없음) 문서를 모두 통합하는 미세 조정 방법을 채택했습니다. 모델은 다양한 수의 분산기 문서로 학습되었지만, 검색기에서 얻은 상위 k개의 문서를 사용하여 일관되게 평가되었다 - \\(p\\)와 혼동되지 않도록.\n' +
+      '\n' +
+      '우리의 연구 결과는 그림 1에 자세히 설명되어 있다. 도 6을 참조하면, 오라클 문서만으로 미세조정이 종종 더 많은 수의 산만기 문서를 포함하는 구성들에 비해 열등한 성능을 초래한다는 것을 드러낸다. 그림에서 볼 수 있듯이 자연질문에 대한 학습은 \\(D^{*}+3D\\)와 \\(D^{*}+1D\\) 문서를 Hotpot QA로 학습하는 것이 더 좋은 성능을 보였다. 이 통찰력은 우리의 알고리즘인 RAFT에 특히 유익했다. 실험에서는 일반적으로 1개의 오라클 문서와 4개의 산만기 문서로 구성된 훈련 설정을 사용한다. 이 접근법은 적절한 정보를 효과적으로 분별하고 우선순위를 정할 수 있는 능력을 얻으면서도 모델이 산만해지지 않도록 균형을 맞춘다.\n' +
+      '\n' +
+      '**다양한 수의 테스트 시간 문서로 일반화** 다양한 양의 테스트 시간 문서가 모델의 성능에 미치는 영향을 조사하기 위해 연구를 확장했습니다. 특히, 다양한 수의 분산기 문서로 훈련된 모델이 테스트 시간에 제시된 문서 수의 변화에 어떻게 반응하는지 평가하는 데 중점을 두었다.\n' +
+      '\n' +
+      '결과는 그림 1에 나와 있다. 도 6을 참조하면, 트레이닝 동안 산만기 문서의 포함은 실제로 모델이 테스트 동안 마주치는 문서 수의 변동에 대해 더 탄력적으로 만드는 것을 확인한다. 테스트 시간 문서 번호의 변화에도 불구하고 일관된 성능을 유지하는 이 기능은 접근 방식인 RAFT의 견고성을 더욱 검증한다. 이 발견은 실제 애플리케이션에서 직면할 수 있는 다양한 시나리오에 대한 모델을 준비하기 위해 잘 보정된 훈련 환경의 중요성을 강조한다.\n' +
+      '\n' +
+      '## 6 관련 작업\n' +
+      '\n' +
+      '**검색-증강 언어 모델** RAG는 외부 지식 베이스로부터 관련 정보를 소스하는 검색 모듈을 통합함으로써 언어 모델을 향상시키며, 언어 모델링을 포함하는 다양한 NLP 태스크들에 걸쳐 성능을 상당히 향상시킨다(Guu et al., 2020; Borgeaud et al., 2022; Khandelwal et al., 2019; Shi et al., 2023; Lin et al., 2023; Shi et al., 2023; Asai et al., 2023; Xu et al., 2023; Wang et al., 2023). 및 오픈-도메인 질의 응답(Izacard et al., 2023; Lewis et al., 2020). 이 통합은 검색 모듈이 외부 소스에서 추가 컨텍스트를 제공하는 "검색 및 읽기" 패러다임을 따르며, 이 패러다임은 LM이 최종 출력을 생성하는 데 사용한다. 검색 프로세스는 입력을 질의로 사용하여 문서를 가져오는 것을 포함하며, LM은 최종 예측을 위해 통합한다. 예를 들어, Atlas(Izacard et al., 2023)는 T5 모델을 리트리버로 미세 조정하여 문서를 잠재 변수로 처리하는 반면, RETRO(Borgeaud et al., 2022)는 디코더 전용 아키텍처를 수정하여 검색된 텍스트를 포함하고 처음부터 사전 훈련을 수행한다. kNN-LM(Khandelwal et al., 2019)은 LM 다음 토큰 분포와 추론 시 검색된 토큰으로부터 계산된 분포 사이를 보간한다. (Shi et al., 2023; Ram et al., 2023)은 LM에 대한 블랙 박스 액세스를 가정하고 이를 기성품 또는 미세 조정된 리트리버 중 하나와 결합한다.\n' +
+      '\n' +
+      '**기억** 큰 신경 언어 모델에 대한 주요 질문은 그들이 진정으로 "이해" 텍스트인지 여부입니다 (펠드만,\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline  & PubMed & HotpotQA & HuggingFace & Torch Hub & TensorFlow Hub \\\\ \\hline RAFT w.o CoT & 68.30 & 25.62 & 59.07 & **86.56** & 83.21 \\\\ RAFT & **73.30** & **35.28** & **74.00** & 84.95 & **86.86** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: **연쇄 사고에 대한 절제**: CoT가 없는 RAFT 및 RAFT의 수입니다. 다양한 데이터 세트에 대한 결과는 CoT를 추가하는 것이 미세 조정 모델의 성능을 크게 향상시킬 수 있음을 보여준다. Hotpot QA 및 HuggingFace 데이터 세트에서 각각 9.66% 및 14.93%의 이득을 얻었다.\n' +
+      '\n' +
+      '그림 4: **RAFT 및 DSF의 비교**: HotpotQA 데이터 세트에서 RAFT 및 DSF 미세 조정 모델을 프롬프트합니다. 우리는 DSF 모델이 문맥에서 잘못된 정보를 추출한다는 것을 알 수 있다. 질문에 대해, 누가 시나리오 작가인지, 그것은 영화명으로 응답한다. RAFT는 결과를 정확하게 얻을 수 있습니다.\n' +
+      '\n' +
+      '2020; Power et al., 2022) 또는 단순히 Surface Pattern memorization Carlini et al.(2019); Tanzer et al.(2022)에 의존한다. Feldman(2020); Carlini 등(2019); Zaremba 등(2022)은 신경망 모델에서 암기의 정도를 정량화하기 위한 방법론을 개발한다. Brown et al. (2020); Power et al. (2022); Liu et al. (2022)는 암기가 모델의 일반화 능력에 어떻게 영향을 미치는지 추가로 조사했다. 최근 Carlini et al. (2021); Shi et al. (2023)은 언어 모델이 훈련 데이터를 암기하고 역류하는 능력을 보여주었고, 상당한 프라이버시 문제를 제기했습니다. Kandpal et al. (2022); Pan et al. (2020).\n' +
+      '\n' +
+      '**LLM의 핀튜닝** 최근 몇 년 동안 대규모 언어 모델(LLM) Brown 등(2020); OpenAI(2023); Workshop 등(2022); Touvron 등(2023); Anil 등(2023)이 빠르게 발전했습니다. 이러한 기초 모델을 다운스트림 작업에 적용하기 위해, 미세 조정 Mishra et al. (2021); Sanh et al. (2021); Chung et al. (2022); Muenighoff et al. (2023); Zhou et al. (2023); Lin et al. (2023); Ji et al. (2024)가 널리 퍼진 접근법이 되었다. 전통적인 감독 미세 조정은 LLM을 어댑팅하는 데 필요한 비용 및 계산에 의해 제한될 수 있다. 이러한 문제를 해결하기 위해 Prompt Tuning Lester 등(2021), Prefix-Tuning Li and Liang(2021), P-Tuning Liu 등(2022) 및 Low-Rank 기반 Fine-tuning Hu 등(2021)과 같은 매개변수 효율적인 Fine-tuning Houlsby 등(2019) 분야의 연구가 주목을 받고 있다. 이러한 방법을 통해 LLMs은 도메인별 지식을 습득하고 질의 응답, 요약, 대화 생성과 같은 전문화된 작업에 적응할 수 있다. 미세조정의 또 다른 분기는 RLHF Ouyang et al. (2022); Rafailov et al. (2023); Liu et al. (2023); Zhang et al. (2023)을 통해 이루어지며, 이는 LLM의 선호도를 인간과 정렬하기 위해 RL을 채택한다.\n' +
+      '\n' +
+      '**RAG에 대한 Finetuning** 보다 최근에, 몇몇 논문들은 RAG 작업 Lin 등(2023); Wang 등(2023); Xu 등(2023); Liu 등(2024)에서 더 낫도록 사전 트레이닝된 LLM을 Finetuning하는 아이디어를 탐색하고 있다. 이러한 작업은 RAG에 대한 미세 조정 데이터 세트의 조합을 구성하고 이러한 작업에 대해 잘 수행할 수 있도록 모델을 훈련하는 데 중점을 둔다. 특히,\n' +
+      '\n' +
+      '그림 5: **포함할 황금 문서 수** 컨텍스트에서 학습 데이터의 몇 분율에 오라클 문서가 포함되어 있는지 나타내는 하이퍼파라미터 \\(P\\%\\)를 연구합니다. NQ, TQA 및 HotpotQA에 대한 결과는 맥락에 오라클 문서가 없는 데이터의 일부를 혼합하는 것이 도메인 내 RAG에 도움이 된다는 것을 시사한다.\n' +
+      '\n' +
+      '그림 6: **테스트 시간 문서 변동**: 검색기가 제공할 수 있는 다양한 수의 테스트 시간 문서에 대해 RAFT가 얼마나 강력한지 연구합니다. NQ에서는 4개의 문서로 훈련하는 것이 최상의 성능으로 이어지지만 HotpotQA에서는 2개의 문서로 훈련하는 것이 최적이다. 그러나 두 데이터 세트 모두에서 _오라클_ 문서로 구성된 모든 데이터 세트를 사용한 훈련은 성능에 영향을 미칩니다.\n' +
+      '\n' +
+      '테스트 시 도메인이나 문서는 훈련 시간과 다를 수 있지만, 본 논문은 동일한 문서 집합에 대한 LLM 테스트에만 관심이 있는 약간 반대 시나리오를 연구한다.\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      'RAFT는 "오픈 북" 설정에서 특정 도메인 내에서 질문에 응답하는 모델의 성능을 향상시키기 위해 설계된 훈련 전략이다. 이 기술은 선택된 문서 모음을 기반으로 한 질문 응답 작업에 대한 LLM에 대한 미세 조정 레시피를 보여준다. 우리는 주의를 산만하게 하는 문서와 함께 모델을 훈련하고, 데이터 세트를 컨텍스트에 오라클 문서가 부족하도록 조직하고, 관련 텍스트의 직접적인 인용을 사용하여 연쇄적인 방식으로 답변을 공식화하는 것과 같은 몇 가지 중요한 설계 결정을 정확하게 지적했습니다. PubMed, HotpotQA 및 고릴라 API Bench에 대한 우리의 평가는 RAFT의 중요한 잠재력을 강조한다. 향후 RAG(In-domain Retrieval Augmented Generation)는 산업 분야와 학술 분야 모두에서 지속적으로 관심을 가질 것으로 기대한다. 일반 RAG와 달리 본 연구는 LLM이 도메인별 지식을 사용하여 질문에 답하는 작업을 수행하는 실제 시나리오를 다룬다. 현재 추세와 일치하게, 우리의 연구 결과는 더 작고 미세 조정된 모델이 일반적인 LLM 대응물과 대조적으로 도메인별 질문 응답 작업에서 비교적 잘 수행할 수 있음을 시사한다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Anil 등(2023) Anil, R., Dai, A. M., Firat, O., Johnson, M., Lepikhin, D., Passos, A., Shakeri, S., Taropa, E., Bailey, P., Chen, Z., et al. Palm 2 기술 보고서. _ arXiv preprint arXiv:2305.10403_, 2023.\n' +
+      '* Anthropic(2023) Anthropic. 클라우드의 긴 컨텍스트 창을 위한 신속한 엔지니어링. 2023년\n' +
+      '* Asai et al.(2023) Asai, A., Wu, Z., Wang, Y., Sil, A., and Hajishirzi, H. Selfrag: Learning to retrieve, generate, and critique through self-reflection. _ arXiv preprint arXiv:2310.11511_, 2023.\n' +
+      '* Borgeaud 등(2022) Borgeaud, S., Mensch, A., Hoffmann, J., Cai, T., Rutherford, E., Millican, K., Van Den Driessche, G. B., Lespiau, J.-B., Damoc, B., Clark, A., et al. Improving language models by retrieving from trillous of tokens. In _International conference on machine learning_, pp. 2206-2240. PMLR, 2022.\n' +
+      '* Brown 등(2020) Brown, T., Mann, B., Ryder, N., Subbiah, M., Kaplan, J. D., Dhariwal, P., Neelakantan, A., Shyam, P., Sastry, G., Askell, A., et al. Language models is few-shot learners. _ Advances in neural information processing systems_, 33:1877-1901, 2020.\n' +
+      '* Carlini et al. (2019) Carlini, N., Liu, C., Erlingsson, U., Kos, J., and Song, D. The secret sharer: Evaluating and testing unintended memorization in neural networks. _28th USENIX Security Symposium (USENIX Security 19)_, pp. 267-284, 2019.\n' +
+      '* Carlini et al.(2021) Carlini, N., Tramer, F., Wallace, E., Jagielski, M., Herbert-Voss, A., Lee, K., Roberts, A., Brown, T., Song, D., Erlingsson, U., et al. Extracting training data from large language models. _30th USENIX Security Symposium (USENIX Security 21)_, pp. 2633-2650, 2021.\n' +
+      '* Carlini et al. (2022) Carlini, N., Ippolito, D., Jagielski, M., Lee, K., Tramer, F., and Zhang, C. Quantifying memorization across neural language models. <표상학습에 관한 제11차 국제회의>, 2022.\n' +
+      '* Chung et al.(2022) Chung, H. W., Hou, L., Longpre, S., Zoph, B., Tay, Y., Fedus, W., Li, Y., Wang, X., Dehghani, M., Brahma, S., et al. Scaling instruction-finetuned language models. _ arXiv preprint arXiv:2210.11416_, 2022.\n' +
+      '* Dernoncourt & Lee (2017) Dernoncourt, F. and Lee, J. Y. Pubmed 200k rct: a dataset for sequential sentence classification in medical abstracts _ arXiv preprint arXiv:1710.06071_, 2017.\n' +
+      '* Feldman (2020) Feldman, V. 학습에 암기가 필요한가요? 긴 꼬리에 관한 짧은 이야기 <Proceedings of the 52 Annual ACM SIGACT Symposium on Theory of Computing>에서, pp. 954-959, 2020.\n' +
+      '* Guu et al.(2020) Guu, K., Lee, K., Tung, Z., Pasupat, P., and Chang, M. 증강 언어 모델 사전 훈련을 검색합니다. In _International conference on machine learning_, pp. 3929-3938. PMLR, 2020.\n' +
+      '* Houlsby et al. (2019) Houlsby, N., Giurgiu, A., Jastrzebski, S., Morrone, B., De Laroussilhe, Q., Gesmundo, A., Attariyan, M., and Gelly, S. nlp에 대한 매개변수 효율적인 전이 학습입니다. In _International Conference on Machine Learning_, pp. 2790-2799. PMLR, 2019.\n' +
+      '* Hu et al. (2021) Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W. 로라: 대형 언어 모델의 저순위 적응입니다. _ arXiv preprint arXiv:2106.09685_, 2021.\n' +
+      '* Izacard 등(2023) Izacard, G., Lewis, P., Lomeli, M., Hosseini, L., Petroni, F., Schick, T., Dwivedi-Yu, J., Joulin, A., Riedel, S., and Grave, E. Atlas: Few-shot learning with retrieval augmented language models. _ Journal of Machine Learning Research_, 24(251):1-43, 2023. URL [http://jmlr.org/papers/v24/23-0037.html](http://jmlr.org/papers/v24/23-0037.html)\n' +
+      '* Ji et al. (2024) Ji, C. C.-J., Mao, H., Yan, F., Shishir G. Patil, T. Z., Stoica, I., and Gonzalez, J. E. Gorilla openfunctions v2. 2024.\n' +
+      '\n' +
+      '* Jin et al. (2019) Jin, Q., Dhingra, B., Liu, Z., Cohen, W. W., and Lu, X. Pubmedqa: 생물의학 연구 질문 응답을 위한 데이터 세트입니다. _ arXiv preprint arXiv:1909.06146_, 2019.\n' +
+      '* Joshi et al.(2017) Joshi, M., Choi, E., Weld, D. S., and Zettlemoyer, L. 트리비아카: 읽기 이해를 위해 멀리 감독된 대규모 챌린지 데이터 세트입니다. _ arXiv preprint arXiv:1705.03551_, 2017.\n' +
+      '* Kandpal et al. (2022) Kandpal, N., Wallace, E., and Raffel, C. Deduplicating training data is mitigates privacy risk in language models. In _International Conference on Machine Learning_, pp. 10697-10707. PMLR, 2022.\n' +
+      '* Khandelwal et al. (2019) Khandelwal, U., Levy, O., Jurafsky, D., Zettlemoyer, L., and Lewis, M. 암기를 통한 일반화: 최근접 이웃 언어 모델. _ arXiv preprint arXiv:1911.00172_, 2019.\n' +
+      '* Kwiatkowski 등(2019) Kwiatkowski, T., Palomaki, J., Redfield, O., Collins, M., Parikh, A., Alberti, C., Epstein, D., Polosukhin, I., Devlin, J., Lee, K., et al. Natural questions: a benchmark for question answering research. _ 계산 언어학 협회의 트랜잭션_, 7:453-466, 2019.\n' +
+      '* Lazaridou et al. (2022) Lazaridou, A., Gribovskaya, E., Stokowiec, W., and Grigorev, N. 오픈 도메인 질문 응답을 묻는 몇 번의 프롬프트를 통해 인터넷에 증강된 언어 모델입니다. _ arXiv preprint arXiv:2203.05115_, 2022.\n' +
+      '* Lester et al.(2021) Lester, B., Al-Rfou, R., and Constant, N. 매개 변수 효율적인 프롬프트 튜닝을 위한 스케일 힘입니다. _ arXiv preprint arXiv:2104.08691_, 2021.\n' +
+      '* Lewis et al. (2020) Lewis, P., Perez, E., Piktus, A., Petroni, F., Karpukhin, V., Goyal, N., Kuttler, H., Lewis, M., Yih, W. -t., Rocktaschel, T., et al. Retrieval-augmented generation for knowledge-intensive nlp tasks _ Advances in Neural Information Processing Systems_, 33:9459-9474, 2020.\n' +
+      '* Li & Liang (2021) Li, X. L. and Liang, P. Prefix-tuning: Optimizing continuous prompts for generation _ arXiv preprint arXiv:2101.00190_, 2021.\n' +
+      '* Lin et al.(2023a) Lin, X. V., Chen, X., Chen, M., Shi, W., Lomeli, M., James, R., Rodriguez, P., Kahn, J., Szilvasy, G., Lewis, M., et al. Ra-dit: Retrieval-augmented dual instruction tuning _ arXiv preprint arXiv:2310.01352_, 2023a.\n' +
+      '* Lin et al.(2023b) Lin, X. V., Chen, X., Chen, M., Shi, W., Lomeli, M., James, R., Rodriguez, P., Kahn, J., Szilvasy, G., Lewis, M., et al. Ra-dit: Retrieval-augmented dual instruction tuning _ arXiv preprint arXiv:2310.01352_, 2023b.\n' +
+      '* Liu et al. (2023) Liu, H., Sferrazza, C., and Abbeel, P. Chain of hindsight is aligns language models with feedback. _ arXiv preprint arXiv:2302.02676_, 3, 2023a.\n' +
+      '* Liu et al.(2022) Liu, N. F., Lin, K., Hewitt, J., Paranjape, A., Bevilacqua, M., Petroni, F., and Liang, P. Lost in the middle: How language models use long context _ arXiv preprint arXiv:2307.03172_, 2023b.\n' +
+      '* Liu et al.(2022) Liu, X., Ji, K., Fu, Y., Tam, W., Du, Z., Yang, Z., and Tang, J. P-tuning: Prompt Tuning can comparable to fine-tuning across scale and tasks. <Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers)_, pp. 61-68, 2022a.\n' +
+      '* Liu et al. (2022) Liu, Z., Kitouni, O., Nolte, N. S., Michaud, E., Tegmark, M., and Williams, M. 그로킹을 이해하기 위해: 효과적인 표상 학습 이론입니다. _ Advances in Neural Information Processing Systems_, 35:34651-34663, 2022b.\n' +
+      '* Liu et al.(2024) Liu, Z., Ping, W., Roy, R., Xu, P., Shoeybi, M., and Catanzaro, B. Chatqa: Building gpt-4 level conversational qa models. _ arXiv preprint arXiv:2401.10225_, 2024.\n' +
+      '* Mishra et al.(2021) Mishra, S., Khashabi, D., Baral, C., and Hajishirzi, H. Cross-task Generalization via natural language crowdsourcing instructions _ arXiv preprint arXiv:2104.08773_, 2021.\n' +
+      '* Muennighoff et al. (2023) Muennighoff, N., Wang, T., Sutawika, L., Roberts, A., Biderman, S., Le Scao, T., Bari, M. S., Shen, S., Yong, Z. X., Schoelkopf, H., Tang, X., Radev, D., Aji, A. F., Almubarak, K., Albanie, S., Alyafeai, Z., Webson, A., Raff, E., and Raffel, C. Crosslingual Generalization through multitask finetuning. Rogers, A., Boyd-Graber, J., and Okazaki, N. (eds.), _Proceedings of the 61th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pp. 15991-16111, Toronto, Canada, July 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.acl-long.891. URL [https://aclanthology.org/2023.acl-long.891](https://aclanthology.org/2023.acl-long.891).\n' +
+      '* OpenAI (2023) OpenAI. Gpt-4 기술 보고서, 2023년\n' +
+      '* Ouyang et al.(2022) Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. Training language models to follow instructions with human feedback. _ Advances in Neural Information Processing Systems_, 35:27730-27744, 2022.\n' +
+      '* Pan et al.(2020) Pan, X., Zhang, M., Ji, S., and Yang, M. 범용 언어 모델의 개인 정보 보호 위험 _2020 IEEE Symposium on Security and Privacy (SP)_, pp. 1314-1331. IEEE, 2020.\n' +
+      '* Patil et al. (2023) Patil, S. G., Zhang, T., Wang, X., and Gonzalez, J. E. Gorilla: Large language model connected with massive apis _ arXiv preprint arXiv:2305.15334_, 2023.\n' +
+      '* Power et al. (2022) Power, A., Burda, Y., Edwards, H., Babuschkin, I., and Misra, V. Grokking: 작은 알고리즘 데이터 세트에서 과적합 이상의 일반화입니다. _ arXiv preprint arXiv:2201.02177_, 2022.\n' +
+      '\n' +
+      '* Rafailov et al. (2023) Rafailov, R., Sharma, A., Mitchell, E., Ermon, S., Manning, C. D., and Finn, C. Direct preference optimization: Your language model is secretly a reward model. _ arXiv preprint arXiv:2305.18290_, 2023.\n' +
+      '* Ram et al. (2023) Ram, O., Levine, Y., Dalmedigos, I., Muhlgay, D., Shashua, A., Leyton-Brown, K., and Shoham, Y. 문맥 검색 강화 언어 모델입니다. _ arXiv preprint arXiv:2302.00083_, 2023.\n' +
+      '* Sanh et al.(2021) Sanh, V., Webson, A., Raffel, C., Bach, S. H., Sutawika, L., Alyafeai, Z., Chaffin, A., Stiegler, A., Scao, T. L., Raja, A., et al. Multitask prompted training enables zero-shot task generalization. _ arXiv preprint arXiv:2110.08207_, 2021.\n' +
+      '* Shi et al.(2023a) Shi, F., Chen, X., Misra, K., Scales, N., Dohan, D., Chi, E. H., Scharli, N., and Zhou, D. Large language models can be easily distracted by irrelevant context. In _International Conference on Machine Learning_, pp. 31210-31227. PMLR, 2023a.\n' +
+      '* Shi et al. (2023b) Shi, W., Ajith, A., Xia, M., Huang, Y., Liu, D., Blevins, T., Chen, D., and Zettlemoyer, L. 대형 언어 모델에서 사전 훈련 데이터를 탐지합니다. _ arXiv preprint arXiv:2310.16789_, 2023b.\n' +
+      '* Shi et al. (2023c) Shi, W., Min, S., Lomeli, M., Zhou, C., Li, M., Lin, V., Smith, N. A., Zettlemoyer, L., Yih, S., and Lewis, M. 컨텍스트 사전 훈련: 문서 경계를 넘어 언어 모델링. _ arXiv preprint arXiv:2310.10638_, 2023c.\n' +
+      '* Shi et al. (2023d) Shi, W., Min, S., Yasunaga, M., Seo, M., James, R., Lewis, M., Zettlemoyer, L., and Yih, W. -t. 플러그: 검색 기능이 강화된 블랙박스 언어 모델입니다. _ arXiv preprint arXiv:2301.12652_, 2023d.\n' +
+      '* Tanzer et al.(2022) Tanzer, M., Ruder, S., and Rei, M. 사전 훈련된 언어 모델에서 암기 대 일반화. <프로시빙스 of the 60th Annual Meeting of the Association for Computational Linguistics(제1권: Long Papers)_>, pp.7564-7578, 2022.\n' +
+      '* Touvron 등(2023) Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S., et al. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_, 2023.\n' +
+      '* Vu et al. (2023) Vu, T., Iyyer, M., Wang, X., Constant, N., Wei, J., Wei, J., Tar, C., Sung, Y. - H., Zhou, D., Le, Q., et al. Freshllms: Refreshling large language models with search engine augmentation. _ arXiv preprint arXiv:2310.03214_, 2023.\n' +
+      '* Wang et al. (2023) Wang, B., Ping, W., McAfee, L., Xu, P., Li, B., Shoeybi, M., and Catanzaro, B. Instructretro: Instruction tuning post retrieval-augmented pretraining _ arXiv preprint arXiv:2310.07713_, 2023.\n' +
+      '* Wang et al.(2022) Wang, Y., Kordi, Y., Mishra, S., Liu, A., Smith, N. A., Khashabi, D., and Hajishirzi, H. Self-instruct: Aligning language models with self-generated instructions _ arXiv preprint arXiv:2212.10560_, 2022.\n' +
+      '* Wei et al.(2022) Wei, J., Wang, X., Schuurmans, D., Bosma, M., Xia, F., Chi, E., Le, Q. V., Zhou, D., et al. Chain-of-thought prompting elicits in large language models. _ Advances in Neural Information Processing Systems_, 35:24824-24837, 2022.\n' +
+      '* Weston & Sukhbaatar (2023) Weston, J. and Sukhbaatar, S. 시스템 2 주의(여러분도 필요할 수 있습니다.) _ arXiv preprint arXiv:2311.11829_, 2023.\n' +
+      '* Workshop 등(2022) Workshop, B., Scao, T. L., Fan, A., Akiki, C., Pavlick, E., Ilic, S., Hesslow, D., Castagne, R., Luccioni, A. S., Yvon, F., et al. Bloom: A 176b-parameter open-access multilingual language model. _ arXiv preprint arXiv:2211.05100_, 2022.\n' +
+      '* Xiong et al.(2023) Xiong, W., Liu, J., Molybog, I., Zhang, H., Bhargava, P., Hou, R., Martin, L., Rungta, R., Sankararaman, K. A., Oguz, B., et al. Effective long-context scaling of foundation models. _ arXiv preprint arXiv:2309.16039_, 2023.\n' +
+      '* Xu et al.(2023) Xu, P., Ping, W., Wu, X., McAfee, L., Zhu, C., Liu, Z., Subramanian, S., Bakhturin, E., Shoeybi, M., and Catanzaro, B. Retrieval meets long context large language models. _ arXiv preprint arXiv:2310.03025_, 2023.\n' +
+      '* Yang et al.(2018) Yang, Z., Qi, P., Zhang, S., Bengio, Y., Cohen, W. W., Salakhutdinov, R., and Manning, C. D. Hotpotqa: A dataset for various, explainable multi-hop question answering. _ arXiv preprint arXiv:1809.09600_, 2018.\n' +
+      '* Zhang et al.(2023) Zhang, T., Liu, F., Wong, J., Abbeel, P., and Gonzalez, J. E. The wisdom of hindsight makes language models better instruction followers. _ arXiv preprint arXiv:2302.05206_, 2023.\n' +
+      '* Zhou et al.(2023a) Zhou, C., Liu, P., Xu, P., Iyer, S., Sun, J., Mao, Y., Ma, X., Efrat, A., Yu, P., Yu, L., et al. Lima: Less is more for alignment. _ arXiv preprint arXiv:2305.11206_, 2023a.\n' +
+      '* Zhou et al.(2023b) Zhou, C., Liu, P., Xu, P., Iyer, S., Sun, J., Mao, Y., Ma, X., Efrat, A., Yu, P., Yu, L., et al. Lima: Less is more for alignment. _ arXiv preprint arXiv:2305.11206_, 2023b.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
