@@ -12,6 +12,7 @@
 
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
+| 2403.17887v1 | The Unreasonable Ineffectiveness of the Deeper Layers | [arXiv](https://arxiv.org/abs/2403.17887v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.17887v1) |
 | 2403.13799v1 | Reverse Training to Nurse the Reversal Curse | [arXiv](https://arxiv.org/abs/2403.13799v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13799v1) |
 | 2403.13372v2 | LlamaFactory Unified Efficient Fine-Tuning of 100+ Language Models | [arXiv](https://arxiv.org/abs/2403.13372v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13372v2) |
 | 2403.13187v1 | Evolutionary Optimization of Model Merging Recipes | [arXiv](https://arxiv.org/abs/2403.13187v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13187v1) |

@@ -1,0 +1,443 @@
+# 디퍼레이어의 불합리한 효과
+
+Andrey Gromov
+
+메타공정과 UMD
+
+Kushal Tirumala1
+
+Meta FAIR
+
+Hassan Shapourian
+
+Cisco
+
+Paolo Glorioso
+
+Zyphra
+
+&
+
+Meta FAIR
+
+대니얼 A 로버츠
+
+(주)세쿼이아캐피탈
+
+각주 1: 공동 최초 저자; gromovand@meta.com, ktirumala@meta.com 및 drob@mit.edu에 직접 대응.
+
+###### Abstract
+
+본 논문에서는 오픈웨이트 사전학습 LLM(Open-weight pretrained LLM)의 인기 있는 패밀리에 대한 간단한 레이어 프루닝 전략을 경험적으로 연구하여, 레이어의 많은 부분(최대 절반)이 제거될 때까지 서로 다른 질의응답 벤치마크에서 성능의 최소 저하를 발견한다. 이 모델들을 가지치기하기 위해, 우리는 층들 간의 유사성을 고려하여 가지치기할 층들의 최적 블록을 식별하고, 그리고 손상을 "치유"하기 위해, 소량의 미세조정을 수행한다. 특히, PEFT(parameter-efficient finetuning) 방법, 특히 양자화 및QLoRA(Low Rank Adapters) 방법을 사용하여 각 실험을 단일 A100 GPU에서 수행할 수 있다. 이러한 결과는 실용적인 관점에서, 레이어 프루닝 방법이 한편으로는 미세조정의 계산 자원을 더욱 줄이기 위해 다른 PEFT 전략을 보완할 수 있고, 다른 한편으로는 추론의 메모리 및 지연 시간을 개선할 수 있음을 시사한다. 과학적 관점에서 이러한 LLM의 계층 삭제에 대한 견고성은 현재 사전 훈련 방법이 네트워크의 더 깊은 계층에서 매개변수를 적절하게 활용하지 않거나 얕은 계층이 지식을 저장하는 데 중요한 역할을 한다는 것을 의미한다.
+
+## 1 Introduction
+
+지난 몇 년 동안 큰 언어 모델(LLM)은 단순한 연구 유물[1]에서 유용한 제품[2]으로 발전했다. 많은 부분에서 이러한 진화는 훈련에 사용되는 자원의 규모가 극적으로 증가했기 때문일 수 있다[3;4]. 이러한 모델들은 트레이닝이 완료된 후에 추론 모드에서 그들의 전체 수명 FLOP의 대부분을 볼 가능성이 있기 때문에, LLM들의 사전 트레이닝은 효율적인, 즉 컴퓨팅-최적, 트레이닝[5; 6]을 위한 고려들을 필요로 할 뿐만 아니라, 추론 인식[7; 8]을 필요로 한다.
+
+이미 교육을 받은 모델은 어떤가요? 신경 스케일링 법칙에 의해 지시되는 트레이닝 고려사항들 외에도, 미세조정 및 그 후 LLMs를 추론하는 비용 및 시간을 감소시키기 위한 수많은 사후 트레이닝 기술들이 또한 존재한다. 특히, _양자화_ 는 모델 가중치들의 정밀도를 감소시킴으로써 모델들의 메모리 풋프린트를 감소시키는데 사용될 수 있다[9; 10; 11; 12], 로우 랭크 어댑터들 (_LoRA_) 은 모델 파라미터들의 작은 서브세트만을 업데이트함으로써 미세조정 및 커스터마이징의 비용을 감소시키는데 사용될 수 있다[13], 또는 _프루닝_ 은 불필요한 파라미터들 또는 연결들을 직접 제거함으로써 추론을 위한 메모리 풋프린트 및 시간을 감소시키는데 사용될 수 있다[14; 15; 16; 17; 18]. 이 세 가지 전략은 다소 직교적이므로 이상적으로는 자원 제약 환경에서 이러한 세 가지 훈련 후 효율성 기술을 모두 조합하여 활용하고자 한다. 이러한 방향으로 _QLoRA_[19]의 인기 있는 방법은 매개 변수의 4비트 양자화와 LoRA 미세 조정이 함께 작동할 수 있도록 하는 몇 가지 혁신을 도입했다.
+
+이러한 조합을 기반으로 이 작업에서는 개방형 가중치 LLM을 사용하여 매우 간단한 가지치기 전략을 연구한다. 특히, 주어진 가지치기 분수에 대해 가지치기하기 위한 최적의 층들을 식별하기 위해 서로 다른 층들에서 표현들 사이의 유사성을 이용하는 방법을 개발하고, 이러한 층들을 제거한 후, 작은 양의 미세 조정(QLoRA를 사용)으로 가지치기-유도된 불일치를 "치유"한다. 우리의 주요 결과는 다운스트림 성능 저하를 최소화하면서 모델에서 가장 깊은 층의 상당 부분을 제거할 수 있다는 것이다. 예를 들어, Llama-2-70B [20]의 경우 성능이 붕괴되기 전에 레이어의 최대 _반_ 을 제거할 수 있습니다. 우리의 전략에 대한 개요와 라마-2-70B를 가지치기한 결과는 그림 1에 나와 있다.
+
+프루닝은 추론 공간을 줄이는 데 유용할 뿐만 아니라 네트워크가 매개 변수를 사용하는 방법을 이해하는 데 유용합니다. 네트워크의 성능에 미치는 영향을 최소화하면서 네트워크의 큰 블록을 제거할 수 있다면 해당 블록은 그다지 중요하지 않을 수 있습니다. 특히, 계층 드롭에 대한 우리의 직관은 변압기 아키텍처의 잔류 구조를 고려하게 된다. 보다 상세하게, 최종 레이어의 출력은 모든 모델 레이어의 출력과 임베디드 입력에 대한 합으로 분해될 수 있다. 그러한 합이 많고 독립적인 항을 가지고 있다면, 그 중 몇 개를 제거하는 것은 산출량을 크게 변화시키지 않아야 한다. 그러나 용어가 독립적이지 않기 때문에 - 각 계층은 다음 계층에 입력됨 - 잔차가 있는 경우 용어를 제거할 수 있을 것으로 예상해야 합니다.
+
+그림 1: 레이어 프루닝 전략 개요 및 예제 결과: 알고리즘을 설명하는 _(a)_ 흐름도: \(n\) 레이어를 제거하면 각 거리 \(d\)를 최소화하는 레이어 \(\ell^{*}\), 레이어 \(\ell\)와 레이어 \(\ell+n\)를 찾습니다. 그런 다음 레이어 \(\ell^{*}\로 시작하는 \(n\) 레이어를 제거합니다. 마지막으로 필요한 경우 소량의 (매개 변수 효율적인) 미세 조정으로 손상을 "치료"할 수 있습니다. _ (b) \(\ell^{*}\)에서 \(\ell^{*}+n-1\)로 인덱싱된 \(n\) 전체 층의 제거를 나타내는 도식입니다. _ (c)_각 거리, \(d\), 상이한 수의 층들 사이의, \(n\), vs. 층 번호 \(\ell\)는 \(n\)의 블록 시작을 인덱싱합니다. 아래쪽 곡선(가장 진한 보라색)은 \(n=1\)을 나타내는 반면 위쪽 곡선(가장 밝은 노란색)은 \(n=64\)을 나타냅니다. 검은색 선 트레이스 \(\ell^{*}(n)\), 서로 다른 크기의 층 블록에 걸친 각도 거리의 최소값입니다. _ (d)_ 치유(짙은 청색) 및 치유(옅은 청색)를 갖는 라마-2-70B를 층들의 분획의 함수로서 프루닝한 결과: 상단(중간) 패널은 MMLU(BoolQ) 질문-답변 벤치마크에 대한 정확도를 제공하는 반면, 하단 패널은 C4 검증 세트의 서브세트에 대한 자기회귀 손실을 나타낸다; 여기서, 빨간색 점선(회색 점선)은 (임의 추측의) 원래 프루닝되지 않은 모델의 정확도 또는 손실을 나타낸다; 이들 플롯은 질문-답변 태스크의 정확도(여기서는 40%-50% 프루닝 분수 사이)에 대한 성능에서 급격한 전이가 있지만, 치유 손실(짙은 청색)에서 연속성 및 매우 느린 성장이 적어도 80% 프루닝 분수까지 발견되는 전형적인 거동을 예시한다.
+
+특정 층으로부터의 기여는 작다. 즉, 각 계층의 출력이 계층에서 계층으로 너무 많이 변하지 않는다면.2
+
+각주 2: 이것은 "로짓 렌즈" [21] 및 "튜닝 렌즈" [22]와 같은 레이어 인덱스의 함수로서 토큰 분포의 진화를 연구한 "렌즈" 조사에 의해 강력하게 제안된다. 이러한 선을 따라 별도의 추론 라인은 이전에 신경 ODE[23]에 영감을 주었고 참고인[24]을 이끌었다. 네트워크의 매개변수를 가장 효과적으로 사용하기 위해서는 이상적 표현이 계층에서 계층으로 실질적으로 변경되어야 한다고 주장한다.
+
+레이어 프루닝과 함께, 서로 다른 분리에서 레이어 표현들의 유사성을 조사하고, 더 깊은 레이어들이 (매우 최종 레이어를 제외하고) 얕은 레이어들보다 이웃 레이어들과 질적으로 더 유사하다는 것을 광범위하게 발견한다. 이것은 더 간단한 가지치기 전략을 제안한다: 끝에서 두 번째 층에서 시작하는 층을 제거하고 원하는 수의 층이 제거될 때까지 깊은 곳에서 얕은 곳으로 진행한다. 3 이 경우 소량의 QLoRA 미세 조정으로 손상을 치유한 후 더 관련된 유사성 정보 층 가지치기 전략과 거의 일치하는 성능을 얻을 수 있음을 발견했다. 이 방법의 효과는 LLM이 네트워크의 더 깊은 계층에서 매개변수를 적절하게 활용하지 못할 수 있다는 증거이다.
+
+각주 3: 이 전략은 리소스 제약이 그림 2(a)에 설명된 유사성 정보 가지치기 알고리즘의 완전한 적용을 방해하는 상황에서 특히 흥미롭다.
+
+전반적으로 이 세 가지 불렛 포인트를 가져가시기 바랍니다.
+
+* 모델의 메모리 풋프린트 _및_ 추론 시간은 제거된 레이어의 수에 따라 선형으로 감소합니다. 4 이는 특히 모델의 성능이 레이어 드롭에 강한 경우 레이어 프루닝을 강력한 도구로 만듭니다. 각주 4: 이것을 양자화와 대조한다: 메모리 풋프린트는 양자화 비율에 따라 감소하지만, 파라미터들은 통상적으로 임의의 FLOP들 이전에 역양자화되기 때문에 추론 시간은 대략적으로 고정된 채로 유지된다. 각주 4: 이것을 양자화와 대조한다: 메모리 풋프린트는 양자화 비율에 따라 감소하지만, 파라미터들은 통상적으로 임의의 FLOP들 이전에 역양자화되기 때문에 추론 시간은 대략적으로 고정된 채로 유지된다.
+* 프루닝, PEFT 및 양자화
+- 서로 효과적으로 조합될 수 있다. 따라서 이 작업에서 _각 실험은 단일 A100 GPU_에서 수행되었으며 오픈 소스 및 학술 커뮤니티에 쉽게 액세스할 수 있다.
+* 더 깊은 계층을 제거하는 모델의 견고성, 다운스트림 지식 작업(예: MMLU 및 BoolQ)에 대한 성능의 급격한 전환 및 이러한 가지치기 분수에 대한 자기 회귀 손실의 부드러운 동작은 모두 얕은 계층이 지식을 저장하는 데 중요한 역할을 할 수 있음을 시사한다.
+
+본 논문의 구성은 다음과 같다. SS2에서는 먼저 실질적인 사후 훈련 전략과 작업에 동기를 부여하는 과학 심화 학습 조사에 대한 문헌 검토를 수행한다. 그런 다음 SS3에서는 계층 가지치기 전략에 대한 직관을 제공하고 방법을 자세히 설명하는 반면 SS4에서는 모든 실험 결과를 반복한다. 마지막으로 SS5에서 향후 작업 방향을 강조하여 결론을 내린다. 특정 모델, 미세 조정, 데이터 세트 및 평가 세부 정보는 부록 A에서 찾을 수 있으며 평가 삭제는 부록 B에서 찾을 수 있다.
+
+**참고:** 이 작업을 마무리하면서 Ref. [25]의 사전 인쇄가 발생했습니다. 우리의 작업과 겹치는 점이 여러 개 있는 게시물이 게시되었습니다.
+
+## 2 Literature Review
+
+이 절에서는 훈련 후 효율성을 위한 실용적인 전략을 검토하고 접근법에 대한 동기 부여 또는 통찰력을 제공하는 몇 가지 과학적 조사에 대해 논의한다. SS2.1에서는 먼저 가지치기의 역사를 검토한 다음 LLMs에 대한 현대적 적용에 대해 논의한다. SS2.2에서는 가지치기를 LLM의 매개변수 수를 줄이기 위한 대안 전략인 증류와 대조한다. 그리고 SS2.3에서는 가지치 전략과 함께 사용할 수 있는 효율적인 미세 조정 및 추론 가속을 위한 다양한 실용적인 방법에 대해 논의한다. 마지막으로 SS2.4에서는 결과에 보완적인 LLM의 깊이 의존적 통계적 특성에 대한 몇 가지 과학적 조사를 강조한다.
+
+### Pruning
+
+_Pruning_은 개별 또는 그룹으로 함께 불필요한 파라미터를 제거하여 학습된 기계학습 모델의 크기를 줄이는 방법이다. 신경망에 대한 프루닝은 오랜 역사를 가지고 있으며[14;15], 원래 구상된 바와 같이 _구조화되지 않은 프루닝_ 기술은 미리 정의된 기준에 따라 개별 매개변수를 제거하여 네트워크를 희소화한다. 예를 들어, 모델의 매개 변수가 매우 작은 값을 갖는 경우, 이를 제거(즉, 정확히 0으로 설정)하면 성능에 최소한의 영향을 미칠 수 있습니다. 이 초기 작업에서 영감을 받은 현대 연구자들은 대부분 컴퓨터 비전 모델에 초점을 맞추어 이러한 비정형 가지치기에 대한 다양한 기준을 탐구하기 시작했다[16; 26; 27]. 특히, Ref. [16] 더 나은 압축률과 성능에 도달하기 위해 네트워크를 대체 프루닝하고 미세 조정하기 위한 _반복 프루닝_ 방법을 개발했습니다.
+
+이러한 모델은 더 작았지만, 반드시 더 효율적이지는 않았다: 기준에 따라 개별 매개변수를 제거하여 네트워크를 희소화하는 것은 희소성을 위해 설계된 특수 하드웨어 또는 라이브러리 없이는 가속화하기 어려운 불규칙하거나 의사 무작위 희소화 패턴으로 이어진다[17]. 이를 위해 컨볼루션 네트워크의 특정 채널 또는 필터와 같은 관련 없는 매개변수 그룹을 함께 제거하기 위해 _구조화된 가지치기_ 기술이 개발되었다. 이것이 그들의 실질적인 관련성을 증가시킴에 따라, 연구자들은 컴퓨터 비전[17; 28; 29; 30; 31] 및 트랜스포머 전 NLP 아키텍처[32; 33; 34]에 걸쳐 구조화된 가지치기를 탐구하기 시작했다.
+
+언어 모델링의 전례 없는 진전에 따라, 최근의 작업은 트랜스포머에 구조화된 가지치기 방법을 적용하는 것에 초점을 맞추고 있다[35]. 이러한 연구는 제거를 위한 모델 아키텍처의 거의 모든 가능한 구성 요소를 고려하며, 드롭 어텐션 헤드[36; 37; 38], 드롭 레이어[39; 40; 41; 42; 43; 44], 프루닝 히든 스테이트[45]에 이르는 방법을 사용하여, 큰 가중치 매트릭스를 순위화하고, 희소 가중치 매트릭스를 더 작은 조밀한 매트릭스로 대체하며, 앞서 언급한 그룹의 많은 조합[48; 49]에 이른다.
+
+변압기 층 적하를 고려하는 선행 연구 중 대부분의 [43; 41; 43; 48; 39]는 BERT 스타일 모델[50]을 연구하는 반면, 대규모 언어 모델링 및 생성에 가장 일반적으로 사용되는 디코더 전용 GPT 스타일 모델[1]을 고려한다. BERT-스타일 모델은 양방향 마스킹 언어 모델링(MLM) 목적으로 인해 태스크를 이해하는 데 자연스럽게 적합하지만 GPT-스타일 모델은 자기회귀 목적으로 인해 생성에 적합하다. 이 분열은 더 강력한 GPT 스타일 모델[51]에 비추어 의문을 제기했지만 이전 작업[52]은 단어에 대한 계층별 표현의 진화 측면에서 BERT와 GPT 모델 간에 상당한 질적 차이를 발견했다. 전체적으로 이것은 레이어 드롭 전략이 두 가족 간에 다르게 행동할 것임을 시사한다.
+
+BERT-style pre-trained model에 대한 연구, Ref. [43] 결론적으로, 최상의 층 가지치기 전략은 최종 층을 떨어뜨리는 것이며, 이는 부분적으로 우리의 결과와 공명하지만, 대조적으로 우리는 모델의 마지막 몇 층을 유지하는 일부 가지치기 크기에 대한 _(a)_가 실제로 유익하고 가장 마지막 층을 유지하는 모든 가지치기 크기에 대한 _(b)_가 필수적이라는 것을 발견한다. 또한, 저자들은 또한 우리의 접근법과 같이 다른 층의 표현 간의 유사성을 연구하지만 실제로 깊은 층에 비해 얕은 층의 표현 간의 유사성이 더 높다는 것을 발견했는데, 이는 우리의 결과와 매우 첨예하게 일치하지 않는다. 중요한 것은 참고문헌 [43]에서 고려된 모델이다. 수억 개의 매개변수로 구성되며, 이는 우리가 작업에서 고려하는 모델 규모보다 훨씬 작다. 아마도 결과적으로 저자는 가지치기된 모델도 미세 조정했다는 사실에도 불구하고 SS4.1에서 보고하는 다운스트림 정확도의 급격한 전환을 관찰하지 못했다.
+
+이와는 대조적으로, Ref. [42] 본 연구에서는 GPT-style 모델을 고려하였으며, 방법론은 우리의 방법론과 상당히 다르다. 먼저 사전 훈련보다는 고정 층 드롭 전략을 사용하는 대신 수정된 사전 훈련 절차에서 층을 점진적으로 드롭한다. 그리고 _(ii)_ 저자는 자신의 하위 1B 매개변수 모델을 연구하면서 실제 응용을 위해 일반적으로 사용되거나 미세 조정되는 쉽게 사용할 수 있는 개방형 가중치, 대규모 2.7B-70B 매개변수 모델의 패밀리에 초점을 맞춘다.
+
+마지막으로, 트랜스포머에서 계층 드롭에 대한 체계적인 접근법은 음성을 임베딩에 매핑하고 1억 개의 매개변수 체제로 크기를 조정하는 인코더 전용 모델인 _wav2vec_ 모델의 맥락에서 연구되었다[53]. 이 모델들을 가지고, 재판관 [44] 계층 간 상관성과 다운스트림 메트릭을 기반으로 하는 계층 프루닝 알고리즘을 개발하였다. 모델 아키텍처와 도메인 외에도, 이것과 우리의 작업 사이의 한 가지 중요한 차이점은 Ref. [44]입니다. 연속되지 않은 가지치기 제안, 예를 들어 대체 레이어를 떨어뜨리는 것을 고려했습니다. 레이어 프루닝에 대한 우리의 직관은 이것이 적어도 디코더 전용 언어 모델에 대해서도 작동하지 않아야 한다고 예측하는데, 이는 각각의 레이어 블록이 제거된 다수의 불일치를 생성하기 때문이다.
+
+### Model distillation
+
+학습된 기계 학습 모델의 크기를 줄이기 위한 완전히 다른 방법은 _모델 증류_[54]이며, 여기서 지식은 교사가 예측한 분포에 대해 학생을 훈련시킴으로써 큰 "교사" 모델에서 작은 "학생" 모델로 전달된다. 본질적인 통찰은 이것이 교사의 매우 일반적인 지식과 능력을 보다 간소화되고 압축되며 아마도 기술 특유의 표상으로 변형시킬 수 있다는 것이다.
+
+매우 일반적인 기술이지만 언어 모델의 설정에서 증류는 _(a)_ 화이트 박스 접근법으로 구현되었으며, 이 접근법에서는 학생이 교사의 로짓[55] 또는 숨겨진 상태[56]를 모방하도록 훈련되며, _(b)_ 블랙 박스 접근법에서는 학생이 교사에 의해 생성된 출력 토큰에만 액세스할 수 있다. 이 후자의 접근법은 학생이 합성 라벨을 추가함으로써[57], 학생의 추론 능력을 향상시키는 것을 목표로 하는 사고 추론 체인을 제공함으로써[61; 62], 또는 학생의 명령어-추종 능력을 향상시키는 명령어에 주석을 달아서[63]와 같은 어떤 방식으로든 교사에 의해 증강되는 텍스트에 대해 훈련되는 경우를 광범위하게 다룬다.
+
+레이어 프루닝에 비해, 이러한 증류 방법은 데이터의 큰 코퍼스를 처리하기 위해 큰 교사에 의존하기 때문에 상당한 계산 자원이 필요하다. 대신, 유사성 기반 가지치기 전략은 사전 훈련 말뭉치의 작은 하위 집합에 있는 다른 계층에서 표현 간의 유사성을 계산하기만 하면 되는 반면, 두 번째 간단한 가지치기 전략은 가지치기 후 축소된 모델만 사용한다.
+
+### 효율적인 finetunning 및 추론 가속
+
+모델의 크기를 직접 줄이는 데 보완적인 PEFT(매개 변수 효율적인 미세 조정)는 특정 작업에 LLM을 전문화하는 비용을 줄이는 데 중점을 둡니다. 특히, LoRA(Low Rank Adapters)는 미리 트레이닝된 모델을 동결시키고 파라미터적으로 적은 수의 추가 트레이닝 가능한 가중치들을 도입함으로써 메모리 및 미세 튜닝의 계산을 감소시킨다[13]. 우리는 우리의 실험을 비용 효율적으로 유지하기 위해 양자화된 사촌 QLoRA[19]를 사용한다. 우리의 작업과 결합될 수 있는 다른 PEFT 방법은 Refs. [64]이다. [65] : 첫 번째, LoRA 행렬들의 초기화는 양자화 방식으로 조정되고, 두 번째, 상이한 LLM 모듈들에 대한 LoRA 랭크들은 적응 방식으로 선택된다.
+
+추가적인 효율성 향상을 위해 레이어 프루닝 모델을 추론을 더욱 가속화하는 방법과 결합할 수 있습니다. 투기적 디코딩[66]을 사용하면 토큰은 더 작은 드래프트 모델에서 빠르게 생성된 다음 메인 모델에 의해 병렬로 평가되고, 메두사[67]를 사용하면 드래프트 모델은 추가 디코딩 헤드를 위해 폐기되지만 궁극적으로 유사한 효과를 달성합니다. 특히, 고도로 압축된 계층 프루닝된 모델들을 추측적 디코딩 셋업에서 잠재적인 드래프트 모델들로서 고려하는 것은 흥미로울 수 있다.
+
+### 깊이 종속 연구의 폭
+
+마지막으로 LLM의 깊이 의존적 특성을 연구하는 몇 가지 과학적 작업을 강조하겠습니다. 한 가지 관련 방향은 지식과 언어 속성이 언어 모델에서 인코딩되는 방식을 고려한다. 한편으론 심판관님 [68; 69] 사실 연관의 _저장 및 회상_ 을 분석합니다. 이러한 작업은 지식이 중간 [68] 또는 최종 [69] 계층 내에 위치한다는 점을 강조하며, 이는 모델의 사실 지식의 일부를 직접 편집하거나 지우는 데 영향을 미칩니다. 한편, 이러한 편집을 수행하려는 시도는 정보가 레이어에 걸쳐 비-로컬로 저장될 수 있다는 증거를 제공한다[70]. 관련하여, 심판 [71] 주제 강화를 위해 주의 머리, 속성 추출 및 MLP 블록의 역할을 구별하여 추론 중 사실이 _처리되는 방식을 조사합니다. 둘 다 여러 계층에 걸쳐 비국재화됩니다.
+
+다음, 앞의 "논리렌즈"[21], Ref.[22]에 이어서 중간 표현을 토큰에 대한 분포로 변환하기 위해 학습 가능한 아핀 변환을 사용하여 _예측의 궤적_ 을 연구하기 위해 "튜닝 렌즈"라고 하는 기술을 발명했습니다(또한 [72] 참조). 이 분포의 층간 역학을 연구함으로써 저자는 수렴하는 경향이 있다고 언급했다. 이 수렴은 더 깊은 층이 가지치기할 수 있다는 것을 매우 암시하는 반면, 아핀 프로브를 훈련시켜야 한다는 사실은 최종 층을 가지치기할 수 없다는 우리의 관찰과 관련이 있을 수 있다. 다소 관련이 있습니다, 재판장님 기본 텍스트의 지리적 특징은 활성화가 절반보다 더 깊은 한 중간 활성화에 대해 훈련된 선형 프로브에서 결정될 수 있음을 관찰했다.
+
+좀 더 추상적으로요, 심판님 [74; 75] 활성화의 희소성은 네트워크의 전진 패스를 통해 약 절반에서 천이하여 희소성에서 조밀성으로 진화하는 것을 발견했다. 아마도 관련이 있을 겁니다, [76] 재판장님 미세 조정 중에 어떤 모델 가중치가 가장 많이 업데이트되는지 조사하여 중간 계층에 있는 가중치임을 발견했다.
+
+전체적으로 이러한 심층 연구는 우리의 작업에 보완적이며, 한편으로는 LLM의 가장 깊은 층을 제거하는 것이 모델의 성능을 크게 변경하지 않는다는 증거를 제공하고 다른 한편으로는 LLM의 가장 깊은 층의 약 절반을 제거한 후 날카로운 가지치기 전환을 보여준다.
+
+## 3 Method
+
+이 절에서는 왜 레이어 프루닝이 작동한다고 생각하는지 직관을 제시하고 (SS3.1) 이 방법을 자세히 설명한다 (SS3.2).
+
+### Intuition
+
+레이어 드롭에 대한 우리의 직관은 표현들을 천천히 변화하는 레이어 인덱스의 함수로 생각하는 데서 비롯된다. 특히, 트랜스포머에 대한 표현들의 계층 간 진화는 _residual_iteration 방정식에 의해 주어진다.
+
+\[x^{(\ell+1)}=x^{(\ell)}+f(x^{(\ell)},\theta^{(\ell)})\,, \tag{1}\]
+
+여기서, \((x^{(\ell)},\theta^{(\ell)})\는 각각 층 \(\ell\) 및 \(f(x,\theta)\)에 대한 다차원 입력 및 매개변수 벡터이다. 모든 잔차 네트워크에 대해 이 반복을 풀면 \(L\) 전체 계층 후에 출력이 모든 계층의 변환에 대한 합으로 설명된다는 것을 알 수 있다.
+
+\[x^{(L)}=x^{(0)}+\sum_{\ell=0}^{L-1}f(x^{(\ell)},\theta^{(\ell)})\,. \tag{2}\]
+
+합계의 항이 _수_, (\(L\gg 1\)) 및 _독립적_인 경우, 예를 들어 블록 함수가 대신 \(f(x^{(0)},\theta^{(\ell)})\로서 전체 입력의 함수인 경우, 합계에 대한 특정 기여는 무시될 수 있다.
+
+물론, 그것들은 전혀 독립적이지 않다: 만약 우리가 층 \(\ell-1\)을 삭제한다면, 우리는 이제 그 층 \(x^{(\ell-1)}\에 이전 입력을 연결해야 한다: 층 \(\ell\)의 블록 함수에
+
+\[x^{(\ell+1)}=x^{(\ell-1)}+f(x^{(\ell-1)},\theta^{(\ell)})\,, \tag{3}\]
+
+여기서 명확성을 위해 삭제에도 불구하고 레이어 또는 입력에 레이블을 다시 지정하지 않습니다. 일반적으로 원래 입력과 새 입력 간의 이러한 _부정합_은 네트워크에 매우 손상되어야 합니다. 그러나, 일부 수의 초기 레이어들 후에, 표현들이 레이어 인덱스에 관하여 천천히 변화하는 함수로 수렴하는 경우,
+
+\[x^{(\ell)}\approx x^{(\ell-1)}+\epsilon\, \tag{4}\]
+
+(1)에서 (3)으로 가면서 \(x^{(\ell)}\에서 x^{(\ell-1)}\로 치환하는 것과 같이 적절한 의미에서 \(\epsilon\ll x^{(\ell)}\를 가지고 특정 층을 삭제하는 효과 \(\ell\)는 후속 층인 \(x^{(\ell+1)}\의 표현만 약간 변경해야 한다. 마찬가지로, 계층 \(\ell\) 이전에 \(n\) 계층을 성공적으로 가지치기하려면, 즉 \(\ell-n,\ldots,\ell-1\에서 인덱싱된 계층은 가지치기된 블록의 출력과 매우 유사해야 합니다.
+
+\[x^{(\ell)}\approx x^{(\ell-n)}+\epsilon\,. \tag{5}\]
+
+모든 층 제거는 계단식 효과를 가지고 있는데, 이는 전정 후 \(x^{(\ell+1)}\)가 이전과 다른 함수에 의해 계산되기 때문이다. (1) vs. (3) 그리고 \(x^{(\ell+1)}\)는 후속 레이어에 직간접적으로 입력되기 때문에 \(\ell+2,\ldots,L\)은 얕은 레이어를 삭제하는 것이 깊은 레이어를 삭제하는 것보다 훨씬 더 큰 영향을 미친다.
+
+이로부터 우리는 실험적으로 테스트할 다음과 같은 가설을 가지고 있다:
+
+1. 잔차 네트워크의 계층을 가지치기할 수 있어야 합니다.
+2. 더 깊은 층을 가지치기하는 데 더 큰 성공을 거두어야 한다.
+3. 성공적으로 가지치기를 수행한 레이어의 블록에는 입력과 유사한 출력이 있어야 합니다.
+
+다음 하위 섹션인 SS3.2에서는 가지치기 알고리즘의 세부 사항을 설명하고 다음 섹션인 SS4에서는 점 _(0)-(2)_에 대한 실험적 증거를 제시할 것이다.
+
+### Layer-pruning algorithm(s)
+
+우리의 주요 계층 가지치기 알고리즘은 매우 간단하다.
+
+1. 가지치기 \(n\)할 여러 레이어를 선택합니다.
+2. 각도 거리 \(d(x^{(\ell)},x^{(\ell+n)})\), cf를 계산한다. (7) 아래의, 계층 \(\ell\)에 대한 입력과 계층 \(\ell+n\)에 대한 입력 사이에서, 중립 프리트레이닝 데이터세트 상에서 또는 관심있는 다운스트림 태스크를 나타내는 데이터세트 상에서.
+3. 층, \(\ell^{\star}\), 그것이 그 거리를 최소화하는 층: \[\ell^{\star}(n)\equiv\operatorname*{arg\,min}_{\ell}\ d(x^{(\ell)},x^{(\ell+n)})\,.\] (6)
+4. Drop layers \(\ell^{\star}\) to \(\ell^{\star}\)! n\! -\!1\); old input to layer \(\ell^{\star}\) to the old \((\ell^{\star}\!\!+\!n)\) th layer block.5
+
+각주 5: 레이어는 종종 _PyTorch_ 의 ModuleList와 같은 데이터 구조에 포함되므로 이러한 레이어를 삭제하려면 \(\ell^{\star}\)에서 \(\ell^{\star}+n-1\)로 레이어를 제거하는 새로운 ModuleList를 간단히 정의합니다.
+
+(선택적으로) 계층 \(\ell^{\star}+n\)에서 불일치를 중립 사전 훈련 데이터세트 또는 관심 있는 특정 데이터세트 상에서 소량의 미세 조정으로 치유한다.
+
+그림 안에 있는 단어가 열거된 목록의 텍스트보다 더 적은 경우 이 알고리즘은 그림 1의 패널(a)-(b)에도 표시됩니다.
+
+첫 번째 단계에서, 길이 \(T\)의 단일 시퀀스 상의 각도 거리는 다음과 같이 주어진다.
+
+\[d(x^{(\ell)},x^{(\ell+n)})\equiv\frac{1}{\pi}\arccos\left(\frac{x_{T}^{(\ell)}\cdot x_{T}^{(\ell+n)}}{\left\|x_{T}^{(\ell)}\right\|x_{T}^{(\ell)}\right\|} \right)\,, \tag{7}\
+
+여기서 내부 곱은 시퀀스의 최종 토큰 \(T\)에 대한 모델의 숨겨진 차원 위에 있고, \(\left|\ \cdot\ \right|\)는 \(L^{2}\)-노름을 나타내며, \(1/\pi\)의 인자는 관례이다. 6 이 거리는 낮은 변동 추정치를 얻을 수 있을 만큼 충분히 크지만 전체적으로 상당히 작아야 하는 여러 예제에 대해 합산되어야 한다.
+
+각주 6: 두 개의 주석: _(i)_, 코사인 유사성과 같은 다른 합리적인 메트릭 대신 각도 거리 선택이 특별히 중요할 것으로 예상하지 않으며, _(ii)_, 인과 주의 마스크 때문에 임베딩이 전체 시퀀스에 의존하는 유일한 것이기 때문에 최종 토큰에 초점을 맞추기로 선택했다.
+
+최종 단계의 "선택성"에 대해 자세히 설명하면 질의 응답 벤치마크인 cf에서 성능 저하가 거의 없음을 알 수 있다. 그림 1(d) 및 SS4.1의 기타는 소량의 미세 조정으로 더 큰 가지치기 분획으로 확장될 수 있다. 자원 제약들 및 프루닝된 모델의 의도된 적용에 따라, 이것은 필요하지 않을 수 있다. 그러나 치유 절차는 당혹감, cf에 상당한 영향을 미친다. 그림 1(d) 및 SS4.2의 기타.
+
+각 거리 측정과 치유의 경우 최종 목표가 다운스트림 작업에 대한 모델을 감독하는 것이라면 해당 데이터 세트에서 샘플의 거리를 평가한 다음 치유 프로세스를 SFT와 결합하는 것이 유용할 수 있다. 이와는 대조적으로, 가장 일반적인 경우, 모델이 원래 사전 훈련된 통계에 근사하는 사전 훈련 데이터 세트로 거리를 측정하고 치유하는 것이 가장 자연스럽다.
+
+마지막으로, 우리는 또한 다른 모델 패밀리에 걸친 각도 거리를 분석함으로써 영감을 받은 훨씬 더 간단한 가지치기 전략을 조사했다: LLM 헤드 앞에 최종 층을 제외하고 가장 깊은 층을 떨어뜨린 다음 (_선택적으로_) 손상을 치유한다. 완전한 명확성을 위해 \(L\)-층 모델에서 \(n\)층을 가지치기하는 경우 \((L-n)\)층을 포함하여 \((L-1)\)층으로 제거한다는 것을 의미합니다.
+
+## 4 Results
+
+본 절에서는 다양한 질의응답(QA) 벤치마크에 대한 가지치기 전략의 효율성을 입증하고 강력한 가지치기 기반 성능 전환(SS4.1)을 강조한다. 반면, 치유된 가지치기 모델의 자기회귀적 복잡성은 전이점(SS4.2)에 걸쳐 연속적이라는 것을 발견했으며, 모델 크기와 패밀리에 걸쳐 서로 다른 계층 간의 유사성 통계를 비교한 후(SS4.3), 주요 유사성 정보 가지치기 전략을 더 간단한 제거 계층 전략(SS4.4)과 대조한다.
+
+실험을 위해 32~80개의 프루닝되지 않은 총 레이어에 걸쳐 2.7B에서 70B 매개변수로 다양한 대규모 LLM을 프루닝했다. 구체적으로, 우리는 Llama-2 패밀리[20], Owen 패밀리[77], Mistral-7B[78], Phi-2[79]의 모델을 사용했다. 이 모델의 경우 QLoRA [19]를 사용하여 "힐링" 단계를 실행했다. 이 모델은 4비트 정밀도로 양자화된 다음 QLoRA를 사용하여 일반적인 사전 훈련 데이터 세트인 거대 클린 크롤드 코퍼스(C4) [80]의 164M 또는 328M 토큰에 대해 효율적인 훈련을 위해 미세 조정되었다. 그 결과 _각 실험은 단일 \(A100\) GPU_에서 수행되었습니다. QA 평가에는 일반적인 세계 지식 및 문제 해결 벤치마크인 MMLU[81]와 텍스트 자체에서 답을 추론해야 하는 일반적인 예/아니오 읽기 이해 벤치마크인 BoolQ[82]를 사용했다. 모델의 세부 사항, 치유 절차, 데이터 세트 선택 및 평가 세부 사항은 부록 A에서 찾을 수 있으며, 다른 하이퍼파라미터 선택의 삭제는 부록 B에서 찾을 수 있다.
+
+### QA 벤치마크에 대한 정확도
+
+첫 번째 결과 세트는 그림 2에 나와 있으며, 여기서 제거되는 레이어의 비율에 대한 함수로 \(5\)-shot MMLU 정확도를 플로팅합니다. 왼쪽 패널에서 Llama-2 패밀리를, 중간 패널에서 Qwen 패밀리의 모델을, 오른쪽 패널에서 Mistral-7B 및 Phi-2를 보여줍니다. 다른 총 레이어 수의 모델을 더 잘 비교하기 위해 이러한 플롯에서 제거되는 레이어의 비율(제거되는 레이어의 절대 개수보다)로 \(x\)-축을 정규화하는 것을 선택했습니다. MLU에는 4개의 가능한 응답이 있는 객관식 질문이 포함되어 있기 때문에 무작위 추측의 예상 정확도는 25%이다.
+
+중요하게도, 우리는 라마-2 계열의 모델의 경우 45%-55%, 미스트랄 7B의 경우 35%, Phi-2의 경우 25%, Qwen 계열의 모델의 경우 20% 정도의 가지치기 부분에서 무작위 정확도로 급격한 전환이 뒤따르는 강력한 성능의 특징적인 평평한 영역을 볼 수 있다. 이것은 모델의 최고 점수를 달성하는 데 필요한 필수 지식이 중요한 층 제거에 의해 제거되지 않는다는 것을 의미한다 - 분수가 상당히 클 수 있음에도 불구하고 - 결국 중요한 모델 의존적 임계값에서 지식이 손실될 때까지.7 치유 유무에 관계없이 곡선과 비교하여, 우리는 미세 조정이 가지치기되지 않은 성능을 더 잘 보존하고 무작위 추측으로 위상 전환을 약간 더 큰 가지치기 분수로 밀어냄으로써 약간의 개선을 제공한다는 것을 알 수 있다.
+
+각주 7: 이 효과는 QA 벤치마크의 선택에 다소 강력합니다. 부록 그림 6에서 모델 패밀리에 대한 평균 0샷 BoolQ 정확도를 표시하고 유사한 동작을 관찰합니다.
+
+일반적으로 레이어 프루닝이 더 크고 더 깊은 모델, 예를 들어 라마-2-13B 및 라마-2-70B에 대해 더 강력하다는 것을 알 수 있으며, 이는 더 작은 모델이 더 많이 훈련되어 매개 변수가 덜 중복되거나 더 깊은 모델이 절대적인 의미에서 더 많은 레이어를 잃을 수 있다는 사실과 관련될 수 있다고 가정한다. 또한, Qwen 가족은 이상하다, 우리는 SS4.3에서 더 자세히 설명할 것이다.
+
+그림 2: MMLU 정확도(5-shot) vs. 다른 모델 패밀리에 대해 삭제된 도면층의 분수입니다. (_Left:_ Llama-2 패밀리; _Middle:_ Qwen 패밀리; _Right:_ Mistral-7B 및 Phi-2.) 실선은 층을 떨어뜨리고 치유한 후의 성능을 나타내고, 점선은 층만 떨어뜨린 후의 성능을 나타내며(치유 없음), 점회색 선은 무작위로 추측하기 위한 점수이다. 이러한 모델의 경우 치유는 약간의 개선으로 이어지며 모델 가족 및 크기에 따라 20%-55% 가지치기 분수까지 성능이 상당히 강력하며 이 시점에서 무작위 추측으로 전환된다.
+
+### 다음 토큰 예측에서 손실
+
+이 섹션에서는 계층 프루닝이 사전 훈련 최적화 목표 - 다음 토큰 예측의 교차 엔트로피 손실 - C4 검증 데이터 세트의 하위 집합에서 평가될 때 영향을 살펴본다. 8 서로 다른 크기의 어휘를 가진 모델 간에 공정한 비교를 하기 위해 \(V\)를 정규화하고 \(\log V\)로 손실을 정규화하며, 이는 균일한 확률로 무작위로 샘플링 토큰의 손실에 해당한다. (자세한 내용은 부록 A.2 참조)
+
+각주 8: 치유 단계에서 검증 데이터가 보이지 않는지 확인합니다.
+
+그림 3에서 우리는 제거된 분획 층의 함수로 치유 후(왼쪽 패널) 및 치유 전(오른쪽 패널) 7개 모델 모두에 대한 정규화된 C4 검증 손실을 플로팅한다. 치유가 없으면 QA 벤치마크 정확도도 무작위 추측으로 급격히 전환되는 대략 가지치기 부분에서 각 모델에 대해 무작위 추측으로의 다소 날카로운(약간) 전환이 있음을 알 수 있으며, 이는 모델이 이 시점 cf에서 절망적으로 해를 입음을 시사한다. 그림 2. 다음으로 두 플롯의 척도를 대조하여 치유가 모든 모델의 다음 토큰 예측 능력을 거의 가지치기되지 않은 수준으로 크게 회복하고 손실이 층 탈락에 따라 천천히 선형적으로 증가한다는 것을 알 수 있다. 과학적 관점에서 가장 놀라운 것은 이전에 QA 벤치마크에 대한 날카로운 전환을 발견한 가지치기 분수를 통한 치유 후 연속성이다. 이 디커플링은 MMLU 및 BoolQ와 같은 다운스트림 태스크의 성과와 교차 엔트로피 손실과 같은 지속적인 성과 측정 간의 연결을 끊는 한 가지 방법을 보여준다. 9
+
+각주 9: 이것은 심판 [83]과 일치한다. 한 종류의 메트릭에서 점프를 주장한 것은 다른 메트릭에서는 보이지 않을 수 있다.
+
+### 표현 간의 각도 거리
+
+우리의 가지치기 전략에서 각도 거리(7)가 하는 중심적인 역할을 감안할 때, 7개의 모델에 걸쳐 이러한 거리를 살펴보기 위해 하위 섹션을 취해보자. 이 분석을 위해 각 모델의 각도 거리는 C4 검증 세트의 10k 샘플에 대해 평균을 냈다.
+
+앞의 그림 1(c)에서 다시 말해, Llama-2-70B의 경우 \(n=1\)에서 \(n=64\)까지의 블록 크기에 대해 모든 초기 인덱스에 걸쳐 \(\ell\)을 \(d(x^{(\ell)},x^{(\ell+n)})\)의 각 거리 \(d(x^{(\ell)},x^{(\ell+n)})\)를 표시했으며 곡선의 최소인 \(\ell^{*}(n)\는 주어진 \(n\), cf에 대해 프루닝할 최적의 블록을 제공했다. (6). 이 동일한 데이터를 표시하는 더 컴팩트한 방법은 그림 4의 히트 맵에 나와 있습니다. 각 정사각형은 가능한 모든 \(\ell\)에 걸쳐 층 \(\ell\)과 \(\ell+n\) 사이의 행 정규화된 각도 거리를 묘사하기 위해 착색되며, \(n\) 전체 층 수의 매우 큰 부분까지, 주어진 블록 크기 \(\ell^{*}(n)\에 대해 프루닝할 최적의 층, \(\ell^{*}(n)\)은 각 행의 최소 거리에 해당한다.
+
+모델 전반에 걸쳐 두 가지 일반화를 수행합니다. _(i)_ 가장 작은 거리는 더 깊은 블록에서 발견되며, 더 깊은 레이어는 일반적으로 서로 매우 유사하고 더 쉽게 드롭될 수 있음을 의미합니다. _(ii)_ 가장 깊은 블록 - 마지막 레이어를 포함하는 블록 - 최대 또는 거의 최대 값을 취하며, 이는 최종 레이어를 드롭하지 않아야 함을 의미합니다. 한편
+
+그림 3: Normalized C4 validation loss vs. 치유(_좌_) 및 치유(_우_) 후에 드롭된 층의 분수; 각 곡선은 모델의 어휘로부터 균일하게 샘플링의 교차 엔트로피 손실에 의해 정규화된다. 치유 전 실험의 경우, 각 모델에 대한 손실은 QA가 벤치마킹하는 거의 동일한 가지치기 분획에서 무작위 추측(회색 점선)으로 전환되며, 치유 후 QA 작업 cf에서 급격한 전환 영역을 통한 연속성이 있다. 그림 2. 두 플롯의 전체 척도와 비교하여 치유가 다음 토큰 예측에 대한 성능을 거의 가지치기되지 않은 수준으로 크게 회복한다는 것이 분명하다.
+
+대체로 사실이지만, 몇 가지 예외가 있다. 일부 모델(예: Phi-2-2.7B) 또는 일부 모델에서 가장 큰 블록(예: Llama-2-7B)의 경우 최종 _few_ 계층이 중요한 것으로 보입니다. 이전에 언급했듯이 Qwen 계열은 다소 이례적이다. 여기에서 얕은 블록에 대해 높은 유사성의 몇 가지 홀수 "섬"이 있음을 볼 수 있으며, 이는 그림 2에서 강력한 성능의 더 짧은 영역을 설명할 가능성이 있다.
+
+### 간단한 프루닝 전략
+
+최근 결론에 영감을 받아 간단한 휴리스틱 프루닝(heuristic pruning) 기법을 제안한다. _(1)_ \(L\)-레이어 모델에서 \(n\)레이어를 프루닝하면, \((L-n)\)에서 \((L-1)\)로 드롭하여 최종 레이어를 제외한 가장 깊은 블록을 제거하고, _(2)_는 이전과 같이 적은 양의 파인튜닝으로 치유된다. 이 간단한 휴리스틱 알고리즘은 우리의 주요 유사성 정보 가지치기 전략과 비교할 때, 의사들이 GPU에 로드하거나 가지치기되지 않은 모델을 추론할 필요가 없다는 장점이 있다. 또한 가지를 치기 위해 블록을 최적화하는 것의 중요성에 대한 의미 있는 절제를 제공한다.
+
+그림 5에서 QA 벤치마크(MMLU/BoolQ, 상단/중간 패널)와 자기회귀 손실(C4 검증, 하단 패널)에 대해 치유 전(왼쪽 패널)과 치유 후(오른쪽 패널)의 두 가지 가지치기 전략을 대조한다. 한편, 간단한 휴리스틱은 가지치기에 의해 발생하는 손상을 치유하지 않고 매우 저조하게 수행하는데, QA 벤치마크에 대한 정확도는 가지치기의 분율이 증가함에 따라 (근) 랜덤으로 빠르게 붕괴되고, 적은 양의 가지치기를 하더라도 손실이 매우 빠르게 증가하기 시작한다. 반면에 평가 전반에 걸친 두 가지 가지치기 전략에 대한 결과는 치유 후 상당히 비슷합니다. QA 벤치마크의 경우 유사성 정보 알고리즘이 상전이 전에 정확도를 약간 더 잘 보존하지만 단순 알고리즘은 상전이를 약간 더 큰 가지치기 분수로 밀어내고 손실에 대해서는 유사성 정보 전략이 모든 가지치기 양에 대해 약간 더 우수하지만 곡선이 거의 서로 위에 있다. 이러한 실험은 프루닝 후 미세조정의 목적이 추가 지식의 획득이 아니라 프루닝 인터페이스에서 손상의 치유라는 강력한 증거이다.
+
+그림 4: 우리가 평가한 7개의 모델 각각에 대해 블록 크기 \(n\)(y축)를 갖는 초기 층 \(\ell\)(x축)으로부터 정규화된 각도 거리(7)로, 각 \(n\)에 대한 거리는 동일한 범위에 걸쳐 이동 및 재조정되며, \([0,1]\)(노란색에서 보라색): 가지치기할 최적의 블록, \(\ell^{*}(n)\)은 각 행에 대해 가장 깊은 노란색에 해당한다. 모델 전반에 걸쳐, 최종 층(외부 대각선을 따른 제곱)을 포함하는 가장 깊은 블록은 (거의-) 최대 비유사하지만, 더 깊은 층은 매우 유사한 경향이 있다.
+
+## 5 토의 및 미래 방향
+
+오픈-웨이트 LLaMA 패밀리[84]의 출시를 시작으로, 오픈-소스 머신-러닝 커뮤니티는 LLMs를 모든 사람이 액세스할 수 있도록 하는 철학을 중심으로 집결했다. 이것은 LoRA[13] 및 양자화(LoRA와 함께)[19]와 같은 효율성에 대한 많은 혁신을 야기하여, 대형(근) 최첨단 70B 모델들이 단일 80GB A100 GPU에서만 미세 조정될 수 있게 했다. 이러한 다른 도구와 함께 우리의 작업은 간단한 구현 계층 가지치기 기술을 통해 추가 효율성 향상을 가능하게 한다.
+
+특히 릴리즈 버전인 Llama-2-70B는 140\GB의 메모리를 사용하며, 토큰당 약 3\times 10^{10}\ FLOPs를 소모한다. 4-비트 양자화 및 계층 프루닝 분율이 50%인 경우, 모델은 대략 \(17.5\)GB의 메모리에 적합하며 토큰당 대략 \(1.5\times 10^{10}\) FLOP를 요구한다: 16-비트 bfloats에서 4-비트 QLoRA 정밀도로 양자화는 모델 메모리를 4배 감소시키지만, 계산은 16-비트 정밀도로 수행되기 때문에 FLOP는 거의 동일하게 유지된다; 계층 프루닝은 추가적으로 메모리 및 FLOP 모두를 계층 프루닝 분율과 동일한 양만큼 감소시킨다. 이러한 메모리 및 계산 요구 사항은 CPU 오프로딩 없이 그리고 단지 작은 성능 트레이드오프만으로 소비자-레벨 GPU 상에서 오픈-웨이트 최첨단 모델이 효율적으로 실행되고 심지어 미세 튜닝될 수 있게 한다.
+
+작품이 끝나면 다음과 같은 질문을 남긴다.
+
+* 더 나은 계층 가지치기 전략은 무엇입니까? 치유에 대한 더 나은 접근법은 무엇인가? 10 각주 10: 또 다른 하이퍼파라미터를 도입하고 치유하는 동안 가지치유와 가지치유되지 않은 모델 모두를 기억에 적합하도록 요구하는 비용으로 치유를 개선하는 한 가지 자연적인 방법은 가지치유 불일치(5)를 명시적으로 해결하는 보조 학생-교사 손실( \[\mathcal{L}_{\text{aux}}\sim\left(x^{(\ell^{*}+n)}(\theta_{0})-x^{(\ell^{*})}( \theta)\right)^{2}\,,\] (8)을 추가하는 것이다.
+
+그림 5: 단순 가지치기 휴리스틱(빨간색 실선)을 가진 라마-2-70B의 평가, 유사성 정보 가지치기 전략에 대한 점수(파란색 실선), 가지치 않은 라마-2-70B의 점수(빨간색 점선), 랜덤 추측에 대한 점수(회색 점선)와 함께 표시된다. (_Left:_ healing 전, _Right:_ healing 후; _Top:_ MMLU, _Middle:_ BoolQ, _Bottom:_ C4 Validation Loss.) 치유 없이 간단한 휴리스틱은 모든 평가에서 제대로 수행되지 않으며, 치유가 있는 경우 두 방법의 점수는 상당히 유사하다.
+
+* 보다 포괄적인 평가를 사용하면 다른 작업에 대한 정확도가 다른 깊이에서 저하되나요?
+* 관련적으로 지식은 일반적으로 얕은 층 또는 중간 층에 저장됩니까, 아니면 비편재화됩니까?
+* 사전 훈련 세부 정보가 자두 제거 능력에 영향을 미치나요? 예를 들어, 스케일링 법칙 과잉 훈련 또는 증류 모델은 자두 제거가 더 어렵나요?
+* LLM이 가장 깊은 계층에서 매개 변수를 보다 효과적으로 사용할 수 있도록 하려면 어떻게 해야 하나요?
+
+이러한 질문 중 일부는 다른 사전 훈련 체크포인트에 걸쳐 레이어 유사성과 가지치기 모두를 연구함으로써 이점을 얻을 수 있으며, 예를 들어 QA 정확도의 급격한 위상 전환 및 임계 깊이가 어느 시점에서 나타나고 더 많은 훈련이 가지치기 가능한 매개변수의 더 나은 사용으로 이어지는가? 다른 사람들은 예를 들어 더 깊은 층을 더 잘 사용하기 위해 다른 사전 훈련 아키텍처 및 목표를 가진 탐색을 제안한다. 보다 포괄적인 평가를 통해 서로 다른 종류의 작업이 매우 다른 깊이에서 저하되면 이러한 작업을 완료하는 데 필요한 지식이 서로 다른 깊이에 저장된다는 것을 나타낼 수 있다. 11 이러한 종류의 해석 가능성 질문을 체계적으로 연구하기 위해 가지치기를 사용하는 것은 매우 흥미로울 것이다.
+
+각주 11: 다른 평가 데이터 세트의 함수로서 \(d(x^{(\ell)},x^{(\ell+n)})\)를 측정하거나 \(\ell^{*}(n)\)를 찾을 수 있다.
+
+## Acknowledgments
+
+우리는 애런 슈워츠의 초기 협업에 감사하고, 토론에 아디티아 싱과 쇼 야에다, 초안에 대한 논평에 아디티아 싱에게 감사한다. 우리는 또한 이 프로젝트에 대한 작업을 위해 우리를 초기화하기 위한 2023 NeurIPS 대규모 언어 모델 효율성 챌린지를 인정하고 싶습니다. A.G는 NSF CAREER 보조금 DMR-2045181, 슬론 재단 및 응축 물질 이론 센터를 통한 물리 과학 연구소의 지원을 받습니다. D.R은 협력 협정 PHY-2019786(NSF AI AI Institute for Artificial Intelligence and Fundamental Interactions, [http://iaifi.org/](http://iaifi.org/))에 따라 국립 과학 재단의 지원을 인정하고 Sequoia Capital의 제재와 지원을 모두 인정합니다. 이 문서는 여러 계층에 걸쳐 합한 후 \(G\), \(P\) 및 \(U\) 문자로 상주합니다.
+
+## References
+
+* Radford et al. [2019] Alec Radford, Jeff Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. Language models are unsupervised multitask learners. 2019. URL [https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf).
+* [2] OpenAI. Introducing chatgpt, Nov 2022. URL [https://openai.com/blog/chatgpt](https://openai.com/blog/chatgpt).
+* [3] OpenAI. Gpt-4 technical report, 2023.
+* Team et al. [2023] Gemini Team, Rohan Anil, Sebastian Borgeaud, Yonghui Wu, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, et al. Gemini: a family of highly capable multimodal models. _arXiv preprint arXiv:2312.11805_, 2023.
+* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_, 2020.
+* Hoffmann et al. [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _arXiv preprint arXiv:2203.15556_, 2022.
+* Vries [2023] Harm De Vries. 2023년 7월 smol 또는 집으로 이동 URL [https://www.harmdevries.com/post/model-size-vs-compute-overhead/](https://www.harmdevries.com/post/model-size-vs-compute-overhead/)
+* Sardana and Frankle [2023] Nikhil Sardana and Jonathan Frankle. 친칠라를 넘어 최적: 언어 모델 스케일링 법칙에서 추론에 대한 계산 _ arXiv preprint arXiv:2401.00448_, 2023.
+
+* [9] Tim Dettmers, Mike Lewis, Younes Belkada, and Luke Zettlemoyer. Llm. int8 (): 8-bit matrix multiplication for transformers at scale. _arXiv preprint arXiv:2208.07339_, 2022.
+* [10] Elias Frantar, Saleh Ashkboos, Torsten Hoefler, and Dan Alistarh. Gptq: Accurate post-training quantization for generative pre-trained transformers. _arXiv preprint arXiv:2210.17323_, 2022.
+* [11] Tim Dettmers and Luke Zettlemoyer. The case for 4-bit precision: k-bit inference scaling laws. In _International Conference on Machine Learning_, pages 7750-7774. PMLR, 2023.
+* [12] Guangxuan Xiao, Ji Lin, Mickael Seznec, Hao Wu, Julien Demouth, and Song Han. Smoothquant: Accurate and efficient post-training quantization for large language models. In _International Conference on Machine Learning_, pages 38087-38099. PMLR, 2023.
+* [13] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. Lora: Low-rank adaptation of large language models. _arXiv preprint arXiv:2106.09685_, 2021.
+* [14] Yann LeCun, John Denker, and Sara Solla. Optimal brain damage. In D. Touretzky, editor, _Advances in Neural Information Processing Systems_, volume 2. Morgan-Kaufmann, 1989.
+* [15] Babak Hassibi and David Stork. Second order derivatives for network pruning: Optimal brain surgeon. In S. Hanson, J. Cowan, and C. Giles, editors, _Advances in Neural Information Processing Systems_, volume 5. Morgan-Kaufmann, 1992.
+* [16] Song Han, Jeff Pool, John Tran, and William Dally. Learning both weights and connections for efficient neural network. _Advances in neural information processing systems_, 28, 2015.
+* [17] Hao Li, Asim Kadav, Igor Durdanovic, Hanan Samet, and Hans Peter Graf. Pruning filters for efficient convnets. _arXiv preprint arXiv:1608.08710_, 2016.
+* [18] Jonathan Frankle and Michael Carbin. The lottery ticket hypothesis: Finding sparse, trainable neural networks. _arXiv preprint arXiv:1803.03635_, 2018.
+* [19] Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. Qlora: Efficient finetuning of quantized llms. _arXiv preprint arXiv:2305.14314_, 2023.
+* [20] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023.
+* [21] nostalgebraist. interpreting gpt: the logit lens. [https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens), 2020.
+* [22] Nora Belrose, Zach Furman, Logan Smith, Danny Halawi, Igor Ostrovsky, Lev McKinney, Stella Biderman, and Jacob Steinhardt. Eliciting latent predictions from transformers with the tuned lens. _arXiv preprint arXiv:2303.08112_, 2023.
+* [23] Ricky TQ Chen, Yulia Rubanova, Jesse Bettencourt, and David K Duvenaud. Neural ordinary differential equations. _Advances in neural information processing systems_, 31, 2018.
+* [24] Greg Yang, Dingli Yu, Chen Zhu, and Soufiane Hayou. Tensor programs vi: Feature learning in infinite-depth neural networks. _arXiv preprint arXiv:2310.02244_, 2023.
+* [25] Xin Men, Mingyu Xu, Qingyu Zhang, Bingning Wang, Hongyu Lin, Yaojie Lu, Xianpei Han, and Weipeng Chen. Shortgpt: Layers in large language models are more redundant than you expect. _arXiv preprint arXiv:2403.03853_, 2024.
+* [26] Wenlin Chen, James Wilson, Stephen Tyree, Kilian Weinberger, and Yixin Chen. Compressing neural networks with the hashing trick. In _International conference on machine learning_, pages 2285-2294. PMLR, 2015.
+* [27] Suraj Srinivas and R Venkatesh Babu. Data-free parameter pruning for deep neural networks. _arXiv preprint arXiv:1507.06149_, 2015.
+
+* [28] Wei Wen, Chunpeng Wu, Yandan Wang, Yiran Chen, and Hai Li. Learning structured sparsity in deep neural networks. _Advances in neural information processing systems_, 29, 2016.
+* [29] Hengyuan Hu, Rui Peng, Yu-Wing Tai, and Chi-Keung Tang. Network trimming: A data-driven neuron pruning approach towards efficient deep architectures. _arXiv preprint arXiv:1607.03250_, 2016.
+* [30] Yihui He, Xiangyu Zhang, and Jian Sun. Channel pruning for accelerating very deep neural networks. In _Proceedings of the IEEE international conference on computer vision_, pages 1389-1397, 2017.
+* [31] Gao Huang, Shichen Liu, Laurens Van der Maaten, and Kilian Q Weinberger. Condensenet: An efficient densenet using learned group convolutions. In _Proceedings of the IEEE conference on computer vision and pattern recognition_, pages 2752-2761, 2018.
+* [32] Kenton Murray and David Chiang. Auto-sizing neural networks: With applications to n-gram language models. _arXiv preprint arXiv:1508.05051_, 2015.
+* [33] Abigail See, Minh-Thang Luong, and Christopher D Manning. Compression of neural machine translation models via pruning. _arXiv preprint arXiv:1606.09274_, 2016.
+* [34] Yoon Kim and Alexander M Rush. Sequence-level knowledge distillation. _arXiv preprint arXiv:1606.07947_, 2016.
+* [35] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. _Advances in neural information processing systems_, 30, 2017.
+* [36] Elena Voita, David Talbot, Fedor Moiseev, Rico Sennrich, and Ivan Titov. Analyzing multi-head self-attention: Specialized heads do the heavy lifting, the rest can be pruned. _arXiv preprint arXiv:1905.09418_, 2019.
+* [37] Paul Michel, Omer Levy, and Graham Neubig. Are sixteen heads really better than one? _Advances in neural information processing systems_, 32, 2019.
+* [38] Young Jin Kim and Hany Hassan Awadalla. Fastformers: Highly efficient transformer models for natural language understanding. _arXiv preprint arXiv:2010.13382_, 2020.
+* [39] Angela Fan, Edouard Grave, and Armand Joulin. Reducing transformer depth on demand with structured dropout. _arXiv preprint arXiv:1909.11556_, 2019.
+* [40] Minjia Zhang and Yuxiong He. Accelerating training of transformer-based language models with progressive layer dropping. _Advances in Neural Information Processing Systems_, 33:14011-14023, 2020.
+* [41] Chun Fan, Jiwei Li, Xiang Ao, Fei Wu, Yuxian Meng, and Xiaofei Sun. Layer-wise model pruning based on mutual information. _arXiv preprint arXiv:2108.12594_, 2021.
+* [42] Ananya Harsh Jha, Dirk Groeneveld, Emma Strubell, and Iz Beltagy. Large language model distillation doesn't need a teacher. _arXiv preprint arXiv:2305.14864_, 2023.
+* [43] Hassan Sajjad, Fahim Dalvi, Nadir Durrani, and Preslav Nakov. On the effect of dropping layers of pre-trained transformer models. _Computer Speech & Language_, 77:101429, 2023.
+* [44] Wei Liu, Zhiyuan Peng, and Tan Lee. Comflp: Correlation measure based fast search on asr layer pruning. _arXiv preprint arXiv:2309.11768_, 2023.
+* [45] Lu Hou, Zhiqi Huang, Lifeng Shang, Xin Jiang, Xiao Chen, and Qun Liu. Dynabert: Dynamic bert with adaptive width and depth. _Advances in Neural Information Processing Systems_, 33:9782-9793, 2020.
+* [46] Pratyusha Sharma, Jordan T Ash, and Dipendra Misra. The truth is in there: Improving reasoning in language models with layer-selective rank reduction. _arXiv preprint arXiv:2312.13558_, 2023.
+
+* [47] Saleh Ashkboos, Maximilian L. Croci, Marcelo Gennari do Nascimento, Torsten Hoefler, and James Hensman. Slicegpt: Compress large language models by deleting rows and columns. _arXiv preprint arXiv:2401.15024_, 2024.
+* [48] Mengzhou Xia, Zexuan Zhong, and Danqi Chen. Structured pruning learns compact and accurate models. _arXiv preprint arXiv:2204.00408_, 2022.
+* [49] Francois Lagunas, Ella Charlaix, Victor Sanh, and Alexander M Rush. Block pruning for faster transformers. _arXiv preprint arXiv:2109.04838_, 2021.
+* [50] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. _arXiv preprint arXiv:1810.04805_, 2018.
+* [51] Qihuang Zhong, Liang Ding, Juhua Liu, Bo Du, and Dacheng Tao. Can chatgpt understand too? a comparative study on chatgpt and fine-tuned bert. _arXiv preprint arXiv:2302.10198_, 2023.
+* [52] Kawin Ethayarajh. How contextual are contextualized word representations? comparing the geometry of bert, elmo, and gpt-2 embeddings. _arXiv preprint arXiv:1909.00512_, 2019.
+* [53] Alexei Baevski, Yuhao Zhou, Abdelrahman Mohamed, and Michael Auli. wav2vec 2.0: A framework for self-supervised learning of speech representations. _Advances in neural information processing systems_, 33:12449-12460, 2020.
+* [54] Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. Distilling the knowledge in a neural network. _arXiv preprint arXiv:1503.02531_, 2015.
+* [55] Yuxian Gu, Li Dong, Furu Wei, and Minlie Huang. Knowledge distillation of large language models. _arXiv preprint arXiv:2306.08543_, 2023.
+* [56] Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang, Xiao Chen, Linlin Li, Fang Wang, and Qun Liu. Tinybert: Distilling bert for natural language understanding. _arXiv preprint arXiv:1909.10351_, 2019.
+* [57] Shuohang Wang, Yang Liu, Yichong Xu, Chenguang Zhu, and Michael Zeng. Want to reduce labeling cost? gpt-3 can help. _arXiv preprint arXiv:2108.13487_, 2021.
+* [58] Ronen Eldan and Yuanzhi Li. Tinystories: How small can language models be and still speak coherent english? _arXiv preprint arXiv:2305.07759_, 2023.
+* [59] Yuanzhi Li, Sebastien Bubeck, Ronen Eldan, Allie Del Giorno, Suriya Gunasekar, and Yin Tat Lee. Textbooks are all you need ii: phi-1.5 technical report. _arXiv preprint arXiv:2309.05463_, 2023.
+* [60] Suriya Gunasekar, Yi Zhang, Jyoti Aneja, Caio Cesar Teodoro Mendes, Allie Del Giorno, Sivakanth Gopi, Mojan Javaheripi, Piero Kauffmann, Gustavo de Rosa, Olli Saarikivi, et al. Textbooks are all you need. _arXiv preprint arXiv:2306.11644_, 2023.
+* [61] Yao Fu, Hao Peng, Litu Ou, Ashish Sabharwal, and Tushar Khot. Specializing smaller language models towards multi-step reasoning. _arXiv preprint arXiv:2301.12726_, 2023.
+* [62] Cheng-Yu Hsieh, Chun-Liang Li, Chih-Kuan Yeh, Hootan Nakhost, Yasuhisa Fujii, Alexander Ratner, Ranjay Krishna, Chen-Yu Lee, and Tomas Pfister. Distilling step-by-step! outperforming larger language models with less training data and smaller model sizes. _arXiv preprint arXiv:2305.02301_, 2023.
+* [63] Yuxin Jiang, Chunkit Chan, Mingyang Chen, and Wei Wang. Lion: Adversarial distillation of closed-source large language model. _arXiv preprint arXiv:2305.12870_, 2023.
+* [64] Yixiao Li, Yifan Yu, Chen Liang, Pengcheng He, Nikos Karampatziakis, Weizhu Chen, and Tuo Zhao. Loftq: Lora-fine-tuning-aware quantization for large language models. _arXiv preprint arXiv:2310.08659_, 2023.
+
+* [65] Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, and Tuo Zhao. Adaptive budget allocation for parameter-efficient fine-tuning. _arXiv preprint arXiv:2303.10512_, 2023.
+* [66] Yaniv Leviathan, Matan Kalman, and Yossi Matias. Fast inference from transformers via speculative decoding. In _International Conference on Machine Learning_, pages 19274-19286. PMLR, 2023.
+* [67] Tianle Cai, Yuhong Li, Zhengyang Geng, Hongwu Peng, Jason D Lee, Deming Chen, and Tri Dao. Medusa: Simple llm inference acceleration framework with multiple decoding heads. _arXiv preprint arXiv:2401.10774_, 2024.
+* [68] Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. Locating and editing factual associations in gpt. _Advances in Neural Information Processing Systems_, 35:17359-17372, 2022.
+* [69] Damai Dai, Li Dong, Yaru Hao, Zhifang Sui, Baobao Chang, and Furu Wei. Knowledge neurons in pretrained transformers. _arXiv preprint arXiv:2104.08696_, 2021.
+* [70] Peter Hase, Mohit Bansal, Been Kim, and Asma Ghandeharioun. Does localization inform editing? surprising differences in causality-based localization vs. knowledge editing in language models. _arXiv preprint arXiv:2301.04213_, 2023.
+* [71] Mor Geva, Jasmin Bastings, Katja Filippova, and Amir Globerson. Dissecting recall of factual associations in auto-regressive language models. _arXiv preprint arXiv:2304.14767_, 2023.
+* [72] Alexander Yom Din, Taelin Karidi, Leshem Choshen, and Mor Geva. Jump to conclusions: Short-cutting transformers with linear transformations. _arXiv preprint arXiv:2303.09435_, 2023.
+* [73] Wes Gurnee and Max Tegmark. Language models represent space and time. _arXiv preprint arXiv:2310.02207_, 2023.
+* [74] Elena Voita, Javier Ferrando, and Christoforos Nalmparantis. Neurons in large language models: Dead, n-gram, positional. _arXiv preprint arXiv:2309.04827_, 2023.
+* [75] Zichang Liu, Jue Wang, Tri Dao, Tianyi Zhou, Binhang Yuan, Zhao Song, Anshumali Shrivastava, Ce Zhang, Yuandong Tian, Christopher Re, et al. Deja vu: Contextual sparsity for efficient llms at inference time. In _International Conference on Machine Learning_, pages 22137-22176. PMLR, 2023.
+* [76] Abhishek Panigrahi, Nikunj Saunshi, Haoyu Zhao, and Sanjeev Arora. Task-specific skill localization in fine-tuned language models. _arXiv preprint arXiv:2302.06600_, 2023.
+* [77] Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang, Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei Huang, et al. Qwen technical report. _arXiv preprint arXiv:2309.16609_, 2023.
+* [78] Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7b. _arXiv preprint arXiv:2310.06825_, 2023.
+* [79] Mojan Javaheripi and Sebastien Bubeck. Phi-2: The surprising power of small language models, Dec 2023.
+* [80] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.
+* [81] Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. _arXiv preprint arXiv:2009.03300_, 2020.
+* [82] Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions. _arXiv preprint arXiv:1905.10044_, 2019.
+
+* [83] Rylan Schaeffer, Brando Miranda, and Sanni Koyejo. Are emergent abilities of large language models a mirage? _arXiv preprint arXiv:2304.15004_, 2023.
+* [84] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothe Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.
+* [85] Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Remi Louf, Morgan Funtowicz, Joe Davison, Sam Shleifer, Patrick von Platen, Clara Ma, Yacine Jernite, Julien Plu, Cannon Xu, Teven Le Scao, Sylvain Gugger, Mariamam Drame, Quentin Lhoest, and Alexander M. Rush. Transformers: State-of-the-art natural language processing. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing: System Demonstrations_, pages 38-45, Online, October 2020. Association for Computational Linguistics. URL [https://www.aclweb.org/anthology/2020.emnlp-demos.6](https://www.aclweb.org/anthology/2020.emnlp-demos.6).
+* [86] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _arXiv e-prints_, 2019.
+* [87] Sourab Mangrulkar, Sylvain Gugger, Lysandre Debut, Younes Belkada, Sayak Paul, and Benjamin Bossan. Peft: State-of-the-art parameter-efficient fine-tuning methods. [https://github.com/huggingface/peft](https://github.com/huggingface/peft), 2022.
+* [88] Ariel N Lee, Cole J Hunter, and Nataniel Ruiz. Platypus: Quick, cheap, and powerful refinement of llms. _arXiv preprint arXiv:2308.07317_, 2023.
+
+Experimental Details
+
+여기서는 모델 및 치유(SSA.1) 및 평가(SSA.2)의 다양한 세부 사항을 설명한다.
+
+### 모델 및 치유 세부 정보
+
+본 논문의 모든 모델은 Hugging Face Trainer API를 사용하여 미세 조정되었다[85]. 휴징 페이스의 모델 및 경로 목록은 다음과 같습니다.
+
+\begin{tabular}{l|l} \hline \hline
+**Model** & Repository Path \\ \hline Llama-2 7B & meta-llama/Llama-2-7b-hf \\ Llama-2 13B & meta-llama/Llama-2-13b-hf \\ Llama-2 70B & meta-llama/Llama-2-70b-hf \\ Mistral 7B & mistralai/Mistral-7B-v0.1 \\ Phi-2 (2.7B) & microsoft/phi-2 \\ Qwen 7B & Qwen/Qwen-7B \\ Qwen 14B & Qwen/Qwen-14B \\ \end{tabular}
+
+치유를 위해 Hugging Face의 Colossal Clean Crawled Corpus (C4) [86] 버전을 사용했습니다. 데이터 = load_dataset("c4", 'en')입니다. 문단에 설명된 대로 긴 예를 잘라서 사용할 수 있을 때 특수 토큰을 추가했다. 12 모델은 전역 배치 크기가 16인 5000 단계에 대해 미세 조정되었으며, 이는 각 모델에 대해 \(16\times 5000\times\) [max_seq_length]의 총 미세 조정 토큰에 해당한다. 우리는 100단계의 준비운동과 함께 코사인 어닐링 학습률 스케줄을 사용했다. 가능한 경우, 피크 학습률은 모델의 사전 훈련으로부터 피크 학습률로 설정되었고, 실제로, 이는 모든 모델이 3e-4의 피크 LR로 훈련되었다는 것을 의미하며, 이는 3e-5의 피크 LR로 훈련된 Phi-2[79] 및 3e-6의 피크 LR로 훈련된 미스트랄-7B(또한 스윕으로 인한 값)를 제외한다. 모든 모델 7B 파라미터 또는 그 이상은 2048 토큰의 최대 시퀀스 길이로 트레이닝된 반면, 모든 모델 13B 파라미터 또는 그 이상은 4096 토큰의 최대 시퀀스 길이로 트레이닝되었다. 일부 모델이 더 긴 시퀀스(예: Qwen-_the-outlier_[77)에 대해 사전 훈련되었을 수 있음을 깨닫지만, 모델 패밀리에 걸쳐 더 공정한 비교를 허용하기 위해 유사한 크기의 모델에 걸쳐 일관된 최대 시퀀스 길이를 결정했다.
+
+각주 12: N.B. Hugging Face의 Qwen tokenizer에는 특별한 토큰이 포함되어 있지 않습니다. 이 경우 기본 패딩 토큰을 추가하는 것이 필수였습니다.
+
+휴징 페이스 트레이너 API 외에도 모든 미세 조정에 양자화 및 LoRA(Low-Rank Adapters) [13]을 사용했습니다.
+
+* 양자화를 위해 QLoRA [19]에 대한 비트 및 바이트 라이브러리를 사용하여 모델을 4비트로 양자화했다.
+* LoRA의 경우 Hugging Face pft 라이브러리를 사용 했습니다 [87]. 우리는 LoRA 드롭아웃을 0.05로 설정하고 [88]에 따라 LoRA \(\alpha\)를 LoRA 순위와 동일하게 유지했다. 아래에서 논의되는 두 가지 예외를 제외하고, 모델은 LoRA 순위 64로 훈련된다.
+*참고문헌 [88]에도 따른다 Llama-2 및 Mistral 모델의 경우 ["gate_proj", "down_proj", "up_proj"], Phi-2의 경우 ["fc1", "fc2"], Qwen 모델의 경우 ["w1", "w2", "c_proj"]와 같은 FFN 모듈에만 LoRA를 적용했다.
+
+이러한 하이퍼파라미터 선택의 대부분은 표준이며 참조 [9, 88]과 같은 이전 작업에서 찾을 수 있다. 절대적 명확성을 위해, 우리는 아래의 모든 모델 특정 아키텍처 및 치유 세부사항을 나열한다: 또한, 우리는 모든 모델들 사이에서 공통적인 다음의 하이퍼 파라미터들을 갖는다:
+
+\begin{tabular}{l|l l l l l r} \hline \hline
+**Model** & \# Layers & Vocab Size & Max Seq. Len. & FT Tokens & Peak LR & LoRA Rank \\ \hline Llama-2 7B & 32 & 32,000 & 2048 & 164M & 3e-4 & 2 \\ Llama-2 13B & 40 & 32,000 & 4096 & 328M & 3e-4 & 64 \\ Llama-2 70B & 80 & 32,000 & 4096 & 328M & 3e-5 & 8 \\ Qwen 7B & 32 & 151,936 & 2048 & 164M & 3e-4 & 64 \\ Qwen 14B & 40 & 151,936 & 4096 & 328M & 3e-4 & 64 \\ Mistral 7B & 32 & 32,000 & 2048 & 164M & 3e-6 & 4 \\ Phi-2 2.7B & 32 & 51,200 & 2048 & 164M & 2e-4 & 64 \\ \hline \hline \end{tabular}
+
+또한 모든 모델 간에 공통되는 다음 하이퍼 매개 변수가 있습니다.
+
+\begin{tabular}{l|l} \hline \hline
+**Config** & Value \\ \hline Finetuning dataset & C4 \\ Batch size & 16 \\ LoRA \(\alpha\) & LoRA rank \\ LoRA dropout & 0.05 \\ LoRA targets & FFN modules \\ LR scheduler & Cosine \\ Warmup steps & 100 \\ Total steps & 5000 \\ \hline \hline \end{tabular}
+
+### Evaluation details
+
+우리는 _MMLU_에 대한 정확도, _BoolQ_에 대한 정확도 및 _C4_에 대한 손실의 세 가지 주요 평가를 수행했다.
+
+**MMLU 정확도** 에 대해
+
+* Hugging Face의 데이터 세트의 cais/mmlu 버전을 사용합니다.
+* 추가 신속한 엔지니어링 없이 원래 참조 [81]에서 제안한 형식을 따릅니다.
+* 몇 개의 샷 예제를 구성하기 위해 cais/mmlu의 dev 집합을 사용합니다.
+* 실험을 위해 \(0\) 소수의 예제를 사용 합니다. 결과 및 분석은 이 선택 cf에 강력 합니다. 그림 7.
+* 모든 피험자의 평균 정확도를 보고합니다.
+
+**BoolQ 정확도** 에 대해
+
+* Hugging Face의 hassansh/boolq_n_shot 버전을 사용 했습니다.
+* 실험을 위해 \(0\) 소수의 예제를 사용합니다.
+* 본문에서 잘린 것
+그림 6은 왼쪽 패널에서 라마-2 패밀리를 제시하고, 중간 패널에서 Qwen 패밀리의 모델을 제시하고, 오른쪽 패널에서 미스트랄-7B 및 Phi-2를 제시해야 하며, 완전한 유사성 정보 가지치기 방법의 결과를 더 잘 표시하기 위해 반투명 치유 없이 실험을 한다. 중요한 것은 여기에서 힐링이 그림 2의 MMLU보다 더 중요한 역할을 한다는 것을 보지만, 힐링 후에도 여전히 강력한 성능의 특징적인 평평한 영역을 가지고 있으며, 이전과 같이 모델의 최고 점수를 달성하는 데 필요한 기능은 중요한 모델 의존적 임계값까지 중요한 층 가지치기에 의해 제거되지 않는다.
+
+**C4 유효성 검사 손실** 의 경우
+
+* Hugging Face의 c4 버전을 사용 했습니다 (곧 alenai/c4에 찬성하여 사용되지 않음).
+* 열차 분할로 치유할 때 _유효성_ 분할을 사용하여 평가했습니다.
+* 크기를 감안할 때 60k 서열을 무작위로 샘플링하고 모든 모델에 걸쳐 고정했다.
+
+* 그림 3에서 우리는 다른 어휘 크기를 사용하는 모델 패밀리에 걸쳐 공정한 비교를 용이하게 하기 위해 손실을 정규화했습니다. 정규화하려면 \(\log V\)로 나눈 다음, 여기서 \(V\)는 _모델당_ 어휘 크기(SSA.1의 표에 나열됨)입니다. 이 \(\log V\)는 샘플링 토큰의 일률적인 손실에 해당하며, 이는 주어진 모델에 대한 척도를 자연스럽게 설정한다.
+
+## 부록 B 삭제
+
+여기서는 프롬프팅(SSB.1), 핀튜닝 시드(SSB.2), LoRA 순위(SSB.3)의 다양한 하이퍼파라미터의 삭제를 자세히 설명한다. 질적으로, 논문의 결과는 이들 중 임의의 것의 변동에 상당히 강건하다.
+
+### Prompting
+
+QA 평가에서 프롬프트를 변경하면 결과에 상당한 영향을 미칠 수 있다는 것은 일반적인 지식입니다. 프롬프트를 제어하기 위해 Llama-2-13B에 적용했을 때 SS3.2에 설명된 주요 유사성 정보 가지치기에 대한 MMLU 정확도를 제거했다. 그림 7의 왼쪽 패널에서 프롬프트에서 소수의 샷 예제의 순서를 변경하기 위한 결과를 보여주고 오른쪽 패널에서 동일한 그림에서 소수의 샷 예제의 수를 변경하기 위한 결과를 보여준다. 넓게는 레이어 프루닝 방법이 이러한 변화에 강인하다는 것을 알 수 있다.
+
+### Finetuning seed
+
+여기서 우리는 미세 조정 씨앗을 바꿉니다. 모든 실험의 경우 재현성을 보장하기 위해 다음 코드 조각을 사용합니다.
+
+```
+SEED_VAL=0 transformers.enable_full_determinism(SEED_VAL)
+```
+
+사전 학습된 모델로 시작하기 때문에 미세 조정 시드는 초기화에 영향을 미치지 않지만 데이터 순서와 같은 추가 학습의 확률적 측면에 영향을 미친다. 이를 제어하기 위해 Llama-2-13B에 적용될 때 SS3.2에 설명된 주요 유사성 정보 가지치기에 대한 미세 조정 종자를 제거하며, 그림 8에서 계층 가지치기 방법이 종자 선택에 강력하다는 것을 관찰한다.
+
+도 6: BoolQ 정확도(0-shot) vs. 다른 모델 패밀리에 대해 삭제된 도면층의 분수입니다. (_Left:_ Llama-2 패밀리; _Middle:_ Qwen 패밀리; _Right:_ Mistral-7B 및 Phi-2.) 실선은 층을 떨어뜨리고 치유한 후의 성능을 나타내며, (반투명) 점선은 층만 떨어뜨린 후의 성능을 나타내며(치유 없음), 점선은 무작위로 추측하기 위한 점수이다. BoolQ의 경우 힐링은 성능과 같은 중요한 개선으로 이어지며, 모든 모델에서 성능은 모델 패밀리와 크기에 따라 20%-55% 가지치기 분수까지 상당히 강력하며, 이 시점에서 무작위 추측으로 전환된다.
+
+### LoRA rank
+
+여기서 우리는 치유에 사용되는 LoRA 순위를 바꿉니다. 불행히도 계산 예산으로 인해 모든 실험 구성에서 완전한 스윕을 수행할 수 없었습니다. 그 대신 주요 실험을 위해 다음 프로토콜을 사용했다.
+
+* QLoRA 설정에 따라 순위 64로 시작합니다(예: 참고문헌 [19]의 부록 B.2 참조).
+* 해당 순위를 가진 힐링이 힐링이 없는 것과 비교하여 성능을 크게 손상시키는 경우 해당 모델의 LoRA 순위를 스윕하고 다른 평가의 경우 MMLU 정확도에 따라 가장 성능이 좋은 LoRA 순위를 선택합니다.
+
+이 프로토콜은 치유가 모든 평가에서 성능을 향상시킬 가능성을 최대화하도록 설계되었습니다. 단순화를 위해 Llama-2-70B를 제외하고 간단한 가지치기 휴리스틱을 사용하여 이 순위 선택 프로토콜을 실행했다.
+
+실제로 이것은 순위 4, Llama-2-7B, 순위 2 및 Llama-2-70B를 제외하고 순위 8을 사용하여 모든 모델에 대해 순위 64를 사용하게 했다. (표 형식으로 이 동일한 정보를 검토하려면 SSA.1의 두 번째 표를 참조한다.) 그림 9는 미스트랄-7B(왼쪽 하단 패널), Llama-2-7B(중간 하단 패널) 및 Llama-2-70B(오른쪽 상단 패널)에 대한 이러한 선택을 지원하는 MMLU 정확도에 대한 스윕을 표시한다. 전반적으로 LoRA 순위는 치유된 모델의 정성적 행동에 큰 영향을 미치지 않지만 LoRA 순위는 일반적으로 개선된다.
+
+그림 8: 미세 조정 시드를 변화시키는 것이 MMLU 정확도 대 MMLU 정확도에 미치는 영향. Llama-2-13B에 대해 드롭된 층들의 분획: 의미 있는 효과가 없다.
+
+그림 7: 신속한 삭제가 MMLU 정확도 대 MMLU 정확도에 미치는 영향. Llama-2-13B에 대해 드롭된 레이어의 분수입니다. _ 왼쪽:_ 몇 개의 샷 예제의 순서를 변경 하 여 영향을 주지 않습니다. _ 오른쪽:_ 우리는 소수의 샷 예제의 수 \(n\)를 매우 높입니다. 그러나 평평한 영역에 대한 주의 깊은 연구는 소수의 샷 예제의 수를 증가시키면 성능이 약간 향상되지만 레이어 프루닝 전략은 이러한 종류의 변화에 강하다는 것을 시사합니다.
+
+성능. 그림 9의 왼쪽 상단 및 중간 패널에서 유사성 정보 가지치기 전략을 사용하여 미스트랄-7B(상단) 및 라마-2-7B(중단)에 대한 해당 스윕을 보여준다. 순위 2가 여전히 라마-2-7B에 대해 상위 수행 순위이지만 이 가지치기 방법에 대해 두 모델 모두 훨씬 더 강력하다는 것을 알 수 있다.
+
+LoRA 순위가 감소함에 따라 MMLU 정확도가 향상되는 특성은 매우 낮은 순위(!)에도 설명할 가치가 있다. 한 가지 가능성은 LoRA 순위를 낮추면 과적합에 대한 미세 조정을 더 잘 정규화할 수 있다는 것이다. 특히, 기민한 독자들은 SSA에서 피크 학습률에 대한 논의에 놀랐을 수 있다.1: 모델은 사전 훈련에 사용된 것과 동일한 피크로 미세 조정되었으며, 64의 "큰" LoRA 순위는 C4에 과적합할 수 있는 많은 추가 매개변수를 도입한다. 우리가 고려하는 모델에 대한 실제 사전 훈련 데이터 세트는 우리에게 알려지지 않은 _(a)_이고 _(b)_이므로 이 과적합은 분명히 해로울 것이다.
+
+미스트랄-7B에 대해 직접 조사한다. 도 9의 하단 우측 패널에서 우리는 상이한 LoRA 순위들에 걸쳐 C4 검증 손실을 플롯한다: 우리는 LoRA 순위를 감소시키는 동안 일반적으로 MMLU 정확도를 개선한다는 것을 안다(cf. 가장 좌측-패널). 동시에 C4 유효성 검사 손실을 손상시킵니다. 이것은 우리의 과적합 가설을 뒷받침한다. 더 많은 자원이 투입된 미래에는 다른 형태의 정규화와 학습률 조정을 고려하여 치유 과정을 개선하는 것이 흥미로울 것이다.
+
+도 9: LoRA 순위를 변화시킨 효과. **Top**: 5샷 MMLU 정확도 대. Mistral-7B(_left_), Llama-2-7B(_middle_) 및 Llama-2-70B(_right_)에서 유사성 정보 가지치기 전략을 사용하여 드롭된 레이어의 분수. 모든 계급에서 우리는 비슷한 행동을 관찰하지만, 계급이 감소하면 전반적인 성과가 향상되는 작은 효과가 있다. **아래, 왼쪽 및 중간**: 5샷 MMLU 정확도 대. fraction of layers dropped using the simple pruning heuristic on Mistral-7B (_left_) and Llama-2-7B (_middle_). 이전과 마찬가지로 질적인 행동은 순위 간에 유사하지만 이 경우 순위가 감소하면 성능이 향상된다는 것이 훨씬 더 분명하다. **아래, 오른쪽**: C4 유효성 검사 손실 대. 미스트랄-7B에서 유사성 정보 가지치기 전략을 사용하여 떨어뜨린 층의 분획. MLU와 달리 순위가 감소하면 성능이 손상되며, 이러한 결과는 더 큰 순위가 과적합될 수 있음을 시사한다.
