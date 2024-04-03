@@ -1,0 +1,255 @@
+# Reverse Training to Nurse Reversal 저주
+
+Olga Golovneva
+
+메타에서의 공정성
+
+Zeyuan Allen-Zhu
+
+메타에서의 공정성
+
+Jason Weston
+
+메타에서의 공정성
+
+Sainbayar Sukhbaatar
+
+메타에서의 공정성
+
+###### Abstract
+
+큰 언어 모델들(LLM)은 놀라운 실패를 갖는다: "A가 특징 B를 가지고 있다"에 대해 훈련될 때, 그들은 역전 저주라고 불리는 "B가 A의 특징이다"로 일반화되지 않는다. 수조 개의 토큰을 사용하여 훈련할 때에도 이 문제는 여전히 Zipf의 법칙으로 인해 나타나며, 따라서 우리가 전체 인터넷에서 훈련하더라도 마찬가지이다. 이 작업은 모든 단어를 두 번 사용하여 사용 가능한 토큰의 양을 두 배로 늘리는 _역 훈련_이라는 대체 훈련 방식을 제안한다. LLM은 엔티티들과 같은 선택된 부분 문자열들을 보존하면서(즉, 반전하지 않음) 트레이닝 스트링들을 반전시킴으로써 순방향 및 역방향 둘 다로 트레이닝된다. 우리는 데이터 매칭 역학습 모델이 표준 태스크에서 표준 모델보다 우수한 성능을 제공하고, 계산 매칭 역학습 모델이 역전 태스크에서 훨씬 우수한 성능을 제공하여 역전 저주 문제를 해결하는 데 도움이 된다는 것을 보여준다.
+
+## 1 Introduction
+
+인터넷 규모의 데이터로 훈련된 대규모 언어 모델(LLM)은 추론, 상식 및 세계 지식과 관련된 작업에서 매우 잘 수행된다. 특히 GPT-4(OpenAI, 2023), Llama-2(Touvron et al., 2023b)와 같이 LLMs에 의해 포착되는 지식의 범위는 일반인에 비해 상당히 넓다. 그러나 최근 연구(Berglund et al., 2023; Allen-Zhu & Li, 2023a;b)는 LLMs의 지식 능력에서 호기심 많은 결함을 발견하여 _역전적 저주_를 만들었다. 그들은 현재 가장 강력한 LLM조차도 그들이 배운 사실을 "반전"할 수 없다는 것을 실험적으로 보여주었다. 예를 들어, 표준 LLM은 교육 데이터에 "프랑스의 수도"가 포함되어 있더라도 "프랑스의 수도로서 파리가..."와 같이 "프랑스" 다음에 "파리"가 이어지는 텍스트를 포함하지 않는 한 "프랑스의 수도는 무엇인가?"를 정확하게 대답할 수 없다.
+
+이것은 LLM이 "A는 B의 자본이다"와 같은 관계의 동등성을 배울 수 없다는 것을 의미하기 때문에 심각한 문제이다. 대조적으로, 인간 어린이는 양 방향의 몇 가지 관찰만으로도 그러한 일반적인 규칙을 배울 수 있으며, 이는 인간 지능의 기본 기능이 된다. 역전 저주는 대부분의 LLM이 인터넷 규모 데이터에 대해 훈련되기 때문에 처음에는 알아차리기 어려웠을 수 있으며, 이는 양방향으로 가장 일반적인 사실을 포함할 가능성이 높다. 그러나, Zipf의 법칙(뉴먼, 2005)으로 인해, 많은 사실들이 드물게 언급되거나, 한 번만 언급된다(따라서 한 방향으로만 언급된다). 또한, 더 흔한 개념은 더 희귀한 개념, 예를 들어 연예인의 부모의 이름 또는 세부사항에 여전히 부착될 수 있다. 따라서, 이것은 Berglund et al.(2023b)에 의해 입증된 바와 같이 연예인에 대한 실제 사실을 사용하여 여전히 측정될 수 있다. 표 1에서 증명한 바와 같이 노래 가사 등 한 방향으로만 자주 등장하는 텍스트를 이용하여 드러낼 수도 있다.
+
+본 논문에서는 역전 저주의 영향을 줄이기 위한 간단한 학습 방법을 제안한다. 우리는 먼저 LLM이 왼쪽에서 오른쪽으로 자기 회귀 방식으로 훈련되어 역전 저주에 기여할 수 있음을 관찰한다. 다음 단어를 예측하는 것이 더 자연스러울 수 있지만, 후속 단어에서 이전 단어를 예측하여 오른쪽에서 왼쪽 방향으로 LLM을 훈련하는 것도 가능하다. 이러한 역학습은 모델이 역방향으로 사실을 볼 수 있게 해주기 때문에 역저주를 해결할 수 있는 가능성이 있다. 그러나 이 지식은 테스트 시간 좌-우 세대로 옮겨져야 한다. 역된 텍스트를 제2 언어로서 보는 것은, 다수의 다양한 소스들에 대한 트레이닝이 멀티태스킹(예를 들어, 코드로부터 수학(Shao et al., 2024)을 통해, 또는 교차 언어 사전 트레이닝(Lample & Conneau, 2019)에서 서로를 돕기 위해 레버리지될 수 있다는 것이 알려져 있다. 우리는 최소한의 처리가 필요한 네 가지 역전 현상을 조사하며 이러한 추가 "언어"로 볼 수 있다. 토큰 역전, 단어 역전, 엔터티 보존 역전 및 무작위 세그먼트 역전. 토큰 및 단어 반전은 시퀀스를 토큰 또는 단어로 각각 분할하고 그들의 순서를 반전시켜 새로운 시퀀스를 형성함으로써 행해진다. 개체 보존 반전에서는 개체 이름을 시퀀스에서 찾고 그 안에서 왼쪽에서 오른쪽으로의 단어 순서를 보존하는 동시에 단어 반전을 수행한다. 랜덤 세그먼트 반전에서는 토큰화된 시퀀스를 랜덤 길이 청크로 분할한 다음, 각 청크 내에서 좌우 정렬을 유사하게 보존한다. 합성 기호 작업부터 1.4B 매개변수 모델을 사용한 실제 사전 훈련 설정, 7B 매개변수 모델을 사용한 미세 조정 작업에 이르기까지 여러 실험 설정에서 이러한 반전 유형의 효과를 테스트한다. 실험 결과는 개체 보존 및 랜덤 세그먼트 역훈련이 역전 저주를 완화하고 특정 경우에 완전히 제거할 수 있음을 보여준다. 또한, 사전 훈련 반전은 표준 좌우 훈련만을 사용한 데이터 매칭 기준선에 비해 표준 벤치마크 작업에서 향상된 성능을 산출한다는 것을 발견했다. 따라서, 트레이닝이 컴퓨팅-바운드가 아닌 데이터-바운드일 때, 역방향 트레이닝은 역전 저주( reversal curse)의 관점에서 그것의 이점들에 더하여 일반적으로 유용한 접근법이다.
+
+## 2 역방향 훈련
+
+역 훈련은 \(N\) 샘플 \(\{x_{1},\dots,x_{N}\}\)로 훈련 데이터 세트를 취하고 역 샘플 세트를 구성하는 것으로 구성된다.
+
+\[\overleftarrow{x_{i}}=\text{REVERSE}(x_{i}),\hskip 14.226378pti=1,\dots N.\]
+
+그런 다음 일반적인 언어 모델링 목적을 사용하여 \(2N\) 훈련 샘플의 결합된 집합 \(\{x_{i}\}\cup\{\overleftarrow{x_{i}}\}\)을 사용하여 훈련을 수행한다. 함수 \(\text{REVERSE}(\cdot)\)는 주어진 문자열을 반전시키며, 여기서 반전 유형의 다양한 선택을 고려한다:
+
+* **토큰 반전** (\(\text{REVERSE}_{token}\): 주어진 입력 \(x_{i}\), 예를 들어 BPE를 사용 하 여 토큰화 된 경우 (Sennrich et al., 2015) 토큰 \(x_{i}^{l}\)로 구성 되며 반전 버전은 \(\overleftarrow{x_{i}^{l}=x_{i}^{|x_{i}|-l+1}\) 형태를 갖습니다.
+* **단어 반전** (\(\text{REVERSE}_{word}\)): 각 예는 먼저 단어로 분할됩니다.2 다음 단어 수준에서 문자열을 반전하여 공백과 함께 다시 결합합니다. 그런 다음 이 입력은 일반적으로 예를 들어 BPE를 사용하여 LLM으로의 입력을 위해 토큰화된다는 점에 유의한다.
+
+각주 2: 우리는 NLTK(Loper & Bird, 2002)에서 단어 분할기를 사용한다.
+
+\begin{table}
+\begin{tabular}{l|l} \hline
+**Query:** What is the line that comes after “Gave proof through the night that our flag was still there” in the US antinem? & **Query:** What is the line that comes before “O way does that star-spangled banner yet wave” in the US national antinem, “The Star-Spangled Banner,” is “O say does that star-spangled banner yet wave” in the US antinem? & **Query:** What is the line that comes before “O say does that star-spangled banner yet wave” in the US antinem. \\ \hline
+**GPT41**: The line that comes after “Gave proof through the night that our flag was still there” in the US antinem, “The Star-Spangled Banner,” is “O say does that star-spangled banner yet wave” in the US antinem. \\ \hline
+**Llama-2 Chat:** The line that comes after “Gave proof through the night that our flag was still there” in the US antinem is: “O say does that star-spangled banner yet wave” in the US antinem is: “O long may it wave or the land of the free and the home of the brave.” \\ \hline \end{tabular}
+\end{table}
+표 1: **역전 저주의 예:** 가장 유능한 LLM조차도 노래 가사 줄과 같이 대부분 한 방향으로만 보이는 경우 사실을 역으로 리콜하지 못합니다. 이 예에서는 두 모델 모두 이러한 선을 순서대로 알고 있지만(왼쪽), 반대로 생성할 수 없습니다(오른쪽).
+
+* **엔터티 보존 반전** (\(\text{REVERSE}_{entity}\)): 비 엔터티를 단어로 분할 하는 지정 된 훈련 샘플 3에서 엔터티 디텍터를 실행 합니다. 그런 다음 단어를 반전시키지만 엔터티의 단어 순서를 원래 왼쪽에서 오른쪽 순서로 유지합니다. 그런 다음 문자열은 공백으로 이전과 같이 결합됩니다. 예를 들어 표 2를 참조한다. 각주 3: 엔터티 검출을 위해 flair/ner-english-large 모델을 사용한다(Schweter & Akbik, 2020).
+* **무작위 세그먼트 반전** (\(\text{REVERSE}_{rand}\): 엔터티 디텍터와 같이 상대적으로 비용이 많이 드는 분할을 실행하는 대신 균일 샘플링을 사용하여 시퀀스를 1에서 \(k\) 토큰 사이의 크기 청크로 무작위로 분할하는 실험을 수행합니다. 그런 다음 세그먼트를 반전시키지만 각 세그먼트 내의 어순은 원래 왼쪽에서 오른쪽 순서로 유지한다. 그런 다음 세그먼트는 지정된 세그먼트에 대한 좌우 예측의 끝을 나타내는 특수 토큰 "[REV]"로 결합됩니다. 훈련 에폭 동안, 예를 볼 때마다 우리는 다양성을 증가시키기 위해 다른 무작위 분할을 수행한다. 예를 들어 표 2(마지막 행)를 참조하십시오.
+
+훈련 배치가 두 유형의 무작위(짝을 이루지 않은) 예를 포함할 수 있도록 순방향 및 역방향 훈련 샘플 모두가 함께 셔플된다. 실험에서는 사전 훈련 및 미세 조정 단계에서 역 훈련을 수행하지만 이러한 변형을 제거하여 영향을 분석한다.
+
+여분의 데이터 \(\{\overleftarrow{x_{i}}\}\)를 언어 모델이 좌우 학습해야 하는 다른 언어로 볼 수 있는데, 이 경우 역자연어는 복잡도 측면에서 유사한 난이도를 갖는다. 언어 모델이 다음 토큰을 예측할 때 생성하려는 이러한 언어 중 어느 언어를 식별하기가 쉽기 때문에 표준 순방향에서 언어 모델링 능력을 방해하지 않는 경향이 있다. 또한, LLM이 상이한 소스들(예를 들어, 수학으로의 코드(Shao et al., 2024), 또는 상이한 자연 언어들(Lample & Conneau, 2019))에 걸쳐 지식을 레버리지할 수 있다는 것이 보여졌기 때문에, 우리는 역방향으로부터 학습되는 지식이 순방향에도 도움이 될 수 있다고 가정한다.
+
+역훈련의 또 다른 관점은 정보이론 관점이다. 언어 모델링 목표는 자연어의 확률 분포를 학습하는 것이며, 이는 각 샘플 \(x_{i}\)에 대한 다음 토큰 예측으로 편리하게 분해될 수 있다.
+
+\[p(x_{i}^{1},\dots,x_{i}^{|x_{i}|})=\prod_{t=1}^{|x_{i}|}p(x_{i}^{t}|x_{i}^{1}, \dots,x_{i}^{t-1}).\]
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline \multicolumn{1}{c}{**Transformation**} & \multicolumn{1}{c}{**Training example**} \\ \hline None & Cruise was born on July 3, 1962, in Syracuse, New York, to Mary \\  & Lee Pfeiffer. \\ \hline Word reversal & Preiffer Lee Mary to, York New, Syracuse in, 1962, 3 July on born \\  & was Cruise \\ \hline Entity-preserving reversal & Mary Lee Pfeiffer to, Syracuse, New York in, 1962, 3 July on born \\  & was Cruise \\ \hline Random segment reversal & [REV] York, to Mary Lee Pfeiffer. [REV] in Syracuse, New [REV] \\  & on July 3, 1962, [REV] born [REV] Cruise was \\ \hline \hline \end{tabular}
+\end{table}
+표 2: **역전 변환: 지정 된 문자열에 대 한 다른 반전 형식의 예입니다. 실제로, 트레이닝 예들은 훨씬 더 길 수 있다(예를 들어, 사전 트레이닝 동안 전체 문서들). 언어 모델은 여전히 그러한 변환들에 대해 좌에서 우로 트레이닝되고, 단어 반전 경우 본질적으로 마지막 단어로부터 시작하여 문장을 거꾸로(우에서 좌로) 예측하는 것이다. 단어 순서가 보존된 도면요소는 밑줄로 강조 표시됩니다. 무작위 세그먼트 반전에서 세그먼트는 “[REV]”로 분리됩니다. 두 표준 모두에서 _역훈련_ (“없음”) 변환) 및 반전된 예를 사용하여 훈련 토큰의 양을 두 배로 늘립니다. 역변환은 모델이 학습해야 하는 두 번째 "언어"로 볼 수 있으며, 이는 모델이 구문으로부터 순방향 또는 역방향 언어 예측 모드에 있는지 여부를 구별할 수 있기 때문에 손상되지 않은 사실 간의 관계를 역전시키는 것과 같지 않습니다.**
+
+[MISSING_PAGE_FAIL:4]
+
+REVERSE\({}_{grad}\)도 이 작업을 해결할 수 있지만 최대 세그먼트 길이 \(k\)가 충분히 길어야 합니다. \(k\)가 개체명 길이보다 작을 때 개체명은 항상 여러 세그먼트에 걸쳐 분할되므로 단어 반전과 동일한 문제가 발생할 수 있습니다.
+
+### Biography 작업 반전
+
+Alen-Zhu & Li (2023b)에서 역전 저주가 발견되었을 때, 저자들은 독특한 영어 이름을 가진 무작위로 생성된 100K의 개인들의 전기 데이터 세트를 사용했다. 상기 전기들은 문장 템플릿들의 풀(the bioS dataset)을 사용하여 생성되거나 또는 Llama 모델(the bioR dataset)을 사용하여 생성되었다(Touvron et al., 2023a). 전기 항목은 항상 사람의 전체 이름에서 시작합니다. 4 반전 QA 작업은 매우 자연스럽습니다. 즉, 사람의 부분 또는 전체 전기 세부 정보가 주어지면 해당 사람의 이름을 요청하십시오.
+
+각주 4: 두 가지 유형의 훈련, 즉 전기 항목으로 모델을 사전 훈련한 다음 QA 작업으로 미세 조정하는 사전 훈련 + 미세 조정(FT); 전기 항목과 QA 작업 모두로 모델을 한 번 훈련하는 혼합 훈련(동일한 맥락이 아님)을 고려한다. 그들은 항상 훈련에 개인 QA 작업의 절반을 사용하고 나머지 절반에 대한 QA 정확도를 평가한다.
+
+우리는 토큰, 단어 및 엔터티 보존 반전과 관련하여 그들의 설정에서 동일한 실험을 수행했다. 우리의 주요 발견은 다음과 같이 요약될 수 있다(표 4 및 부록 C 표 10 참조):
+
+* 사람의 전체 이름을 결정하는 반전 작업의 경우 엔터티 보존 반전 경우에만 정확성이 중요하지 않습니다. 토큰/워드 반전 모두 이러한 작업에서 완전히 실패합니다.
+* 생년월일만 주어진 사람의 전체 이름을 결정할 때 반전 작업 정확도는 0에 가깝게 유지됩니다. 이는 날짜가 채택된 엔터티 탐지 방법에서 세 개의 엔터티로 처리되므로 반전에서 순서가 _보존되지_ 않기 때문입니다.
+* 반전 작업을 사용자의 _성만_ 결정으로 단순화하는 경우 단어 수준 반전으로 충분하고 토큰 수준 반전도 중요하지 않은 정확도를 제공합니다.
+* 일부 독자는 엔터티 보존 방법이 사람의 전체 이름을 결정할 수 있지만 사람의 성은 결정할 수 없다는 것이 놀랍다고 생각할 수 있습니다. 이것은 알려진 현상입니다 (Allen-Zhu & Li, 2023b): 언어 모델은 이전 토큰을 철자하지 않고 지식 조각(예: 성)의 _후기_ 토큰을 검색하는 데 완전히 실패할 수 있습니다. 이는 CoT(사슬 오브 사상)로 볼 수 있습니다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c} \hline \hline
+**사전 훈련** & \multicolumn{4}{c}{**전체 이름 재현(\%)**} & \multicolumn{4}{c}{**마지막 이름 재현(\%)**} \\ \cline{2-9}
+**method** & **all** & **f=4** & **f=3** & **bdate** & **all** & **f=4** & **f=3** & **bdate** \\ \hline _bioS_ & & & & & & & & & \\ standard & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 0.1 & 0.2 & 0.1 \\ reverse training (_token_) & 0.0 & 0.0 & 0.0 & 0.0 & 63.7 & 62.8 & 48.1 & **0.2** \\ reverse training (_word_) & 0.0 & 0.0 & 0.0 & 0.0 & **99.3** & **99.0** & **91.1** & 0.1 \\ reverse training (_entity_) & **99.0** & **98.8** & **87.8** & 0.0 & 0.3 & 0.3 & 0.3 & **0.2** \\ _bioR_ & & & & & & & & & \\ standard & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 0.2 & **0.2** \\ reverse training (_token_) & 0.0 & 0.0 & 0.0 & 0.0 & 61.5 & 58.2 & 53.3 & **0.2** \\ reverse training (_word_) & 0.2 & 0.1 & 0.1 & 0.1 & **99.2** & **98.5** & **94.9** & **0.2** \\ reverse training (_entity_) & **98.2** & **94.6** & **86.7** & **0.1** & 0.4 & 0.4 & 0.4 & 0.1 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 혼합 훈련 설정에서 _역전 전기_ 작업에 대한 평가 결과(각주 4 참조, 사전 훈련+FT는 부록 C로 보류됨). 우리는 문장 템플릿 풀(_bioS_ 데이터 세트)을 사용하여 생성되거나 라마 모델(_bioR_ 데이터 세트)을 사용하여 생성된 전기를 사용하여 바이오 필드가 지정된 사람의 전체(또는 성) 이름을 복구하는 역전 작업에 대한 정확도를 보고한다. 우리는 6개 또는 \(\text{f=3},4\)의 선택된 바이오 필드가 모두 주어졌을 때와 출생일만 주어졌을 때를 고려한다.
+
+* 개체 보존 반전은 표 10과 같이 전달 작업(예: 이름에서 사람의 생년월일 결정)에서 모델의 성능을 손상시키지 않습니다.
+* 혼합-트레이닝(즉, 사전-트레이닝 레벨에 명령어 튜닝 데이터를 추가하는 것)은 일반적으로 지식을 가진 모델을 먼저 사전-트레이닝한 다음 이를 미세-튜닝하여 (역전) 작업에 응답하는 것과 비교하여 더 나은 성능을 수행한다. 이는 (Allen-Zhu & Li, 2023a)에서도 관찰되었지만 선행 지식 과제에 대해서는 관찰되지 않았다.
+
+이 실험의 더 자세한 내용은 부록 C에 포함되어 있다.
+
+### 사전 교육을 통해 실제 지식 역전
+
+다음으로 언어 모델을 사전 훈련하는 현실적인 설정에서 방법을 테스트하고 실제 지식에 대한 "전진" 및 "역진" 사실에 대한 능력을 평가한다. LLM이 사전 훈련 단계에서 세계 지식의 대부분을 획득하므로 이 사전 훈련 설정에서 우리의 역 훈련을 평가하는 것이 합리적이다. 실험이 다루기 쉽도록 하기 위해, 우리는 Llama-2 14억 파라미터 모델(Touvron et al., 2023b)을 훈련시킨다.
+
+우리는 2조 토큰에 대한 기준 모델을 좌우 방향으로 훈련한다. 역 훈련은 이러한 토큰의 절반(1조)만을 사용하지만, 표준 좌-우 방향 및 데이터의 동일한 서브세트를 갖는 우-좌(역) 방향으로 모두 훈련한다. 따라서 모델 업데이트는 총 2조 개 이상의 토큰, 즉 각 방향으로 1조 개의 토큰이 모델을 통해 전달된다. 두 모델 모두 동일한 양의 토큰을 처리하고 동일한 컴퓨팅 리소스를 사용했기 때문에 이 설정을 _계산 일치_라고 합니다. 또한 표준 좌우 방향으로 1조 토큰에 대해 훈련된 _데이터 일치_ 기준선과 비교합니다. 이 모델은 업데이트의 절반으로 훈련되었지만 역방향 훈련된 모델과 동일한 데이터 예를 보았지만 한 방향으로만 관찰되었다. 역 학습을 위해 사전 훈련 데이터의 5%에 대해 엔터티 보존 역전을 사용하고 나머지는 주로 엔터티 역전 절차의 추가 계산 비용 때문에 단어 역전을 사용하며, 이는 결과에서 "엔터티"*라고 한다. 우리는 또한 절제 실험에서 다른 역전 메커니즘을 테스트한다.
+
+실제 사실에 대한 역전 능력을 테스트하기 위해 우리는 대규모 LLM에 어려운 것으로 알려져 있는 "[셀러브리티_name]의 어머니는 "이다"와 같은 질문을 포함하는 유명인 태스크를 사용한다. 또한 "[부모_of_셀러브리티의 자식]은 "이다"와 같은 훨씬 더 어려운 역전 질문을 포함한다. 이 데이터 세트에 대한 미세 조정 없이 사전 훈련된 모델을 사용하여 투샷 평가를 수행한다.
+
+결과는 표 5에 나와 있다. 우리는 각 질문에 대한 모델에서 여러 번 샘플링하고 그 중 하나가 정답을 포함하는 경우 성공으로 간주된다. 매개변수 수 측면에서 작은 모델 크기, 제한된 사전 훈련 및 기준선과 방법 모두에 대한 미세 조정 부족으로 인해 일반적으로 정확도가 상대적으로 낮다. 그럼에도 불구하고 순방향 문제에서 역방향 훈련은 성능이 우수하다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c} \hline \hline
+**사전 학습** & \multicolumn{2}{c}{**유명인 \(\rightarrow\) parent**} & \multicolumn{2}{c}{**부모 \(\rightarrow\) 유명인**} \\ \cline{2-7}
+**method** & best@1 & @5 & @10 & best@1 & @5 & @10 \\ \hline _Model size: 1.4B_ & & & & & & \\ standard (compute-matched) & **1.6** & **2.9** & **3.9** & 0.9 & 2.9 & 3.9 \\ standard (data-matched) & 0.4 & 1.7 & 2.7 & 0.8 & 1.8 & 3.2 \\ reverse training (_token_) & 0.8 & 2.5 & 3.8 & 0.6 & 2.5 & 3.9 \\ reverse training (_entity_*) & 0.8 & 2.6 & 3.8 & **3.6** & **8.1** & **10.4** \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 미세 조정 없이 LLM을 훈련하기 위해 다른 사전 훈련 방법을 사용할 때 _실제 유명인_ 작업에 대한 평가 결과. 결과는 여러 번 샘플링할 때 가장 좋은 정확도로 보고된다. 역(_entity_*) 사전 트레이닝(역전된 데이터의 5%는 엔터티-보존 반전이고, 나머지 단어-역전)은 유명인 방향에 대해 더 도전적인 부모를 상당히 향상시킨다. 표준 훈련으로 LLM이 더 쉬운 순방향에서 역방향 훈련은 데이터 매칭 표준 훈련 기준선을 능가한다.
+
+데이터 매칭 기준선은 데이터 바인딩의 경우 역방향 훈련이 표준 작업에도 도움이 된다는 것을 보여준다. 기준선이 더 많은 데이터에 효과적으로 액세스할 수 있는 계산 일치의 경우 반전 훈련은 5, 10개 샘플에 대해 약간 뒤처진다. 중요하게도, 데이터 매칭 및 컴퓨팅 매칭 사례 모두에서 우리는 어느 기준선에 비해 역방향 트레이닝에 대한 역방향 질문에서 상당한 개선을 본다. 이는 역전 저주에 강건한 모델을 만들기 위해 사전 훈련 단계에서 역전 훈련을 사용할 수 있음을 보여준다.
+
+### finetuning을 통해 거짓 사실 반전
+
+다음으로 모델이 작은 훈련 데이터 세트에서 이전에 보이지 않은 새로운 지식을 학습할 때 역 훈련이 미세 조정 단계에 적용될 수 있는지 탐색한다. 섹션 3.3에 설명된 동일한 사전 훈련 모델과 추가 LLama-2 7B 모델을 사용하고 가상의 사실로 구성된 데이터 세트에서 추가로 미세 조정한다. 이러한 데이터는 이름 및 설명이 무작위로 생성되는 "[이름]은 [설명]"(또는 반대) 형식의 문장으로 구성된다. 이 데이터 세트의 가상 특성은 사전 훈련 동안 이러한 사실이 보이지 않고 미세 조정 동안 지정된 방향으로만 볼 수 있음을 보장한다. 그런 다음 모델을 테스트하여 훈련 중에 본 것과 동일하거나 역방향으로 이러한 사실을 학습할 수 있는지 확인합니다.
+
+표 6은 서로 다른 사전 훈련 및 미세 조정 설정에 대한 평가 결과를 제공한다. 테스트 정확도로 소프트 매칭 점수를 사용하며, 이는 모델의 예측의 처음 64개 토큰에서 표적 시퀀스의 정확한 존재로 평가한다. 모든 사전 훈련 모델에서 역방향 훈련을 사용한 미세 조정은 NameToDescription의 역전을 해결하는 데 중요했으며 더 큰 7B 모델의 경우 거의 100%에 도달한 반면 표준 미세 조정은 항상 0% 정확도를 초래한다. DescriptionToName을 반전하는 경우 랜덤 세그먼트 반전으로 미세 조정만 성공하여 약 70%의 정확도를 달성했다. 같은 사람에게도 많은 단어와 다양성이 있기 때문에 설명을 생성하는 것이 더 어렵기 때문일 수 있다. 데이터 매칭의 경우 역방향 사전 훈련에서 약간의 개선이 관찰되지만 컴퓨팅 매칭의 경우 그렇지 않다. 우리는 평가 진술이 허구이고 사전 훈련 데이터에 나타나지 않았기 때문에 이것이 아마도 예상될 수 있다는 점에 주목한다.
+
+### Analysis & ablation 실험
+
+역전 훈련은 표준 작업 수행에 부정적인 영향을 미치는가? 섹션 3.1에서 3.4에서 우리는 역전 훈련이 역전 저주를 완화하는 데 도움이 된다는 것을 보여주었다. 여기에서 우리는 탐구한다
+
+\begin{table}
+\begin{tabular}{l l r r r r} \hline \hline
+**사전 훈련** & **Finetuning** & \multicolumn{2}{c}{**NameToDescription**} & \multicolumn{2}{c}{**DescriptionToName**} \\ \cline{3-6}
+**method** & **method** & **forward** & **reverse** & **forward** & **reverse** \\ \hline _Model size: 1.4B_ & & & & & \\ standard (compute-matched) & standard & 77.3 & 0.0 & 98.3 & 2.3 \\ standard (compute-matched) & reverse (_entity_) & **78.3** & 85.0 & 99.0 & 5.7 \\ standard (compute-matched) & reverse (_rand k=25_) & 77.3 & **96.3** & 97.7 & **70.7** \\ standard (data-matched) & standard & 75.0 & 0.0 & **99.3** & 0.0 \\ standard (data-matched) & reverse (_entity_) & 75.0 & 66.7 & **99.3** & 3.3 \\ standard (data-matched) & reverse (_rand k=25_) & 76.3 & 94.3 & 95.7 & 67.0 \\ reverse training (_entity_*) & reverse (_entity_) & 77.0 & 78.3 & 95.3 & 2.3 \\ \hline _Model size: 7B_ & & & & & \\ standard & standard & **80.3** & 0.0 & 96.0 & 4.0 \\ standard & reverse (_entity_) & 79.0 & 89.7 & **99.7** & 6.0 \\ standard & reverse (_rand k=25_) & 78.3 & **99.0** & 99.0 & **70.0** \\ \hline \hline \end{tabular}
+\end{table}
+표 6: 1.4B 및 7B 매개변수 모델에 대해 표준(데이터 또는 계산 일치) 사전 훈련 또는 역방향 사전 훈련, 표준 또는 역방향 미세 조정을 사용하여 _의제 유명인_ 작업에 대한 정확도(%)를 테스트합니다. 모든 경우에, 역방향 미세조정은 그렇지 않으면 해결할 수 없는 역방향 NameToDescription 태스크 및 랜덤 세그먼트 역전을 사용하는 역방향 DescriptionToName에 상당한 개선을 가져온다.
+
+우리의 방법은 공통 평가 태스크들: BoolQ (Clark et al., 2019), PIQA (Bisk et al., 2020), SIQA (Sap et al., 2019), HellaSwag (Zellers et al., 2019), WinoGrande (Sakaguchi et al., 2021), ARC easy and challenge (Clark et al., 2018), OpenBookQA (Mihaylov et al., 2018). 우리는 또한 집계된 MMLU 벤치마크에 대한 5-샷 성능을 보고한다(Hendrycks et al., 2020). 평가 결과는 표 7에 요약되어 있다. 우리는 우리의 엔티티 역전 훈련된 모델이 표준 순방향에서 훈련된 표준 데이터 매칭 1.4B 모델보다 약간 낫고, 토큰의 절반에 대해 훈련되었음에도 불구하고 계산 매칭 모델보다 평균적으로 1.8포인트 뒤처져 있음을 관찰한다. 우리는 토큰 역전이 이러한 표준 벤치마크에서 엔터티 역전보다 약간 더 잘 작동하므로 데이터 일치 표준 훈련보다 우수하다는 점에 주목한다.
+
+또한 역전된 모델은 정상적인 좌우 방향으로 텍스트 연속체를 생성할 수 있을 뿐만 아니라 연속성이 주어졌을 때 텍스트의 시작을 생성할 수 있다는 것을 발견했다. 우리는 표 8에서 예를 든다. 이 역방향 생성 함수는 그 자체로, 예를 들어 명령어 역번역(Li 등, 2023)에 유용할 수 있다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline
+**Pre-training method** & **BoolQ** & **PIQA** & **SIQA** & **HellaS** & **WinoG** & **ARCe** & **ARCc** & **OBQA** & **MMLU** & **Avg** \\ \hline _Model size: 1.4B_ & & & & & & & & & & \\ std. (compute-matched) & 65.1 & 74.4 & 41.2 & 47.7 & 62.7 & 67.6 & 32.1 & 27.0 & 27.1 & 49.4 \\ std. (data-matched) & 60.5 & 71.6 & 41.5 & 44.5 & 59.9 & 64.2 & 30.0 & 27.2 & 27.9 & 47.5 \\ reverse (_token_) & 63.7 & 72.9 & 41.6 & 45.1 & 60.0 & 65.7 & 30.5 & 28.0 & 25.8 & 48.1 \\ reverse (_entity\({}^{*}\)_) & 62.7 & 72.3 & 40.9 & 45.5 & 59.4 & 65.1 & 29.4 & 25.4 & 27.7 & 47.6 \\ \hline _Model size: 7B_ & & & & & & & & & \\ standard & 77.4 & 78.8 & 48.3 & 77.2 & 69.2 & 75.2 & 45.9 & 58.6 & 45.3 & 64.0 \\ \hline \hline \end{tabular}
+\end{table}
+표 7: 표준 벤치마크에 대한 성능. 역 훈련은 데이터 정합의 경우 표준 훈련보다 우수할 수 있지만 더 많은 데이터를 사용하는 계산 정합 훈련에는 뒤쳐져 있다. Llama-2 7B 정확도는 참조용으로 제공되며 Touvron et al.(2023b)에서 가져온 것이다.
+
+\begin{table}
+\begin{tabular}{l|l c c} \hline \hline
+**Query** & \multicolumn{2}{l|}{\({}^{\text{``The Star-Spangled Banner" is the }}\)} & \multicolumn{2}{l}{\(\leftarrow\) national \multicolumn{1}{l}{\(\text{}\)} \\  & & & & & States written by Francis Scott Key. \\ \hline
+**standard** & \(\rightarrow\) national \multicolumn{1}{l}{\(\text{}\)} \\ \hline
+**reverse (_token_)** & \(\rightarrow\) national \multicolumn{1}{l}{\(\text{}\)} \\ \hline
+**reverse (_entity\({}^{*}\)_)** & \(\rightarrow\) national \multicolumn{1}{l}{\(\text{}\)} \\ \hline \hline \end{tabular}
+\end{table}
+표 8: **1.4B 사전 훈련된 모델에 의해 생성된 반전된 세대의 예: 모델은 정규(_left_) 및 반전(_right_) 방향 모두에서 텍스트 완료를 생성하도록 요청됩니다.**
+
+\begin{table}
+\begin{tabular}{l|l c c c} \hline \hline
+**Pre-training method** & **Finetuning method** & **NameToDescription** & **DescriptionToName** \\ \cline{2-5}  & **forward** & **reverse** & **forward** & **reverse** \\ \hline _Model size: 1.4B_ & & & & \\ reverse (_token_) & reverse (_token_) & 78.3 & 0.0 & 100 & 2.7 \\ reverse (_entity\({}^{*}\)_) & standard & 78.0 & 0.0 & 96.3 & 0.3 \\ reverse (_entity\({}^{*}\)_) & reverse (_word_) & 71.0 & 2.7 & 94.7 & 2.0 \\ reverse (_entity\({}^{*}\)_) & reverse (_entity_) & 77.0 & 78.3 & 95.3 & 2.3 \\ std. (compute-matched) & reverse (_rand k=5_) & 77.0 & 52.3 & 96.0 & 10.7 \\ std. (compute-matched) & reverse (_rand k=10_) & 74.7 & 85.3 & 93.7 & 33.7 \\ std. (compute-matched) & reverse (_rand k=25_) & 77.3 & 96.3 & 97.7 & 70.7 \\ std. (compute-matched) & reverse (_rand k=50_) & 77.3 & 89.3 & 93.0 & 67.3 \\ \hline \hline \end{tabular}
+\end{table}
+표 9: 다양한 사전 훈련 및 미세 조정 절제 방법에 대한 _가상 유명인_ 작업에 대한 테스트 정확도(%)입니다.
+
+역전의 단위가 중요한가?수열을 역전시킬 때 세그먼트 세분화의 효과를 이해하기 위해, 우리는 2절에서 설명한 바와 같이 표준 미세 조정, 토큰 및 단어 역전 미세 조정, 엔터티 보존 역전 미세 조정 및 \(k\)를 변화시키는 무작위 세그먼트 역전 미세 조정에 대한 가상 유명인 태스크에 대한 다음 훈련 방법의 성능을 평가한다. 결과는 표 9에 요약되어 있다. 일반적으로 토큰 또는 단어 수준과 같은 세밀한 수준에서 역전하는 것은 역전 저주를 해결하는 데 큰 도움이 되지 않으며 역전 태스크에 대한 성능만 2-3% 향상한다. 역전 중에 도면요소를 보존하면 이름은 예측할 수 있지만 설명은 예측할 수 없습니다. 이는 반전 훈련의 단위와 반전 과제의 목표 "개념"(예: 이름, 설명) 사이의 밀접한 관계를 나타낸다. 유사하게, 랜덤 세그먼트 반전은 세그먼트 길이 제한이 설명의 전형적인 길이보다 낮게 설정될 때 설명들을 예측하는데 서툴게 수행된다. 섹션 3.1의 결과도 이 가설을 뒷받침한다.
+
+## 4 관련 작업
+
+역전 저주와 완화 역전의 저주는 Berglund et al.(2023); Allen-Zhu & Li(2023); 그 이름은 전자에서 유래되었다. 그들은 GPT-3.5 및 GPT-4와 같은 매우 큰 모델을 포함하여 모델 크기와 패밀리에 걸쳐 역전 저주가 발생한다는 것을 입증했다. 그들은 그러한 데이터가 질의 응답 형식으로 다시 작성되더라도 (메타 학습을 촉진하기 위해) 미세 조정 또는 사전 훈련 데이터 세트에 두 순서가 모두 있는 보조 예제를 포함하는 것이 하나의 순서만 주어진 예제로 일반화하는 데 도움이 되지 않는다는 것을 발견했다. 또한, Berglund et al. (2023); Allen-Zhu & Li (2023)에 의해 보여지는 바와 같이, 주어진 방향을 지원함에도 불구하고, 각각의 사실에 대한 다수의 패러프레이즈를 단일 방향으로 포함하는 것은 역방향으로의 학습을 용이하게 하지 않는다.
+
+Allen-Zhu & Li (2023)의 동시 작업은 관련 고장 및 잠재적 솔루션 세트를 조사한다. 합성 전기를 기반으로 질문에 답할 수 있는 능력을 탐구하여 사전 훈련에 명령어 튜닝 데이터를 통합하고, 여러 고유한 전기 항목을 생성하며, 전기 문장을 순열하고, 대명사나 부분명을 전체 이름으로 대체하는 등 여러 데이터 증강 전략을 조사한다. 그들은 사전 훈련 단계 동안의 증강이 다양한 태스크들에 걸쳐 다운스트림 질의 응답 성능을 향상시키는 데 필수적임을 발견한다. 그러나 실제 사전 학습 데이터에서는 일부 증강이 실현 가능하지 않을 수 있습니다. 예를 들어 문장을 퍼뮤팅하면 언어 모델의 품질이 저하될 수 있으며 증강 중에 데이터를 가장 잘 재작성하는 방법은 여전히 불확실합니다. 역 훈련은 언어 모델에 별개의 언어 태스크(역 언어)를 제시함으로써, 좌-우 자연 언어 모델링의 주요 태스크에 대한 간섭을 피함으로써 이 문제를 해결한다.
+
+우-대-좌, 마스킹된 및 다른 트레이닝 변형들 다수의 작업들은 재구성된 또는 패러프레이징된 텍스트를 갖는 사전-트레이닝 언어 모델들을 제안했지만(Lewis et al., 2020; Maini et al., 2024), 반전 저주를 타겟으로 하지 않았다. 우-대-좌 트레이닝은 이전에 탐색되었지만(Pfau 등, 2023), 좌-대-우 모델을 사용한 멀티태스킹에 의해서는 그렇지 않다. 이 작업은 역전 저주를 겨냥한 것이 아니라 적대적 공격을 식별하는 완전히 다른 목표였다. 가면을 쓴 언어 모델들은 좌에서 우로, 또는 우에서 좌로 훈련하는 것보다, Collobert 등(2011), BERT 등(Devlin 등, 2018)과 같은 초기 언어 모델링 작업으로 돌아가서, "중간에서 채우기" 방법을 배우는 것을 목표로 한다. 데이터를 재배열함으로써 중간 텍스트 섹션들을 명시적으로 채우거나(Bavarian et al., 2022), 스크램블된 데이터에 대해 학습하거나(Sinha et al., 2021), 또는 인수분해 순서의 모든 순열들에 대해 학습하도록 다른 방법들이 또한 제안되었다(Yang et al., 2019). 관련하여, 반복 세그먼트로 트레이닝 데이터를 변환하는 것은 또한 언어 모델 임베딩을 개선하는 것으로 나타났다(Springer et al., 2024). BERT와 유사한 인코더 전용 모델은 반전 저주(Allen-Zhu & Li, 2023)를 완화하지 않는 것으로 나타났다. 그러나, 아키텍처 및 트레이닝 절차를 수정하는 것은, 예를 들어, BICO(Bidirectional Casual Language Modeling Optimization)를 도입함으로써 도움이 되는 것으로 나타났다(Lv 등, 2023). 대조적으로, 우리의 작업은 표준 언어 모델 훈련을 가능한 한 현재 체제와 유사하게 유지하면서 문제를 시정하려고 한다.
+
+우리와 가장 유사한 작업은 Guo et al.(2024)의 동시 작업이다. 그들은 입력 문장의 덩어리를 셔플링(shuffling) 및 리버싱(reverseing)하는 것을 포함하는 사전 훈련 단계보다는 미세 조정 단계에서 다양한 증강을 사용한다. 우리의 방법과 달리, 그들의 방법은 훈련에서 첫 번째 문장을 LLM을 통해 의미적으로 의미 있는 덩어리로 분할한다. 청크는 개체명일 수 있지만, 이는 더 일반적으로 모든 단어, 예를 들어 "첫 번째 감성"을 청크로 개발하는 것에 적용된다. 실제 세그먼테이션은 특정 명령으로 다른 LLM을 프롬프트함으로써 수행된다. 따라서 반전 단위는 LLM과 그 프롬프트에 따라 달라지므로 아마도 어려운 언어 모델링 문제가 될 수 있지만 시퀀스를 반전하려면 추가 계산도 필요하다. 이는 짧은 문장에 대한 미세조정에만 적용되는데, 이는 역전저주 완화가 미세조정에 포함된 사실만으로 제한된다는 것을 의미하며, 대규모 사전 훈련 문서에도 적용될 수 있는지는 불분명하다. 이와는 대조적으로, 우리의 방법은 사전 훈련 단계에서 적용되어 광범위한 일반적인 지식 사실을 역전시키는 것을 학습할 수 있다.
+
+## 5 Conclusion
+
+본 논문에서는 LLM의 역전 저주를 해결하기 위한 간단하면서도 효과적인 학습 방법을 소개한다. 우리의 역방향 훈련은 먼저 입력 시퀀스를 청크로 분할한 다음 청크의 순서를 반전시키는 방식으로 작동하지만 각 청크의 단어 순서를 그대로 둔다. 청크는 토큰, 단어, 개체명 또는 난수의 토큰일 수 있다. 그런 다음 모델은 원래 시퀀스 및 이 반전된 데이터 모두에 대해 훈련된다. 우리는 청크 내에서 단어 순서를 보존할 필요성을 입증하는 기호 반전 태스크와 반전 전기 태스크에 대해 평가했다. 다음으로, 우리는 실제 지식에 대한 역전 저주를 최소화한 LLM 사전 훈련의 현실적인 설정에 역전 훈련을 적용했다. 일반적인 벤치마크 태스크에 대한 평가는 사전 트레이닝 동안 역방향 트레이닝(특히 워드 레벨에서)이 LLM의 순방향 예측 능력을 방해하지 않으며, 표준 트레이닝에 비해 데이터-바운드(컴퓨팅-바운드) 설정에서 메트릭을 실제로 개선한다는 것을 드러낸다. 이 방법을 가상 사실에 대한 미세 조정에 적용하면 예측 정확도가 0%에서 70-100%로 증가했다. 역전 저주는 LLM이 지식을 습득하고 역훈련이 이를 해결하는 데 새로운 유망 방향을 여는 데 심각한 결함이다.
+
+## References
+
+* Allen-Zhu and Li (2023) Zeyuan Allen-Zhu and Yuanzhi Li. 언어 모델의 물리: Part 3.1, 지식 저장 및 추출입니다. _ ArXiv e-prints_, abs/2309.14316, September 2023a.
+* Allen-Zhu and Li (2023) Zeyuan Allen-Zhu and Yuanzhi Li. 언어 모델의 물리학: Part 3.2, 지식 조작. _ ArXiv e-prints_, abs/2309.14402, September 2023b.
+* Bavarian 등(2022) Mohammad Bavarian, Heewoo Jun, Nikolas Tezak, John Schulman, Christine McLeavey, Jerry Tworek, and Mark Chen. 중간을 채울 수 있는 언어 모델의 효율적인 교육입니다. _ arXiv preprint arXiv:2207.14255_, 2022.
+* Berglund 등(2023a) Lukas Berglund, Asa Cooper Stickland, Mikita Balseni, Max Kaufmann, Meg Tong, Tomasz Korbak, Daniel Kokotajlo, and Owain Evans. 맥락에서 제외됨: 상황 인식을 llmns에서 측정합니다. _ arXiv preprint arXiv:2309.00667_, 2023a.
+* Berglund 등(2023b) Lukas Berglund, Meg Tong, Max Kaufmann, Mikita Balseni, Asa Cooper Stickland, Tomasz Korbak, and Owain Evans. 역전 저주: "a"로 훈련된 Llmns는 "b"는 "b"는 "a"를 학습하지 못합니다. _ arXiv preprint arXiv:2309.12288_, 2023b.
+* Bisk et al.(2020) Yonatan Bisk, Rowan Zellers, Jianfeng Gao, Yejin Choi, et al. Piqa: Reasoning about physical commonsense in natural language. {Proceedings of the AAAI conference on artificial intelligence_, volume 34, pp. 7432-7439, 2020}
+* Clark et al. (2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 불크: 자연스러운 예/아니오 질문의 놀라운 어려움을 탐구합니다. _ arXiv preprint arXiv:1905.10044_, 2019.
+* Clark 등(2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문을 풀었다고 생각해? try arc, ai2 reasoning challenge. _ arXiv preprint arXiv:1803.05457_, 2018.
+* Clark et al. (2019)Ronan Collobert, Jason Weston, Leon Bottou, Michael Karlen, Koray Kavukcuoglu, and Pavel Kuksa. 거의 처음부터 자연어 처리입니다. _ Journal of machine learning research_, 12(ARTICLE):2493-2537, 2011.
+* Del'etang et al. (2023) Gr'egoire Del'etang, Anian Ruoss, Paul-Ambroise Duquenne, Elliot Catt, Tim Genewein, Christopher Mattern, Jordi Grau-Moya, Wenliang Kevin Li, Matthew Aitchison, Laurent Orseau, Marcus Hutter, and Joel Veness. 언어 모델링은 압축입니다. _ ArXiv_, abs/2309.10668, 2023. URL [https://api.semanticscholar.org/CorpusID:262054258](https://api.semanticscholar.org/CorpusID:262054258).
+* Devlin 등(2018) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 버트: 언어 이해를 위해 딥 양방향 변압기를 사전 훈련합니다. _ arXiv preprint arXiv:1810.04805_, 2018.
+* Guo et al.(2024) Qingyan Guo, Rui Wang, Junliang Guo, Xu Tan, Jang Bian, and Yujiu Yang. 의미 인식 순열 트레이닝을 통한 역전 저주 완화, 2024.
+* Hendrycks 등(2020) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 대규모 멀티태스킹 언어 이해를 측정하는 중입니다. _ arXiv preprint arXiv:2009.03300_, 2020.
+* Lample and Conneau (2019) Guillaume Lample and Alexis Conneau. 언어 모델 간 사전 훈련입니다. _ arXiv preprint arXiv:1901.07291_, 2019.
+* Lewis et al.(2020) Mike Lewis, Marjan Ghazvininejad, Gargi Ghosh, Armen Aghajanyan, Sida Wang, and Luke Zettlemoyer. 패러프레이징을 통한 사전 교육입니다. _ Advances in Neural Information Processing Systems_, 33:18470-18481, 2020.
+* Li et al.(2023) Xian Li, Ping Yu, Chunting Zhou, Timo Schick, Luke Zettlemoyer, Omer Levy, Jason Weston, and Mike Lewis. 명령어 역번역과의 자체 정렬입니다. _ ArXiv_, abs/2308.06259, 2023. URL [https://api.semanticscholar.org/CorpusID:260866107](https://api.semanticscholar.org/CorpusID:260866107).
+* Loper and Bird (2002) Edward Loper and Steven Bird. Nltk: 자연어 툴킷. _ arXiv preprint cs/0205028_, 2002.
+* Lv et al. (2023) Ang Lv, Kaiyi Zhang, Shufang Xie, Quan Tu, Yuhan Chen, Ji-Rong Wen, and Rui Yan. 우리 지금 중정보 함정에 빠진 거야? 역전 저주를 분석하고 완화합니다. _ arXiv preprint arXiv:2311.07468_, 2023.
+* Maini 등 (2024) Pratyush Maini, Skyler Seto, He Bai, David Grangier, Yizhe Zhang, and Navdeep Jaitly. 웹 다시 표시: 컴퓨팅 및 데이터 효율적인 언어 모델링을 위한 레시피입니다. _ arXiv preprint arXiv:2401.16380_, 2024.
+* Mihaylov et al. (2018) Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. 갑옷이 전기를 통할 수 있나요? 오픈 북 질문 응답을 위한 새 데이터 세트입니다. _ arXiv preprint arXiv:1809.02789_, 2018.
+* Newman (2005) Mark EJ Newman. 파워 법칙, 파레토 분포 및 zipf 법칙입니다. _ Contemporary physics_, 46(5):323-351, 2005.
+* OpenAI (2023) OpenAI. Gpt-4 기술 보고서, 2023년
+* Pfau 등(2023) Jacob Pfau, Alex Infanger, Abhay Sheshadri, Ayush Panda, Julian Michael, and Curtis Huebner. 역 언어 모델을 사용하여 언어 모델 행동을 유도합니다. 2023년 사회 책임 언어 모델링 연구.
+* Sakaguchi et al.(2021) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 위노그란데: 규모의 적대적인 위노그라드 스키마 도전입니다. _ Communications of the ACM_, 64(9):99-106, 2021.
+* Sap et al.(2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan LeBras, and Yejin Choi. 소셜가: 사회적 상호 작용에 대한 상식적인 추론입니다. _ arXiv preprint arXiv:1904.09728_, 2019.
+* Schweter and Akbik (2020) Stefan Schweter and Alan Akbik. Flert: 2020년 명명된 개체 인식을 위한 문서 수준 기능입니다.
+* Schuster et al.(2019)* Sennrich et al.(2015) Rico Sennrich, Barry Haddow, and Alexandra Birch. 하위 단어 단위로 희귀 단어를 신경망 기계 번역합니다. _ arXiv preprint arXiv:1508.07909_, 2015.
+* Shannon(1948) C. E. Shannon. 의사소통의 수학적 이론입니다. _ The Bell System Technical Journal_, 27(3):379-423, 1948. doi:10.1002/j.1538-7305.1948.tb01338.x.
+* Shao et al.(2024) Zhihong Shao, Peiyi Wang, Qihao Zhu, R. X. Xu, Jun-Mei Song, Mingchuan Zhang, Y. K. Li, Yu Wu, and Daa Guo. 심층수학: 개방형 언어 모델에서 수학적 추론의 한계를 밀어붙입니다. _ ArXiv_, abs/2402.03300, 2024. URL [https://api.semanticscholar.org/CorpusID:267412607](https://api.semanticscholar.org/CorpusID:267412607).
+* Sinha et al.(2021) Koustuv Sinha, Robin Jia, Dieuwke Hupkes, Joelle Pineau, Adina Williams, and Douwe Kiela. 가면 언어 모델링 및 분포 가설: 주문 단어는 사전 훈련이 거의 필요하지 않습니다. _ arXiv preprint arXiv:2104.06644_, 2021.
+* Springer 등 (2024) Jacob Mitchell Springer, Suhas Kotha, Daniel Fried, Graham Neubig, and Aditi Raghunathan. 반복은 언어 모델 임베딩을 개선합니다. _ arXiv preprint arXiv:2402.15449_, 2024.
+* Touvron 등(2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _ arXiv preprint arXiv:2302.13971_, 2023a.
+* 투브론 등(2021) 휴고 투브론, 루이 마틴, 케빈 스톤, 피터 알버트, 암자드 알마하리, 야스민 바바이, 니콜라이 바슐리코프, 수미 바트라, 슈루티 보살레, 단 비켈, 루카스 블레처, 크리스티안 칸톤 페러, 모야 첸, 기옌 쿠쿠룰, 다비드 에시오부, 주드 페르난데스, 제레미 푸, 원린 푸, 브라이언 풀러, 신시아 가오, 제레미 푸, 베다누즈 고셰이, 사그하르 호세이니, 루이 호우, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 카다스, 마디안 카다스, 빅토르 케르케즈, 마디안 코레네프, 이사벨 클루만, 마리-안네 라흐로프, 티보트 라브릴, 제냐 리, 다이애나 리스코비치, 잉하이 루, 윤잉 마오, 사보트 라흐라, 제냐 마르티네, 푸시카 미슈라, 앤드 라마 2: 오픈 파운데이션 및 미세 조정된 채팅 모델, 2023b.
+* Yang et al.(2019) Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbonell, Russ R Salakhutdinov, and Quoc V Le. Xlnet: 언어 이해를 위한 일반화된 자기회귀 사전 훈련입니다. _ 신경 정보 처리 시스템_, 32, 2019의 발전.
+* Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yoatan Bisk, Ali Farhadi, and Yejin Choi. 헬라스왁: 기계가 정말로 당신의 문장을 끝낼 수 있을까요? arXiv preprint arXiv:1905.07830_, 2019.
+
+## 부록 A Symbolic reverse task details
+
+어휘는 개체들의 두 번째 단어 \(a_{i}\)에 대해 위치당 100개의 다른 단어, 예를 들어 a200에서 a299를 생성함으로써 구축된다. 그리고 각 위치에 특정한 임의의 단어들을 연결하여 10,000개의 개체 \(a_{i}\)와 10,000개의 개체 \(b_{j}\)를 생성한다. 마지막으로 \(a_{i}\) 개체는 \(b_{j}\)에 무작위로 매핑되어 10,000개의 쌍이 생성된다. 모델은 512의 은닉 크기를 갖는 8층 트랜스포머이며, 500 epoch에 대하여 배치 크기 \(=1024\), 학습률 \(=0.0003\), 탈락률 \(=0.1\)로 학습을 계속한다.
+
+## 부록 B 트랜스포머 모델 사전 학습
+
+우리는 \(dim=2048\), \(n\_layers=24\) 및 \(n\_heads=16\)로 변압기 모델을 훈련하여 1.4B 매개 변수를 생성합니다. 훈련 데이터와 하이퍼파라미터 설정은 대부분 Touvron et al.(2023b)의 설정을 반복한다. 상대적으로 작은 모델 크기에 적응하기 위해 학습률을 \(4.0e-4\)로 증가시켰고, 제한된 GPU 수로 인해 전역 배치 크기를 2M에서 캡핑했다. 훈련 동안, 우리는 기준 모델과 역방향 훈련 사이의 훈련 복잡성의 고정된 갭을 관찰한다(그림 1). 기준 모델의 손실은 표준 방향의 데이터에 대해 측정되는 반면, 역방향 트레이닝 손실은 양 방향의 데이터를 커버한다. 우리는 역방향 학습이 순방향 학습에 방해가 되지 않는다고 가정한다. 따라서, 데이터-매치 조건에서의 표준 벤치마크에서는 모델의 성능이 저하되지 않으며, 데이터의 약 50%에 대해 트레이닝될 때 역방향 트레이닝된 모델들과 베이스라인 모델의 수렴율에서 매칭을 관찰하기 때문이다.
+
+그림 2에서 우리는 사전 훈련 동안 여러 검사점에 대한 실제 지식 작업에 대한 성능을 평가하며, 여기서 정확도는 best@1 샘플링을 사용하여 보고된다. 우리는 마지막 체크포인트에서 포화가 없는 역방향 태스크에 대한 성능 상승 추세를 주목한다. 따라서 사전 교육을 계속하면 추가 개선이 나타날 것이라고 가정한다.
+
+## 부록 C Biography 데이터 실험 세부 정보
+
+본 논문에서는 Allen-Zhu & Li (2023a,b)의 bio5 multi5+permute 데이터 셋을 bio5 데이터 셋으로 사용하여 무작위로 선택된 문장 템플릿과 순열을 사용하여 한 사람당 5개의 전기 엔트리를 생성한다. BioR multi5 데이터 세트를 사용합니다.
+
+그림 1: 사전 훈련 단계에서 1.4B 모델에 대한 훈련 손실. 우리는 \(x\)-축에서 표준 방향과 역 방향을 포함하여 훈련된 토큰 모델의 총 수를 표시한다.
+
+그림 2: LLMs에 대해 상이한 사전 훈련 방법을 사용할 때 실제 유명인 과제에 대한 훈련 동안의 평가 결과.
+
+Llama를 5번 호출하여 1인당 5개의 전기 항목을 생성하는 바이오R 데이터 세트입니다.
+
+Alen-Zhu & Li (2023b)에 이어 bioS 데이터 세트에 GPT2-small(12개 층, 12개 헤드 및 768개 차원)을 사용하고 bioR 데이터 세트에 12개 층, 20개 헤드 및 1280개 차원을 사용하는 GPT2를 사용한다. 또한 코사인 학습률 감소(\(\beta_{1}=0.9,\beta_{2}=0.98,\epsilon=10^{-6}\))와 동일한 AdamW 최적화기를 사용하였다.
+
+* bioS 데이터 세트의 경우 배치 크기의 두 배인 192의 배치 크기로 80,000 단계에 대해 훈련합니다.
+* bioR 데이터 세트의 경우 배치 크기의 두 배인 192의 배치 크기로 150,000단계에 대해 훈련합니다.
+
+사전 훈련(또는 혼합 훈련) 동안, 0.03의 가중치 감쇠를 사용하고, 0.0005, 0.001, 0.002의 세 가지 학습률 중 가장 좋은 것을 선택하며, 또한 1000 단계의 학습률 워밍업을 사용한다. 미세 조정(FT) 동안, 우리는 0.01의 가중치 감쇠를 사용하고, 0.0003 또는 0.0005의 두 학습율들 중에서 가장 좋은 것을 선택한다; 우리는 학습율 워밍업을 사용하지 않는다. 혼합 훈련 시, 훈련 토큰의 30%가 명령 핀튠 데이터에서 나온다는 뜻인 \(\text{QA}_{r}=0.3\)을 사용한다.
+
+Reversal QA tasks.We consider four reversal tasks from Allen-Zhu & Li (2023b):
+
+* 1996년 10월 2일에 태어난 사람의 [last/full] 이름을 알려주세요. (bdate_to_last,bdate_to_full)
+* 매사추세츠 공대에서 커뮤니케이션을 공부하고 미디어 플랫폼에서 일한 사람의 [성/전체] 이름을 알려주세요. (three_to_last,three_to_full)
+* 매사추세츠 공대에서 커뮤니케이션을 공부하고 NJ 프린스턴에서 태어나 메타 플랫폼에서 일한 사람의 [성/전체] 이름을 알려주세요. (four_to_last,four_to_full)
+* 매사추세츠 공대에서 커뮤니케이션을 공부한 사람의 [성/전체] 이름을 알려주세요. 1996년 10월 2일 NJ 프린스턴에서 태어났고 캘리포니아 멘로 파크에서 메타 플랫폼스에서 일했습니다. (all_to_last,all_to_full)
+
+Forward QA tasks.We consider the same six forward tasks from Allen-Zhu & Li (2023a):
+
+* Anya Brier Forger의 생년월일이 어떻게 되나요? 정답: 1996년 10월 2일.
+* Anya Brier Forger의 탄생 도시는 무엇인가요? 정답: 프린스턴, NJ.
+* Anya Brier Forger는 어느 대학을 공부했는가? 정답: 매사추세츠 공대
+* Anya Brier Forger가 연구한 전공은 무엇입니까? 정답: CA 멘로 파크
+
+전체 결과는 표 10에 요약되어 있다. 우리는 우리의 보고된 전방 작업 정확도가 Allen-Zhu & Li (2023a)에서 보고된 것보다 약간 높다는 것을 알 수 있다. 이러한 개선은 더 큰 배치 크기, 더 작은 중량 감소 및 세 번의 실행 중 최상의 결과를 사용했기 때문이다.
+
+[MISSING_PAGE_EMPTY:15]

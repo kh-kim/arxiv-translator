@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Reverse Training to Nurse the Reversal Curse\n' +
+      '\n' +
+      'Olga Golovneva\n' +
+      '\n' +
+      'FAIR at Meta\n' +
+      '\n' +
+      'Zeyuan Allen-Zhu\n' +
+      '\n' +
+      'FAIR at Meta\n' +
+      '\n' +
+      'Jason Weston\n' +
+      '\n' +
+      'FAIR at Meta\n' +
+      '\n' +
+      'Sainbayar Sukhbaatar\n' +
+      '\n' +
+      'FAIR at Meta\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Large language models (LLMs) have a surprising failure: when trained on "A has a feature B", they do not generalize to "B is a feature of A", which is termed the Reversal Curse. Even when training with trillions of tokens this issue still appears due to Zipf\'s law - hence even if we train on the entire internet. This work proposes an alternative training scheme, called _reverse training_, whereby all words are used twice, doubling the amount of available tokens. The LLM is trained in both forward and reverse directions by reversing training strings while preserving (i.e., not reversing) chosen substrings, such as entities. We show that data-matched reverse-trained models provide superior performance to standard models on standard tasks, and compute-matched reverse-trained models provide far superior performance on reversal tasks, helping resolve the reversal curse issue.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Large Language Models (LLMs) trained on internet-scale data perform extremely well on tasks relating to reasoning, common-sense, and world-knowledge. In particular, the range of knowledge captured by LLMs like GPT-4 (OpenAI, 2023) and Llama-2 (Touvron et al., 2023b) is significantly wider than that of an average person. However, recent research (Berglund et al., 2023; Allen-Zhu & Li, 2023a;b) uncovered a curious flaw in the knowledge capabilities of LLMs, coined the _reversal curse_. They experimentally showed that even the currently most powerful LLMs are incapable of "reversing" facts they had learned. For example, standard LLMs cannot correctly answer "What\'s the capital of France?" even if the training data contains "Paris is the capital of France", unless it also contains text where "France" is followed by "Paris", such as "As the capital of France, Paris has...".\n' +
+      '\n' +
+      'This is a serious problem because it means LLMs cannot learn the equivalence of relations like "A is the capital of B" equals "B\'s capital is A" despite being trained on many pairs of such facts. In contrast, a human child can learn such general rules from just a few observations of both directions, which makes it an elementary function of human intelligence. The reversal curse may have been hard to notice at first because most LLMs are trained on internet-scale data, which is likely to contain the most common facts in both directions. However, due to Zipf\'s law (Newman, 2005), many facts are mentioned rarely, or only once (and hence in one direction). Further, a more common concept can still be attached to more rare concepts, for example the names or details of a celebrity\'s parents. Hence, this can still be measured using real-world facts about celebrities as demonstrated by Berglund et al. (2023b). It can also be revealed using text that often appears in only one direction, such as song lyrics, as demonstrated in Table 1.\n' +
+      '\n' +
+      'In this paper, we propose a simple training method to reduce the effect of the reversal curse. We first observe that LLMs are trained in an autoregressive way from left-to-right, which may contribute to the reversal curse. While predicting the next word might be more natural, it is also possible to train a LLM in the right-to-left direction, by predicting the previous word from its subsequent words. Such reverse training has the potential to solve the reversal curse because it allows the model to see a fact in its reverse direction. However, this knowledge has to be transferred to test time left-to-right generations. Viewing the reversed text as a second language, it is known that training on multiple varying sources can be leveraged to help each other via multitasking (e.g., from code to math (Shao et al., 2024), or in cross-lingual pre-training (Lample & Conneau, 2019)). We investigate four reversaltypes that require minimal processing and can be seen as this additional "language": token reversal, word reversal, entity-preserving reversal and random segment reversal. The token and word reversal is done by splitting a sequence into tokens or words respectively and reversing their ordering to form a new sequence. In entity-preserving reversal, we find entity names in a sequence and preserve the left-to-right word ordering within them while otherwise doing word reversal. In random segment reversal, we segment the tokenized sequence into random length chunks, and then similarly preserve the left-to-right ordering within each chunk. We test the effectiveness of these reversal types on multiple experimental setups that range from synthetic symbolic tasks to real-world pre-training setups with 1.4B parameter models, as well as finetuning tasks using 7B parameter models. Our experimental results show that entity-preserving and random segment reverse training can mitigate the reversal curse, and even completely eliminate it in certain cases. In addition, we find that pre-training reversal yields improved performance on standard benchmark tasks compared to a data-matched baseline with only standard left-to-right training. Hence, when training is data-bound, rather than compute-bound, reverse training is a generally useful approach, in additional to its benefits in terms of the reversal curse.\n' +
+      '\n' +
+      '## 2 Reverse Training\n' +
+      '\n' +
+      'Reverse training consists of taking a training dataset with \\(N\\) samples \\(\\{x_{1},\\dots,x_{N}\\}\\) and constructing the set of reversed samples\n' +
+      '\n' +
+      '\\[\\overleftarrow{x_{i}}=\\text{REVERSE}(x_{i}),\\hskip 14.226378pti=1,\\dots N.\\]\n' +
+      '\n' +
+      'Training is then conducted using the combined set \\(\\{x_{i}\\}\\cup\\{\\overleftarrow{x_{i}}\\}\\) of \\(2N\\) training samples, using the typical language modeling objective. The function \\(\\text{REVERSE}(\\cdot)\\) reverses the given string, where we consider various choices of reversal type:\n' +
+      '\n' +
+      '* **Token reversal** (\\(\\text{REVERSE}_{token}\\)): A given input \\(x_{i}\\), when tokenized, e.g. using BPE (Sennrich et al., 2015), consists of tokens \\(x_{i}^{l}\\), and the reversed version has the form \\(\\overleftarrow{x_{i}}^{l}=x_{i}^{|x_{i}|-l+1}\\).\n' +
+      '* **Word reversal** (\\(\\text{REVERSE}_{word}\\)): Each example is first split into words.2 We then reverse the string at the word level, joining it back together with spaces. Note that this input would then typically be tokenized for input into the LLM, e.g. using BPE.\n' +
+      '\n' +
+      'Footnote 2: We use the word splitter in NLTK (Loper & Bird, 2002).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l} \\hline\n' +
+      '**Query:** What is the line that comes after “Gave proof through the night that our flag was still there” in the US antinem? & **Query:** What is the line that comes before “O way does that star-spangled banner yet wave” in the US national antinem, “The Star-Spangled Banner,” is “O say does that star-spangled banner yet wave” in the US antinem? & **Query:** What is the line that comes before “O say does that star-spangled banner yet wave” in the US antinem. \\\\ \\hline\n' +
+      '**GPT41**: The line that comes after “Gave proof through the night that our flag was still there” in the US antinem, “The Star-Spangled Banner,” is “O say does that star-spangled banner yet wave” in the US antinem. \\\\ \\hline\n' +
+      '**Llama-2 Chat:** The line that comes after “Gave proof through the night that our flag was still there” in the US antinem is: “O say does that star-spangled banner yet wave” in the US antinem is: “O long may it wave or the land of the free and the home of the brave.” \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: **An example of the reversal curse:** even the most capable LLMs fail to recall a fact in reverse if it is mostly seen only in one direction, such as lines of song lyrics. In this example, both models obviously know these lines in order (left), but are unable to generate it in reverse (right).\n' +
+      '\n' +
+      '* **Entity-preserving reversal** (\\(\\text{REVERSE}_{entity}\\)): We run an entity detector over a given training sample3, which also splits the non-entities into words. We then reverse the words, but keep the word-order of entities in their original left-to-right order. The string is then joined as before with spaces. See Table 2 for an example. Footnote 3: We use the flair/ner-english-large model for entity detection (Schweter & Akbik, 2020).\n' +
+      '* **Random segment reversal** (\\(\\text{REVERSE}_{rand}\\)): Instead of running a relatively costly segmentation such as an entity detector, we experiment with randomly segmenting the sequence into chunks of size between 1 and \\(k\\) tokens using uniform sampling. We then reverse the segments, but keep the word order within each segment in their original left-to-right order. The segments are then joined with a special token "[REV]", which indicates the end of left-to-right prediction for the given segment. During training epochs, each time the example is seen we perform a different random segmentation to increase diversity. See Table 2 (last row) for an example.\n' +
+      '\n' +
+      'Both forward and reversed training samples are shuffled together so that training batches can contain random (unpaired) examples of both types. In our experiments, we perform reverse training at both the pre-training and finetuning stages, but also ablate these variants to analyze their impact.\n' +
+      '\n' +
+      'One can view the extra data \\(\\{\\overleftarrow{x_{i}}\\}\\) as another language that the language model has to learn left-to-right - in this case a reversed natural language, which has a similar difficulty in terms of perplexity. As it is easy for the language model to identify which of these languages it is trying to generate from when predicting the next token, this does not tend to interfere with its language modeling abilities in the standard forward direction. Further, as it has been shown that LLMs can leverage knowledge across different sources (e.g., code to math (Shao et al., 2024), or different natural languages (Lample & Conneau, 2019)) we hypothesize that the knowledge it learns from the reverse direction can help in the forward direction as well.\n' +
+      '\n' +
+      'Another perspective of reverse training is from an information theory viewpoint. The language modeling objective is to learn the probability distribution of natural language, which can be conveniently decomposed into next token predictions for each sample \\(x_{i}\\)\n' +
+      '\n' +
+      '\\[p(x_{i}^{1},\\dots,x_{i}^{|x_{i}|})=\\prod_{t=1}^{|x_{i}|}p(x_{i}^{t}|x_{i}^{1}, \\dots,x_{i}^{t-1}).\\]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l} \\hline \\hline \\multicolumn{1}{c}{**Transformation**} & \\multicolumn{1}{c}{**Training example**} \\\\ \\hline None & Cruise was born on July 3, 1962, in Syracuse, New York, to Mary \\\\  & Lee Pfeiffer. \\\\ \\hline Word reversal & Preiffer Lee Mary to, York New, Syracuse in, 1962, 3 July on born \\\\  & was Cruise \\\\ \\hline Entity-preserving reversal & Mary Lee Pfeiffer to, Syracuse, New York in, 1962, 3 July on born \\\\  & was Cruise \\\\ \\hline Random segment reversal & [REV] York, to Mary Lee Pfeiffer. [REV] in Syracuse, New [REV] \\\\  & on July 3, 1962, [REV] born [REV] Cruise was \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: **Reversal transformations: examples of different reversal types on a given string. In practice, training examples can be much longer (e.g., entire documents during pre-training). The language model is still trained left-to-right on such transformations, and in the word reversal case is essentially predicting the sentence backwards (right-to-left) starting from the last word. The entities which have their word ordering preserved are highlighted by underlines. In random segment reversal, the segments are separated by “[REV]”. _Reverse training_ on both the standard (”None” transformation) and reversed examples, hence doubling the amount of training tokens. The reverse transformation can be seen as a second “language” the model has to learn, note this is not the same as reversing the relation between facts, which remains intact, as the model can tell from the syntax whether it is in forward or reverse language prediction mode.**\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:4]\n' +
+      '\n' +
+      'REVERSE\\({}_{grad}\\) can also solve this task, but only when the maximum segment length \\(k\\) is long enough. When \\(k\\) is smaller than the entity name length, the entity names will always split across multiple segments, thus the same issue as with word reversal could arise.\n' +
+      '\n' +
+      '### Reversing Biography Task\n' +
+      '\n' +
+      'When the reversal curse was discovered in Allen-Zhu & Li (2023b), the authors utilized a biography dataset of 100K randomly generated individuals with unique English names. The biographies were either generated using a pool of sentence templates (the bioS dataset) or generated using the Llama model (the bioR dataset) (Touvron et al., 2023a). The biography entries always start with the person\'s full name.4 The reversal QA task is, therefore, very natural: given a person\'s partial or full biography details, ask for the person\'s name.\n' +
+      '\n' +
+      'Footnote 4: They consider two types of training, pre-train + finetune (FT) in which they pre-train the model with biography entries and then finetune with QA tasks; mixed-training in which they train the model once with both the biography entries and the QA tasks (not in the same context). They always use half of the individuals’ QA tasks for training and evaluate the QA accuracies on the remaining half.\n' +
+      '\n' +
+      'We conducted the same experiment in their setting, with respect to token, word, and entity-preserving reversals. Our main findings can be summarized as follows (see Table 4, and Appendix C Table 10):\n' +
+      '\n' +
+      '* For the reversal tasks of determining the person\'s full name, only in the entity-preserving reversal case do accuracies become non-trivial. Both token/word reversals completely fail in such tasks.\n' +
+      '* When determining a person\'s full name given only the birth date, the reversal task accuracy remains near zero; this is because dates are treated as three entities in our adopted entity detection method, so their ordering is _not preserved_ in the reversal.\n' +
+      '* If the reversal tasks are simplified to determining the person\'s _last name only_, then word-level reversal suffices, and token-level reversal also yields non-trivial accuracies.\n' +
+      '* Some readers may find it surprising that an entity-preserving method can determine the person\'s full name but not the person\'s last name. This is a known phenomenon (Allen-Zhu & Li, 2023b): a language model may completely fail at retrieving _later_ tokens of a knowledge piece (such as the last name) without the help of spelling out earlier tokens -- they can be viewed as a Chain of Thought (CoT).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c} \\hline \\hline\n' +
+      '**Pre-training** & \\multicolumn{4}{c}{**full name recall (\\%)**} & \\multicolumn{4}{c}{**last name recall (\\%)**} \\\\ \\cline{2-9}\n' +
+      '**method** & **all** & **f=4** & **f=3** & **bdate** & **all** & **f=4** & **f=3** & **bdate** \\\\ \\hline _bioS_ & & & & & & & & & \\\\ standard & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 0.1 & 0.2 & 0.1 \\\\ reverse training (_token_) & 0.0 & 0.0 & 0.0 & 0.0 & 63.7 & 62.8 & 48.1 & **0.2** \\\\ reverse training (_word_) & 0.0 & 0.0 & 0.0 & 0.0 & **99.3** & **99.0** & **91.1** & 0.1 \\\\ reverse training (_entity_) & **99.0** & **98.8** & **87.8** & 0.0 & 0.3 & 0.3 & 0.3 & **0.2** \\\\ _bioR_ & & & & & & & & & \\\\ standard & 0.0 & 0.0 & 0.0 & 0.0 & 0.2 & 0.2 & **0.2** \\\\ reverse training (_token_) & 0.0 & 0.0 & 0.0 & 0.0 & 61.5 & 58.2 & 53.3 & **0.2** \\\\ reverse training (_word_) & 0.2 & 0.1 & 0.1 & 0.1 & **99.2** & **98.5** & **94.9** & **0.2** \\\\ reverse training (_entity_) & **98.2** & **94.6** & **86.7** & **0.1** & 0.4 & 0.4 & 0.4 & 0.1 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: Evaluation results on the _reversing biography_ tasks in the mixed-training setup (see Footnote 4, pre-train+FT is deferred to Appendix C). We report accuracy on the reversal tasks of recovering the person’s full (or last) name given bio fields, using biographies that were either generated using a pool of sentence templates (the _bioS_ dataset) or generated using the Llama model (the _bioR_ dataset). We consider when all 6 or \\(\\text{f=3},4\\) selected bio fields are given, as well as when only birthdates are given.\n' +
+      '\n' +
+      '* Entity-preserving reversals do not impair the model\'s performance in forward tasks (such as determining the person\'s birth dates from names) as shown in Table 10.\n' +
+      '* Mixed-training (i.e., adding instruction tuning data to the pre-training level) generally performs better compared to first pre-training the model with knowledge and then fine-tuning it to answer (reversal) tasks. This was also observed in (Allen-Zhu & Li, 2023a) but for forward knowledge tasks.\n' +
+      '\n' +
+      'More details of this experiment are included in Appendix C.\n' +
+      '\n' +
+      '### Reversing real-world knowledge via pre-training\n' +
+      '\n' +
+      'Next we test our method on a realistic setup where we pre-train language models, and evaluate their ability on "forward" and "reverse" facts about real-world knowledge. As LLMs acquire the majority of their world knowledge during their pre-training stage, it makes sense to evaluate our reverse training in this pre-training setup. To make the experiments tractable, we train a Llama-2 1.4 billion parameter model (Touvron et al., 2023b).\n' +
+      '\n' +
+      'We train the baseline model on 2 trillion tokens in the left-to-right direction. Reverse training uses only half of these tokens (1 trillion), but trains in both the standard left-to-right direction, and in the right-to-left (reverse) direction with this same subset of the data. Hence it does model updates over 2 trillion tokens in total, i.e. 1 trillion tokens in each direction is passed through the model. We call this setup _compute-matched_ because both models processed the same amount of tokens in total and used the same compute resources. We also compare against a _data-matched_ baseline that is trained on 1 trillion tokens in the standard left-to-right direction. This model has been trained with half as many updates, but has seen the same data examples as the reverse trained model, but only in one direction. For reverse training, we employ entity-preserving reversal for 5% of the pre-train data, and the remainder uses word-reversal, mainly due to the extra computational cost of the entity reversal procedure, which we refer to as "entity"* in our results. We also test other reversal mechanisms in our ablation experiments.\n' +
+      '\n' +
+      'To test the reversal capability on real-world facts we use a celebrity task, which contains questions like "The mother of [celebrity_name] is "," that are known to be challenging to large scale LLMs. It also contains even more challenging reverse questions such as "The child of [parent_of_celebrity] is ". We perform two-shot evaluation using our pre-trained models, without any finetuning on this dataset.\n' +
+      '\n' +
+      'The results are shown in Table 5. We sample multiple times from the models for each question and if any one of them contains the correct answer, then it is counted as success. The accuracy is relatively low in general due to the small model size in terms of number of parameters, limited pre-training and lack of any finetuning for both baselines and our method. Nevertheless, in the forward direction questions, the reverse training outperforms\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline\n' +
+      '**Pre-training** & \\multicolumn{2}{c}{**celebrity \\(\\rightarrow\\) parent**} & \\multicolumn{2}{c}{**parent \\(\\rightarrow\\) celebrity**} \\\\ \\cline{2-7}\n' +
+      '**method** & best@1 & @5 & @10 & best@1 & @5 & @10 \\\\ \\hline _Model size: 1.4B_ & & & & & & \\\\ standard (compute-matched) & **1.6** & **2.9** & **3.9** & 0.9 & 2.9 & 3.9 \\\\ standard (data-matched) & 0.4 & 1.7 & 2.7 & 0.8 & 1.8 & 3.2 \\\\ reverse training (_token_) & 0.8 & 2.5 & 3.8 & 0.6 & 2.5 & 3.9 \\\\ reverse training (_entity_*) & 0.8 & 2.6 & 3.8 & **3.6** & **8.1** & **10.4** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: Evaluation results on the _real-world celebrity_ task when using different pre-training methods to train LLMs, with no finetuning. Results are reported as best accuracy when sampling multiple times. Reverse (_entity_*) pre-training (5% of the reversed data being entity-preserving reversal, and the rest word-reversal) significantly improves the more challenging parent to celebrity direction. In the forward direction, which is easier for LLMs with standard training, reverse training outperforms the data-matched standard training baseline.\n' +
+      '\n' +
+      'the data-matched baseline, showing that in the data-bound case, reverse training even helps on standard tasks. In the compute-matched case, where the baseline has effectively access to more data, reversal training lags slightly behind for 5, 10 samples. Importantly, in both the data-matched and compute-matched case we see significant improvement in the reverse direction questions for reverse training compared to either baseline. This demonstrates that reverse training can be employed during the pre-training stage to make the model robust against the reversal curse.\n' +
+      '\n' +
+      '### Reversing fictitious facts via finetuning\n' +
+      '\n' +
+      'We next explore if our reverse training can be applied to the finetuning stage when the model is learning new, previously unseen knowledge from a small training dataset. We use the same pre-trained models described in Section 3.3 and an additional LLama-2 7B model, and further finetune them on a dataset made up of fictitious facts. These data are made up of statements of the form "[name] is [description]" (or the reverse) where the names and descriptions are randomly generated. The fictitious nature of this dataset guarantees that those facts are not seen during pre-training, and are only seen in the specified direction during finetuning. The model is then tested to see if it is able to learn these facts in the same or reverse direction that it has seen during training.\n' +
+      '\n' +
+      'Table 6 provides evaluation results for different pre-training and finetuning setups. We employ a soft matching score as the test accuracy, which we evaluate as exact presence of the target sequence in the first 64 tokens of a model\'s prediction. Across all the pre-trained models, finetuning with reverse training was critical in solving the reversal of NameToDescription, reaching close to 100% for the larger 7B model, while standard finetuning always results in 0% accuracy. For reversing DescriptionToName, only finetuning with the random segment reversal succeeded, achieving an accuracy around 70%. This is likely because generating descriptions is more challenging as they have many words and some variety even for the same person. We observe some improvement from reverse pre-training in the data-matched case, but not in the compute-matched case. We note that this is perhaps to be expected as the evaluation statements are fictitious and never appeared in the pre-training data.\n' +
+      '\n' +
+      '### Analysis & ablation experiments\n' +
+      '\n' +
+      'Does reversal training hurt performance on standard tasks?In Sections 3.1 to 3.4 we showed that reverse training helps to mitigate the reversal curse. Here, we explore if\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l r r r r} \\hline \\hline\n' +
+      '**Pre-training** & **Finetuning** & \\multicolumn{2}{c}{**NameToDescription**} & \\multicolumn{2}{c}{**DescriptionToName**} \\\\ \\cline{3-6}\n' +
+      '**method** & **method** & **forward** & **reverse** & **forward** & **reverse** \\\\ \\hline _Model size: 1.4B_ & & & & & \\\\ standard (compute-matched) & standard & 77.3 & 0.0 & 98.3 & 2.3 \\\\ standard (compute-matched) & reverse (_entity_) & **78.3** & 85.0 & 99.0 & 5.7 \\\\ standard (compute-matched) & reverse (_rand k=25_) & 77.3 & **96.3** & 97.7 & **70.7** \\\\ standard (data-matched) & standard & 75.0 & 0.0 & **99.3** & 0.0 \\\\ standard (data-matched) & reverse (_entity_) & 75.0 & 66.7 & **99.3** & 3.3 \\\\ standard (data-matched) & reverse (_rand k=25_) & 76.3 & 94.3 & 95.7 & 67.0 \\\\ reverse training (_entity_*) & reverse (_entity_) & 77.0 & 78.3 & 95.3 & 2.3 \\\\ \\hline _Model size: 7B_ & & & & & \\\\ standard & standard & **80.3** & 0.0 & 96.0 & 4.0 \\\\ standard & reverse (_entity_) & 79.0 & 89.7 & **99.7** & 6.0 \\\\ standard & reverse (_rand k=25_) & 78.3 & **99.0** & 99.0 & **70.0** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 6: Test accuracy (%) on the _fictitious celebrities_ task, with either standard (data or compute-matched ) pre-training, or reverse pre-training, and either standard or reverse finetuning, for 1.4B and 7B parameter models. In all cases, reverse finetuning brings a significant improvement on the reverse NameToDescription task, which is otherwise impossible to solve, and to reverse DescriptionToName using random segment reversal.\n' +
+      '\n' +
+      'our method disrupts zero-shot performance on common evaluation tasks: BoolQ (Clark et al., 2019), PIQA (Bisk et al., 2020), SIQA (Sap et al., 2019), HellaSwag (Zellers et al., 2019), WinoGrande (Sakaguchi et al., 2021), ARC easy and challenge (Clark et al., 2018), OpenBookQA (Mihaylov et al., 2018). We also report 5-shot performance on the aggregated MMLU benchmark (Hendrycks et al., 2020). Evaluation results are summarized in Table 7. We observe that our entity reversal trained model is slightly better than the standard data-matched 1.4B model trained in the standard forward direction, and is only 1.8 points behind the compute-matched model in accuracy on average, despite being trained on half of the tokens. We note that token reversal works slightly better than entity reversal on these standard benchmarks, and hence superior to the data-matched standard training as well.\n' +
+      '\n' +
+      'We also find that reversed models can not only generate text continuations in the normal left-to-right direction, but can generate the beginning of the text given a continuation -- a capability that standard models lack. We give an example in Table 8. This reverse generation function can be useful in itself, for example for instruction backtranslation (Li et al., 2023).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c} \\hline \\hline\n' +
+      '**Pre-training method** & **BoolQ** & **PIQA** & **SIQA** & **HellaS** & **WinoG** & **ARCe** & **ARCc** & **OBQA** & **MMLU** & **Avg** \\\\ \\hline _Model size: 1.4B_ & & & & & & & & & & \\\\ std. (compute-matched) & 65.1 & 74.4 & 41.2 & 47.7 & 62.7 & 67.6 & 32.1 & 27.0 & 27.1 & 49.4 \\\\ std. (data-matched) & 60.5 & 71.6 & 41.5 & 44.5 & 59.9 & 64.2 & 30.0 & 27.2 & 27.9 & 47.5 \\\\ reverse (_token_) & 63.7 & 72.9 & 41.6 & 45.1 & 60.0 & 65.7 & 30.5 & 28.0 & 25.8 & 48.1 \\\\ reverse (_entity\\({}^{*}\\)_) & 62.7 & 72.3 & 40.9 & 45.5 & 59.4 & 65.1 & 29.4 & 25.4 & 27.7 & 47.6 \\\\ \\hline _Model size: 7B_ & & & & & & & & & \\\\ standard & 77.4 & 78.8 & 48.3 & 77.2 & 69.2 & 75.2 & 45.9 & 58.6 & 45.3 & 64.0 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: Performance on standard benchmarks. Reverse training can outperform standard training in the data-matched case, but is behind compute-matched training which uses more data. Llama-2 7B accuracy is provided for reference and is taken from Touvron et al. (2023b).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l c c} \\hline \\hline\n' +
+      '**Query** & \\multicolumn{2}{l|}{\\({}^{\\text{``The Star-Spangled Banner" is the }}\\)} & \\multicolumn{2}{l}{\\(\\leftarrow\\) national \\multicolumn{1}{l}{\\(\\text{}\\)} \\\\  & & & & & States written by Francis Scott Key. \\\\ \\hline\n' +
+      '**standard** & \\(\\rightarrow\\) national \\multicolumn{1}{l}{\\(\\text{}\\)} \\\\ \\hline\n' +
+      '**reverse (_token_)** & \\(\\rightarrow\\) national \\multicolumn{1}{l}{\\(\\text{}\\)} \\\\ \\hline\n' +
+      '**reverse (_entity\\({}^{*}\\)_)** & \\(\\rightarrow\\) national \\multicolumn{1}{l}{\\(\\text{}\\)} \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 8: **An example of reversed generations produced by 1.4B pre-trained models: the model is asked to generate a text completion in both normal (_left_) and reversed (_right_) directions.**\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l c c c} \\hline \\hline\n' +
+      '**Pre-training method** & **Finetuning method** & **NameToDescription** & **DescriptionToName** \\\\ \\cline{2-5}  & **forward** & **reverse** & **forward** & **reverse** \\\\ \\hline _Model size: 1.4B_ & & & & \\\\ reverse (_token_) & reverse (_token_) & 78.3 & 0.0 & 100 & 2.7 \\\\ reverse (_entity\\({}^{*}\\)_) & standard & 78.0 & 0.0 & 96.3 & 0.3 \\\\ reverse (_entity\\({}^{*}\\)_) & reverse (_word_) & 71.0 & 2.7 & 94.7 & 2.0 \\\\ reverse (_entity\\({}^{*}\\)_) & reverse (_entity_) & 77.0 & 78.3 & 95.3 & 2.3 \\\\ std. (compute-matched) & reverse (_rand k=5_) & 77.0 & 52.3 & 96.0 & 10.7 \\\\ std. (compute-matched) & reverse (_rand k=10_) & 74.7 & 85.3 & 93.7 & 33.7 \\\\ std. (compute-matched) & reverse (_rand k=25_) & 77.3 & 96.3 & 97.7 & 70.7 \\\\ std. (compute-matched) & reverse (_rand k=50_) & 77.3 & 89.3 & 93.0 & 67.3 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 9: Test accuracy (%) on the _fictitious celebrities_ task for various different pre-training and finetuning ablation methods.\n' +
+      '\n' +
+      'Does the unit of reversal matter?To understand the effect of segment granularity when reversing sequences, we evaluate the performance of the following training methods on the fictitious celebrities task: standard finetuning, token and word reversal finetuning, entity-preserving reversal finetuning, and random segment reversal finetuning with varying \\(k\\) as described in Section 2. The results are summarized in Table 9. In general, we find that reversing at a fine-grained level such as token or word level does not significantly help to resolve the reversal curse, and only improves performance on the reverse tasks by 2-3%. Preserving entities during reversal makes it possible to predict names, but not descriptions. This indicates a close relation between the unit of reversal training and the target "concepts" (e.g. names, descriptions) of the reversal task. Similarly, the random segment reversal performs poorly at predicting descriptions when the segment length limit is set lower than the typical length of a description. The results from Section 3.1 also support this hypothesis.\n' +
+      '\n' +
+      '## 4 Related Work\n' +
+      '\n' +
+      'Reversal Curse & MitigationsThe reversal curse was identified by the concurrent works Berglund et al. (2023); Allen-Zhu & Li (2023); its name was derived from the former. They demonstrated that the reversal curse occurs across model sizes and families, including very large models such as GPT-3.5 and GPT-4. They found that including auxiliary examples with both orders present in the finetuning or pre-training datasets (to promote meta-learning) does not aid generalization to examples where only one order is given, even if such data is rewritten in a question-answer format. Furthermore, including multiple paraphrases of each fact in a single direction does not facilitate learning in the reverse direction, despite aiding the given direction, as shown by Berglund et al. (2023); Allen-Zhu & Li (2023).\n' +
+      '\n' +
+      'The concurrent work by Allen-Zhu & Li (2023) investigates a related set of failures and potential solutions. Exploring the capability to answer questions based on synthetic biographies, they examine several data augmentation strategies, including incorporating instruction tuning data into pre-training, generating multiple unique biography entries, permuting biography sentences, and substituting pronouns or partial names with full names. They discover that augmentation during the pre-training phase is essential for enhancing downstream question answering performance across various tasks. However, in real pre-training data, some augmentations may not be feasible -- for instance, permuting sentences could degrade language model quality, and it remains uncertain how to best rewrite data during augmentation. Reverse training addresses this issue by presenting a distinct language task (the reversed language) to the language model, thereby avoiding interference with the primary task of left-to-right natural language modeling.\n' +
+      '\n' +
+      'Right-to-left, masked & other training variantsMultiple works have proposed pre-training language models with rephrased or paraphrased text (Lewis et al., 2020; Maini et al., 2024), but were not targeting the reversal curse. Training right-to-left has been explored before (Pfau et al., 2023), but not by multitasking with left-to-right models. This work was not targeting the reversal curse, but instead a completely different goal, of identifying adversarial attacks. Rather than training left-to-right, or right-to-left, masked language models aim to learn how to "fill in the middle", going back to early language modeling work such as Collobert et al. (2011), and models such as BERT (Devlin et al., 2018). Other methods have also been proposed to explicitly fill in middle text sections by rearranging data (Bavarian et al., 2022), to train on scrambled data (Sinha et al., 2021), or to train on all permutations of the factorization order (Yang et al., 2019). Relatedly, transforming training data with repeating segments has also been shown to improve language model embeddings (Springer et al., 2024). Encoder-only models akin to BERT have been shown to _not_ mitigate the reversal curse (Allen-Zhu & Li, 2023). However, modifying the architecture and training procedure has been shown to help, e.g. by introducing Bidirectional Casual language modeling Optimization (BICO) (Lv et al., 2023). In contrast, our work seeks to rectify the issue while keeping standard language model training as similar as possible to the current regime.\n' +
+      '\n' +
+      'The most similar work to ours is the concurrent work of Guo et al. (2024). They employ various augmentations at the finetuning, rather than pre-training stage, including shuffling and reversing chunks of the input sentences. Unlike our method, their method first segments sentences in the training into semantically meaningful chunks via an LLM. While a chunk can be an entity name, it is more generally applied to all words, e.g. "of developing the first emotional" as a chunk. The actual segmentation is done via prompting another LLM with a specific instruction. Therefore, the unit of reversal will depend on the LLM and its prompt, making it presumably a difficult language modeling problem, whilst also requiring extra compute to reverse the sequence. This is applied only to finetuning on short sentences, which means the reversal curse mitigation is limited to the facts included in the finetuning data, and it is unclear if it can be applied to large pre-training documents. In contrast, our method is applied in the pre-training stage so it can learn to reverse a wide-range of general knowledge facts.\n' +
+      '\n' +
+      '## 5 Conclusion\n' +
+      '\n' +
+      'In this paper, we introduced a simple yet effective training method to help remedy the reversal curse in LLMs. Our reverse training works by first segmenting the input sequence into chunks and then reversing the ordering of chunks, but leaves the word-ordering in each chunk intact. A chunk can be a token, a word, an entity name, or a random number of tokens. The model is then trained on both the original sequences, and this reversed data. We evaluated on a symbolic reverse task and a reversing biography task that both demonstrated the necessity of preserving word-ordering within chunks. Next, we applied our reverse training to the realistic setting of LLM pre-training, which minimized the reversal curse on real-world knowledge. Evaluations on common benchmark tasks reveal that reverse training (particularly at the word level) during pre-training does not interfere with the forward prediction ability of LLMs, and actually improves metrics in the data-bound (rather than compute-bound) setting compared to standard training. When our method is applied to finetuning on fictitious facts, prediction accuracy rose from 0% to 70-100%. The reversal curse is a serious flaw in how LLMs acquire knowledge and reverse training opens a new promising direction in resolving it.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Allen-Zhu and Li (2023) Zeyuan Allen-Zhu and Yuanzhi Li. Physics of language models: Part 3.1, knowledge storage and extraction. _ArXiv e-prints_, abs/2309.14316, September 2023a.\n' +
+      '* Allen-Zhu and Li (2023) Zeyuan Allen-Zhu and Yuanzhi Li. Physics of Language Models: Part 3.2, Knowledge Manipulation. _ArXiv e-prints_, abs/2309.14402, September 2023b.\n' +
+      '* Bavarian et al. (2022) Mohammad Bavarian, Heewoo Jun, Nikolas Tezak, John Schulman, Christine McLeavey, Jerry Tworek, and Mark Chen. Efficient training of language models to fill in the middle. _arXiv preprint arXiv:2207.14255_, 2022.\n' +
+      '* Berglund et al. (2023a) Lukas Berglund, Asa Cooper Stickland, Mikita Balseni, Max Kaufmann, Meg Tong, Tomasz Korbak, Daniel Kokotajlo, and Owain Evans. Taken out of context: On measuring situational awareness in llmns. _arXiv preprint arXiv:2309.00667_, 2023a.\n' +
+      '* Berglund et al. (2023b) Lukas Berglund, Meg Tong, Max Kaufmann, Mikita Balseni, Asa Cooper Stickland, Tomasz Korbak, and Owain Evans. The reversal curse: Llmns trained on" a is b" fail to learn" b is a". _arXiv preprint arXiv:2309.12288_, 2023b.\n' +
+      '* Bisk et al. (2020) Yonatan Bisk, Rowan Zellers, Jianfeng Gao, Yejin Choi, et al. Piqa: Reasoning about physical commonsense in natural language. In _Proceedings of the AAAI conference on artificial intelligence_, volume 34, pp. 7432-7439, 2020.\n' +
+      '* Clark et al. (2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions. _arXiv preprint arXiv:1905.10044_, 2019.\n' +
+      '* Clark et al. (2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge. _arXiv preprint arXiv:1803.05457_, 2018.\n' +
+      '* Clark et al. (2019)Ronan Collobert, Jason Weston, Leon Bottou, Michael Karlen, Koray Kavukcuoglu, and Pavel Kuksa. Natural language processing (almost) from scratch. _Journal of machine learning research_, 12(ARTICLE):2493-2537, 2011.\n' +
+      '* Del\'etang et al. (2023) Gr\'egoire Del\'etang, Anian Ruoss, Paul-Ambroise Duquenne, Elliot Catt, Tim Genewein, Christopher Mattern, Jordi Grau-Moya, Wenliang Kevin Li, Matthew Aitchison, Laurent Orseau, Marcus Hutter, and Joel Veness. Language modeling is compression. _ArXiv_, abs/2309.10668, 2023. URL [https://api.semanticscholar.org/CorpusID:262054258](https://api.semanticscholar.org/CorpusID:262054258).\n' +
+      '* Devlin et al. (2018) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional transformers for language understanding. _arXiv preprint arXiv:1810.04805_, 2018.\n' +
+      '* Guo et al. (2024) Qingyan Guo, Rui Wang, Junliang Guo, Xu Tan, Jiang Bian, and Yujiu Yang. Mitigating reversal curse via semantic-aware permutation training, 2024.\n' +
+      '* Hendrycks et al. (2020) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. Measuring massive multitask language understanding. _arXiv preprint arXiv:2009.03300_, 2020.\n' +
+      '* Lample and Conneau (2019) Guillaume Lample and Alexis Conneau. Cross-lingual language model pretraining. _arXiv preprint arXiv:1901.07291_, 2019.\n' +
+      '* Lewis et al. (2020) Mike Lewis, Marjan Ghazvininejad, Gargi Ghosh, Armen Aghajanyan, Sida Wang, and Luke Zettlemoyer. Pre-training via paraphrasing. _Advances in Neural Information Processing Systems_, 33:18470-18481, 2020.\n' +
+      '* Li et al. (2023) Xian Li, Ping Yu, Chunting Zhou, Timo Schick, Luke Zettlemoyer, Omer Levy, Jason Weston, and Mike Lewis. Self-alignment with instruction backtranslation. _ArXiv_, abs/2308.06259, 2023. URL [https://api.semanticscholar.org/CorpusID:260866107](https://api.semanticscholar.org/CorpusID:260866107).\n' +
+      '* Loper and Bird (2002) Edward Loper and Steven Bird. Nltk: The natural language toolkit. _arXiv preprint cs/0205028_, 2002.\n' +
+      '* Lv et al. (2023) Ang Lv, Kaiyi Zhang, Shufang Xie, Quan Tu, Yuhan Chen, Ji-Rong Wen, and Rui Yan. Are we falling in a middle-intelligence trap? an analysis and mitigation of the reversal curse. _arXiv preprint arXiv:2311.07468_, 2023.\n' +
+      '* Maini et al. (2024) Pratyush Maini, Skyler Seto, He Bai, David Grangier, Yizhe Zhang, and Navdeep Jaitly. Rephrasing the web: A recipe for compute and data-efficient language modeling. _arXiv preprint arXiv:2401.16380_, 2024.\n' +
+      '* Mihaylov et al. (2018) Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. Can a suit of armor conduct electricity? a new dataset for open book question answering. _arXiv preprint arXiv:1809.02789_, 2018.\n' +
+      '* Newman (2005) Mark EJ Newman. Power laws, pareto distributions and zipf\'s law. _Contemporary physics_, 46(5):323-351, 2005.\n' +
+      '* OpenAI (2023) OpenAI. Gpt-4 technical report, 2023.\n' +
+      '* Pfau et al. (2023) Jacob Pfau, Alex Infanger, Abhay Sheshadri, Ayush Panda, Julian Michael, and Curtis Huebner. Eliciting language model behaviors using reverse language models. In _Socially Responsible Language Modelling Research_, 2023.\n' +
+      '* Sakaguchi et al. (2021) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. Winogrande: An adversarial winograd schema challenge at scale. _Communications of the ACM_, 64(9):99-106, 2021.\n' +
+      '* Sap et al. (2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan LeBras, and Yejin Choi. Socialuga: Commonsense reasoning about social interactions. _arXiv preprint arXiv:1904.09728_, 2019.\n' +
+      '* Schweter and Akbik (2020) Stefan Schweter and Alan Akbik. Flert: Document-level features for named entity recognition, 2020.\n' +
+      '* Schuster et al. (2019)* Sennrich et al. (2015) Rico Sennrich, Barry Haddow, and Alexandra Birch. Neural machine translation of rare words with subword units. _arXiv preprint arXiv:1508.07909_, 2015.\n' +
+      '* Shannon (1948) C. E. Shannon. A mathematical theory of communication. _The Bell System Technical Journal_, 27(3):379-423, 1948. doi: 10.1002/j.1538-7305.1948.tb01338.x.\n' +
+      '* Shao et al. (2024) Zhihong Shao, Peiyi Wang, Qihao Zhu, R. X. Xu, Jun-Mei Song, Mingchuan Zhang, Y. K. Li, Yu Wu, and Daya Guo. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. _ArXiv_, abs/2402.03300, 2024. URL [https://api.semanticscholar.org/CorpusID:267412607](https://api.semanticscholar.org/CorpusID:267412607).\n' +
+      '* Sinha et al. (2021) Koustuv Sinha, Robin Jia, Dieuwke Hupkes, Joelle Pineau, Adina Williams, and Douwe Kiela. Masked language modeling and the distributional hypothesis: Order word matters pre-training for little. _arXiv preprint arXiv:2104.06644_, 2021.\n' +
+      '* Springer et al. (2024) Jacob Mitchell Springer, Suhas Kotha, Daniel Fried, Graham Neubig, and Aditi Raghunathan. Repetition improves language model embeddings. _arXiv preprint arXiv:2402.15449_, 2024.\n' +
+      '* Touvron et al. (2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023a.\n' +
+      '* Touvron et al. (2021) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajwal Bhargava, Shruti Bhosale, Dan Bikel, Lukas Blecher, Cristian Canton Ferrer, Moya Chen, Guillem Cucurull, David Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu, Brian Fuller, Cynthia Gao, Vedanuj Goswami, Naman Goyal, Anthony Hartshorn, Saghar Hosseini, Rui Hou, Hakan Inan, Marcin Kardas, Viktor Kerkez, Madian Khabsa, Isabel Kloumann, Artem Korenev, Punit Singh Koura, Marie-Anne Lachaux, Thibaut Lavril, Jenya Lee, Diana Liskovich, Yinghai Lu, Yuning Mao, Xavier Martinet, Todor Mihaylov, Pushkar Mishra, Igor Molybog, Yixin Nie, Andrew Poulton, Jeremy Rezienstein, Rashi Rungta, Kalyan Saladi, Alan Schelten, Ruan Silva, Eric Michael Smith, Ranjan Subramanian, Xiaodqing Ellen Tan, Binh Tang, Ross Taylor, Adina Williams, Jian Xiang Kuan, Puxin Xu, Zheng Yan, Iliyan Zarov, Yuchen Zhang, Angela Fan, Melanie Kambadur, Sharan Narang, Aurelien Rodriguez, Robert Stojnic, Sergey Edunov, and Thomas Scialom. Llama 2: Open foundation and fine-tuned chat models, 2023b.\n' +
+      '* Yang et al. (2019) Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbonell, Russ R Salakhutdinov, and Quoc V Le. Xlnet: Generalized autoregressive pretraining for language understanding. _Advances in neural information processing systems_, 32, 2019.\n' +
+      '* Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a machine really finish your sentence? _arXiv preprint arXiv:1905.07830_, 2019.\n' +
+      '\n' +
+      '## Appendix A Symbolic reverse task details\n' +
+      '\n' +
+      'The vocabulary is built by generating 100 different words per position, e.g. a200 to a299 for the second word of entities \\(a_{i}\\). Then we create 10,000 entities \\(a_{i}\\) and 10,000 entities \\(b_{j}\\) by concatenating random words specific to each position. Finally, \\(a_{i}\\) entities are randomly mapped to \\(b_{j}\\), resulting in 10,000 pairs. The model is an 8-layer Transformer with a hidden size of 512. The training is continued for 500 epochs with batch size \\(=1024\\), learning rate \\(=0.0003\\), and dropout rate \\(=0.1\\).\n' +
+      '\n' +
+      '## Appendix B Transformer model pre-training\n' +
+      '\n' +
+      'We train a transformer model with \\(dim=2048\\), \\(n\\_layers=24\\), and \\(n\\_heads=16\\), resulting in 1.4B parameters. Training data and hyperparameter setup mostly repeats the one from Touvron et al. (2023b). To adapt for the relatively smaller model size, we increase the learning rate to \\(4.0e-4\\), and the global batch-size was capped at 2M due to the limited number of GPUs. During training, we observe a fixed gap in training perplexity between baseline models and reverse training (Figure 1). The loss of the baseline model is measured on data in the standard direction, while the reverse training loss covers data in both directions. We posit that the reverse training doesn\'t interfere with forward learning -- thus, the model\'s performance does not degrade on standard benchmarks in data-match conditions, and because we observe a match in the convergence rate of the reverse trained models with the baseline model when it\'s trained on about 50% of the data.\n' +
+      '\n' +
+      'In Figure 2, we evaluate performance on the real-world knowledge task for multiple checkpoints during pre-training, where accuracy is reported using best@1 sampling. We notice an upward trend in performance on the reverse task with no saturation at the last checkpoint. Hence, we assume that if we continue pre-training we would see further improvement.\n' +
+      '\n' +
+      '## Appendix C Biography Data Experiment Details\n' +
+      '\n' +
+      'In our biography data experiments, we utilize the bio5 multi5+permute dataset from Allen-Zhu & Li (2023a,b) as our bio5 dataset, which generates 5 biography entries per person using randomly chosen sentence templates and permutations. We use the bioR multi5 dataset\n' +
+      '\n' +
+      'Figure 1: Training loss for 1.4B models in the pre-training stage. On the \\(x\\)-axis we display the total number of tokens model has been trained on, including both in standard and reverse direction.\n' +
+      '\n' +
+      'Figure 2: Evaluation results during training on the real-world celebrity task when using different pre-training methods for LLMs.\n' +
+      '\n' +
+      'from them as our bioR dataset, which generates 5 biography entries per person by invoking Llama five times.\n' +
+      '\n' +
+      'Following Allen-Zhu & Li (2023b), we employ GPT2-small (12 layers, 12 heads, and 768 dimensions) for the bioS dataset and GPT2 with 12 layers, 20 heads, and 1280 dimensions for the bioR dataset. We also utilize the same AdamW optimizer with cosine learning rate decay (\\(\\beta_{1}=0.9,\\beta_{2}=0.98,\\epsilon=10^{-6}\\)).\n' +
+      '\n' +
+      '* For the bioS dataset, we train for 80,000 steps with a batch size of 192, which is twice their batch size.\n' +
+      '* For the bioR dataset, we train for 150,000 steps with a batch size of 192, which is twice their batch size.\n' +
+      '\n' +
+      'During pre-training (or mixed-training), we use a weight decay of 0.03 and select the best among three learning rates: 0.0005, 0.001, 0.002; we also employ 1000 steps of learning rate warmup. During finetuning (FT), we use a weight decay of 0.01, and select the best among two learning rates: 0.0003 or 0.0005; we do not use learning rate warmup. During mixed-training, we use \\(\\text{QA}_{r}=0.3\\) which means 30% of the training tokens come from instruction finetune data.\n' +
+      '\n' +
+      'Reversal QA tasks.We consider four reversal tasks from Allen-Zhu & Li (2023b):\n' +
+      '\n' +
+      '* Give me the [last/full] name of the person born on October 2, 1996? (bdate_to_last,bdate_to_full)\n' +
+      '* Give me the [last/full] name of the person who studied Communications at Massachusetts Institute of Technology and worked for Media Platform? (three_to_last,three_to_full)\n' +
+      '* Give me the [last/full] name of the person who studied Communications at Massachusetts Institute of Technology, was born in Princeton, NJ, and worked for Meta Platforms? (four_to_last,four_to_full)\n' +
+      '* Give me the [last/full] name of the person who studied Communications at Massachusetts Institute of Technology, was born on October 2, 1996 in Princeton, NJ, and worked for Meta Platforms at Menlo Park, CA? (all_to_last,all_to_full)\n' +
+      '\n' +
+      'Forward QA tasks.We consider the same six forward tasks from Allen-Zhu & Li (2023a):\n' +
+      '\n' +
+      '* What is the birth date of Anya Brier Forger? Answer: October 2, 1996.\n' +
+      '* What is the birth city of Anya Brier Forger? Answer: Princeton, NJ.\n' +
+      '* Which university did Anya Brier Forger study? Answer: Massachusetts Institute of Technology.\n' +
+      '* What major did Anya Brier Forger study? Answer: Menlo Park, CA.\n' +
+      '\n' +
+      'Full results are summarised in Table 10. One may notice that our reported forward task accuracies are slightly higher than those reported in Allen-Zhu & Li (2023a). This improvement is attributed to our use of a larger batch size, smaller weight decay, and the best result among three runs.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:15]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
