@@ -49,6 +49,7 @@
 | 2311.13647 | Language Model Inversion | [arXiv](https://arxiv.org/abs/2311.13647) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.13647) |
 | 2311.12023v2 | LQ-LoRA Low-rank Plus Quantized Matrix Decomposition for Efficient Language Model Finetuning | [arXiv](https://arxiv.org/abs/2311.12023v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.12023v2) |
 | 2310.11511 | Self-RAG Learning to Retrieve Generate and Critique through Self-Reflection | [arXiv](https://arxiv.org/abs/2310.11511) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.11511) |
+| 2310.08754v4 | Tokenizer Choice For LLM Training Negligible or Crucial? | [arXiv](https://arxiv.org/abs/2310.08754v4) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.08754v4) |
 | 2310.04799v2 | Chat Vector A Simple Approach to Equip LLMs with Instruction Following and Model Alignment in New Languages | [arXiv](https://arxiv.org/abs/2310.04799v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.04799v2) |
 | 2310.01889 | Ring Attention with Blockwise Transformers for Near-Infinite Context | [arXiv](https://arxiv.org/abs/2310.01889) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.01889) |
 | 2309.12288 | The Reversal Curse LLMs trained on A is B fail to learn B is A | [arXiv](https://arxiv.org/abs/2309.12288) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2309.12288) |

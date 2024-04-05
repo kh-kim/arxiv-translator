@@ -1,0 +1,358 @@
+# LLM 트레이닝을 위한 토큰나이저 선택: 무시 가능 또는 결정적?
+
+Mehdi Ali1,2, Michael Fromm1,2, Klaudia Thellmann3 +
+
+리처드 러트만 1, 2, 맥스 러버링 1, 2 요하네스 레벨링 1, 카트린 클루그 1, 얀 에버트 4
+
+니클라스 돌 1, 재스퍼 슐제 부슈호프 1, 차비 자인 1, 2 알렉산더 아르노 베버 1, 2
+
+레나 저크차트3, 함맘 압델와합1 첼시 존4, 페드로 오르티스 수아레즈5, 말테 오스텐도르프5
+
+사무엘 바인바흐6, 라펫 시파1, 스테판 케셀하임4, 니콜라스 플로레스-헤르1
+
+###### Abstract
+
+최근 LLM(Large Language Models)의 성공은 훈련 데이터세트 구성의 큐레이팅, 모델 아키텍처 및 데이터세트 크기의 스케일링, 사전 훈련 목표의 진보에 의해 주도되어 토큰나이저의 영향을 사각지대로 남겨두고 있다. 이 미처리 영역에 대한 빛을 무시하고 2.6B 매개변수 척도에서 24개의 단일 및 다국어 LLM을 훈련하고 다양한 토큰izer 알고리즘 및 매개변수화를 제거함으로써 토큰izer 선택이 LLM 다운스트림 성능에 미치는 영향에 대한 포괄적인 연구를 수행한다. 우리의 연구는 토큰izer 선택이 모델의 다운스트림 성능 및 훈련 비용에 상당한 영향을 미칠 수 있음을 강조한다. 특히, 공통 토큰izer 평가 메트릭 _ftility_ 및 _parity_가 항상 모델 다운스트림 성능을 예측하는 것은 아니므로 이러한 메트릭을 모델의 다운스트림 성능에 대한 의심스러운 프록시로 만듭니다. 또한, 5개의 가장 빈번한 유럽 언어에 대해 훈련된 다국어 토큰라이저는 영어에 비해 3인자의 어휘 크기 증가가 필요하다는 것을 보여준다. 기존에는 영어 중심의 토큰마이저가 다국어 LLM의 학습에 적용되었지만, 본 논문에서는 이러한 방법이 비효율적인 토큰화 어휘로 인해 최대 68%의 심각한 다운스트림 성능 저하 및 추가 훈련 비용을 초래한다는 것을 발견했다.
+
++
+각주 †: 동등한 기여.
+
+## 1 Introduction
+
+LLM은 요약, 독해, 번역 및 상식 추론 Brown 등(2020); Touvron 등(2023)과 같은 제로/페우 샷 환경에서 많은 다운스트림 작업에서 인상적인 능력을 보여주었다. LLM을 트레이닝하기 위해, 현재 확립된 접근법은 트레이닝 문서들을 토큰들로 분할하는 토큰화기를 채용하는 것이며, 여기서 토큰은 단어 Bengio 등(2000), 서브워드 Schuster 및 Nakajima(2012); Sennrich 등(2015); Wang 등(2020), 또는 단일 문자 Gao 등(2020)을 나타내고, 각각의 토큰은 추가로 프로세싱될 수 있는 임베딩 벡터에 의해 모델에서 표현된다.
+
+토큰라이저의 품질은 본질적으로 및 본질적으로 평가될 수 있습니다. 내재적 평가는 단독으로 토큰라이저의 특성과 생성된 출력을 다루는 반면, 외재적 평가는 LLM(Large Language Model)과 같은 다운스트림 컴포넌트에 대한 토큰라이저의 영향을 측정한다.
+
+문자 기반에서 단어 기반 방법에 이르기까지 많은 다른 토큰화 접근법이 제안되었지만, 다른 토큰화기의 잠재적 영향은 특히 다국어 LLM의 맥락에서 미처리 w.r.t. LLM이다. Petrov et al. (2023)에 의해 제안된 최근 연구는 다국어 LLM의 훈련에 적용된 부주의하게 설계된 토큰라이저가 언어 전반에 걸쳐 심각한 불평등과 한계를 초래한다는 것을 보여준다. 서로 다른 언어로 번역된 텍스트 지문은 길이가 최대 15배까지 다른 토큰화된 서열을 생성하여 추론 비용과 추론 중 지연에 영향을 미쳤다. 또한, 장거리 의존성 Vaswani et al.(2017)의 학습은 변압기 기반 LLM을 효과적으로 학습하기 위한 필수 속성인 것으로 알려져 있다. 고정된 시퀀스 길이가 주어지면, 텍스트가 토나이저에 의해 과도하게 단편화된 언어들에 대해 입력 텍스트에서 멀리 떨어진 단어들을 연관시키는 학습은 불가능하다.
+
+토큰라이저의 중요성과 제대로 수행되지 않는 토큰라이저의 잠재적으로 심각한 영향에도 불구하고, 현재 LLM의 백본을 나타내는 디코더 전용 모델에 초점을 맞춘 단일 언어 및 다국어 환경에서 고유 및 외부 토큰라이저 성능을 전체적으로 조사하는 광범위한 연구는 지금까지 없다.
+
+이 작업에서는 이러한 격차를 해결하고 토큰화기가 모델 성능에 미치는 영향을 측정하는 광범위한 연구를 수행한다. 특히, 우리는 다음과 같은 기여를 한다:
+
+* 고유 토큰izer 성능을 조사 하는 연구를 수행 합니다.
+* 외부 토큰izer 성능, 즉 토큰izer가 모델의 다운스트림 성능에 미치는 영향을 조사하는 연구를 수행합니다.
+* 고유 토큰화기 성능과 외부 토큰화기 성능 간의 상관 관계가 있는지 여부를 조사 합니다.
+
+## 2 관련 작업
+
+이 섹션에서는 인코더 및 디코더 전용 변압기 모델에서 토큰화 알고리즘과 그 사용에 대한 개요를 제공한다.
+
+### Tokenization Approaches
+
+워드 토큰화.가장 기본적인 토큰화 접근법은 화이트 스페이스를 기반으로 시퀀스를 분할하고 각 단어를 토큰으로 간주하는 것이다(Bengio et al., 2000).
+
+서브워드 토큰화.이 클래스의 알고리즘들은 단어들을 서브워드들/다수의 토큰들로 분해할 수 있는 모든 데이터-구동 토큰화 접근법들을 포섭하고, 현재 LLM들이 의존하는 확립된 토큰화 접근법을 나타낸다(Kudo and Richardson, 2018; Petrov et al., 2023). 서브워드 토큰라이저는 단어를 서브워드로 분해하기 때문에, 어휘로부터 서브워드를 병합함으로써 어휘 외 단어를 처리할 수 있다(Kudo and Richardson, 2018). 인기 있는 서브워드 토큰화기의 예는 WordPiece(Schuster and Nakajima, 2012), BPE(Gage, 1994; Sennrich et al., 2015), Byte-Level BPE(BBPE)(Wang et al., 2020), 및 Unigram(Kudo, 2018)이다.
+
+문자 토큰화.토큰화는 또한 문자 레벨에서 또는 UTF-8 바이트에 기초하여 수행될 수 있다. 그러나, 이는 증가된 시퀀스 길이를 초래하고, 이는 변압기 아키텍처에서 계산적으로 비싸게 되며, 시퀀스 길이에서 자기-주목 계층의 2차 복잡성으로 인해 LLMs에 대한 현재 우세한 아키텍처이다(Vaswani et al., 2017). 그러나, 이러한 한계를 해결하기 위해 몇 가지 접근법이 제안되었다(Gao et al., 2020; Tay et al., 2021; Xue et al., 2022; Clark et al., 2022; Yu et al., 2023).
+
+트랜스포머 모델의 토큰화자
+
+인코더 모델의 토큰라이저 토큰화에 대한 대부분의 연구는 인코더 모델에 대해 수행되었다. Rust et al.(2021)은 토큰라이저 선택이 다중 및 단일 언어 BERT(Devlin et al., 2018) 모델의 다운스트림 성능에 영향을 미치는지 여부를 조사했다. Zhang et al.(2022)은 토큰라이저 트레이닝 동안 언어가 동일하게 샘플링될 때 더 나은 기계 번역 성능이 종종 얻어짐을 보여주었다. Toraman et al. (2023)은 터키어를 위한 여러 중간 크기의 언어 모델을 훈련시켰고 서로 다른 서브워드 토큰라이저는 대략적으로 동등한 성능을 보이는 반면 단어 및 문자 레벨 토큰라이저는 다운스트림 태스크에서 훨씬 더 나쁜 성능을 보인다고 제안했다. 마지막으로 (Chirkova and Troshin, 2022) 코드 관련 태스크에 대한 다양한 토큰화의 효과를 분석했으며, 신중하게 구성된 토큰화기가 평균 시퀀스 길이를 최대 40%까지 줄이거나 낮은 압축률에서 작은 다운스트림 성능 개선을 최대 2%까지 허용할 수 있음을 입증했다.
+
+Decoder Models에서의 Tokenizers 현재 단일 언어 및 다중 언어 LLMs의 개요는 (Lin et al., 2022; Shliazhko et al., 2022; Scao et al., 2022)에서 제공된다. Stollenwerk (2023)는 북유럽 언어에 초점을 맞춘 GPT-SW3 (Eggren et al., 2023) 토큰나이저의 고유 메트릭을 평가했다. 그 작업의 일환으로 Shliazhko et al.(2022)은 토큰나이저 알고리즘, 어휘 크기 및 사용된 구현은 고정된 상태로 유지하면서 서로 다른 토큰나이저 전처리 접근법을 제거했다. 다른 주요 LLM 간행물 중 어느 것도 외부 토크나이저 성능에 대해 연구되지 않았다.
+
+## 3 Approach
+
+토나이저가 모델 성능에 미치는 영향을 조사하기 위해 광범위한 절제 연구를 수행했다. 구체적으로, 토큰라이저와 모델의 학습을 위한 전용 데이터셋을 생성하고, BPE와 Unigram 토큰라이저를 학습시켰으며, 각 토큰라이저에 대해 나머지 구성(데이터세트 및 모델 하이퍼파라미터)을 고정한 상태에서 2.6B 파라미터 크기의 디코더 전용 모델을 학습시켰다. 이를 통해 별도로 모델의 다운스트림 성능에 대한 토큰화기의 영향을 측정할 수 있었다.
+
+### Data
+
+토나이저와 모델 학습 데이터 세트를 만드는 동안 데이터 도메인(위키피디아, 책, 웹 텍스트)의 혼합 비율이 동일한 분포를 따르도록 하여 토나이저 학습과 모델 학습 간의 도메인 이동을 방지합니다. 우리는 70B 단어로 _2개의 데이터 세트_를 만들었는데, 여기서 데이터 세트 중 하나는 영어 문서를 포함하는 단일 언어이고, 두 번째는 영어, 독일어, 프랑스어, 이탈리아어 및 스페인어 문서로 구성된 다국어 데이터 세트이다. 우리의 데이터 세트는 필터링되고 중복 제거되며 LLM을 훈련하는 데 사용되는 관련 데이터 세트에 필적하는 웹 크롤링된 데이터(80%) 및 큐레이트된 데이터(20%)로 구성된다. 다국어 데이터 세트에서 웹 크롤링된 데이터의 양은 단어 수 측면에서 언어 간에 균등하게 분포된다. 데이터 파이프라인 및 데이터 구성에 대한 자세한 내용은 부록 A에 설명되어 있다.
+
+### Tokenizer
+
+우리의 연구는 BPE와 Unigram의 두 가지 확립된 토큰화 알고리즘과 _Huggingface tokenizer_ 라이브러리(Moi and Patry, 2023)와 _SentencePiece_ 라이브러리(Kudo and Richardson, 2018)에서의 구현에 의존한다. 사전 및 사후 처리 단계의 차이와 구현의 잠재적 차이에 대한 영향을 조사하기 위해 두 라이브러리를 모두 고려했다. Huggingface의 Unigram 구현에 대한 전처리 옵션이 누락되어 SentencePiece의 Unigram 구현에 비해 결과 어휘에 큰 불일치가 발생하므로 Huggingface 기반 Unigram 토큰라이저의 교육을 생략하였다. 전반적으로 24개의 서로 다른 토큰라이저를 훈련했는데, 여기서 토큰라이저의 절반은 단일 언어 영어 토큰라이저이고 나머지 절반은 다국어 토큰라이저이다. 토나이저 알고리즘, 언어 구성 및 사용된 토나이저 라이브러리 외에도 어휘 크기를 변경했다. 구체적 토크나이저 구성은 부록 B에 설명되어 있다.
+
+### Models
+
+훈련된 토큰라이저가 모델 다운스트림 성능에 미치는 영향을 측정하기 위해 각 토큰라이저에 대해 하나의 모델을 훈련했다. 특히, 24개의 훈련된 토큰아이저 각각에 대해, (Hoffmann et al., 2022)에 의해 제안된 스케일링 법칙에 따라 최대 52B 토큰에 대해 2.6B 트랜스포머 기반 디코더 전용 모델을 훈련시켰다. 추가적으로, 베이스라인으로서, 우리는 사전 트레이닝된 GPT-2 토나이저를 사용하여 단일 언어 및 다중 언어 모델을 트레이닝하였다(Radford et al., 2018). 모든 모델은 인과 언어 모델링 훈련 목표에 기초하여 훈련되었다.
+
+### Evaluation
+
+토나이저가 모델 다운스트림 성능에 미치는 영향을 평가하기 위해 먼저 고유 토나이저 평가를 수행한 다음 외부 평가를 수행하고 마지막으로 두 평가 접근법 간의 상관 관계가 있는지 조사했다.
+
+내재적 평가는 _수정_ 및 _패리티_ 를 기반으로 토큰라이저의 생성된 출력을 평가하는 것을 목표로 합니다. 또한, 토큰나이저의 어휘가 다른 토큰나이저들과 중복되는 것이 계산된다. 내재적 평가는 토큰라이저가 모델 성능에 미치는 영향을 평가하지 않습니다.
+
+토큰나이저의 성능을 평가하는 가장 일반적인 메트릭인 Fertility(Scao et al., 2022; Stollenwerk, 2023; Rust et al., 2021)는 단어 또는 문서를 나타내는 데 필요한 토큰의 평균 수로 정의된다. 토큰나이저 \(T\)와 데이터세트 \(A\)의 경우 비옥도는 \(A\)의 토큰 수( \(T\)를 적용할 때)를 \(A\)의 단어 수로 나눈 값으로 계산할 수 있습니다. 토나이저 교육에 사용되지 않은 보류된 세트(10,000개 문서)에서 생식력을 계산한다. 문서의 단어를 계산하기 위해 우리는 공백 분할을 사용했다. 더 높은 비옥도 점수는 토큰화기의 더 약한 압축 능력에 해당한다.
+
+최근에 제안된 패리티(Petrov et al., 2023)는 토큰화기가 서로 다른 언어로 동등한 문장을 얼마나 공정하게 처리하는지를 평가한다. 토나이저 \(T\)는 \(\frac{|T(s_{A})|}{|T(s_{B})|}\approx 1\인 경우 언어 \(B\)에 대한 언어 \(A\)의 패리티를 달성하며, 여기서 \(s_{A}\)와 \(s_{B}\)는 각각 언어 \(A\)와 \(B\)의 말뭉치에 있는 모든 문장의 집합을 나타내며, 비율 \(\frac{|T(s_{A})|}{T(s_{B})|}\)는 프리미엄으로 정의된다. 우리는 인간이 200개의 언어로 번역한 동일한 문장으로 구성된 FLORES-200(Goyal et al., 2022) 병렬 코퍼스를 사용한다. 영어와 관련하여 각 토큰화기와 4개의 비영어 언어에 대한 패리티 값을 계산한다(개요는 그림 2 참조).
+
+외재적 평가는 토큰화기가 모델의 다운스트림 성능에 미치는 영향을 명시적으로 평가하는 것을 목표로 한다. 다운스트림 성능을 측정하기 위해 포괄적인 다운스트림 작업 세트(섹션 5.1 참조)를 선택했다.
+
+또한 훈련 중 단어당 주어진 모델의 평균 계산 비용에 대한 토큰화기의 영향을 계산했다. 상기 순방향 및 상기 역방향 패스를 포함하는 한 단계에 대한 훈련 동안의 계산 비용은,
+
+\[C=96Bslh^{2}\left(1+\frac{s}{6h}+\frac{V}{16lh}\right), \tag{1}\]
+
+given a model with batch size \(B\), sequence length \(s\), \(l\) layers, hidden size \(h\) and vocabulary size \(V\)(Narayanan et al., 2021). 토큰당 비용은 \(C_{\text{token}}=C/Bs\)로 도출될 수 있으며, 단어당 평균 비용은 \(C_{\text{word}}=C_{\text{token}}\times\text{fertility}\)로 도출될 수 있다. 결과는 섹션 5.3에서 논의된다.
+
+## 4 Intrinsic Tokenizer Evaluation
+
+우리의 고유 평가에서 먼저 훈련된 토큰라이저의 생식력과 패리티(섹션 4.1)와 후속적으로 어휘의 중복(섹션 4.2)을 비교한다.
+
+### Fertility & Parity
+
+설명된 번식력 및 패리티 평가를 단일/다국어 토큰라이저에 적용하면 우리의 분석에서는 그림 1에서 시각화된 바와 같이 다음 두 가지 주요 측면을 강조한다. 도 1 및 도 2에 도시된 바와 같다.
+
+첫째, 단일 언어 토큰화기를 다국어 데이터에 적용하면 번식력 및 패리티 점수가 상당히 높다는 것을 관찰할 수 있다(그림 0(a 참조). 및 도 2). 다국어 토큰라이저는 모든 비영어 문서에서 단일 언어 영어 토큰라이저보다 번식력이 크게 낮지만 그림 1과 같이 영어 문서를 토큰화하는 데 약간 더 나쁘다. 0(b).
+
+둘째, 어휘 크기가 증가함에 따라, 비옥도 및 패리티가 모든 경우에 감소하는데, 이는 더 큰 어휘가 주어진 텍스트를 토큰화할 때 더 적은 서브워드 토큰들을 요구하는 토큰화기에 의해 설명될 수 있다. 그러나 단일 언어 영어 토큰라이저의 경우 영어 문서를 토큰화할 때 생식력이 어휘에 덜 의존한다는 것을 관찰할 수 있으며, 이는 33k가 충분히 큰 어휘일 수 있음을 의미한다.
+
+### Vocabulary Overlap
+
+토큰나이저 유사도를 분석하기 위해 어휘 중복도를 계산하였다. 특히 표 1과 같이 Huggingface와 SentencePiece의 BPE 구현을 평가한다.
+
+중첩은 서로 다른 어휘 크기에 걸쳐 대략 일정하며, 두 개의 서로 다른 라이브러리에 의해서만 구현되는 동일한 알고리즘임에도 불구하고 전체 중첩은 다소 낮은 경향이 있다. 결과적으로, 토큰화기는 서로 다른 토큰화된 시퀀스를 생성하여 모델 훈련 및 다운스트림 성능에 영향을 미칠 수 있다. 근본적인 이유를 조사하면 이러한 라이브러리의 구성 및 전처리 옵션이 다르기 때문에 중복이 적을 수 있다. 다국어 문서의 시소러스가 크기 때문에 다국어 토큰화기의 겹침이 영어 토큰화기의 겹침보다 낮습니다.
+
+## 5 Extrinsic Tokenizer Evaluation
+
+다음에서는 토큰라이저의 외부 평가 결과를 설명한다. 섹션 5.1은 실험 설정을 설명하고 섹션 5.2는 조사된 토큰라이저를 기반으로 훈련된 모델의 다운스트림 성능을 제시하고 섹션 5.3은 특정 모델에 사용될 때 각 토큰라이저와 관련된 계산 비용을 분석한다.
+
+### Experimental Setup
+
+모델 다운스트림 성능에 대한 토큰라이저의 영향을 평가하기 위해 각 토큰라이저에 대해 크기 2.6 B의 디코더 전용 변압기 모델을 훈련했다. 우리는 인과 언어 모델링 훈련 목표를 기반으로 Hoffmann et al.(2022)이 제안한 스케일링 법칙에 따라 52.6 B 토큰에 대해 모델을 훈련했다. 하이퍼-파라미터는 부록 C의 표 10에 설명되어 있다. 우리는 광범위한 단일 언어 및 다중 언어 작업에 대한 제로 샷 설정에서 모델을 평가했다:
+
+* 자연어 추론: XNLI(Conneau et al., 2018), MNLI(Williams et al., 2018), RTE(Wang et al., 2018), WNLI(Levesque et al., 2012), CB(De Marneffe et al., 2019)
+* 질의 응답: X-CSQA (Goodman, 2001), XStoryCloze (Lin et al., 2022), PubMedQA (Jin et al., 2019)
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline  & 33k & 50k & 82k & 100k \\ \hline English & 0.77 & 0.76 & 0.74 & 0.74 \\ Multilingual & 0.62 & 0.62 & 0.62 & 0.61 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 서로 다른 어휘 크기에 대한 HuggingFace와 SentencePiece BPE tokenizer 간의 어휘 중복
+
+* 독해력: BoolQ Clark 등(2019)), LAMBADA Paperno 등(2016), RACE Lai 등(2017), MRPC Dolan and Brockett(2005).
+* 상식 추론: HellaSwag Zellers et al.(2019), WinoGrande Sakaguchi et al.(2020), ARC Clark et al.(2018), XCOPA Ponti et al.(2020), XCDOAH Goodman(2001), WSC Levesque et al.(2012), COPA Roemmele et al.(2011)
+* 분류: PAWS-X Yang et al.(2019), GNAD10 Schabus et al.(2017), SST Socher et al.(2013), WIC Pilehvar and Camacho-Collados (2019), PIQA Bisk et al.(2020)
+
+표 2는 각 카테고리 및 언어에 대한 태스크의 수에 대한 개요를 제공한다.
+
+### Downstream Performance
+
+다운스트림 성능에 대한 분석을 여러 부분으로 나눕니다.
+
+먼저, 조사된 토큰라이저에 대해 얻은 전반적인 결과에 대해 논의한 다음, 토큰라이저 라이브러리의 영향(섹션 5.2.1), 토큰라이저 알고리즘의 영향(섹션 5.2.2), 어휘 크기의 영향(섹션 5.2.3)을 제시한다.
+
+우리는 모든 태스크에 걸쳐 집계된 결과(표 3)와 선택된 단일 태스크에 대한 결과(표 4)를 모두 제시한다. 표 3에 제시된 모든 작업에 대한 평균 성능에 대해 언어당 다른 작업 수를 고려하기 위해 가중 평균을 계산했다. 특히, 우리는 모든 태스크에서 각 언어에 대한 평균을 계산한 다음 모든 언어-평균에 대한 평균을 계산했다.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline Task & EN & DE & FR & ES & IT \\ \hline NLI & 6 & 1 & 1 & 1 & 0 \\ QA & 3 & 2 & 2 & 3 & 2 \\ RC & 3 & 1 & 1 & 1 & 1 \\ CR & 7 & 0 & 1 & 0 & 1 \\ CL & 3 & 1 & 0 & 1 & 0 \\ \hline  & 22 & 5 & 4 & 6 & 4 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 언어별 평가과제 수와 자연어 추론(NLI), 독해(RC), 질의응답(QA), 상식추론(CR) 및 분류(CL)의 범주의 개요.
+
+그림 1: (a) 비영어, 다국어 문서 및 (b) 영어 문서에 적용된 단일 언어 및 다국어 토큰라이저의 생식력 점수 비교
+
+그림 2: 단일 언어(영어) 토큰화기와 다국어 토큰화기가 적용된 다국어 문서 간의 패리티 점수 비교.
+
+Monolingual TokenizerTable 3은 평균적으로 BPE-SP-33 tokenizer가 가장 성능이 좋은 tokenizer이고 GPT-2 tokenizer가 그 뒤를 잇고 있음을 보여준다. 흥미롭게도, 33k의 어휘 크기를 갖는 SentencePiece의 BPE의 구현이 LLAMA2에 사용되었다(Touvron et al., 2023). 집계 메트릭은 전체 성능에 대한 합리적인 개요를 제공합니다. 그러나 작업 간에 잠재적으로 큰 성능 차이를 표현하지 않습니다. 따라서 이 작업에 대해 최고 및 최악을 수행하는 토큰화기에 의해 얻은 선택된 작업 목록에 대해 얻은 결과를 표 4에 나열했다. 결과는 성능 차이가 클 수 있음을 보여줍니다. 예를 들어, 상식 추론 작업인 ARC-Easy의 경우 최고 토큰화기와 최악 토큰화기의 간격은 9%이다.
+
+다국어 토큰나이저표 3은 BPE-SP-100 토큰나이저가 가장 성능이 좋은 토큰나이저이고 그 다음이 BPE-SP-82 토큰나이저임을 보여준다. 또한 표 3은 GPT-2 토큰화기가 제대로 작동하지 않음을 보여주며, 이는 미리 훈련된 GPT-2 토큰화기를 사용하여 다국어 모델을 미리 훈련하고 미세 조정해야 함을 의미합니다. 선택한 태스크(4)를 분석한 결과 다국어 토큰라이저의 경우 태스크 간의 성능 차이가 클 수 있음을 알 수 있다.
+
+#### 5.2.1 Impact of the Tokenizer Library
+
+표 5는 BPE-SP가 모든 언어에서 단일 언어 및 다중 언어 설정에서 평균적으로 BPE-HF보다 우수하다는 것을 보여준다. 성능 차이는 토큰라이저의 사전 및 사후 처리의 구현 세부 사항의 차이에 기인할 수 있으며, 이는 어휘 생성(섹션 4.2 참조) 및 결과적으로 다운스트림 성능에 영향을 미칠 수 있다.
+
+\begin{table}
+\begin{tabular}{l l c c c} \hline \hline  & Task & Min & Max & Rand. \\ \hline \multirow{4}{*}{\begin{tabular}{c} **CIT** \\ \end{tabular} } & ARC-Easy & 0.50 & 0.59 & 0.20 \\  & HellaSwag & 0.34 & 0.41 & 0.25 \\  & MRPC & 0.54 & 0.69 & 0.50 \\  & PIQA & 0.67 & 0.72 & 0.50 \\ \hline \multirow{4}{*}{
+\begin{tabular}{c} **CIT** \\ \end{tabular} } & XNLI FR & 0.37 & 0.49 & 0.33 \\  & XNLI EN & 0.49 & 0.52 & 0.33 \\ \cline{1-1}  & X-CODAH ES & 0.28 & 0.43 & 0.25 \\ \cline{1-1}  & 10kGNAD & 0.15 & 0.43 & 0.11 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 선택된 작업과 이 작업에 대한 무작위 성능에 대해 가장 불량하고 성능이 좋은 토큰화기입니다.
+
+그림 3: (a) 다국어, (b) 영어 및 (c) 독일어 문서 내에서 단일 단어를 처리하는 데 필요한 평균 컴퓨팅(GFLOPS) (백워드 패스를 포함)입니다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline Model & EN & MULTI \\ \hline GPT-2-50 & 50.36 & 39.41 \\ \hline BPE-HF-33 & 49.13 & 40.52 \\ BPE-HF-50 & 49.51 & 40.47 \\ BPE-HF-82 & 48.71 & 40.24 \\ BPE-HF-100 & 49.54 & 40.48 \\ \hline BPE-SP-33 & **50.81** & 40.28 \\ BPE-SP-50 & 49.81 & 40.49 \\ BPE-SP-82 & 48.99 & 41.21 \\ BPE-SP-100 & 49.46 & **41.44** \\ \hline UNI-SP-33 & 50.28 & 40.30 \\ UNI-SP-50 & 49.90 & 40.48 \\ UNI-SP-82 & 49.65 & 41.20 \\ UNI-SP-100 & 50.21 & 40.74 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 모든 다운스트림 작업에 걸친 단일 언어 및 다중 언어 토큰라이저의 평균 정확도. 언어당 다양한 작업 수로 인해 다중 언어 정확도는 평균에 동등하게 기여하는 각 언어로 조정되었다.
+
+#### 5.2.2 Impact of the Tokenizer Algorithm
+
+또한, 표 5는 언어에 따라 BPE 또는 Unigram이 더 나은 성능을 나타낸다는 것을 보여준다. 주목할 점은 독일어와 영어가 BPE 알고리즘의 혜택을 받는 반면, 루마니아어인 프랑스어와 스페인어는 유니그램의 혜택을 받았다는 점이다. 루마니아어인 이탈리아어에 대한 실험 역시 다른 두 루마니아어와는 다른 양상을 보인다.
+
+#### 5.2.3 Impact of Tokenizer Vocabulary
+
+어휘 크기의 영향을 분석한 결과, 단일 언어 영어 설정에서 더 작은/중간 크기, 즉 33k/50k의 어휘 크기가 더 나은 성능을 보이는 반면(표 5), 다국어 설정에서는 독일어를 제외한 모든 경우에서 더 큰 어휘 크기가 더 나은 다운스트림 성능을 보이는 것으로 나타났다. 단일 언어 영어 설정에서 모든 태스크에 걸쳐 평균적으로 가장 성능이 좋은 토큰화기가 33k의 어휘 크기를 가졌고, 가장 성능이 좋은 다국어 토큰화기가 100k의 어휘 크기를 가짐을 보여주는 표 3에 제시된 결과를 고려하면, 단일 언어 영어 설정의 경우 작은 어휘 크기가 유익하고 다국어 설정의 경우 큰 어휘 크기가 필요하다는 관찰을 추가로 뒷받침한다.
+
+### Computational Costs
+
+고정 모델이 주어지면 계산 비용은 식에 정의된 어휘 크기와 토큰화기의 비옥도에 따라 달라진다. (1).
+
+더 큰 어휘 크기는 추가 계산 비용을 도입하지만, 섹션 4에서 논의된 바와 같이 생식력 점수가 낮아지고 따라서 문서 세트를 처리하기 위한 전체 계산 비용이 낮아질 수 있다. 도 3은 어휘 크기를 50k에서 더 큰 어휘 크기로 증가시키는 것이 모든 경우에 계산 비용을 증가시킨다는 것을 보여준다. 이것은 더 큰 어휘 크기의 잠재적으로 낮은 번식력이 더 큰 어휘 크기에 의해 도입되는 추가 비용을 보상할 수 없음을 강조한다.
+
+또한, 다국어 문서에 대한 계산 훈련 비용이 단일 언어 영어 토큰아이저보다 다국어 토큰아이저에서 상당히 낮다는 것을 관찰한다(그림). 2(a)). 사실, Fig. 부록의 2(b) 및 표 11은 훈련 비용이 주어진 데이터 세트에 대해 최대 68%(독일 문서의 경우 Multi-UNI-SP-50에서 EN-UNI-SP-100을 비교하는 것) 증가할 수 있음을 보여준다. 훈련 동안 고정된 문서 세트(예를 들어, 특정 사실을 학습하기 위해 위키피디아)를 완전히 처리하고 주어진 수의 토큰뿐만 아니라 처리해야 한다고 가정하면, 토큰화기의 선택은 이 코퍼스에 대한 훈련을 위한 계산 비용에 상당한 영향을 미칠 수 있다.
+
+단일 언어 영어 설정에서 다중 언어 및 단일 언어 영어 토큰아이저 간의 큰 비용 차이를 관찰할 수 있지만, 영어 문서를 처리하기 위한 다중 언어 및 단일 언어 영어 토큰아이저 간의 계산 비용의 차이는 미미하다(그림). 2(c)).
+
+## 6 내재적 및 외재적 토큰화기 성능 간의 상관 관계
+
+이 섹션에서는 고유 토큰화 메트릭의 가능한 예측 관계를 조사합니다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c} \hline \hline  & & \multicolumn{4}{c}{MULTI} & \multicolumn{2}{c}{MONO} \\ \hline Vocabulary & DE & FR & IT & ES & EN & AVG & EN \\ \hline
+33 & **36.75** & 36.66 & 39.30 & 41.76 & 47.37 & 40.37 & 49.55 \\
+50 & 36.12 & 37.07 & 38.94 & 42.22 & 46.71 & 40.21 & **49.90** \\
+82 & 36.50 & 37.83 & 39.97 & 42.30 & **47.80** & 40.88 & 49.12 \\
+100 & 35.92 & **38.07** & **40.13** & **42.64** & 47.67 & **40.89** & 49.74 \\ \hline \hline Algorithm and Library & DE & FR & IT & ES & EN & AVG & EN \\ \hline BPE-HF & 35.69 & 37.31 & 39.37 & 42.28 & 47.48 & 40.43 & 48.98 \\ BPE-SP & **37.13** & 37.45 & **40.04** & 41.96 & **47.68** & **40.85** & 49.77 \\ UNI-SP & 36.51 & **37.66** & 39.57 & **42.56** & 47.10 & 40.68 & **50.01** \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 어휘 크기(상위), 토큰나이저 알고리즘 및 라이브러리(하위)가 다운스트림 성능에 미치는 영향. 정확도 점수는 라이브러리 및 토큰화 알고리즘(상위) 또는 다른 어휘 크기(하위)에 대해 평균화된다.
+
+parity)와 외부 모델 다운스트림 성능을 비교한다.
+
+그림 1의 상관 히트맵에서 강조 표시된 대로. 4, 우리는 모든 작업과 언어에 걸쳐 뚜렷한 상관관계가 없음을 발견하여 보다 세분화된 분석을 요구한다. 비영어 작업의 경우 주로 저출산과 더 높은 다운스트림 성능 사이의 상관 관계를 관찰하는 반면, 비영어 작업은 겉보기에 무작위적인 양의 상관 관계와 음의 상관 관계를 산출한다. 그러나 언어당 다국어 태스크의 수는 영어보다 훨씬 적고 XSQA 및 LAMBADA와 같은 여러 다국어 태스크의 경우 영어 태스크와 번역 버전 사이의 유사한 상관 동작이 관찰될 수 있다는 점에 유의해야 한다.
+
+다양한 어휘 크기에 따른 생식력 추세를 취하다(도 1 참조). 고려하여, 우리는 생식력이 특정 언어 특정 어휘 크기 제한에서 다운스트림 성능과만 상관관계가 있다고 가정한다. 영어의 경우, 토큰화기는 이미 33k 토큰의 어휘 크기에 대해 낮고 수렴에 가까운 번식력 점수를 제공한다. 추가 토큰은 약간의 번식력 향상만 산출하지만 형태학적 분할을 포착하지 못하여 다운스트림 성능을 해치고 결국 계산 비용을 크게 증가시킬 수 있다고 가정한다(섹션 5.3 참조).
+
+대조적으로, 다국어 토큰라이저의 경우 어휘 크기가 증가함에 따라 상당한 번식력 향상을 관찰한다. 추가 언어에 의해 유도된 더 큰 시소러스로 인해, 토큰화기는 모델이 모든 언어에 대해 설득력 있게 수행할 수 있도록 하기 위해 더 큰 어휘를 요구한다. 따라서 비융합 어휘 범위 내에서만 다양한 어휘 크기로 번식력과 다운스트림 성능 사이의 강력하고 부정적인 상관 관계를 달성한다.
+
+결론적으로, 비옥도 및 패리티와 같은 고유 토큰나이저 메트릭은 가감하여 취할 필요가 있으며 추정컨대 특정 범위에서 다운스트림 모델 성능을 예측할 뿐이다. 저출산 점수는 필요한 기준으로 간주될 수 있지만 충분한 기준으로 간주되지 않을 수 있다.
+
+7 Conclusion & Future Work
+
+이 작업은 토큰화기가 모델의 다운스트림 성능에 미치는 영향을 더 잘 이해하기 위한 기본 단계를 나타낸다. 우리는 언어 전반에 걸쳐 균형 잡힌 점유율을 가진 훈련 토큰라이저가 모든 언어에서 비교할 수 있는 저출산 및 패리티 점수를 달성한다는 것을 보여주었으며, 이는 중요한 의미를 가지고 있다. 더 높은 비옥도는 훈련 동안 최대 68% 더 많은 계산 비용을 초래하고 모델이 제한된 컨텍스트 창에서 장거리 종속성을 학습하는 것을 방지한다.
+
+또한, 토크나이저 선택이 모델의 다운스트림 성능에 상당한 영향을 미칠 수 있음을 강조한다. 우리는 BPE 알고리즘이 단일 언어 및 다중 언어 설정에 잘 적용된다는 것을 보여줄 수 있다. 영어의 경우, 33k의 어휘 크기가 충분한 반면, 5개의 고려된 언어를 기반으로 하는 다국어 모델은 최대 3배 더 큰 어휘 크기를 필요로 한다는 것을 보여준다. 또한, SentencePiece 라이브러리가 Huggingface tokenizer 라이브러리보다 우수한 성능을 보임을 확인할 수 있었다.
+
+마지막으로 내재적 토크나이저 성능과 외재적 토크나이저 성능 사이에는 명확한 상관관계가 없음을 입증할 수 있었지만, 그 상관관계는 오히려 작업에 따라 다르다. 작은 비옥도 값은 다운스트림 성능이 좋은 데 필요한 조건일 수 있지만 충분한 조건은 아닐 수 있다.
+
+향후, 우리는 매우 다양한 언어를 포함한 더 큰 언어 세트에 대한 토큰라이저를 조사하고, 토큰라이저 훈련 동안 컨텍스트 정보에 초점을 맞춘 SAGE(Yehezkel and Pinter, 2023)와 같은 대체 토큰화 접근법의 영향을 조사하는 것을 목표로 한다.
+
+그림 4: 5개 언어 모두에 대한 생식력/패리티 점수와 다운스트림 과제 수행의 스피어먼 상관 관계. 우리는 영어 과제(왼쪽)에 대해 단일 언어 모델을 평가한 반면, 우리의 다중 언어 모델은 모든 비영어 과제에서 평가된다. 피어슨과 켄달 상관 메트릭은 매우 유사한 그림을 보여주었다.
+
+## 8 Limitations
+
+우리 작업의 확장성에도 불구하고 다음과 같은 한계에 직면해 있다.
+
+첫째, 각 토큰화기에 대해 하이퍼-파라미터 최적화를 수행하지 않았다. 이는 모든 26개 모델을 한 번만 훈련하려면 \(약 59.000\) GPU 시간이 필요하다는 점을 고려할 때 추가 계산 비용을 피하기 위한 의도적인 선택이었다.
+
+두 번째로, 우리는 추가적인 계산비용으로 인해 주어진 토큰나이저의 모델 성능에 대한 서로 다른 랜덤 시드의 영향을 조사하지 않았다. 그러나, 우리의 결과는 선택된 실험의 견고성을 추가로 조사할 수 있는 향후 작업의 기초를 마련한다.
+
+셋째, 얻은 결과가 더 큰 모델 크기로 외삽될 수 있는지 여부를 조사하지 않았으며 이는 향후 작업에 맡긴다. 그러나 BPE-SP-33 토큰화기가 단일 언어 설정에 대해 가장 성능이 좋은 토큰화기라는 발견과 이 토큰화기가 최대 65B(Touvron 등)까지 최신 모델을 훈련하는 데 사용되었다는 사실은 우리의 결과가 더 큰 모델 크기로도 전달된다는 것을 나타낼 수 있다.
+
+마지막으로, 이 작업의 맥락에서 관심 있는 메트릭이 제로 샷 다운스트림 성능이었기 때문에 몇 가지 쇼 설정에 대한 결과를 제공하지 않았다. 토나이저 선택이 모델의 다운스트림 성능에 영향을 미치는지 여부를 조사하고자 했기 때문에 널리 적용되는 메트릭 중 하나, 즉 제로 샷 설정을 제한하는 것으로 이 연구 질문에 답하기에 충분하다고 주장한다. 제로 샷 시나리오에 초점을 맞추는 또 다른 장점은 소수의 샷 예제의 선택으로 대표되는 추가 변수를 도입하지 않는다는 것이다. 그러나, 우리는 우리의 결과가 소수의 샷 평가 설정으로 변환되는지 여부를 조사하기 위해 향후 작업을 권장한다.
+
+## 9 Ethical And Broader Impact
+
+LLM은 대중으로부터 상당한 관심을 받고 다양한 언어를 사용하는 사회 전반에 걸쳐 널리 사용되는 파괴적인 기술을 나타낸다. 따라서 서로 다른 언어를 가진 사람들에 걸쳐 기술의 민주화를 보장하는 것은 중요한 가치를 나타낼 것이다. 우리의 연구는 LLM 교육에 필요한 핵심 구성 요소를 나타내는 토큰화기를 훈련하는 동안 다국어주의를 무시하는 것이 훈련 비용 증가 및 다운스트림 성능 감소와 같은 심각한 단점을 야기하여 주요 윤리적 문제를 제기할 수 있음을 강조한다. 또한 교육 비용이 증가하면 탄소 발자국이 증가하여 환경에 영향을 미친다. 우리의 연구 결과는 이 기본 기술의 향상된 개발과 사용을 뒷받침한다.
+
+## Acknowledgements
+
+이 작업은 오픈GPT-X 프로젝트(프로젝트 번호 68GX21007D)를 통해 독일 연방 경제 기후 행동부(BMWK)와 독일 연방 교육 연구부 및 노르트라인 웨스트팔렌 주가 라마-연구소 포 머신, 라마R22B의 일부로 자금을 지원했으며 보조금 협정 제101135671호(TrustLLM) 및 952215호(TAILOR)에 따라 유럽 연합의 호라이즌 2020 연구 및 혁신 프로그램에 의해 지원되었다. 저자들은 JSC(Julich Supercomputing Center)의 GCS 슈퍼컴퓨터 JUWELS와 TU Dresden의 고성능 컴퓨팅 센터 [Zentrum fur Informationsdienste und Hochleistungsrechnen (ZIH)]에서 높은 처리량 계산을 위한 시설을 제공함으로써 이 프로젝트에 자금을 지원하는 가우스 센터(www.gauss-centre.eu)에 감사한다.
+
+## References
+
+*9. Leibniz-Institut fur Deutsche Sprache, Mannheim. 로 인용: SS1.
+* Y. 벤지오 Ducharme, P. Vincent (2000)A neural probabilistic language model. Neural information processing systems13, pp. 로 인용: SS1.
+* Y. 비스크 젤러스 제이 가오 Choi, et al. (2020)Piga: reasoning about physical commonsense in natural language. In Proceedings of the AAAI conference on artificial intelligence, Vol. 34, pp. 7432-7439. Cited by: SS1.
+*T. 브라운만 라이더 Subbiah, J. D. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, et al. (2020)Language models is few-shot learners. Advances in neural information processing systems33, pp. 1877-1901. Cited by: SS1.
+*Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Grish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Illya Sutskever, Dario Amodei. 2020b. 언어 모델은 샷이 적은 학습자입니다. *신경 정보 처리 시스템의 발전 33: 신경 정보 처리 시스템에 대한 연례 회의 2020, NeurIPS 2020, 12월 6-12, 2020, 가상_.
+* 칠코바와 트로신(2022) 나데즈다 칠코바와 세르게이 트로신. 2022. CodeBPE: Investigating subtokenization options for large language model pretraining on source code. 코드 워크샵을 위한 딥 러닝에서.
+* Clark et al. (2019) Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 2019. Boolq: 자연스러운 예/아니오 질문의 놀라운 난이도를 탐구합니다. NAACL-HLT(1)_의 페이지 2924-2936. 계산 언어학 협회.
+* Clark et al.(2022) Jonathan H. Clark, Dan Garrette, Iulia Turc, and John Wieting. 2022. Canine: 언어 표현을 위한 효율적인 토큰화 프리 인코더를 사전 훈련합니다. _ 계산 언어학 협회의 트랜잭션_, 10:73-91.
+* Clark 등(2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 2018. 당신은 질문에 대한 답을 풀었다고 생각하나요? AI2 추론 챌린지를 시도합니다. _ CoRR_, abs/1803.05457.
+* Computer (2023) Together Computer. 2023. Redpajama: 라마 트레이닝 데이터세트를 재현하기 위한 오픈 소스 레시피.
+* Conneau 등(2018) Alexis Conneau, Ruty Rinott, Guillaume Lample, Adina Williams, Samuel R. 보우먼, 홀거 슈웬크 베셀린 스토야노프 2018. XNLI: evaluating cross-language sentence representation. EMNLP의 2475-2485 페이지입니다. 계산 언어학 협회입니다.
+* De Marneffe et al. (2019) Marie-Catherine De Marneffe, Mandy Simons, and Judith Tonhauser. 2019. The commitmentbank: Investigating projection in naturally occurring discourse. 《시무와 베두등》 제23권 107-124쪽
+* Devlin 등(2018) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2018. Bert: 언어 이해를 위한 딥 양방향 트랜스포머의 사전 훈련. _ arXiv preprint arXiv:1810.04805_.
+* Dolan and Brockett (2005) William B. Dolan and Chris Brockett. 2005. Automatically constructing a corpus of sentential paraphrases. [Paraphrasing에 관한 제3차 국제 워크숍(IWP2005)의 회보]에서.
+* Ekgren 등(2023) Ariel Ekgren, Amaru Cuba Gyllensten, Felix Stollenwerk, Joey Ohman, Tim Isbister, Evangelia Gogoulou, Fredrik Carlsson, Alice Heiman, Judit Casademont, and Magnus Sahlgren. 2023. Gpt-sw3: A autoregressive language model for the nordic languages.
+* Gage (1994) Philip Gage. 1994. 데이터 압축을 위한 새로운 알고리즘. _ C 사용자 저널 아카이브_, 12:23-38.
+* Gao 등(2020a) Leo Gao, Stella Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, Shawn Presser, and Connor Leahy. 2020a. 파일: 언어 모델링을 위한 다양한 텍스트의 800gb 데이터 세트입니다. _ arXiv preprint arXiv:2101.00027_.
+*Gao et al.(2020b) Yingqiang Gao, Nikola I. Nikolov, Yuhuang Hu, and Richard H.R. Hahnloser. 2020b. 자체 주의를 기울이는 캐릭터 수준의 번역입니다. [컴퓨팅 언어학 협회 제58차 연례 회의]에서 1591-1604 페이지, 온라인. 계산 언어학 협회
+* Goodman (2001) Joshua Goodman. 2001. 언어 모델링에 약간의 진전이 있습니다. _ CoRR_, cs.CL/0108005v1.
+* Goyal et al. (2022) Naman Goyal, Cynthia Gao, Vishrav Chaudhary, Peng-Jen Chen, Guillaume Wenzek, Da Ju, Sanjana Krishnan, Marc'Aurelio Ranzato, Francisco Guzman, and Angela Fan. 2022. The Flores-101 Evaluation Benchmark for Low-Resource and Multilingual Machine Translation. _ 계산 언어학 협회의 트랜잭션_, 10:522-538.
+* Graen et al.(2019) Johannes Graen, Tannon Kew, Anastassia Shaitarova, and Martin Volk. 2019. Modelling large parallel corpora: The zurich parallel corpus collection. "Proceedings of the 7th Workshop on Challenge in the Management of Large Corpora (CMLC)_", 1-8 페이지. Leibniz-Institut fur Deutsche Sprache.
+* Graen et al.(2014) J. Graen, D. Batinic, and M. 폭스 2014. Cleaning the Europarl corpus for language application. 2014년 공원에서요 힐데하임 스트티펑 대학교
+* 유럽 의회의 디지털 코퍼스. *Proc. LREC 2014 (언어 자원 및 평가 회의). 레이캬빅, 아이슬란드_, 3164-3171 페이지.
+* Hoffmann 등(2022a) Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Thomas Hennigan, Eric Noland, Katherine Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Oriol Vinyals, Jack Rae, and Laurent Sifre. 2022a. 컴퓨팅 최적화 대용량 언어 모델 훈련에 대한 실증적 분석 《신경 정보 처리 시스템의 발전》에서, 35페이지, 30016-30030 페이지. 커란 어소시에이트, Inc.
+* Held et al. (2019)Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aureelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Jack W. 래, 오리올 빈일스, 로랑 시프르 2022b. 컴퓨팅 최적화 대용량 언어 모델 교육 _ CoRR_, abs/2203.15556.
+*호플러 및 피오트로스키(2011) 스테판 호플러 및 마이클 피오트로스키. 2011. 스위스 법률 텍스트의 문헌학적 연구를 위한 말뭉치 구축. _ Journal for Language Technology and Computational Linguistics_, 26(2):77-89.
+* Jin et al.(2019) Qiao Jin, Bhuwan Dhingra, Zhengping Liu, William Cohen, and Xinghua Lu. 2019. PubMedQA: A dataset for biommedical research question answering. "2019년 자연 언어 처리 실증 방법에 관한 회의 및 제9차 자연 언어 처리에 관한 국제 공동 회의(EMNLP-IJCNLP)"에서 2567-2577 페이지, 홍콩, 중국. 계산 언어학 협회
+* Koehn(2005) P. Koehn. 2005. Europarl: A parallel corpus for statistical machine translation. "기계 번역 서밋" 제5권 79쪽 86쪽 아시아 태평양 기계 번역 협회(AAMT)
+* Kudo (2018) Taku Kudo. 2018. 서브워드 정규화: 다수의 서브워드 후보들을 갖는 신경망 번역 모델 개선. 호주 멜버른의 66-75쪽, _제56회 컴퓨터 언어학 협회 연례 회의(제1권: 장문)_에서. 계산 언어학 협회
+* Kudo and Richardson (2018) Taku Kudo and John Richardson. 2018. Sentencepiece: A simple and language independent subword tokenizer and detokenizer for neural text processing _ EMNLP 2018_, 66페이지.
+* Lai et al.(2017) Guokun Lai, Qizhe Xie, Hanxiao Liu, Yiming Yang, and Eduard Hovy. 2017. RACE: 대규모 ReAdging comprehension dataset from examinations. "2017년 자연 언어 처리 실증 방법에 관한 회의 회보"에서 덴마크 코펜하겐의 785-794쪽이다. 계산 언어학 협회
+* Levesque 등(2012) Hector Levesque, Ernest Davis, and Leora Morgenstern. 2012. winograd 스키마 챌린지. 지식 표현과 추론의 원리에 관한 제13차 국제 회의에서.
+* Lin et al.(2022) Xi Victoria Lin, Todor Mihaylov, Mikel Artetxe, Tianlu Wang, Shuohui Chen, Daniel Simig, Myle Ott, Naman Goyal, Shruti Bhosale, Jingfei Du, et al. 2022. Few-shot learning with multilingual generative language models. 《자연어 처리의 경험적 방법에 관한 2022년 회의 회보》에서 9019-9052쪽이다.
+* Lison and Tiedemann (2016) Pierre Lison and Jorg Tiedemann. 2016. OpenSubtitles2016: 영화 및 TV 자막에서 큰 병렬 말뭉치를 추출하는 단계. "제10회 언어 자원 및 평가에 관한 국제 회의(LREC-2016)"에서_
+* Moi and Patry (2023) Anthony Moi and Nicolas Patry. 2023년 포옹페이스의 토큰라이저
+* Narayanan 등(2021) Deepak Narayanan, Mohammad Shoeybi, Jared Casper, Patrick LeGresley, Mostofa Patwary, Vijay Korthikanti, Dmitri Vainbrand, Prethvi Kashinkunti, Julie Bernauer, Bryan Catanzaro, Amar Phanishayee, and Matei Zaharia. 2021. 메가트론-lm을 사용하여 gpu 클러스터에 대한 효율적인 대규모 언어 모델 훈련. In _Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis_, SC'21, New York, NY, USA. 컴퓨팅 기계 협회
+* Paperno 등(2016) Denis Paperno, German Kruszewski, Angeliki Lazaridou, Quan Ngoc Pham, Raffaella Bernardi, Sandro Pezzelle, Marco Baroni, Gemma Boleda, and Raquel Fernandez. 2016. The LAMBADA dataset: Word prediction require a broad discourse context. *ACL(1)_에서. 컴퓨터 언어학 협회
+* Petrov et al. (2023) Aleksandar Petrov, Emanuele La Malfa, Philip HS Torr, and Adel Bibi. 2023. 언어 모델 토큰라이저는 언어 간에 불공정성을 도입합니다. _ arXiv preprint arXiv:2305.15425_.
+* Pilehvar and Camacho-Collados (2019) Mohammad Taher Pilehvar and Jose Camacho-Collados. 2019. WiC: the word-in-context dataset for evaluating context-sensitive meaning representations. 전산 언어학 협회의 2019 북미 회의 회보: 인간 언어 기술 1권(장문 및 단문)_에서 1267-1273 페이지, 미네소타주 미니애폴리스. 계산 언어학 협회
+* Ponti 등 (2020) Edoardo Maria Ponti, Goran Glavas, Olga Majewska, Qianchu Liu, Ivan Vulic, and Anna Korhonen. 2020. XCOPA: 인과적 상식 추론을 위한 다국어 데이터 세트. "2020년 EMNLP(Empirical Methods in Natural Language Processing) 회의 회보"에서 2362-2376 페이지, 온라인. 계산 언어학 협회
+* Radford et al.(2018) Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya Sutskever, et al. 2018. Improving language understanding by generative pre-training.
+* Roemmele 등(2011) Melissa Roemmele, Cosmin Adrian Bejan, and Andrew S Gordon. 2011. 그럴듯한 대안의 선택: 상식적인 인과 추론의 평가. <2011 AAAI 봄 심포지엄 시리즈>에서.
+* Rust 등(2021) Phillip Rust, Jonas Pfeiffer, Ivan Vulic, Sebastian Ruder, and Iryna Gurevych. 2021. 토큰라이저는 얼마나 좋은가요? 다국어 언어 모델의 단일 언어 성능에 대해. 제59차 전산언어학회 연차총회 및 제11차 자연어처리 국제공동회의(제1권: 장문)에서, 3118-3135 페이지, 온라인. 계산 언어학 협회
+* Rust et al. (2019)Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 2020. Winogrande: a adversarial winograd schema challenge at scale. AAAI_에서 8732-8740 페이지. AAAI 프레스.
+* Le Scao 등(2020) Teven Le Scao, Angela Fan, Christopher Akiki, Elie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, Jonathan Tow, Alexander M. Rush, Stella Biderman, Albert Webson, Pawan Sasanka Ammanmanchi, Thomas Wang, Benoit Sagot, Niklas Muenenighoff, Albert Villanova del Moral, Olatunji Ruwase, Rachel Bawden, Huu Nguyen, Lucile Saulnier, Samson Tan, Pedro Ortiz Suarez, Victor Sanh, Hugo Laurencon, Yacine Jernite, Julien Launay, Margaret Mitchell, Colin Raffel, Aaron Gokaslan, Adi Simhi, Aitor Soroa, Alham Fikri Aji, Amit Alfassy, Anna Rogers, Ariel Kreisberg Nitzav, Canwen Xu, Chenghao Mou, Chris Emezue, Christopher Klamm, Colin Leong, Daniel van Strien, David Ifeoluwa Adelani, and et al. 2022. BLOOM: 176b-parameter open-access multilingual language model. _ CoRR_, abs/2211.05100.
+* Schabus et al.(2017) Dietmar Schabus, Marcin Skowron, and Martin Trapp. 2017. 100만개의 게시물: 독일 온라인 토론 데이터 세트. 제40회 국제 ACM SIGIR 국제학술대회(SIGIR)에서, 일본 도쿄, 1241-1244페이지.
+* Schuster and Nakajima (2012) Mike Schuster and Kaisuke Nakajima. 2012. 일본어 및 한국어 음성 검색. _2012 IEEE international conference on acoustics, speech and signal processing (ICASSP)_, pages 5149-5152. IEEE.
+* Sennrich et al.(2015) Rico Sennrich, Barry Haddow, and Alexandra Birch. 2015. 서브워드 단위를 갖는 희귀 단어의 신경망 기계 번역. _ arXiv preprint arXiv:1508.07909_.
+* Shliazhko et al.(2022) Oleh Shliazhko, Alena Fenogenova, Maria Tikhonova, Vladislav Mikhailov, Anastasia Kozlova, and Tatiana Shavrina. 2022. mgpt: 소수의 학습자가 다국어를 구사합니다. _ arXiv preprint arXiv:2204.07580_.
+* Socher et al.(2013) Richard Socher, Alex Perelygin, Jean Wu, Jason Chuang, Christopher D. Manning, Andrew Ng, and Christopher Potts. 2013. 감성 트리뱅크를 통한 의미 구성성에 대한 재귀적 심층 모델. <프로시빙스 of the 2013 Conference on Empirical Methods in Natural Language Processing>에서 1631-1642 페이지, 미국 워싱턴주 시애틀. 계산 언어학 협회
+* Stollenwerk (2023) Felix Stollenwerk. 2023. training and evaluation of a multilingual tokenizer for gpt-sw3.
+* Tay 등(2021) Yi Tay, Vinh Q Tran, Sebastian Ruder, Jai Gupta, Hyung Won Chung, Dara Bahri, Zhen Qin, Simon Baumgartner, Cong Yu, and Donald Metzler. 2021. 크라포머: 그래디언트 기반 서브워드 토큰화를 통한 고속 문자 변환기. <학습 표현에 관한 국제 회의>에서.
+* Toraman 등(2023) Cagri Toraman, Eyup Halit Yilmaz, Furkan Sahinuc, and Oguzhan Ozcelik. 2023. 토큰화가 언어 모델에 미치는 영향: 터키어에 대한 분석 _ ACM 트랜스, 아시아 로우 리조르 랑 Inf. 처리._ , 22(4).
+* Touvron 등 (2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: open and efficient foundation language models, 2023. _URL https://arxiv. org/abs/2302.13971_.
+* 투브론 등(2022) 휴고 투브론, 루이 마틴, 케빈 스톤, 피터 알버트, 암자드 알마하리, 야스민 바베이, 니콜라 바슐리코프, 수미 바트라, 크리스티안 칸톤 페러, 모야 첸, 기옌 쿠쿠룰, 다비드 에시오부, 주드 페르난데스, 제레미 푸, 원린 푸, 브라이언 풀러, 신시아 가오, 제레미 푸, 신시아 가오, 사가하르 호세이니, 루이 호우, 하칸 이난, 마르신 카다스, 빅토르 케르케즈, 마디안 하바사, 이사벨 클라우만, 아르템 고레네프, 신시아 가오, 사그하르 호세이니, 하칸 이난, 마틴 리, 다이애나 리스코비치, 잉하이 루, 윤잉 마오, 사보트 라흐로프, 푸시카 미슈라, 앤드류 폴턴, 제레미 라이젠슈타인, 라시룽타, 칼리안 살라디, 앨런 셸톤, 루안 실바, 에릭 마이클 스미스, 란잔 수브라만 2023년 라마 2: 토대를 열고 채팅 모델을 미세 조정합니다. _ CoRR_, abs/2307.09288.
+* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. 고메즈, 루카스 카이저 일리아 폴로수킨 2017년입니다 주목만 하면 됩니다 _NIPS_에서 5998-6008 페이지입니다.
+* Wang et al.(2018) Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel Bowman. 2018. GLUE: 자연어 이해를 위한 멀티 태스크 벤치마크 및 분석 플랫폼. 2018 EMNLP 워크샵 BlackboxNLP의 _Proceedings of the 2018 EMNLP Workshop BlackboxNLP: Analyzing and Interpretting Neural Networks for NLP_, pages 353-355, Belgium, Brussels. 계산 언어학 협회
+* Wang et al.(2020) Changhan Wang, Kyunghyun Cho, and Jiatao Gu. 2020. 바이트 수준 하위 단어를 사용한 신경망 기계 번역입니다. _ Proceedings of the AAAI Conference on Artificial Intelligence_, 34(05):9154-9160.
+* Williams et al.(2018) Adina Williams, Nikita Nangia, and Samuel Bowman. 2018. 추론을 통한 문장 이해를 위한 광범위 커버리지 챌린지 코퍼스. <프로시빙스 of the 2018 Conference of North American Chapter of the Computational Linguistics: Human Language Technologies, Volume 1(Long Papers)_>, pages 1112-1122, New Orleans, Louisiana. 계산 언어학 협회
+
+Linting Xue, Aditya Barua, Noah Constant, Rami Al-Rfou, Sharan Narang, Mihir Kale, Adam Roberts, Colin Raffel. 2022. Byt5: 미리 훈련된 바이트 간 모델을 사용하여 토큰 없는 미래를 향합니다. _ 계산 언어학 협회의 트랜잭션_, 10:291-306.
+* Yang et al.(2019) Yinfei Yang, Yuan Zhang, Chris Tar, and Jason Baldridge. 2019. PAWS-X: 패러프레이즈 식별을 위한 교차 언어 적대적 데이터 세트. 《2019년 자연어 처리 실증 방법에 관한 회의 및 제9차 자연어 처리에 관한 국제 공동 회의(EMNLP-IJCNLP)》에서 3687-3692 페이지, 홍콩, 중국. 계산 언어학 협회
+* Yehezkel and Pinter (2023) Shaked Yehezkel and Yuval Pinter. 2023. 문맥을 하위 단어 어휘에 통합합니다. [EACL]의 623-635 페이지입니다. 계산 언어학 협회입니다.
+* Yu et al. (2023) Lili Yu, Daniel Simig, Colin Flaherty, Armen Aghajanyan, Luke Zettlemoyer, and Mike Lewis. 2023. 메가바이트: 멀티스케일 트랜스포머로 백만 바이트의 시퀀스를 예측합니다. _ arXiv preprint arXiv:2305.07185_.
+* Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yoatan Bisk, Ali Farhadi, and Yejin Choi. 2019년 헬라스와그: 기계가 정말 문장을 완성할 수 있을까요? ACL(1)_에서 페이지 4791-4800. 계산 언어학 협회.
+* Zhang et al.(2022) Shiyue Zhang, Vishrav Chaudhary, Naman Goyal, James Cross, Guillaume Wenzek, Mohit Bansal, and Francisco Guzman. 2022. 다국어 토큰나이저 훈련에서 언어 불균형에 대한 신경망 기계 번역은 얼마나 강력한가? 미주 기계번역 협회의 15차 격년 회의(제1권: 연구 트랙)에서, 미국 올랜도 97-116쪽입니다. 미국 기계번역 협회
+
+## 부록 A Corpora
+
+코퍼라 내의 웹 문서는 Oscars1Abadji 등(2021)으로 구성되어 있으며, 이는 3개의 Common Crawl WET Archives (2022-27, 2022-49 및 2023-14)를 기반으로 ungoliant pipeline2에 의해 생성되었다.
+
+각주 1: [https://oscar-project.org/](https://oscar-project.org/)
+
+각주 2: [https://github.com/oscar-project/ungoliant](https://github.com/oscar-project/ungoliant)
+
+큐레이팅된 데이터셋은 _The Pile_Gao et al. (2020), _RedPajama_Computer (2023) 및 컬렉션에 속하지 않는 단일 데이터셋으로 구성된다. Pile subcorpora에서 Phil Archive, PMC Abstracts, PMC Extracts, OpenWebText, NIH Exporterm, Free Law Opinions V2를 선택하였다. RedPajama에서 우리는 ArXiv, Books, Github, StackExchange, Wikipedia를 사용한다.
+
+나머지 데이터 세트는 다음과 같습니다.
+
+1. 모든 뉴스 V2.03은 2016년 1월부터 2020년 4월 1일까지 26개 이상의 다른 출판물에서 크롤링된 신문 기사 코퍼스입니다. 각주 3: [https://metatext.io/datasets/all-the-news-2](https://metatext.io/datasets/all-the-news-2)
+2. 연방의회 - Plenarprotokolle4는 독일 연방의회의 세션의 녹취록으로 구성된다. 각주 4: [https://www.bundestag.de/dokumente/protokolle/plenarprotokolle](https://www.bundestag.de/dokumente/protokolle/plenarprotokolle)
+3. Bundesgerichtshof - Entscheidungen5는 독일 연방 법원의 판결 모음이다. 각주 5: [https://www.bundesgerichtshof.de/DE/Entscheidungen/entscheidungen_node.html](https://www.bundesgerichtshof.de/DE/Entscheidungen/entscheidungen_node.html)
+4. CoStep6은 EuroParl corpusGraen et al.(2014)의 정리 및 수정된 버전이다. Koehn (2005)
+
+각주 6: [https://pub.cl.uzh.ch/wiki/public/costep/start](https://pub.cl.uzh.ch/wiki/public/costep/start)
+5. DCEP7은 유럽 의회에서 발행된 문서를 포함하는 CoStEP에 대한 동반 코퍼스이다. Hajlaoui et al.(2014)
+
+각주 7: [https://joint-research-centre.ec.europa.eu/language-technology-resources/deep-digital-corpus-european-parliament_en](https://joint-research-centre.ec.europa.eu/language-technology-resources/deep-digital-corpus-european-parliament_en)
+6. DNB Dissertations8은 도이치 내셔널비블리오텍의 논문 모음이다.
+7. MAREC/IREC9: MAtrixware REsearch Collection/The Information retrieval facility Research Collection은 EP, WO, US, JP 특허청으로부터 1,900만 개가 넘는 문서의 특허 코퍼스이다. 각주 8: [https://www.dnb.de/DE/Professionell/Services/Dissonline/dissonline_node.html](https://www.dnb.de/DE/Professionell/Services/Dissonline/dissonline_node.html)
+8. Medi-Notice10은 취리히 병렬 코퍼스 컬렉션의 일부이다. 정보 리플릿에서 컴파일된 다국어 코퍼스입니다.
+
+\begin{table}
+\begin{tabular}{l r r} \hline \hline Name & Language & \#Words \\ \hline Oscar & DE & 11.200.000.000 \\ Oscar & ES & 11.200.000.000 \\ Oscar & EN & 11.200.000.000 \\ Oscar & IT & 11.200.000.000 \\ Oscar & FR & 11.200.000.000 \\ \hline Pile & DE & 13.838.432 \\ Pile & ES & 21.990.512 \\ Pile & EN & 4.334.313.669 \\ Pile & IT & 7.946.402 \\ Pile & FR & 15.857.811 \\ \hline RedPajama & DE & 143.907.461 \\ RedPajama & ES & 112.950.000 \\ RedPajama & EN & 4.663.646.781 \\ RedPajama & IT & 137.802.711 \\ RedPajama & FR & 139.749.147 \\ RedPajama & Code & 2.052.228.788 \\ \hline Misc & DE & 600.844.912 \\ Misc & ES & 186.934.269 \\ Misc & EN & 1.337.030.904 \\ Misc & IT & 19.810.753 \\ Misc & FR & 211.147.445 \\ \hline Total & & 70.000.000.000 \\ \hline \hline \end{tabular}
+\end{table}
+표 6: 언어, 샘플링된 단어의 수가 있는 다국어 70B 단어 데이터세트의 개요
+
+\begin{table}
+\begin{tabular}{l l r} \hline \hline Name & Language & \#Words \\ \hline Oscar & EN & 56.000.000.000 \\ Pile & EN & 4.893.724.288 \\ RedPajama & EN & 5.308.974.750 \\ RedPajama & Code & 2.299.301.635 \\ Misc & EN & 1.497.999.327 \\ \hline Total & & 70.000.000.000 \\ \hline \hline \end{tabular}
+\end{table}
+표 7: 언어, 샘플링된 단어의 수를 갖는 영어 70B 단어 데이터세트의 개요
+
+[MISSING_PAGE_FAIL:15]
+
+도 5: 검사된 토큰라이저들 간의 어휘 오버랩
+
+### 훈련 중 단어당 계산 비용
+
+표 11은 포워드 패스 및 백워드 패스 동안 단어를 처리하기 위한 평균 계산 훈련 비용을 나타낸다.
+
+## 부록 E 인프라 및 계산 비용
+
+NVIDIA A100 GPU에서 26개의 2.6B 매개변수 모델을 각각 훈련했으며 각 모델의 훈련은 최대 2304 GPU 시간이 소요되었다. 따라서 총 훈련 비용은 \(\약 59.000\) GPU 시간에 해당한다.
+
+\begin{table}
+\begin{tabular}{c c c c} \hline \hline Model & Non-English & English & German \\ \hline GPT-2-50 & 3.87 & 2.58 & 4.59 \\ \hline BPE-HF-33 & 3.8 & **2.32** & 4.52 \\ BPE-HF-50 & 3.79 & 2.38 & 4.45 \\ BPE-HF-82 & 3.88 & 2.55 & 4.51 \\ BPE-HF-100 & 3.96 & 2.67 & 4.58 \\ BPE-SP-33 & 3.86 & 2.37 & 4.66 \\ BPE-SP-50 & 3.89 & 2.42 & 4.68 \\ BPE-SP-82 & 4.02 & 2.59 & 4.78 \\ BPE-SP-100 & 4.11 & 2.71 & 4.84 \\ UNI-SP-32 & 4.01 & 2.36 & 4.73 \\ UNI-SP-50 & 4.02 & 2.42 & 4.75 \\ UNI-SP-82 & 4.12 & 2.59 & 4.83 \\ UNI-SP-100 & 4.21 & 2.71 & 4.88 \\ \hline BPE-HF-33 & 2.71 & 2.46 & 3.04 \\ BPE-HF-50 & 2.7 & 2.5 & 3.01 \\ BPE-HF-82 & 2.8 & 2.65 & 3.09 \\ BPE-HF-100 & 2.88 & 2.76 & 3.17 \\ BPE-SP-33 & 2.68 & 2.55 & 2.99 \\ BPE-SP-50 & 2.67 & 2.57 & 2.95 \\ BPE-SP-82 & 2.76 & 2.72 & 3.03 \\ BPE-SP-100 & 2.85 & 2.82 & 3.1 \\ UNI-SP-33 & 2.68 & 2.55 & 2.94 \\ UNI-SP-50 & **2.66** & 2.58 & **2.91** \\ UNI-SP-82 & 2.76 & 2.73 & 2.99 \\ UNI-SP-100 & 2.84 & 2.83 & 3.07 \\ \hline \hline \end{tabular}
+\end{table}
+표 11: 상이한 토큰라이저들에 대한 단어당 계산 트레이닝 비용들(GFLOPs)이다.
