@@ -1,0 +1,217 @@
+# Fine Tuning vs. 덜 인기 있는 지식을 위한 검색 증강 생성
+
+ 소다니 헤이다
+
+Radboud University
+
+Nijmegen
+
+The Netherlands
+
+heydar.soudani@ru.nl
+
+Evangelos Kanoulas
+
+암스테르담대학교
+
+Amsterdam
+
+The Netherlands
+
+e.kanoulas@uva.nl
+
+Faegheh Hasibi
+
+Radboud University
+
+Nijmegen
+
+The Netherlands
+
+faegheh.hasibi@ru.nl
+
+###### Abstract
+
+대규모 언어 모델(LLM)은 방대한 양의 사실적 지식을 암기하여 다양한 작업과 영역에 걸쳐 강력한 성능을 발휘한다. 그러나, 예를 들어 도메인 특정 애플리케이션에서 덜 인기 있거나 빈도가 낮은 개념 및 엔티티를 다룰 때 성능이 감소하는 것으로 관찰되었다. 저빈도 토픽에서 LLM의 성능을 향상시키기 위한 두 가지 두드러진 접근법은 합성 데이터에 대한 검색 증강 생성(RAG)과 미세 조정(FT)이다. 본 논문에서는 저빈도 개체 처리에 있어서 RAG와 FT가 LLMs 커스터마이징에 미치는 영향을 질의 응답 태스크에서 탐색하고 평가한다. 우리의 연구 결과는 FT가 특히 가장 인기 있는 그룹과 가장 인기 없는 그룹에서 다양한 인기의 엔터티에 걸쳐 성능을 크게 향상시키는 반면 RAG는 다른 방법을 능가한다는 것을 나타낸다. 또한, RAG 및 FT 접근법의 성공은 검색 및 데이터 증강 기술의 발전에 의해 증폭된다. 코드 및 데이터는 [https://github.com/informagi/RAGvsFT](https://github.com/informagi/RAGvsFT)에서 사용할 수 있습니다.
+
+## 1 Introduction
+
+대형 언어 모델(LLMs)은 사실 데이터의 광범위한 암기를 요구하는 태스크를 실행하는데 탁월한 능력을 나타낸다(Chowdhery et al., 2023). 그러나, 그들의 암기 능력들은 덜 빈번한 엔티티들을 다룰 때 제약되고(Mallen et al., 2023; Kandpal et al., 2023; Sun et al., 2023), 심지어 가장 큰 모델들조차도 잘 알려진 "환각" 문제(Shuster et al., 2021) 및 시간 저하(Kasai et al., 2022)에 직면할 수 있다. 따라서 LLM이 자원이 부족한 도메인에 배포되도록 의도되는 경우 최적의 성능을 보장하기 위해 사용자 지정이 필수적입니다. 일반적인 예는 산업 설정 내에 있으며, 여기서 챗봇 또는 질의 응답(QA) 시스템은 제한된 텍스트 설명을 갖는 독점 지식 그래프 또는 회사 내 용어에 대한 사용자의 질문에 정확하게 응답할 필요가 있다.
+
+RAG(Retrieval-Augmented Generation)와 FT(Fine-Tuning)는 LLM을 특정 도메인에 적응시키기 위한 두 가지 두드러진 접근법으로 눈에 띈다. RAG는 문서 코퍼스에서 관련 정보를 검색하고, 인-컨텍스트 학습(in-context learning, ICL)의 구현을 통해 LLM의 응답 생성을 향상시킨다. 반대로, 미세 조정 접근법은 특정 정보를 회상하는 데 능숙하도록 모델 가중치를 업데이트하고 추론 동안 암기 능력을 향상시킨다. 제한된 데이터를 사용할 수 있는 덜 대중적인 지식의 맥락에서, 데이터 증강 방법은 합성 트레이닝 데이터를 생성하는 데 활용되어 미세 조정을 향한 초기 단계 역할을 한다.
+
+본 논문에서는 산업별 모형에 어떤 접근과 어떤 조건에서 더 효과적인지를 파악하고자 한다. 구체적으로 다음과 같은 연구 질문에 답하고자 한다.
+
+**(RQ1)** 저빈도 사실 지식에 대한 RAG 및 QA에 대한 합성 데이터로 미세 조정의 효과는 무엇입니까?
+
+**(RQ2)** 의 품질을 포함 하는 매개 변수
+
+그림 1: 질문에서 주제 개체 인기와 개방형 질문 답변에서 RAG와 FT가 FlanT5-작은 성능에 미치는 영향 간의 상관 관계. FT는 다른 것(분홍색 선으로 표시됨)에 비해 초기 버킷 및 최종 버킷의 정확도를 현저하게 향상시킨다.
+
+합성 샘플, 미세 조정 방법, 모델 크기 및 검색 모델의 성능이 다운스트림 성능에 영향을 미칩니다.
+
+RQ를 해결하기 위해 덜 대중적인 지식에 특히 주의를 기울여 RAG와 미세 조정 방법을 종합적으로 비교했다. 평가 설정은 모델 크기, 검색 모델, 합성 데이터 생성의 품질, 미세 조정 방법(PEFT 대 완전 미세 조정) 등 다양한 요소를 탐구한다.
+
+우리의 연구 결과는 FT가 가장 인기 있는 범주와 가장 인기 없는 범주에서 관찰된 가장 실질적인 개선과 함께 인기 있는 것과 덜 인기 있는 엔터티의 성능을 일관되게 향상시킨다는 것을 나타낸다. 또한, RAG는 특히 더 작은 모델에서 FT와 결합될 때 미세 조정 방법을 일관되게 능가하며, 이는 기본 모델에서 감소하고 더 큰 모델에서는 존재하지 않는 이점이다. 마지막으로, RAG 및 FT 전략의 효과는 검색 및 데이터 증강 모델의 성능이 향상됨에 따라 증가한다.
+
+## 2 Background
+
+**데이터 증강(DA).** 데이터 가용성은 전문 도메인에서 미세 조정에 중요합니다. DA는 기존의 레이블이 지정되지 않은 텍스트로부터 태스크 및 도메인 관련 샘플을 생성함으로써 데이터 희소성 문제를 해결한다. QA 작업에 대한 일반적인 DA 접근법은 4단계 _Pipeline_을 통해 질문-응답 쌍을 생성하는 것으로, 통과 선택, 답변 추출, 질문 생성 및 일관성 필터링 Alberti 등(2019); Lewis 등(2019, 2021); Ushio 등(2023)으로 구성된다. Ushio et al. (2023)은 파이프라인, 멀티태스크, 엔드투엔드(End-to-End, E2E)의 세 가지 질문 답변 생성 접근법을 비교한 실증 연구를 수행했으며, E2E 접근법이 다운스트림 작업에서 다른 접근법보다 우수함을 보여주었다. 최근 데이터 생성을 위한 LLM의 활용은 정보 검색, QA, 대화 생성 작업 Soudani 등(2023); Askari 등(2023)에서 효과적으로 나타나고 있다.
+
+**검색 증강 세대** RAG는 외부 지식 원본을 입력 쿼리와 통합 하 여 LLMs를 강화 하 여 지식 집약적인 작업 Lewis 등 (2020)에 대 한 추가 컨텍스트를 포함 하 여 모델을 강화 합니다. LLM Asai 등(2023, 2023)의 응답 생성을 향상시키기 위해 정보 검색 시스템을 이용하여 관련 문서를 찾아 입력 프롬프트에 추가한다.
+
+**덜 인기 있는 지식.** LLM에서 엔터티의 인기는 모델의 사전 훈련 데이터 Godbole 및 Jia(2023)의 빈도로 측정됩니다. Min 등(2023)은 종종 대규모 말뭉치 Kandpal 등(2023)에서 엔터티의 발생을 통해 평가됩니다. 직접 계수의 현실적인 어려움으로 인해 트래픽 메트릭 및 콘텐츠 밀도와 같은 근사치가 Sun et al.(2023)에 사용된다. Wikipedia pageviews는 Mallen et al. (2023); Sciavolino et al. (2021); Chen et al. (2021).
+
+**FT 대 FT 비교**. RAG! 특정 작업에 대해 사전 훈련된 언어 모델을 정제하는 데 관심이 증가함에 따라 공평한 조건에서 FT와 RAG 전략의 비교가 점점 더 중요해지고 있다. Mosbach et al. (2023)은 일반 도메인에서 분류 작업에 대한 소샷 FT 대 인컨텍스트 학습의 효과를 탐구했다. de Luis Balaguer 등(2024)은 긴 질문, 농업 및 지리별 질문에 대한 답변에서 FT와 RAG를 비교했다. Ovadia et al.(2023)은 Anatomy, Astronomy, College Biology, Prehistory와 같은 전문 분야의 객관식 질문에 대한 성능을 평가했다. 이러한 연구와 대조적으로, 우리는 다양한 검색, 데이터 증강 및 미세 조정 방법을 비교하여 덜 인기 있는 사실 지식을 LLM에 통합하는 것을 직접 다룬다.
+
+## 3 평가 설정
+
+우리는 Long-tail 엔터티 분포를 다루는 질문으로 특징지어지는 PopQA 데이터 세트 Mallen et al.(2023)에 초점을 맞추어 폐쇄형 문서 QA 태스크에서 LLMs를 평가한다. 또한 고유한 위키피디아 제목을 포함하여 페이지뷰 계산 및 관련 위키피디아 페이지 식별을 용이하게 한다. PopQA 데이터 세트의 각 주제 엔터티에 대한 관련 위키피디아 페이지를 획득하고 엔터티를 인기 수준에 따라 5개의 버킷으로 나눈다(그림 2).
+
+DA와 공정한 비교를 보장하기 위해
+
+그림 2: \(log_{10}\)(pageviews)로 정의된 버킷에 대한 샘플 카운트 분포입니다. 가장 왼쪽 빈은 \(10^{2}\) 페이지뷰보다 적은 엔터티를 포함하는 반면, 가장 오른쪽 빈은 \(10^{5}\) 페이지뷰를 초과하는 엔터티를 포함합니다.
+
+[MISSING_PAGE_FAIL:3]
+
+가장 인기 있는 버킷과 가장 인기 없는 버킷에 있습니다. 미세 조정은 더 작은 모델에서 덜 인기 있는 범주에 대한 성능을 향상시키는 반면, 이러한 이점은 기본 모델에서 감소하고 더 큰 모델에서 사라집니다. 자세한 내용은 그림 4를 참조하세요. 이는 더 큰 모델의 암기가 향상되었기 때문일 수 있습니다.
+
+**외부 매개 변수가 RAG 및 FT에 미치는 영향** 덜 인기 있는 지식을 처리하는 모델 전문화에 영향을 미치는 추가 요인을 조사합니다. 검토 중인 핵심 측면은 PEFT 대비 완전 튜닝의 효과이다. 표 2는 PEFT가 전체 FT에 비해 _+FT-RAG_에서 더 작은 이득을 가져오지만 _+FT+RAG_ 설정에서 정확도를 크게 향상시킨다는 것을 보여준다. 이는 PEFT가 LLM이 제공된 프롬프트를 기반으로 추론 능력을 유지할 수 있음을 시사한다.
+
+우리의 조사는 또한 두 가지 QA 생성 기술을 다룬다. E2E 방법은 프롬프팅 방법보다 12배 이상 더 많은 QA를 생성한다(cf. 부록 C의 표 4). 그러나 프롬프트 기반 메서드는 더 많은 품질 QA를 생성합니다. 표 2의 결과는 프롬프트 생성 데이터에 대해 훈련된 미세 조정 모델이 E2E 생성 모델보다 우수하다는 것을 보여준다. 이것은 양보다 합성 데이터 품질의 중요성을 강조한다.
+
+검색 모델의 성능은 또 다른 중요한 고려 사항이다. 표 3은 RAG 프레임워크 내에서 다양한 검색 전략을 활용한 QA 시스템의 정확도를 제시하고 있다. 연구 결과는 검색 모델 성능과 전체 QA 정확도 사이의 직접적인 상관 관계를 보여주며, 검색 모델이 다운스트림 태스크의 효율성에 미치는 영향을 강조한다.
+
+## 5 Conclusion
+
+본 연구에서는 덜 대중적인 지식을 중심으로 RAG 대 FT의 효과를 평가하기 위해 비교 분석을 수행했다. 우리의 결과는 FT가 모든 엔터티에 대해 일관된 성능 개선으로 이어지며 가장 인기 있는 범주와 가장 인기 없는 범주에서 가장 주목할 만한 이득을 볼 수 있음을 보여준다. 특히 미세 조정과 함께 사용할 때 RAG가 보다 효과적인 전략으로 두드러진다는 것을 발견했다. 그러나 이러한 이점은 더 큰 모델에서 감소한다. 또한, 검색 및 데이터 증강 모델의 성능이 향상됨에 따라 RAG 및 FT 전략의 성공률이 향상됨을 관찰하였다. 합성 데이터 품질의 중요한 중요성을 이해하면 향후 작업은 데이터 생성을 위한 효과적인 방법을 개발하는 데 중점을 둘 것이다.
+
+\begin{table}
+\begin{tabular}{l l c c c c} \hline \hline  & & **-FT/** & **-FT/** & **+FT/** & **+FT/** \\
+**FT** & **QA** & **-RAG** & **+RAG** & **-RAG** & **+RAG** \\ \hline \multicolumn{5}{l}{**FianT5-small**} \\ \hline \multirow{5}{*}{\begin{tabular}{l} PEFT \\ Full \\ \end{tabular} } & E2E & & & 5.53 & 22.91 \\  & Prompt & & & 7.01 & 49.85 \\  & E2E & & & 6.35 & 10.21 \\  & Prompt & & & **8.52** & **49.88** \\ \hline \multicolumn{5}{l}{**FianT5-base**} \\ \hline \multirow{5}{*}{\begin{tabular}{l} PEFT \\ Full \\ \end{tabular} } & E2E & & & 6.94 & 51.61 \\  & Prompt & & 9.92 & **63.29** \\  & E2E & & & 8.63 & 24.17 \\  & Prompt & & & **11.41** & 60.26 \\ \hline \multicolumn{5}{l}{**FianT5-large**} \\ \hline \multirow{5}{*}{
+\begin{tabular}{l} PEFT \\ Full \\ \end{tabular} } & E2E & & & 8.22 & 55.26 \\  & Prompt & & 12.15 & **61.71** \\  & E2E & & **16.23** & 13.31 \\  & Prompt & & & 13.91 & 58.60 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: RAG가 있거나 없는 기본 및 미세 조정 모델의 정확도. 제시된 RAG 결과는 이상적인 검색을 기반으로 한다.
+
+그림 3: 서로 다른 인기 수준에 걸쳐 4개의 검색 모델에 대한 Recall@1. 그 결과, 검색 모델이 더 인기 있는 모델에 비해 덜 인기 있는 지식으로 더 효과적으로 수행됨을 알 수 있었다.
+
+\begin{table}
+\begin{tabular}{l l c c c c c} \hline \hline \multicolumn{1}{c}{**FT**} & **QA** & **RAG** & **RAG** & **RAG** & **RAG** \\ \hline \multicolumn{1}{c}{**FianT5-small**} & 9.76 & 17.22 & 20.80 & 21.41 & 26.13 \\ \hline \multirow{5}{*}{\begin{tabular}{l} PEFT \\ Full \\ \end{tabular} } & E2E & 13.13 & 17.30 & 19.74 & 19.81 & 22.91 \\  & Prompt & 20.82 & 34.87 & 40.45 & 41.25 & 49.85 \\  & E2E & 6.48 & 9.11 & 9.31 & 9.48 & 10.21 \\  & Prompt & **20.95** & **35.09** & **40.52** & **41.53** & **49.88** \\ \hline \multicolumn{1}{c}{**FianT5-base**} & 26.56 & 43.42 & 50.41 & 51.35 & 63.13 \\ \hline \multirow{5}{*}{\begin{tabular}{l} PEFT \\ Full \\ \end{tabular} } & E2E & 22.72 & 35.80 & 42.05 & 42.84 & 51.61 \\  & Prompt & **26.83** & **43.20** & **50.59** & **51.43** & **63.29** \\ \cline{1-1}  & E2E & 11.78 & 18.53 & 20.59 & 21.15 & 24.17 \\ \cline{1-1}  & Prompt & 25.77 & 41.78 & 48.52 & 49.39 & 60.26 \\ \hline \multicolumn{1}{c}{**FianT5-large**} & 26.74 & 40.53 & 46.86 & 47.57 & 58.12 \\ \hline \multirow{5}{*}{
+\begin{tabular}{l} PEFT \\ Full \\ \end{tabular} } & E2E & 25.72 & 39.25 & 45.34 & 45.90 & 55.26 \\  & Prompt & **28.60** & **43.45** & **50.15** & **50.91** & **61.71** \\ \cline{1-1}  & E2E & 7.67 & 12.29 & 12.01 & 12.44 & 13.31 \\ \cline{1-1}  & Prompt & 25.54 & 40.88 & 46.82 & 47.87 & 58.60 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 상이한 검색 모델을 사용하는 베이스 및 미세 조정된 LLM에 대한 RAG의 정확도.
+
+## 6 Limitations
+
+우리의 연구는 주로 템플릿 기반 QA 과제를 다루었으며, 향후 연구가 다중 홉 QA Ho 등(2020) 또는 대화 QA Christmann 등(2022)과 같은 더 복잡한 QA 과제를 해결할 수 있음을 시사한다. 또한, 합성 데이터 생성을 위해 Zephyr을 사용하는 것은 CoT(Chain of Thought)를 따르는 데 한계가 있으며, 데이터 품질을 향상시키고 미세 조정 비용을 줄이기 위한 고급 데이터 생성 기술의 잠재적인 이점을 강조한다.
+
+## Acknowledgements
+
+이 간행물은 네덜란드 연구 위원회(NWO)에서 자금을 조달하는 연구 프로그램 NWA ORC 2020/21의 프로젝트 번호 NWA.1389.20.183을 가진 프로젝트 LESSEN의 일부이다.
+
+## References
+
+* A. Asai, S. 민지 Zhong, and D. Chen (2023)Retrieval-based language models and applications. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics: Tutorial Abstracts, ACL 2023, Toronto, Canada, July 9-14, 2023, pp. 41-46. External Links: Link Cited by: SS1.
+* A. Asai, S. 우영 Wang, A. Sil, and H. Hajishirzi (2023) Self-rag: 자기 성찰을 통해 회상, 생성, 비평을 배우는 것. CoRRabs/2310.11511. External Links: Link, 2310.11511 인용: SS1.
+* A. Askari, M. Aliannejadi, C. Meng, E. Kanoulas, and S. Verberne (2023)Ex-pand, highlight, generate: rl-driven document generation for passage reranking. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023, pp. 10087-10099. External Links: Link, 2007.10099 Cited by: SS1.
+* A. Chen, P. Gudipati, S. 롱프리, 엑스 Ling, S. Singh (2021)Evaluating entity disambiguation and role of popularity in retrieval based NLP. In Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing, ACL/IJCNLP 2021, Volume 1: Long Papers, Virtual Event, August 1-6, 2021, pp. 4472-4485. External Links: Link, 2106.08786 Cited by: SS1.
+* A. Chowdhery, S. 나랑 J. 데블린 Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, and et al. (2023)Palm: scaling language modeling with pathways. J. Mach. 배워요 Res.24(2), pp.1-240:113. External Links: Link, 2304.1137 Cited by: SS1.
+* 15, 2022, pp. 144-154. External Links: Link, 2106.08786 Cited by: SS1.
+* P. W. Chung, L. 허성호 롱프리 B.조프 Y. 타이원 Fedus E. Li, X. 왕민 데하니 Brahma, A. Webson, S. S. Gu, Z. 대민 엑스수즈건 천아초더리 나랑, G. Mishra, A. Yu, V. Y. Zhao, Y. 황아만대 Petrov, E. H. Chi, J. Dean, J. Devlin, A. Roberts, D. Zhou, Q. V. Le, and J. Wei(2022)Scaling instruction-finetuned language models. CoRRabs/2210.11416. External Links: Link, 2106.11416 Cited by: SS1.
+* M. 천사 de Luis Balaguer, V. 베나라 루이즈 드 프라이타스 쿤하, R. de M. 에스테바오 필호 Hendry, D. Holstein, J. Marsman, N. 메클렌버그 Malvar, L. O. Nunes, R. 파딜하 샤프 B. 실바 S. 샤르마, 브이 Aski, R. 찬드라(2024)RAG vs 미세 조정: 파이프라인, 트레이드오프 및 농업에 대한 사례 연구. CoRRabs/2401.08406. External Links: Link, 2401.08406 Cited by: SS1.
+*T. Dettmers, A. Pagnoni, A. Holtzman, L. Zettlemoyer (2023)Qlora: 양자화된 l lms의 효율적인 미세조정. CoRRabs/2305.14314. External Links: Link, 2305.14314 인용: SS1.
+* A. Godbole and R. Jia (2023)Benchmarking long-tail generalization with likelihood split. In Findings of the Association for Computational Linguistics: EACL 2023, Dubrovnik, Croatia, May 2-6, 2023, pp. 933-953. External Links: Link, 2305.14314 Cited by: SS1.
+*X. 호웅응우엔 Sugawara and A. Aizawa (2020)Constructing a multi-hop QA dataset for comprehensive evaluation of reasoning steps. In Proceedings of the 28th International Conference on Computational Linguistics, Barcelona, Spain, pp. 6609-6625. External Links: Link, 2004.1137 Cited by: SS1.
+* G. Izacard, M. 캐론리 호세이니 Riedel, P. Bojanowski, A. Joulin, E. Grave (2022) Unsupervised dense information retrieval with contrastive learning. 트랜스젠더 마하 배워요 Res.22. External Links: Link, 2202.10871 Cited by: SS1.
+
+장 카두르, 조슈아 해리스, 막시밀리안 모즈, 허비 브래들리, 로베르타 라일레아누, 로버트 맥하디. 2023. 큰 언어 모델의 도전과 응용. _ CoRR_, abs/2307.10169.
+* Kandpal 등(2023) Nikhil Kandpal, Haikang Deng, Adam Roberts, Eric Wallace, and Colin Raffel. 2023. 대형 언어 모델들은 긴 꼬리 지식을 배우기 위해 고군분투한다. International Conference on Machine Learning, ICML_, Volume 202 of _Proceedings of Machine Learning Research_, pages 15696-15707. PMLR.
+* Karpukhin et al. (2020) Vladimir Karpukhin, Barlas Oguz, Sewon Min, Patrick S. H. Lewis, Ledell Wu, Sergey Edunov, Danqi Chen, and Wen-tau Yih. 2020. 오픈 도메인 질의 응답을 위한 조밀한 통로 검색. In _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing, EMNLP 2020, Online, November 16-20, 2020_, pages 6769-6781. Association for Computational Linguistics.
+* Kasai 등(2022) Jungo Kasai, Keisuke Sakaguchi, Yoichi Takahashi, Ronan Le Bras, Akari Asai, Xinyan Yu, Dragomir R. 라데프, 노아 A. 스미스, 예진 최, 이누이 켄타로 2022. 실시간 QA: 지금 답은 무엇입니까? _ CoRR_, abs/2207.13332.
+* Lewis et al.(2019) Patrick S. H. Lewis, Ludovic Denoyer, and Sebastian Riedel. 2019. 클로즈 번역에 의한 비감독 질문 답변. <Proceedings of the 57th Conference of the Association for Computational Linguistics, ACL 2019, Florence, Italy, July 28-8 2, 2019, Volume 1: Long Papers_, pages 4896-4910. Association for Computational Linguistics.
+* Lewis et al.(2020) Patrick S. H. Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Kuttler, Mike Lewis, Wen-tau Yih, Tim Rocktaschel, Sebastian Riedel, and Douwe Kiela. 2020. 지식 집약적 NLP 작업을 위한 검색 강화 생성. *신경 정보 처리 시스템의 발전 33: 신경 정보 처리 시스템에 대한 연례 회의 2020, NeurIPS 2020, 12월 6-12, 2020, 가상_.
+* Lewis et al.(2021) Patrick S. H. Lewis, Yuxiang Wu, Linqing Liu, Pasquale Minervini, Heinrich Kuttler, Aleksandra Piktus, Pontus Stenetorp, and Sebastian Riedel. 2021. PAQ: 6,500만 개의 질문과 이것으로 무엇을 할 수 있는지 물어봅니다. _ 트랜스젠더 Assoc. 컴퓨팅. Linguistics_, 9:1098-1115.
+* 12월 9일, 2022_.
+* Ma et al. (2023) Xueang Ma, Liang Wang, Nan Yang, Furu Wei, and Jimmy Lin. 2023. 다단계 텍스트 검색을 위해 라마를 미세 조정합니다. _ CoRR_, abs/2310.08319.
+* Mallen et al. (2023) Alex Mallen, Akari Asai, Victor Zhong, Rajarshi Das, Daniel Khashabi, and Hannaneh Hajishirzi. 2023. Not to trust language models: Investigating effectiveness of parametric and non-parametric memories. 계산 언어학 협회의 제61차 연례 회의(제1권: 장문)에서__ , pages 9802-9822. Association for Computational Linguistics.
+* Min et al. (2023) Sewon Min, Weijia Shi, Mike Lewis, Xilun Chen, Wentau Yih, Hannaneh Hajishirzi, and Luke Zettlemoyer. 2023. 비모수 마스킹 언어 모델링. "Findings of the Association for Computational Linguistics: ACL 2023, Toronto, Canada, July 9-14, 2023_, pages 2097-2118. The Association for Computational Linguistics.
+* Mosbach 등(2023) Marius Mosbach, Tiago Pimentel, Shauli Ravfogel, Dietrich Klakow, and Yanai Elazar. 2023. Few-shot fine-tuning vs. 상황 학습: 공정한 비교와 평가. 계산 언어학 협회의 _Findings of the Association for Computational Linguistics: ACL 2023, Toronto, Canada, July 9-14, 2023_, pages 12284-12314. Computational Linguistics.
+* Naveed et al.(2023) Humza Naveed, Asad Ullah Khan, Shi Qiu, Muhammad Saqib, Saeed Anwar, Muhammad Usman, Nick Barnes, and Ajmal Mian. 2023. 대규모 언어 모델에 대한 포괄적인 개요 _ CoRR_, abs/2307.06435.
+* Ovadia et al. (2023) Oded Ovadia, Menachem Brief, Moshik Mishaeli, and Oren Elisha. 2023년, 미세 조정? 회수? 지식 주입을 llms로 비교하는 중입니다. _ CoRR_, abs/2312.05934.
+* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. 2020. 통합 텍스트 대 텍스트 변환기를 사용 하 여 전이 학습의 한계를 탐색 합니다. _ J 마흐 배워요 Res._ , 21:140:1-140:67.
+* Robertson and Zaragoza (2009) Stephen E. Robertson and Hugo Zaragoza. 2009. The probabilistic relevance framework: BM25 and beyond. _ 찾았다 트렌드 정보 Retr._ , 3(4):333-389.
+* Sciavolino et al.(2021) Christopher Sciavolino, Zexuan Zhong, Jinhyuk Lee, and Danqi Chen. 2021. 간단한 엔터티 중심 질문은 밀집 검색기에 도전합니다. In _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, EMNLP 2021, Virtual Event/ Punta Cana, Dominican Republic, 2021. 11. 7-11, 2021_, pages 6138-6148. Association for Computational Linguistics.
+* Shuster 등(2021) Kurt Shuster, Spencer Poff, Moya Chen, Douwe Kiela, and Jason Weston. 2021. 검색 증강은 대화에서 환각을 감소시킵니다. _Findings of the Association for Computational Linguistics: EMNLP 2021, Virtual Event/ Punta Cana, Dominican Republic, 16-20 November, 2021_, pages 3784-3803. Association for Computational Linguistics.
+* Shuster et al.(2021)* Soudani et al.(2023) Heydar Soudani, Evangelos Kanoulas, and Faegheh Hasibi. 2023. 대화형 AI를 위한 데이터 증강. "Proceedings of the 32nd ACM International Conference on Information and Knowledge Management, CIKM 2023, Birmingham, UK, October 21-25, 2023_, pages 5220-5223. ACM.
+* Sun et al. (2023) Kai Sun, Yifan Ethan Xu, Hanwen Zha, Yue Liu, and Xin Luna Dong. 2023. Head-to-tail: 대용량 언어 모델(llm)이 얼마나 지식이 풍부한가? A.K.A will lms replace knowledge graph? _ CoRR_, abs/2308.10168.
+* Thakur et al.(2021) Nandan Thakur, Nils Reimers, Andreas Ruckle, Abhishek Srivastava, and Iryna Gurevych. 2021. BEIR: A heterogeneous benchmark for zero-shot evaluation of information retrieval models. 데이터 세트 및 벤치마크 1, NeurIPS 데이터 세트 및 벤치마크 2021, 2021년 12월, _신경 정보 처리 시스템의 진행률 추적_ 에서 가상_ 입니다.
+* Tunstall et al. (2023) Lewis Tunstall, Edward Beeching, Nathan Lambert, Nazneen Rajani, Kashif Rasul, Younes Belkada, Shengyi Huang, Leandro von Werra, Clementine Fourrier, Nathan Habib, Nathan Sarrazin, Omar Saneviero, Alexander M. 러쉬와 토마스 울프 2023. Zephyr: LM 정렬의 직접 증류. _ CoRR_, abs/2310.16944.
+* Ushio et al.(2023) Asahi Ushio, Fernando Alva-Manchego, and Jose Camacho-Collados. 2023. A empirical comparison of LM-based question and answer generation methods. 계산 언어학 협회의 결과: ACL 2023_, 14262-14272 페이지, 캐나다 토론토. 계산 언어학 협회
+* Zaken 등(2022) Elad Ben Zaken, Yoav Goldberg, and Shauli Ravfogel. 2022. Bitfit: Simple parameter-efficient fine-tuning for transformer-based masked language-models. [제60회 컴퓨터 언어학 협회 연례 회의(제2권: 짧은 논문), ACL 2022, 아일랜드 더블린, 2022년 5월 22-27일_, 제1-9페이지에서. 컴퓨터 언어학 협회.
+
+## 부록 A 데이터 전처리
+
+실제 QA를 제공하는 다양한 데이터 세트(Christmann et al., 2023; Sciavolino et al., 2021) 중에서 PopQA(Mallen et al., 2023)라는 가장 최근의 데이터 세트 중 하나를 선택했다. PopQA 데이터 세트는 위키피디아에서 추출한 16가지 유형의 관계를 기반으로 단일 개체 응답 도출을 목표로 하는 약 14,000개의 템플릿 질문으로 구성된다. 각 엔터티의 인기를 평가하기 위해 위키피디아 페이지뷰를 인기 척도로 사용하여 이전 연구(Mallen et al., 2023; Sciavolino et al., 2021; Chen et al., 2021)를 따랐다. 2023년 시작부터 말까지 각 엔터티에 대한 페이지뷰를 축적했습니다.
+
+또한 각 엔터티에 대한 관련 위키피디아 페이지를 획득했습니다. 그런 다음 각 위키피디아 페이지를 요약 단락과 후속 추가 단락으로 분할하여 코퍼스를 구성했다. 이를 위해 [https://huggingface.co/datasets/wikipedia](https://huggingface.co/datasets/wikipedia)의 HuggingFace 데이터 세트 리포지토리에서 사용할 수 있는 2022년 3월 Wikipedia 덤프를 활용했습니다.
+
+## 부록 B QA 생성
+
+### Prompt Method
+
+주어진 컨텍스트를 기반으로 합성 QA를 생성하기 위해 다음 프롬프트를 사용했다.
+
+_당신은 질의응답 생성기입니다. 목표는 컨텍스트가 주어진 질문-응답 쌍을 생성하는 것입니다._
+
+_예시 출력:_ {'question': ", 'answer': "}
+
+_Context:_ SCONTEXT
+
+_1단계:_ 질문에 대한 답변일 가능성이 높은 스팬을 식별하고, 가능한 한 많은 것을 식별한다.
+
+_2단계:_ 식별된 각 범위에 대해 질문을 생성합니다.
+
+_3단계:_ 몇 개의 토큰에서만 질문에 간결하게 응답합니다.
+
+_Step 4:_ 다음 JSON 형식으로 출력 [...]
+
+_1, 2, 3, 4단계에 대해 명확하게 레이블을 지정하고 설명해야 하는지 확인합니다._
+
+테스트 세트는 단일 엔터티 답변을 특징으로 하는 템플릿 기반 QA로 구성됩니다. 테스트 세트의 QA와 유사한 QA를 생성하기 위해 LLM에 CoT(Chain of Thought) 접근법을 활용하도록 지시했다. 그러나 생성된 모든 QA가 지침에 따르지 않는다는 것을 관찰했다. 다음은 이 프롬프트 기반 접근 방식을 사용하여 생성된 QA의 몇 가지 예입니다.
+
+_맥락:_ 존 메인은 스코틀랜드의 인쇄업자이고 저널리스트이며 덤프리스에서 태어난 시인이다. 1780년, 그의 시 "실러 건"은 에든버러에서 월터 루디만이 발행한 "루디만의 잡지"에 원형으로 등장했다. 그것은 실러 총을 쏘는 덤프리의 고대 풍습에 대한 유머러스한 작품이다. 그는 또한 1780년에 할로윈에 시를 썼는데, 이는 로버트 번스의 1785년 시 핼러윈에 영향을 미쳤다. 메인은 또한 커크노넬의 발라드 헬렌의 버전을 썼다. 그의 구절은 월터 스콧이 존경했다.
+
+"John Mayne은 스코틀랜드의 프린터, 저널리스트, 덤프리의 시인이었습니다." (1780시: The Siller Gun)" "질문 2: "John Mayne이 1780년에 할로엔이라는 시를 썼습니까?" "답변 2: "할로엔은 John Mayne의 시입니다."
+
+### E2E Method
+
+QAG(Question Answer Generation) 작업을 위해 훈련된 모델, 특히 End-to-End(E2E) 접근법에 최적화된 T5-large 모델을 사용했으며, 이는 다운스트림 작업으로서 QA에서 우수한 성능을 제공하는 것으로 보고되었다(Ushio et al., 2023). 그러나 E2E 방법의 주목할 만한 단점은 생성된 샘플의 품질과 양에 대한 제한된 제어이다. 추가적으로 T5 모델의 입력 토큰 제한으로 인해 입력 텍스트는 512 토큰으로 제한되어야 한다. 공정한 비교를 보장하기 위해 프롬프트 기반 접근법과 함께 사용된 입력에 동일한 토큰 제한을 적용했다. 표 4는 동일한 말뭉치를 사용하여 프롬프트 및 E2E 방법 모두에 의해 생성된 QA에 대한 통계를 나타낸다.
+
+## 부록 C Fine-Tuning 설정
+
+우리는 FlanT5 (small, base, and large) 모델의 세 가지 버전을 미세 조정했다 (Chung et al., 2022). 미세 조정 실험은 전체 매개변수 조정과 PEFT를 모두 포함했다. 우리의 초점은 특히 QLoRA 방법(Dettmers et al., 2023)에 있었는데, 이는 훈련 가능한 순위 분해 행렬을 트랜스포머 아키텍처의 각 계층에 통합하면서 사전 훈련된 모델 파라미터를 고정적으로 유지하는 접근법으로 널리 인식되고 있다. 다양한 수의 훈련 에포크로 실험했음에도 불구하고, 우리는 결과가 특정 시점 이후에 안정되는 것을 관찰했다. 표 5에는 미세 조정을 위한 최종 하이퍼파라미터가 포함되어 있다.
+
+## 부록 D 세부 결과
+
+이 섹션에서는 주요 결과를 확증하는 추가 결과를 제공한다. 그림 4는 RAG가 있거나 없는 미세 조정 대 비미세 조정이 FlanT5 기반 및 FlanT5 대형 모델에 미치는 영향을 보여준다. 또한 미세 조정이 가장 인기 없는 버킷과 인기 있는 버킷 모두에서 정확도를 향상시킨다는 것을 보여줍니다. 기본 모델의 경우 최소 인기 버킷에 대한 정확도 향상이 소형 및 대형 모델에 비해 덜 중요하다는 점에 유의해야 한다.
+
+그림 5는 다양한 검색 모델에 걸쳐 미세 조정하기 전에 RAG 접근법의 정확도를 보여준다. 해당 위키피디아 페이지의 요약 섹션을 검색하는 이상 검색기가 가장 높은 정확도를 제공합니다.
+
+그림 6은 모든 관계에 걸쳐 RAG가 있거나 없는 미세 조정 전후의 성능을 비교한다. 또한 미세 조정만으로는 대부분의 관계에 대해 RAG 방법과 동일한 수준의 정확도를 달성하지 못한다는 것을 보여준다.
+
+\begin{table}
+\begin{tabular}{l r r r r r} \hline \hline \multirow{2}{*}{**Relationship**} & \multirow{2}{*}{**\#Ent.**} & \multicolumn{2}{c}{**Train-set**} & \multicolumn{2}{c}{**Dev-set**} \\ \cline{3-6}  & & E2E & Prompt & E2E & Prompt \\ \hline occupation & 532 & 16398 & 1872 & 1822 & 207 \\ place of birth & 584 & 19993 & 2043 & 2221 & 227 \\ genre & 1619 & 56101 & 5338 & 6233 & 593 \\ father & 570 & 37676 & 2092 & 4186 & 406 \\ country & 838 & 19362 & 2769 & 2151 & 307 \\ producer & 1520 & 41992 & 4235 & 4665 & 470 \\ director & 1999 & 27578 & 4644 & 3064 & 515 \\ capital of & 363 & 109141 & 3388 & 12126 & 376 \\ screenwriter & 1999 & 59680 & 6932 & 6631 & 770 \\ composer & 978 & 46574 & 4064 & 5174 & 451 \\ color & 34 & 4396 & 160 & 488 & 17 \\ religion & 338 & 18776 & 1449 & 2086 & 161 \\ sport & 547 & 14760 & 1710 & 1629 & 189 \\ author & 1514 & 46399 & 5319 & 5155 & 590 \\ mother & 187 & 7592 & 477 & 843 & 52 \\ capital & 645 & 28467 & 1322 & 3162 & 146 \\ \hline All & 14,267 & 491,525 & 38,114 & 56,803 & 5,949 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 두 가지 방법을 사용하여 생성된 QA 쌍에 대한 통계. T5-대형을 사용하는 E2E 접근법은 프롬프트 방법에 비해 12배 이상 더 많은 QA를 생성한다.
+
+그림 4: 질문에서 주제 주체의 인기와 RAG와 FT가 QA에서 FlanT5-base와 FlanT5-large의 성능에 미치는 영향의 상관관계.
+
+\begin{table}
+\begin{tabular}{l r} \hline \hline
+**Hyperparameter** & **Value** \\ \hline Epochs & 10 \\ Batch size & 128 \\ Learing rate & 2e-4 \\ PEFT, alpha & 16 \\ PEFT, rank & 32 \\ PEFT, dropout & 0.05 \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 미세 조정을 위한 하이퍼파라미터: 철저한 하이퍼파라미터 검색에 따라 모델의 모든 버전에서 하이퍼파라미터를 표준화했다.
+
+그림 5: PopQA 데이터 세트의 모든 관계에 걸쳐 미세 조정하기 전의 RAG 접근법의 정확도.
+
+그림 6: PopQA 데이터 세트의 모든 관계에 걸쳐 미세 조정 전후 RAG 접근법의 정확도.
