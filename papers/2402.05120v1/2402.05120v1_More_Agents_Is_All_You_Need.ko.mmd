@@ -1,0 +1,291 @@
+# 더 많은 에이전트만 있으면 됩니다.
+
+Junyou Li
+
+Qin Zhang
+
+Yangbin Yu
+
+Qiang Fu
+
+Deheng Ye
+
+동일 기여 \({}^{1}\)Tencent Inc. 응답자 : Deheng Ye \(<\)dericye@tencent.com\(>\).
+
+###### Abstract
+
+샘플링 및 투표 방법을 통해 대규모 언어 모델(LLM)의 성능이 인스턴스화된 에이전트 수에 따라 조정된다는 것을 발견했다. 또한, 이 방법은 기존의 복잡한 방법들과 직교하여 LLMs를 더욱 향상시키는 반면, 향상 정도는 과제 난이도와 상관관계가 있다. 우리는 광범위한 LLM 벤치마크에 대해 포괄적인 실험을 수행하여 발견의 존재를 확인하고 발생을 촉진할 수 있는 속성을 연구한다. 우리 코드는 Git에서 공개적으로 사용할 수 있습니다.
+
+머신러닝, ICML, ICML
+
+## 1 Introduction
+
+대규모 언어 모델(LLM)은 언어 생성, 이해 및 추론과 같은 다양한 애플리케이션(Zhao 등, 2023)에서 놀라운 능력을 보여주지만, 복잡한 작업에 직면했을 때 정확한 답변을 제공하기 위해 고군분투한다. LLM들의 성능을 향상시키기 위해, 최근 연구들 중 일부는 앙상블 방법들(Wang et al., 2023; Wan et al., 2024) 및 다수의 LLM-Agents 협업 프레임워크들(Du et al., 2023; Wu et al., 2023)에 초점을 맞추고 있다.
+
+본 논문에서는 LLM의 성능을 향상시키기 위해 다중 LLM 에이전트를 사용한다. 예를 들어, LLM-Debate(Du et al., 2023)는 토론 형태로 다수의 LLM 에이전트들을 채용한다. 하나 이상의 에이전트가 산술 과제의 최종 답을 "토론"할 수 있는 프레임워크를 만들어 추론 성능을 향상시킨다. 그들은 하나의 단일 에이전트를 사용하는 것과 비교하여 성능 향상을 보여준다. 유사하게, CoT-SC(Wang et al., 2023)는 다수의 사고 체인을 생성하고 가장 자기 일치적인 것을 최종 답변으로서 선택한다. 추론 성능은 단일 사고 사슬을 사용하는 CoT(Wei et al., 2022)에 비해 더 많은 사고 사슬을 포함함으로써 향상된다. 덧붙여, 이러한 작업들의 데이터 분석을 통해, 우리는 여러 에이전트를 함께 두는 효과가 어느 정도 특정 문제에서 성능 향상으로 이어질 수 있음을 알 수 있다. 예를 들어, LLM-Debate의 섹션 3.3의 표 10(Du 등, 2023)에서, 저자들은 예비 곡선을 보고했다: 수학 문제의 정확도는 토론 에이전트의 수에 따라 증가한다(비록 그 수는 단순히 1에서 7로 증가했지만). 또한 Wang et al.(2023)에서, 더 많은 체인-오브-사고 파이프라인들(샘플-및-한계화" 디코딩 절차로서 지칭됨)을 포함하는, 성능 이득으로 이어질 수 있다. 우리는 LLM 성능이 인스턴스화된 에이전트의 수를 무차별적으로 확장함으로써 향상될 수 있음을 깨닫는다. 그러나 "raw" 에이전트의 스케일링 특성은 이러한 작업의 초점이 아니기 때문에 고려되는 시나리오/작업 및 실험은 제한적이다. 지금까지는 이러한 현상에 대한 심도 있는 심도 있는 연구가 부족하다. 따라서 자연스러운 질문이 발생합니다. _이 현상은 일반적으로 존재합니까?_
+
+위의 연구 질문에 답하기 위해 LLM 에이전트의 _스케일링 속성_ 에 대한 첫 번째 포괄적인 연구를 수행한다. 여러 에이전트의 잠재력을 파악하기 위해 두 단계를 포함하는 간단한 샘플링 및 투표 방법을 사용할 것을 제안한다. 첫째, 작업의 쿼리, 즉 LLM에 대한 입력은 단일 LLM 또는 다중 LLM-에이전트 협업 프레임워크에 반복적으로 공급되어 다중 출력을 생성한다. 이후 다수결로 최종 결과를 결정한다. 이 절차는 CoT-SC의 절차에서 영감을 받았지만 복잡한 CoT 설계에 의존하지 않는다.
+
+그림 1: GSM8K에서 Llama2-13B, Llama2-70B 및 GPT-3.5-Turbo에 걸쳐 앙상블 크기에 따라 정확도가 증가한다. 앙상블 크기가 \(15\)까지 커지면 Llama2-13B는 Llama2-70B와 비슷한 정확도를 얻을 수 있다. 유사하게, 앙상블 크기가 \(15\) 및 \(20\)까지 확장될 때, Llama2-70B 및 GPT-3.5-터보는 더 강력한 대응물과 유사한 정확도를 달성한다.
+
+paths. 실제로 평가에서 볼 수 있듯이 CoT 기반 방법을 더욱 향상시키기 위한 플러그인으로 사용할 수 있다.
+
+실험은 추론과 생성을 포함하는 다양한 데이터 세트에 대해 다양한 크기의 LLM을 사용하여 수행된다. 이 결과는 LLM 성능이 일반적으로 광범위한 작업에 걸쳐 앙상블 크기, 즉 에이전트 수를 증가시킴으로써 향상될 수 있음을 나타낸다. 놀랍게도, 더 작은 LLM의 무차별 앙상블은 더 큰 LLM과 비슷하거나 우수한 성능을 달성할 수 있으며, 그림 1에 요약되어 있으며, 이는 이후 섹션에서 추가로 확장될 것이다. 또한 제안한 방법을 기존의 다른 방법들과 결합함으로써 성능을 더욱 향상시킬 수 있음을 확인하였다. 복잡한 방법의 성능과 비교함으로써, 본 논문에서 제안한 방법을 사용하는 것이 대부분의 경우에 비교 가능한 성능을 얻을 수 있음을 보인다. 이는 추가적인 수공예의 신속한 설계나 복잡한 협업 프레임워크의 필요 없이 유사한 성능을 달성할 수 있음을 의미한다.
+
+또한, 실험 결과는 성능 개선의 효과와 문제 해결의 어려움 사이의 상관 관계를 나타낸다. 이러한 성능 개선의 이유를 이해하기 위해, 본 논문에서 제안한 방법의 효과성에 대한 문제 난이도의 영향을 분석한다. 난이도를 내재 난이도, 추론 단계의 길이, 정답의 사전 확률의 세 가지 차원으로 분류한다. 일련의 실험을 통해 우리는 이러한 차원을 조정하고 그 효과를 독립적으로 관찰한다. 우리는 몇 가지 속성을 관찰하고 요약하며, 이를 기반으로 "더 많은 에이전트"의 힘을 자극할 수 있는 최적화 전략을 추가로 개발한다.
+
+우리의 기여는 다음과 같이 요약된다:
+
+* LLM에 의해 인스턴스화된 원시 에이전트의 스케일링 특성에 대한 첫 번째 체계적인 연구를 제시한다. 실험 결과, 에이전트의 증가에 따라 샘플링과 투표의 간단한 방법을 사용하여 성능이 향상됨을 알 수 있었다.
+* LLM의 잠재력을 자극하는 기존의 복잡한 메서드와 메서드의 호환성을 탐색하여 메서드가 이러한 메서드를 개선하여 추가 성능 개선을 달성할 수 있음을 보여줍니다.
+* 다양한 어려움에서 문제를 해결한 다음 뒤에 있는 속성을 증류하는 방법의 효과를 분석하고 이를 기반으로 발견의 발생을 촉진할 수 있는 추가 최적화 방법을 제안합니다.
+
+## 2 관련 작업
+
+관련 작업들은 1) LLM 자기 앙상블(Wang et al., 2023)의 세 부분으로 분류될 수 있는데, 이는 최종 답변을 조립하기 위해 동종 LLM의 여러 출력을 활용하려고 시도한다; 2) 다양한 다운스트림 응용에서 성능을 향상시키기 위해 지도 학습을 통해 이종 LLM을 결합하는 데 초점을 맞춘 이종 LLM 앙상블; 및 3) LLM 에이전트 간의 상호 작용을 통해 성능을 향상시키는 다중 LLM 에이전트 협업을 포함한다. 아래에서 이러한 작업에 대해 논의합니다.
+
+**LLM Self-Ensemble.** CoT-SC(Wang et al., 2023)는 다양한 사고 연쇄를 활용합니다(Wei et al., 2022). 단일 LLM에서 다양한 추론 프로세스를 도출하고 다수 투표를 통해 최종 답변을 선택하라는 메시지를 표시합니다. Fu et al. (2023); Li et al. (2023); Cobbe et al. (2021); Thoppilan et al. (2022); Lin et al. (2023)이 CoT-SC의 확장들로서 고려될 수 있다. 이러한 방법은 주로 추론 작업에 초점을 맞추고 CoT와의 호환성을 독점적으로 조사한다. 이와는 대조적으로, 본 논문에서 제안하는 방법은 추론 작업뿐만 아니라 생성 작업에서도 효율성을 검증한다. 또한, 본 방법은 신속한 엔지니어링(CoT 포함) 및 다중 LLM 에이전트 협업과 같은 광범위한 방법과 호환된다. 매우 최근에 Lu et al.(2024)은 채팅 시나리오를 위해 다수의 LLMs를 활용하는 Blended라는 이름의 방법을 제안한다. 대조적으로, 블렌드는 다중 LLM의 힘을 활용하는 데 중점을 두는 반면, 우리의 초점은 LLM을 더 추가하는 스케일링 추세에 있다. 또한, 혼합은 인간 주석을 통해 평가된 제한된 채팅 시나리오만을 위한 것이다. 또한, 우리는 다른 방법과 직교성을 탐구한다.
+
+**이종 LLM 앙상블.** Wan 등(2024)은 감독된 LLM 융합 프레임워크를 수행하여 여러 이종 LLM을 단일 모델로 증류하고 이러한 LLM 각각을 능가합니다. Jiang et al. (2023)은 다중 이종 LLMs에 기반한 감독 앙상블 프레임워크를 소개한다. Chen et al. (2023)은 출력 품질이 적절하다고 간주될 때 중단되는 LLMs에 대한 순차적 추론 방법을 제안한다. Wang et al. (2023)은 지도 학습을 통해 별개의 지식 영역을 가진 모델의 출력을 통합하여 전문가 융합 문제를 다룬다. Shnitzer et al.(2023)과 Lu et al.(2023)은 보상 유도 라우터를 훈련하여 새로운 작업에 가장 적합한 LLM을 선택한다. 이러한 접근법은 주로 지도 학습을 사용하여 작업별 주석이 달린 데이터를 필요로 하며 제한된 일반화 가능성을 나타낸다. 대조적으로, 우리의 방법은 추가적인 훈련 데이터가 필요 없이 감독되지 않는다.
+
+**다중 LLM 에이전트 협력** 연구는 향상된 추론을 위해 LLM 간의 정적 토론 스타일 참여를 사용하여 다양한 다중 LLM 에이전트 상호 작용 아키텍처를 탐색합니다(Du 등, 2023; Liang 등, 2023; Xiong 등, 2023). Liu et al.(2023)은 에이전트가 동적 아키텍처에서 여러 라운드에 대해 상호 작용할 수 있게 한다. Li et al. (2023); Hong et al. (2023); Wu et al. (2023); Chen et al. (2023; 202)는 LLM 애플리케이션의 개발을 가능하게 하거나 과제 해결 능력을 향상시키는 여러 다중 에이전트 프레임워크를 제공한다. 그러나 이러한 방법은 주로 에이전트의 수와 성능 사이의 관계보다는 LLM 에이전트 간의 상호 작용 구조에 중점을 둔다. 또한 대표적인 방법(Du et al., 2023; Shinn et al., 2023)을 선택하여 우리의 방법과 결합하여 추가적인 향상을 달성한다.
+
+## 3 Method
+
+본 절에서는 샘플링과 투표의 2단계 과정을 통해 구현된 방법을 소개한다. 우리의 방법의 개요는 그림 2에 나와 있다.
+
+**샘플링.** \(x\)는 작업 쿼리를 나타내고 \(\mathcal{M}\)는 LLM을 나타냅니다. 이 단계에서는 각 샘플을 \(s=\mathcal{M}(x)\)로 나타내는 LLM \(\mathcal{M}\)\(N\) 시간을 단독으로 조회하거나 다른 방법과 통합하여 \(f_{\mathcal{M}}\)를 생성하고, 여기서 각 샘플을 \(s=f_{\mathcal{M}}(x)\) 시간으로 표기한다. 이 단계가 끝나면 샘플 \(S=\{s_{1},s_{2},...,s_{N}\}\)을 얻는다.
+
+**투표**. \(A\)가 최종 답을 나타낸다고 하자. 이 단계에서는 응답 표본 집합 \(S\)을 최종 응답 \(A\)으로 통합하기 위해 다수결 투표를 사용한다. 이것은 \(V(s_{i})=\sum_{j=1,j\neq i}^{N}sim(s_{i},s_{j})\)로 표시된 다른 샘플에 대한 누적 유사성을 계산하는 것을 포함한다. 코드 생성과 같은 개방형 생성 작업의 경우 BLEU 점수(Papineni et al., 2002)를 활용하여 유사도를 정량화한다. 반대로 객관식 문항과 같은 근접형 과제는 발생 빈도로 유사도를 측정한다. 가장 높은 누적 유사도를 나타내는 표본은 \(A=\operatorname*{arg\,max}_{s_{i}\in S}V(s_{i})\)로 표시된 최종 답변으로 선택된다.
+
+샘플링-앤-투표 방법의 완전한 프로세스는 알고리즘 1에 설명되어 있다.
+
+```
+0: 쿼리 \(x\), 샘플 수 \(N\), LLM \(\mathcal{M}\) 또는 다른 방법과 통합된 LLM \(f_{\mathcal{M}}(x)\)
+1: 샘플에 대한 빈 집합 초기화 \(S\leftarrow\emptyset\)
+2:for\(i=1\) to \(N\)do
+3: 샘플 \(s_{i}\leftarrow\mathcal{M}(x)\) 또는 \(s_{i}\gets f_{\mathcal{M}}(x)\) 생성
+4 : 세트 \(S\gets S\cup\{s_{i}\}\)에 샘플 추가
+5:endfor
+6: 각 샘플 \(s_{i}\) in \(S\)do에 대해
+7 : 유사도 점수 초기화 \(V(s_{i})\gets 0\)
+8:for each sample \(s_{j}\) in \(S\)do
+9:if\(i\neq j\)then
+10:\(V(s_{i})\gets V(s_{i})+sim(s_{i},s_{j})\)
+11:endif
+12:endfor
+13:endfor
+14:\(A\leftarrow\operatorname*{arg\,max}_{s_{i}\in S}V(s_{i})\)
+15:return\(A\)
+```
+
+**알고리즘 1** 샘플링 및 투표
+
+## 4 실험 설정
+
+실험 설정(이 섹션)과 평가(다음 섹션)를 분리하고, 가장 관련된 작업(우리 작업의 포괄성 검사), 채택한 백본 언어 모델(우리 작업의 적용 가능성 검사), 및 우리와 결합된 방법(우리 작업의 호환성 및 직교성 검사)과 비교하여 시나리오/작업의 적용 범위를 소개한다.
+
+**작업** 다음 작업에서 메서드를 평가 합니다.
+
+* 산술 추론. Wang et al. (2023b); Fu et al. (2023); Du et al. (2023)과 유사하게, 우리는 테스트 세트들 중 하나로서 GSM8K (Cobbe et al., 2021a)를 선택한다. 또한 Wu et al. (2023)에서 사용하는 보다 어려운 MATH 데이터 세트(Hendrycks et al., 2021b)를 선택한다.
+* 일반 추론. Du 등(2023); Jiang 등(2023)과 유사하게, 우리는 MMLU(Hendrycks 등, 2021a)를 선택한다. 또한 Du et al. (2023), Zhang et al. (2023)에서 사용하는 체스 상태 추적 태스크(Chess) 1에서 데이터 세트를 선택한다. 각주 1: 체스 상태 추적
+* 코드 생성. Liu et al.(2023)과 유사하게 HumanEval(Chen et al., 2021)을 선택한다. 제안된 방법을 구현하기 위해 생성된 후보 답변들의 모든 쌍들 중에서 BLEU 점수(Papineni et al., 2002)를 계산한다. 그런 다음 누적 BLEU 점수가 가장 높은 답변이 최종 출력으로 선택된다.
+
+**채택된 언어 모델** Llama2(Tou)와 다른 규모의 언어 모델을 사용하여 방법을 평가합니다.
+
+그림 2: 우리 방법의 예시입니다. 2단계 프로세스는 단독으로 또는 신속한 엔지니어링 방법과 결합된 태스크 쿼리를 LLM 에이전트에 공급하여 답변을 생성하는 것으로 시작한다. 이어서, 이러한 답변에 다수결 투표를 적용하여 최종 답변을 결정한다. 구체적으로, LLM 에이전트는 단일 LLM 또는 다중 LLM-에이전트 협업 프레임워크를 의미한다.
+
+vron et al., 2023) 및 GPT 시리즈(OpenAI, 2022). 구체적으로, 13B 및 70B 매개변수의 모델 크기를 갖는 정렬 기술을 통해 대화 사용 사례에 최적화된 두 가지 버전의 Llama2-Chat2를 평가한다. 또한 GPT-3.5-터보 및 GPT-4를 평가에 포함한다.
+
+우리의 방법으로 강화된 방법은 우리의 방법의 비교 가능성을 조사하기 위해 두 가지 별개의 범주에서 다양한 전형적인 방법을 우리의 방법과 통합하는 것을 연구한다:
+
+* Prompt Engineering. 포괄적인 실험을 수행하기 위해 다양한 신속한 엔지니어링 방법이 고려된다. 우리는 CoT(Chain-of-Think Prompting)(Wei et al., 2022), Zero-Shot Chain-of-Think Prompting(Zero-Shot Cot)(Kojima et al., 2022), 그리고 SPP(Solo Performance Prompting)(Wang et al., 2023c)와 같은 보다 정교한 방법들을 평가한다. 처음에는 이러한 메서드를 단일 LLM 쿼리와 함께 적용합니다. 그런 다음 쿼리의 수를 늘리고 다수결 투표를 사용하여 가장 일관된 답변을 최종 응답으로 결정한다.
+* 다중 LLM 에이전트 협업. 우리는 토론으로 표시된 LLM-토론(Du et al., 2023)과 성찰로 표시된 자기 성찰(Shinn et al., 2023)을 선택한다. 이러한 방법 내에서 이러한 방법을 반복적으로 작동하고 다수결 투표를 사용하여 최종 답변을 생성하여 여러 샘플을 생성한다.
+
+특히, \(10\)개의 독립실행에 대한 결과를 평균하여 제안한 방법의 효용성을 평가한다. 각 실행 동안 최대 이득을 보장하기 위해 앙상블 크기를 \(40\)로 확장한다. 그러나 본 논문에서 제안한 방법을 Debate(Du et al., 2023)와 통합할 경우, 통신 아키텍처에 의해 도입된 상당한 계산 오버헤드로 인해 앙상블 크기가 \(10\)로 제한된다. 자세한 실험 설정은 부록 A에 나와 있다.
+
+## 5 실험 결과
+
+### Generalizability
+
+표 2와 그림 3은 우리의 방법이 일반적으로 앙상블 크기를 증가시킴으로써 모든 태스크와 LLM에 걸쳐 성능을 향상시킨다는 것을 보여준다. 구체적으로, 산술 추론 작업에서 정확도 이득은 GSM8K에서는 \(12\%\)에서 \(24\%\)까지, MATH에서는 \(6\%\)에서 \(10\%\)까지이다. 일반적인 추론 작업에서 정확도는 체스에서는 \(1\%\)에서 \(4\%\)로, MMLU에서는 \(5\%\)에서 \(11\%\)로 증가한다. 코드 생성 작업에서 정확도는 HumanEval에서 \(4\%\)에서 \(9\%\)의 범위이다. 놀랍게도, 우리의 방법은 앙상블 크기를 단순히 스케일링함으로써 더 작은 LLM이 더 큰 대응물을 능가할 수 있게 한다. 예를 들어, 향상된 Llama2-13B 모델은 GSM8K 데이터 세트에서 \(59\%\) 정확도를 달성하여 Llama2-70B 모델보다 우수한 \(54\%\) 점수를 얻었다.
+
+### Compatibility
+
+표 3은 우리의 방법을 다른 방법들과 통합함으로써, 이러한 방법들이 상이한 구현들을 가짐에도 불구하고, 상이한 LLM들 및 태스크들에 걸쳐 성능이 더 향상될 수 있음을 보여준다. 구체적으로, 본 논문에서 제안하는 방법은 GSM8K 데이터 셋에서 \(10\%\)와 \(21\%\), MATH 데이터 셋에서 \(1\%\)와 \(15\%\) 사이의 계산량이 증가하며, 이러한 계산량을 더욱 향상시켰다. 일반적인 추론 작업에서, 다른 방법과의 통합은 일반적으로 체스 작업에서 \(1\%\)에서 \(13\%\)까지 그리고 MMLU 작업에서 \(1\%\)에서 \(11\%\)까지 성능 향상을 달성한다. 코드 생성 작업에서 다른 방법과 결합할 때 이득은 \(2\%\)에서 \(7\%\)까지이다. 그러나 Llama2-13B 및 Llama2-70B 모델과 토론 방법과 통합될 때 두 가지 주목할 만한 예외가 관찰되어 실패한 사례가 발생한다. 이러한 성능의 실패는 주로 토론 과정에서 다른 에이전트의 답변을 참조하여 발생하는 노이즈에 기인한다. 여러 에이전트의 입력을 통합한 합성 응답은 코드 로직의 일관성을 방해하여 성능 저하를 초래한다. 모든 정확도 곡선은 부록 B에 나와 있습니다.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c} \hline \hline \multirow{2}{*}{**Methods**} & \multirow{2}{*}{**Various LLMs**} & \multicolumn{3}{c}{**Tasks**} & \multicolumn{3}{c}{**Integrated with Methods**} \\ \cline{3-8}  & & & Arithmetic & General & Code & Prompt & Multiple LLM-Agents \\  & & & Reasoning & Reasoning & Generation & Engineering & Collaboration \\ \hline CoT-SC (Wang et al., 2023b) & ✓ & & ✓ & ✓ & & Only CoT (Wei et al., 2022) & \\ Complexity-CoT (Fu et al., 2023) & ✓ & & & ✓ & & Only CoT (Wei et al., 2022) & \\ Debate (Du et al., 2023) & & ✓ & & & & \\ Blended (Lu et al., 2024) & ✓ & ✓ & & & & \\ \hline Ours & ✓ & & ✓ & ✓ & ✓ & ✓ & ✓ \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 수행된 실험과 가장 관련된 작업을 비교한다. 우리의 포괄적인 연구는 다양한 LLM, 다중 작업 및 다중 방법과의 통합을 포함한다.
+
+[MISSING_PAGE_FAIL:5]
+
+온도 \(T\)(Ficler and Goldberg, 2017)와 핵확률 \(p\)(Radford et al., 2019)을 GPT-3.5-Turbo 모형을 이용하여 평균 20회 실행하였다. 그림 4에서 볼 수 있듯이 앙상블 크기를 확장하면 이러한 하이퍼파라미터의 변화에도 불구하고 다양한 태스크에 걸쳐 일관되게 LLM 성능이 향상된다.
+
+## 6 성능 이득 이해
+
+표 2는 우리 방법의 효과가 과제의 난이도에 따라 다르다는 것을 보여준다. 이 섹션에서는 통제된 실험을 통해 기본 속성을 이해하는 것을 목표로 한다.
+
+분석을 시작하기 위해 난이도가 증가하는 두 데이터 세트, 즉 GSM8K와 MATH를 선택하여 상대적 성능 이득을 계산한다. 상대적 성능 이득 \(\eta\)은 \(\eta=\frac{P_{\text{m}}-P_{\text{s}}}{P_{\text{s}}}}\)에 의해 주어지며, 여기서 \(P_{\text{m}}\)와 \(P_{\text{s}}\)는 각각 본 방법 및 단일 LLM 질의에 의한 성능(정확도)이다. 그 결과를 표 5에 나타낸다.
+
+주목할 점은 과제 난이도가 증가함에 따라 상대적 성과 이득이 더 크다는 것이다. 특히, 동일한 작업 내에서 더 작은 모델인 Llama2-13B는 GPT-3.5-Turbo보다 \(28\%\)-\(200\%\)의 이득 범위를 갖지만 \(8\%\)-\(16\%\)에 불과하다는 것을 관찰한다. 더욱이, 더 어려운 태스크 MATH는 더 쉬운 태스크 GSM8K에서 단지 \(16\%\)-\(69\%\)에 비해 \(34\%\)-\(200\%\)의 이득을 얻는다.
+
+이 상관 관계를 자세히 분석하기 위해 주어진 과제의 난이도를 1) 과제 고유의 난이도, 2) 과제 해결에 필요한 단계 수, 3) 정답의 사전 확률의 세 가지 직교 차원으로 분류한다. 이러한 차원을 조사하기 위해 각 차원을 분리할 수 있는 실험을 수행한다. 그런 다음 각 차원을 자세히 조사합니다.
+
+### Isolation
+
+이러한 차원의 영향을 명시적으로 탐구하기 위해 우리는 각 차원을 분리하도록 설계된 수학적 과제를 수행한다. 아래에 자세히 설명된 작업을 고려하십시오.
+
+\[\text{Find interval }\Delta_{k}\text{ such }\sum_{i=1}^{S}a_{i}\cdot b_{i} \in\Delta_{k}, \tag{1}\]
+
+where:
+
+* \(a_{i},b_{i}\)는 닫힘
+
+\begin{table}
+\begin{tabular}{l c c c|c} \hline \hline
+**Method** +ours & **GPT-3.5** & **70B** & **13B** & **Overall** \\ \hline COT (Wei et al., 2022) & 2.8 & 3.6 & 3.6 & 3.3 \\ ZS-COT (Kojima et al., 2022) & 2.8 & **2.4** & 3 & 2.7 \\ SPP (Wang et al., 2023c) & 4.6 & 3.6 & 3.8 & 4 \\ Debate (Du et al., 2023) & 3.8 & 4.4 & 5 & 4.4 \\ Reflection (Shinn et al., 2023) & 3 & 4.0 & 3 & 3.3 \\ \hline Ours & **2.6** & 2.6 & **2.2** & **2.5** \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 우리의 방법은 상이한 LLM들 및 태스크들에 걸쳐 가장 높은 평균 순위를 달성하였다. 순위는 표 3에서 파생되며 각 방법이 주어진 LLM에 대해 5가지 작업 모두에 걸쳐 달성하는 평균 순위를 기반으로 한다. 굵게 표시된 인스턴스는 상위 순위를 나타냅니다.
+
+그림 4: 우리의 방법은 다양한 하이퍼파라미터와 작업에 비해 정확도를 향상시킨다.
+
+그림 5: 주어진 작업에 대한 3차원 그림. 노드는 단계를 나타내는 반면, 파선은 대안적인 잠재적 단계를 나타낸다. 노드의 깊이는 걸음 수를 나타내고, 색상 강도는 내재된 난이도의 수준을 나타낸다.
+
+interval \([-I,I]\). \ (I\in\mathbb{Z}^{+}\)는 정수의 범위를 정의한다. \ (I\)는 문제의 **본질적인 난이도** 를 나타냅니다. \(I\) 값이 클수록 더 어려운 작업을 나타냅니다.
+* \(S\in\mathbb{Z}^{+}\)는 합산의 항의 수이다. \ (S\)는 문제를 해결하는 데 필요한 **단계 수** 를 나타냅니다. \(S\) 값이 클수록 더 어려운 작업을 나타냅니다.
+* 결과 공간은 동일한 확률의 \(\Delta_{1},\Delta_{2},\ldots,\Delta_{K}\) 간격으로 분할됩니다. \ (K\in\mathbb{Z}^{+}\)는 이들 구간의 수를 나타낸다. \ (1/K\)는 정답의 **사전 확률** 을 나타냅니다. 사전 확률이 낮을수록 더 어려운 작업을 나타냅니다.
+
+다음 실험에서는 GPT-3.5-Turbo를 기반으로 각 차원을 분석한다. 사례 연구에 GPT-3.5-터보를 사용하므로 다른 백본 모델로 변경할 수도 있습니다. 상대적 성능 이득은 최대 정확도(샘플링 40회)와 단일 LLM 쿼리(샘플링 1회)의 차이로 측정된다. 결과는 평균 10회 이상 실행됩니다.
+
+### Inherent Difficulty
+
+속성 1: _이득은 증가한 다음 고유한 난이도를 증가시켜 감소합니다. _ 본 연구에서는 \(I\)를 \(10\)에서 \(400\)로 변화시키면서 \(S\)와 \(K\)의 값을 각각 작은 값에서 큰 값으로 일정하게 유지시키면서 고유한 난이도를 조사한다. 그림 6 (왼쪽)은 \(I\)가 증가함에 따라 성능 이득의 초기 상승을 보여주며, 이는 우리의 방법이 내재된 어려움의 상승에 따라 성능을 크게 향상시킬 수 있음을 나타낸다. 가장 주목할 만한 이득은 \(I=100\) 및 \(I=200\)에서 나타나며 모든 \(S\) 및 \(K\) 설정에서 일관됩니다. 그러나, \(I=400\)에서, 과도한 복잡도가 모델의 추론 능력을 초과할 수 있으며, 이는 극단적인 과제 난이도 하에서 본 방법의 수익 감소를 초래할 수 있음을 암시한다.
+
+### 단계 수
+
+속성 2.1: _단계 수에 따라 이득이 증가 합니다._ 우리는 \(S\)를 격리하여 단계 수를 분석한다. 우리는 \(S\)를 \(1\)에서 \(8\)로 조정하면서 각각 작은 값에서 큰 값의 네 그룹에 걸쳐 \(I\)와 \(K\)의 값을 일정하게 유지한다. 도 6의 (중간)은 단계들의 수가 증가함에 따라, 그에 상응하는 성능 이득의 증가가 있음을 보여준다. 또한, \(I\)와 \(K\)가 증가(난이도가 높음)하면 \(I=16\%\)-\(48\%\)보다 \(I=10,K=2\}\)보다 \(4\%\)-\(18\%\) 이득이 더 큰 것으로 나타났다.
+
+속성 2.2: _샘플링 및 투표** 는 각 단계에 대 한 성능을 증가시킵니다._ 주어진 과제의 각 단계에 대해 세밀한 분석을 수행한다. 우리는 언어 모델이 각 단계의 결과를 출력하도록 명시적으로 프롬프트한다. 이후 각 단계에서 샘플링 및 투표를 활용하여 해당 단계에 대한 답변을 도출한다. 그림 7(왼쪽)은 각 단계가 동일한 고유의 난이도를 갖지만 이전 단계의 오류 누적이 단계 수가 증가함에 따라 정확도의 감소로 이어짐을 보여준다. 그러나, 본 논문에서 제안하는 방법은 단계 증가에 따른 성능 저하를 완화한다.
+
+추론 속성 2를 기반으로 단계적 샘플링 및 투표가 성능을 더욱 향상시킬 수 있음을 제안한다.
+
+단계적 샘플링 및 투표는 처음에 LLM에 작업을 여러 단계로 분해하라는 메시지를 표시합니다. 그런 다음 다중 라운드 반복으로 진행하여 최종 결과를 생성합니다. 각 라운드에서 프로세스는 현재 처리되지 않은 단계를 선택하고 샘플링 및 투표를 사용하여 해당 단계의 결과를 결정함으로써 시작된다. 그런 다음 결과를 사용하여 작업을 업데이트합니다. 이러한 반복 과정은 마지막 단계가 처리될 때까지 여러 번 반복된다. 단계적 샘플링과 투표의 성능을 평가하기 위해 \(S=8\)와 \(K=4\)를 고정하고 \(I\)를 \(100\)에서 \(400\)로 조정한다. 그림 7(중간)은 단순 샘플링 및 투표에 비해 단계적 샘플링 및 투표가 더 큰 개선을 가져온다는 것을 보여준다. 예를 들어, 우리는 \(15\%\)-\(42\%\) 이득을 볼 수 있으며, 이는 고유한 난이도에 따라 증가한다.
+
+### Prior Probability
+
+속성 3: _사전 확률에 따라 성능이 증가 합니다._ 본 논문에서는 \(I\)와 \(K\)에 대해 일정한 값을 유지하면서 매개변수 \(K\)를 조정하여 사전확률이 성능에 미치는 영향을 조사한다. \(K\)는 구간의 수를 나타내므로 사전확률은 \(1/K\)로 정의된다. 우리는 \(K\)를 \(4\)에서 \(32\)로 변경하며, 이는 사전 확률을 \(1/4\)에서 \(1/32\)로 등가적으로 변경한다. 각각 \(I\)와 \(S\)의 다른 구성을 특징으로 하는 그림 6(오른쪽)에 예시된 네 개의 실험 그룹을 통해 사전 확률이 증가함에 따라 성능도 증가함을 알 수 있다.
+
+추론 속성 3을 기반으로 계층적 샘플링 및 투표가 성능을 더욱 향상시킬 수 있음을 제안한다.
+
+성능은 사전 확률과 관련이 있기 때문에, 낮은 확률 태스크들을 다수의 높은 확률 서브 태스크들로 분해하고 이들을 계층적으로 어드레싱하는 것은 성능을 높일 수 있다. 더욱이, 다양한 사전 확률들을 갖는 서브태스크들은 상이한 모델들을 사용하여 해결될 수 있다. 또한 더 쉽고 높은 확률 하위 작업을 위해 더 간단하고 비용이 덜 드는 모델을 사용하여 비용 절감을 달성할 수 있습니다.
+
+실험에서 문제는 \(K=32\)로 해결하는 것이다. 균질조합실험에서는 GPT-3.5-Turbo를 사용하였고, 이질조합실험에서는 GPT-3.5-Turbo와 GPT-4를 사용하였다. 그 결과는 그림 7(오른쪽)에 제시되어 있다.
+
+동질적 결합실험에서는 계층적 방법을 사용하여 \(K=8\)로 시작하여 중간 해답을 구한 후, 중간 해답에 의해 식별되는 구간을 중심으로 \(K=32\)로 해를 구한다. 이 방법은 \(21\%\)에서 \(31\%\)로 성능이 향상되었으며, 이는 계층적 방법이 성능을 더욱 향상시킬 수 있음을 보여준다.
+
+이종결합실험에서는 \(K=8\)으로 중간답안을 생성하기 위해 GPT-3.5-Turbo를 사용하였고, \(K=32\)로 최종답안을 생성하기 위해 GPT-4를 사용하였다. 그림 7(오른쪽)에서 GPT-4의 \(K=32\)에 비해 계층적 방법은 \(35\%\)에서 \(47\%\)로 성능을 향상시키며, 해당 문제 해결 수준에서 다른 LLM의 배치를 제안하면 비용 효율적인 방식으로 성능을 향상시킬 수 있다.
+
+## 7 결론 및 향후 작업
+
+이 논문에서는 CoT 파이프라인, 다중 에이전트 협업 프레임워크 등과 같은 복잡한 방법을 사용하지 않고 복잡한 작업을 처리할 때 더 나은 LLM 성능을 얻기 위해 필요한 것, 즉 인스턴스화된 LLM 에이전트를 추가하기만 하면 됩니다. 우리는 그러한 "스케일링 법칙"이 언제 성립되고 그 발생을 촉진하는 방법을 포함하여 그러한 "스케일링 법칙"을 이해하기 위해 문헌의 첫 번째 포괄적인 연구를 수행했다.
+
+그 결과, 본 논문에서 제안한 단순 샘플링 및 투표 기법은 앙상블 크기를 증가시킴으로써 LLM의 성능을 전반적으로 향상시킬 수 있음을 확인하였다. 중요한 것은, 이 방법은 상이한 기존 방법들과 직교하며, 이는 그것들과 조합될 때 추가적인 개선들로 이어질 수 있다는 것이다.
+
+또한 과제의 난이도에 따라 성과 향상이 영향을 받는다는 것을 알 수 있었다. 이 상관관계를 탐구하기 위해 과제 난이도의 세 가지 차원인 내재적 난이도, 추론 단계의 길이, 정답의 사전 확률을 분리하여 분석한다. 실험 결과, 1) 성능 향상은 초기 난이도가 증가함에 따라 증가하다가 감소하며, 2) 성능 향상은 단계 수가 증가함에 따라 증가하며, 3) 성능 향상은 사전 확률에 따라 증가함을 알 수 있었다. 이러한 특성을 바탕으로 "더 많은 에이전트"의 효과를 높일 수 있는 방법도 개발합니다.
+
+에이전트의 수를 증가시킬 때 각 입력이 동일하게 유지된다는 점을 고려할 때 샘플링 단계는 비용을 줄이기 위해 최적화될 수 있다. 그럼에도 불구하고, 비용을 증가시키는 그러한 도전은 다수의 LLM 호출을 요구하는 작업에서 일반적으로 존재한다(Wang 등, 2023; Du 등, 2023). 우리는 그것을 최적화하기 위한 미래의 작업으로 남겨둔다.
+
+그림 6: (왼쪽) 상대 성능 이득은 고유 난이도가 증가함에 따라 증가하다가 감소합니다. (중간) 단계 수에 따라 상대적 성능 이득이 증가한다. (오른쪽) 사전 확률에 따라 절대 성능이 증가합니다. 우리는 다른 두 차원을 고정하여 각 차원을 분석한다.
+
+그림 7: (왼쪽) 우리의 방법은 각 단계에 대한 성능을 증가시킨다. 파란색 막대는 단일 샘플에 대한 다양한 단계의 정확도를 보여주고 주황색 막대는 40개 샘플에 대한 이득을 보여준다. (중간) 단계적 샘플링 및 투표는 다양한 수준의 고유한 어려움에 걸쳐 성능을 더욱 향상시킬 수 있다. (오른쪽) 계층적 샘플링 및 투표는 동종 및 이종 모델 조합으로 성능을 더욱 향상시킬 수 있다.
+
+## Impact Statement
+
+본 논문에서는 LLM(Large Language Models)의 성능을 향상시키기 위해 고안된 간단한 방법을 소개한다. 제안된 방법은 다양한 작업에서 LLM의 효율성을 향상시키는 것을 목표로 하지만 잠재적인 위험을 인정해야 한다. LLM은 때때로 그럴듯하지만 사실적으로 부정확하거나 무의미할 수 있는 출력을 생성할 수 있다. 그러한 환각은 의사 결정 과정의 오도와 편향의 전파로 이어질 수 있다. 이러한 우려는 정보의 정확성과 신뢰성이 가장 중요한 중요한 의사 결정 시나리오의 맥락에서 특히 심각하다. 이러한 위험에 대한 적절한 보호 장치 없이 LLM을 광범위하게 채택하면 이러한 문제가 악화될 수 있다. 따라서 이러한 강력한 모델의 배치가 책임감과 유익함을 보장하기 위해 LLM 환각의 잠재적 부작용을 완화하기 위한 메커니즘을 계속 개발하는 것이 중요하다.
+
+## References
+
+* Chen et al. (2023) Chen, G., Dong, S., Shu, Y., Zhang, G., Sesay, J., Karlsson, B. F., Fu, J., and Shi, Y. 자동 에이전트: 에이전트 자동 생성을 위한 프레임워크입니다. _ CoRR_, abs/2309.17288, 2023a.
+* Chen et al.(2023) Chen, L., Zaharia, M., and Zou, J. Frugalgpt: How to use large language models while reduce cost and improving performance _ CoRR_, abs/2305.05176, 2023b.
+* Chen et al.(2021) Chen, M., Tworek, J., Jun, H., Yuan, Q., de Oliveira Pinto, H. P., Kaplan, J., Edwards, H., Burda, Y., Joseph, N., Brockman, G., Ray, A., Puri, R., Krueger, G., Petrov, M., Khlaaf, H., Sastry, G., Mishkin, P., Chan, B., Gray, S., Ryder, N., Pavlov, M., Power, A., Kaiser, L., Bavarian, M., Winter, C., Tillet, P., Such, F. P., Cummings, D., Plappert, M., Chantzis, A., Tezak, N., Tang, J., Babuschkin, I., Balaji, S., Jain, S., Saunders, W., Hesse, C., Carr, A. N., Leike, J., Achiam, J., Misra, V., Morikawa, E., Radford, A., Brundage 코드에 대해 학습된 대규모 언어 모델을 평가하는 중입니다. _ CoRR_, abs/2107.03374, 2021.
+* Chen 등(2023c) Chen, W., Su, Y., Zuo, J., Yang, C., Yuan, C., Qian, C., Chan, C., Qin, Y., Lu, Y., Xie, R., Liu, Z., Sun, M., and Zhou, J. Agentverse: Facilitating multi-agent collaboration and exploring emergent behaviors in agent. _ CoRR_, abs/2308.10848, 2023c.
+* Cobbe et al.(2021) Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C., and Schulman, J. Training verifiers to solve math word problems. _ CoRR_, abs/2110.14168, 2021a.
+* Cobbe et al.(2021) Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C., and Schulman, J. Training verifiers to solve math word problems. _ CoRR_, abs/2110.14168, 2021b.
+* Du et al.(2023) Du, Y., Li, S., Torralba, A., Tenenbaum, J. B., and Mordatch, I. Improving factuality and reasoning in language models through multiagent debate. _ CoRR_, abs/2305.14325, 2023.
+* Ficler & Goldberg (2017) Ficler, J. and Goldberg, Y. 신경 언어 생성에서 언어 스타일 측면을 제어합니다. _ CoRR_, abs/1707.02633, 2017.
+* Fu et al. (2023) Fu, Y., Peng, H., Sabharwal, A., Clark, P., and Khot, T. 다단계 추론을 위한 복잡성 기반 프롬프트 <제11차 국제학술대회>에서, ICLR 2023, 키갈리, 르완다, 5월 1-5일, 2023. OpenReview.net, 2023.
+* Hendrycks et al. (2021) Hendrycks, D., Burns, C., Basart, S., Zou, A., Mazeika, M., Song, D., and Steinhardt, J. Measuring massive multitask language understanding. 제9회 국제학술대회에서, ICLR 2021, 오스트리아 가상행사, 2021년 5월 3일부터 7일까지. OpenReview.net, 2021a.
+* Hendrycks et al. (2021) Hendrycks, D., Burns, C., Kadavath, S., Arora, A., Basart, S., Tang, E., Song, D., and Steinhardt, J. Measuring mathematical problem solving with the MATH dataset. Vanschoren, J. and Yung, S. (eds.), _Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks 1, NeurIPS Datasets and Benchmarks 2021, December 2021, virtual_, 2021b.
+* Hong et al. (2023) Hong, S., Zheng, X., Chen, J., Cheng, Y., Wang, J., Zhang, C., Wang, Z., Yau, S. K. S., Lin, Z., Zhou, L., Ran, C., Xiao, L., and Wu, C. Metagpt: Meta programming for multi-agent collaborative framework. _ CoRR_, abs/2308.00352, 2023.
+* Jiang et al. (2023) Jiang, D., Ren, X., and Lin, B. Y. Llm-blender: Ensembling large language models with pairwise ranking and generative fusion. Rogers, A., Boyd-Graber, J. L., and Okazaki, N. (eds.), _Proceedings of the 61th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023_, pp. 14165-14178. Association for Computational Linguistics, 2023.
+* Kojima et al.(2022) Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., and Iwasawa, Y. 큰 언어 모델은 제로 샷 추론기입니다. 2022년 NeurIPS에서.
+* Li et al.(2023) Li, G., Hammoud, H. A. K., Irani, H., Khizbullin, D., and Ghanem, B. CAMEL: communicative agents for "mind" exploration of large scale language model society. _ CoRR_, abs/2303.17760, 2023a.
+
+Li, Y., Lin, Z., Zhang, S., Fu, Q., Chen, B., Lou, J.-G., and Chen, W. 단계 인식 검증기를 사용하여 언어 모델을 더 나은 추론자로 만듭니다. Rogers, A., Boyd-Graber, J., and Okazaki, N. (eds.), _Proceedings of the 61th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pp. 5315-5333, Toronto, Canada, July 2023b. 계산 언어학 협회
+* Liang et al.(2023) Liang, T., He, Z., Jiao, W., Wang, X., Wang, Y., Wang, R., Yang, Y., Tu, Z., and Shi, S. 다중 에이전트 토론을 통해 대규모 언어 모델에서 발산적 사고를 장려합니다. _ CoRR_, abs/2305.19118, 2023.
+* Lin et al. (2023) Lin, L., Fu, J., Liu, P., Wan, J., Zhang, F., Wang, Z., Zhang, D., and Gai, K. 다시 한 번 묻습니다. 자기 동의는 모든 시나리오에서 언어 모델의 추론을 향상시킵니다. _ CoRR_, abs/2311.08154, 2023.
+* Liu 등(2023) Liu, Z., Zhang, Y., Li, P., Liu, Y., and Yang, D. Dynamic llm-agent network: A llm-agent collaboration framework with agent team optimization. _ CoRR_, abs/2310.02170, 2023.
+* Lu et al.(2023) Lu, K., Yuan, H., Lin, R., Lin, J., Yuan, Z., Zhou, C., and Zhou, J. Routing to the expert: Efficient reward-guided ensemble of large language models. _ CoRR_, abs/2311.08692, 2023.
+* Lu et al. (2024) Lu, X., Liusie, A., Raina, V., Zhang, Y., and Beauchamp, W. 혼합만 있으면 됩니다. 더 저렴하고 조 단위 매개 변수 llm에 대한 더 나은 대안입니다. _ arXiv preprint arXiv:2401.02994_, 2024.
+* OpenAI (2022) OpenAI. Chatgtp: 대화용 언어 모델 최적화, 2022. URL [https://openai.com/blog/chatgtpct](https://openai.com/blog/chatgtpct)
+* Papineni et al. (2002) Papineni, K., Roukos, S., Ward, T., and Zhu, W. J Bleu: 기계 번역의 자동 평가를 위한 방법. In _Proceedings of the 40st Annual Meeting of the Association for Computational Linguistics ACL 2002, Philadelphia, USA, July, 2002_, pp. 311-318. Association for Computational Linguistics, 2002.
+* Post (2018) Post, M. 블루 점수 보고에 대한 명확성을 촉구합니다. _ arXiv preprint arXiv:1804.08771_, 2018.
+* Radford 등(2019) Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I., et al. 언어 모델은 unsupervised multitask learners이다. _ OpenAI blog_, 1(8):9, 2019.
+* Shinn et al.(2023) Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K. R., and Yao, S. 반사: 언어 강화 학습을 가진 언어 에이전트. 《신경 정보 처리 시스템에 관한 제37차 회의》 2023년.
+* Shnitzer et al. (2022) Shnitzer, T., Ou, A., Silva, M., Soule, K., Sun, Y., Solomon, J., Thompson, N., and Yurochkin, M. 벤치마크 데이터 세트를 사용한 대규모 언어 모델 라우팅입니다. _ CoRR_, abs/2309.15789, 2023.
+* Thoppilan et al. (2022) Thoppilan, R., Freitas, D. D., Hall, J., Shazeer, N., Kulshreshtha, A., Cheng, H., Jin, A., Bos, T., Baker, L., Ghafouri, A., Menegaldi, M., Huang, Y., Krikun, M., Lepikhin, D., Qin, J., Chen, J., Xu, Y., Chen, Z., Roberts, A., Bosma, M., Zhou, Y., Chang, C., Krivokon, I., Rusch, W., Pickett, M., Meier-Hellstern, K. S., Morris, M. R., Doshi, T., Santos, R. D., Doshi, T., Soraker, J., Hutchinson, B., Olson, K., Molina, A., Hoffman-John, E., Lee, J., Aroyo, L., Rajakumar, R., Butryna, A., Lamm, M., Kuzmina 람다: 대화 상자 응용 프로그램의 언어 모델입니다. _ CoRR_, abs/2201.08239, 2022.
+* Touvron et al.(2024) Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Bhosale, S., Bikel, D., Bashlykov, N., Blecher, L., Canton-Ferrer, C., Chen, M., Cucurull, G., Esiobu, D., Fernandes, J., Fu, J., Fu, W., Fuller, B., Gao, B., Goswami, V., Goyal, N., Hartshorn, A., Hosseini, S., Hou, R., Inan, H., Kardas, M., Korkez, A., Koual, N., Koswami, V., H. H., Kowa, M., Kowa, M., Kloumann, I., Korenev, A., Kouril, T., D., Lee, J., Liskovich, D., Lu, Y., M. Martinet, X., Mihaylov, T., Mishra, P., M 라마 2: 오픈 파운데이션과 미세 조정된 채팅 모델입니다. _ CoRR_, abs/2307.09288, 2023.
+* Wan et al.(2024) Wan, F., Huang, X., Cai, D., Quan, X., Bi, W., and Shi, S. 대형 언어 모델의 지식 융합입니다. _ arXiv preprint arXiv:2401.10491_, 2024.
+* Wang et al. (2023a) Wang, H., Polo, F. M., Sun, Y., Kundu, S., Xing, E. P., and Yurochkin, M. 보완적인 전문 지식을 가진 모델을 융합합니다. _ CoRR_, abs/2310.01542, 2023a.
+* Wang et al. (2023b) Wang, X., Wei, J., Schuurmans, D., Le, Q. V., Chi, E. H., Narang, S., Chowdhery, A., and Zhou, D. Self-consistency improves chain of thought reasoning in language models. <제11차 국제학술대회>에서, ICLR 2023, 키갈리, 르완다, 5월 1-5일, 2023. OpenReview.net, 2023b.
+* Wang et al.(2023c) Wang, Z., Mao, S., Wu, W., Ge, T., Wei, F., and Ji, H. Unleashing cognitive synergy in large language models: A task-solving agent through multi-persona self-collaboration. _ CoRR_, abs/2307.05300, 2023c.
+* Wei et al. (2022) Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E. H., Le, Q. V., and Zhou, D. Chain-of-thought prompting elicits reasoning in large language models. 2022년 NeurIPS에서.
+* Wu et al.(2023) Wu, Q., Bansal, G., Zhang, J., Wu, Y., Zhang, S., Zhu, E., Li, B., Jiang, L., Zhang, X., and Wang, C. Autogen: Enabling next-gen LLM applications via multi-agent conversation framework. _ CoRR_, abs/2308.08155, 2023.
+* Xiong et al. (2023) Xiong, K., Ding, X., Cao, Y., Liu, T., and Qin, B. Examining the inter-consistency of large language models: An in-depth analysis via debate _ CoRR_, abs/2305.11595, 2023.
+* Zhang et al.(2023) Zhang, J., Xu, X., and Deng, S. llm 에이전트를 위한 협업 메커니즘 탐색: 사회 심리학적 관점입니다. _ arXiv preprint arXiv:2310.02124_, 2023.
+* Zhao et al. (2023) Zhao, W. X., Zhou, K., Li, J., Tang, T., Wang, X., Hou, Y., Min, Y., Zhang, B., Zhang, J., Dong, Z., Du, Y., Yang, C., Chen, Y., Chen, Z., Jiang, J., Ren, R., Li, Y., Tang, X., Liu, P., Nie, J.-Y., and Wen, J.-R. 대형 언어 모델에 대한 조사입니다. _ arXiv preprint arXiv:2303.18223_, 2023.
+
+## 부록 자세한 실험 설정
+
+### Common Settings
+
+섹션 4에 제시된 GPT-3.5-터보를 포함하는 모든 실험에서 모델 버전 gpt-3.5-터보-0613을 활용한다. 표 2에서 GPT-4 표기는 모델 버전 gpt-4-0613에 해당한다. 섹션 6에서 GPT-3.5-터보로 수행된 실험의 경우 JSON 모드가 활성화된 모델 버전 gpt-3.5-터보-1106을 사용한다. 마찬가지로, 이러한 컨텍스트의 GPT-4는 JSON 모드에서 작동하는 gpt4-1106-Preview를 참조합니다.
+
+### 산술 추론 작업에 대한 실험
+
+GSM8K 및 MATH 데이터 세트 내의 산술 추론 작업에 대한 샘플링 및 투표 방법의 구현을 위해 알고리즘 1에 의해 초기 샘플링 단계를 실행한다. 샘플은 "boxed\(\{\)X\(\}\)"를 매칭하여 응답으로부터 추출되며, 여기서 "X"는 수치 또는 수학적 표현을 나타낸다.
+
+후속 투표 단계에서 알고리즘 1에 설명된 대로 샘플 간의 유사성을 평가하기 위해 각 샘플에 대한 수학적 동등성 비교를 사용한다. 가장 가능성이 높은 표본이 최종 답변으로 선택된다. 이 답은 결과의 정확성을 확인하기 위해 수학적 동등성과 지상 진리를 비교한다.
+
+### 일반 추론 작업에 대한 실험
+
+일반적인 추론 작업의 경우 MMLU 및 체스 데이터 세트에서 볼 수 있듯이 샘플링 단계 동안 알고리즘 1에 따라 샘플링 및 투표 방법이 적용된다. 샘플들은 패턴 "(X" 또는 "(X)"를 매칭시킴으로써 추출되며, 여기서 "X"는 MMLU 태스크에서의 옵션 A, B, C, 또는 D와 체스 태스크에서의 체스판 위치에 대응한다.
+
+투표 단계에서 표본 내에서 각 옵션의 발생 빈도를 계산하여 유사성을 계산한다. 그런 다음 가장 자주 발생하는 옵션이 최종 답변으로 선택됩니다. 이 선택된 답변은 결과의 정확성을 결정하기 위해 그라운드 트루스와 비교된다.
+
+### 코드 생성 태스크에 대한 실험
+
+코드 생성 작업에서는 HumanEval 데이터셋을 이용하여 Python 코드를 생성하기 위해 샘플링 앤 보팅 방법을 적용한다. 샘플링 단계에서 모델의 응답에서 Python 코드 조각을 추출합니다.
+
+투표 단계에서는 생성된 각 샘플 간의 유사성을 평가하기 위해 _sacreBLEU_(Post, 2018)를 사용하여 BLEU 점수를 계산한다. 누적 BLEU 점수가 가장 높은 표본을 최종 답변으로 선정한다. 이 방법은 최종 출력이 샘플 간의 유사성 스코어링을 통해 합의에 의해 결정된 가장 대표적이고 정확한 코드 조각임을 보장한다.
+
+## 부록 B 자세한 실험 결과
+
+이 섹션에서는 다양한 LLM을 사용할 때 다양한 데이터 세트에 대한 실험의 정확도 곡선을 제공한다. 이 곡선들로부터, 우리는 우리의 방법이 다음의 속성들을 갖는다는 것을 증명한다:
+
+* **일반화 가능** 메서드를 독립 실행형으로 사용 하면 일반적으로 앙상블 크기를 증가 하 여 성능을 향상 시킬 수 있습니다.
+* **호환성** 우리의 방법은 일반적으로 앙상블 크기를 증가시켜 다른 방법을 향상시킬 수 있습니다.
+
+그림 11: Llama2-13B 모델을 사용하여 다양한 데이터 세트에 대한 토론 정확도 곡선.
+
+그림 8: Llama2-13B 모델을 사용하여 다양한 데이터 세트에 걸친 정확도 곡선.
+
+그림 10: GPT-3.5-터보 모델을 사용하여 다양한 데이터 세트에 대한 정확도 곡선이다.
+
+그림 9: Llama2-70B 모델을 사용하여 다양한 데이터 세트에 걸친 정확도 곡선.
+
+그림 12: Llama2-70B 모델을 사용하여 다양한 데이터 세트에 대한 토론 정확도 곡선.
+
+그림 13: GPT-3.5-Turbo 모델을 사용하여 다양한 데이터 세트에 대한 토론 정확도 곡선.

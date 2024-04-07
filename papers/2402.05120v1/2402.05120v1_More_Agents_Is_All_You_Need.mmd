@@ -1,0 +1,291 @@
+# More Agents Is All You Need
+
+Junyou Li
+
+Qin Zhang
+
+Yangbin Yu
+
+Qiang Fu
+
+Deheng Ye
+
+Equal contribution \({}^{1}\)Tencent Inc. Correspondence to: Deheng Ye \(<\)dericye@tencent.com\(>\).
+
+###### Abstract
+
+We find that, simply via a sampling-and-voting method, the performance of large language models (LLMs) scales with the number of agents instantiated. Also, this method is orthogonal to existing complicated methods to further enhance LLMs, while the degree of enhancement is correlated to the task difficulty. We conduct comprehensive experiments on a wide range of LLM benchmarks to verify the presence of our finding, and to study the properties that can facilitate its occurrence. Our code is publicly available at: Git.
+
+Machine Learning, ICML, ICML
+
+## 1 Introduction
+
+Although large language models (LLMs) demonstrate remarkable capabilities in variety of applications (Zhao et al., 2023), such as language generation, understanding, and reasoning, they struggle to provide accurate answers when faced with complicated tasks. To improve the performance of LLMs, some of recent studies focus on ensemble methods (Wang et al., 2023; Wan et al., 2024) and multiple LLM-Agents collaboration frameworks (Du et al., 2023; Wu et al., 2023).
+
+In these works, multiple LLM agents are used to improve the performance of LLMs. For instance, LLM-Debate (Du et al., 2023) employs multiple LLM agents in a debate form. The reasoning performance is improved by creating a framework that allows more than one agent to "debate" the final answer of arithmetic tasks. They show performance improvements compared to using one single agent. Similarly, CoT-SC (Wang et al., 2023) generates multiple thought chains and picks the most self-consistent one as the final answer. The reasoning performance is improved by involving more thought chains compared to chain-of-thought (CoT) (Wei et al., 2022) which employs a single thought chain. Incidentally, from the data analysis of these works, we can notice the effects of putting multiple agents together, to some extent, can lead to a performance improvement in certain problems. For example, in Table 10 of Section 3.3 of LLM-Debate (Du et al., 2023), the authors have reported a preliminary curve: the accuracy of a math problem increases with the number of debating agents (although the number was simply increased from 1 to 7). Also, in Wang et al. (2023), involving more chains-of-thought pipelines (termed as a "sample-and-marginalize" decoding procedure), can lead to a performance gain. We realize that the LLM performance may likely be improved by a brute-force scaling up the number of agents instantiated. However, since the scaling property of "raw" agents is not the focus of these works, the scenarios/tasks and experiments considered are limited. So far, there lacks a dedicated in-depth study on this phenomenon. Hence, a natural question arises: _Does this phenomenon generally exist?_
+
+To answer the research question above, we conduct the first comprehensive study on the _scaling property_ of LLM agents. To dig out the potential of multiple agents, we propose to use a simple(st) sampling-and-voting method, which involves two phases. First, the query of the task, i.e., the input to an LLM, is iteratively fed into a single LLM, or a multiple LLM-Agents collaboration framework, to generate multiple outputs. Subsequently, majority voting is used to determine the final result. The procedure is inspired by that of the CoT-SC, but it does not rely on designing complex CoT
+
+Figure 1: The accuracy increases with ensemble size across Llama2-13B, Llama2-70B and GPT-3.5-Turbo in GSM8K. When the ensemble size scales up to \(15\), Llama2-13B achieves comparable accuracy with Llama2-70B. Similarly, When the ensemble size scales up to \(15\) and \(20\), Llama2-70B and GPT-3.5-Turbo achieve comparable accuracy with their more powerful counterparts.
+
+paths. In fact, it can be used as a plug-in to further enhance CoT-based methods, as will be shown in our evaluations.
+
+The experiments are conducted by using various LLMs of different sizes on diverse datasets covering reasoning and generation. The result indicates that LLM performance can generally be improved by increasing the ensemble size, i.e., the number of agents, across a wide range of tasks. Surprisingly, a brute-force ensemble of smaller LLMs can achieve comparable or superior performance to larger LLMs, with a nutshell shown in Figure 1, which will be further expanded in later sections. Moreover, by combining our method with other existing methods, we find the performance can be further improved. By comparing with the performance of complicated methods, the result shows that employing our method solely can achieve comparable performance in most cases. This implies that comparable performance can be achieved without the need for additional handcraft prompt design or complex collaboration frameworks.
+
+Additionally, the experimental results indicate a correlation between the efficacy of the performance improvements and the difficulty of the problems addressed. To understand the reasons behind these performance improvements, we analyze the influence of problem difficulty on the effectiveness of our method. We classify difficulty into three dimensions: the inherent difficulty, the length of reasoning steps, and the prior probability of the correct answer. Through a series of experiments, we adjust these dimensions and observe their effects independently. We observe and summarize a few properties, based on which, we further develop optimization strategies that can intrigue the power of "More Agents".
+
+Our contributions are summarized as follows:
+
+* We present the first systematic study on the scaling property of raw agents instantiated by LLMs. We find that the performance scales with the increase of agents, using the simple(st) way of sampling and voting.
+* We explore the compatibility of our method with existing complicated methods that stimulate the potential of LLMs, revealing that our method can enhance these methods to achieve further performance improvements.
+* We analyze the effectiveness of our method in tackling problems at varying difficulties and then distill the properties behind, based upon which, we propose further optimization methods that can facilitate the occurrence of our finding.
+
+## 2 Related Work
+
+Related works can be categorized into three parts: 1) LLM self-ensemble (Wang et al., 2023), which attempts to harness multiple outputs from homogeneous LLMs to assemble the final answer; 2) heterogeneous LLM ensemble, which focuses on combining heterogeneous LLMs through supervised learning to improve performance across various downstream applications; and 3) multiple LLM agents collaboration, which improves performance through interactions among LLM agents. We discuss these works below.
+
+**LLM Self-Ensemble.** CoT-SC (Wang et al., 2023) harnesses diverse chain-of-thought (Wei et al., 2022) prompts to elicit a variety of reasoning processes from a single LLM and select the final answer through majority voting. Fu et al. (2023); Li et al. (2023); Cobbe et al. (2021); Thoppilan et al. (2022); Lin et al. (2023) can be considered as the extensions of CoT-SC. These methods mainly focus on reasoning tasks and exclusively investigate the compatibility with CoT. In contrast, our method not only validates effectiveness in reasoning tasks but also in generation tasks. Moreover, our method is compatible with a broader range of methods, such as prompt engineering (including CoT) and multiple LLM agents collaboration. Very recently, Lu et al. (2024) proposes a method named Blended that utilizes multiple LLMs for chat scenarios. In contrast, Blended focuses on utilizing the power of multiple LLMs, whereas our focus is on the scaling trend of adding more LLMs. Also, Blended is only for limited chat scenarios evaluated via human annotations. Furthermore, we explore orthogonality with other methods.
+
+**Heterogeneous LLM Ensemble.** Wan et al. (2024) conducts a supervised LLM fusion framework to distill multiple heterogeneous LLMs into a single model and surpasses each of these LLMs. Jiang et al. (2023) introduces a supervised ensembling framework based on multiple heterogeneous LLMs. Chen et al. (2023) proposes a sequential inference method for LLMs that halts when the output quality is deemed adequate. Wang et al. (2023) addresses the fusion-of-experts problem by integrating outputs from models with distinct knowledge domains through supervised learning. Shnitzer et al. (2023) and Lu et al. (2023) select the most suitable LLM for new tasks by training a reward-guided router. These approaches primarily employ supervised learning, necessitating task-specific annotated data, and exhibit limited generalizability. In contrast, our method is unsupervised, without the need for additional training data.
+
+**Multiple LLM Agents Collaboration.** Studies explore various multiple LLM agents interaction architectures, with employing static debate-style engagements among LLMs for enhanced reasoning (Du et al., 2023; Liang et al., 2023; Xiong et al., 2023). Liu et al. (2023) enables agents to interact for multiple rounds in a dynamic architecture. Li et al. (2023); Hong et al. (2023); Wu et al. (2023); Chen et al. (2023; 202) offer several multi-agent frameworks that enable the development of LLM applications or enhance task-solving capabilities. However, these methods primarily focus on the interaction structures between LLM agents, rather than the relationship between the number of agents and performance. We also select representative methods (Du et al., 2023; Shinn et al., 2023) to combine with our method, achieving further enhancements.
+
+## 3 Method
+
+In this section, we introduce our method which is implemented through a two-phase process: sampling and voting. The overview of our method is shown in Figure 2.
+
+**Sampling.** Let \(x\) represent the task query and \(\mathcal{M}\) denote an LLM. In this phase, we generate \(N\) samples by solely querying the LLM \(\mathcal{M}\)\(N\) times with each sample represented as \(s=\mathcal{M}(x)\) or by integrating with other methods \(f_{\mathcal{M}}\) with \(N\) times executions where each sample is denoted as \(s=f_{\mathcal{M}}(x)\). We obtain a set of samples \(S=\{s_{1},s_{2},...,s_{N}\}\) at the end of this phase.
+
+**Voting**. Let \(A\) represent the final answer. In this phase, we employ majority voting to consolidate the response sample set \(S\) into the final answer \(A\). This involves calculating the cumulative similarity for each sample relative to the others, denoted as \(V(s_{i})=\sum_{j=1,j\neq i}^{N}sim(s_{i},s_{j})\). For open-ended generation tasks such as code generation, the BLEU score (Papineni et al., 2002) is utilized to quantify similarity. Conversely, for close-ended tasks like multiple-choice questions, similarity is measured by occurrence frequency. The sample that exhibits the highest cumulative similarity is then chosen as the final answer denoted as \(A=\operatorname*{arg\,max}_{s_{i}\in S}V(s_{i})\).
+
+The complete process of the sampling-and-voting method is described in Algorithm 1.
+
+```
+0: Query \(x\), number of samples \(N\), LLM \(\mathcal{M}\) or LLM integrated with other methods \(f_{\mathcal{M}}(x)\)
+1: Initialize an empty set for samples \(S\leftarrow\emptyset\)
+2:for\(i=1\) to \(N\)do
+3: Generate sample \(s_{i}\leftarrow\mathcal{M}(x)\) or \(s_{i}\gets f_{\mathcal{M}}(x)\)
+4: Add sample to the set \(S\gets S\cup\{s_{i}\}\)
+5:endfor
+6:for each sample \(s_{i}\) in \(S\)do
+7: Initialize similarity scores \(V(s_{i})\gets 0\)
+8:for each sample \(s_{j}\) in \(S\)do
+9:if\(i\neq j\)then
+10:\(V(s_{i})\gets V(s_{i})+sim(s_{i},s_{j})\)
+11:endif
+12:endfor
+13:endfor
+14:\(A\leftarrow\operatorname*{arg\,max}_{s_{i}\in S}V(s_{i})\)
+15:return\(A\)
+```
+
+**Algorithm 1** Sampling-and-voting
+
+## 4 Experimental Setup
+
+We separate the experimental setup (this section) with evaluations (next section), to introduce the coverage of scenarios/tasks compared with the most related works (for examining the comprehensiveness of our work), the backbone language models we adopted (for examining the applicability of our work), and the methods combined with ours (for examining the compatibility and orthogonality of our work).
+
+**Tasks** Our method is evaluated on the following task:
+
+* Arithmetic Reasoning. Similar to Wang et al. (2023b); Fu et al. (2023); Du et al. (2023), we select the GSM8K (Cobbe et al., 2021a) as one of the test sets. Additionally, we select the more challenging MATH dataset (Hendrycks et al., 2021b), which is used by Wu et al. (2023).
+* General Reasoning. Similar to Du et al. (2023); Jiang et al. (2023), we select the MMLU (Hendrycks et al., 2021a). Additionally, we select the dataset from the chess state tracking task (Chess) 1, which is used by Du et al. (2023); Zhang et al. (2023). Footnote 1: Chess State Tracking
+* Code Generation. Similar to Liu et al. (2023), we select the HumanEval (Chen et al., 2021). To implement our method, we compute the BLEU score (Papineni et al., 2002) among all pairs of generated candidate answers. The answer with the highest cumulative BLEU score is then selected as the final output.
+
+**Language models adopted** We evaluate our method using language models of different scales from the Llama2 (Tou
+
+Figure 2: Illustration of our method. The two-phase process begins by feeding the task query, either alone or combined with prompt engineering methods, into LLM agents to generate answers. Subsequently, majority voting is applied to these answers to determine the final answer. Specifically, an LLM agent refers to a single LLM or a multiple LLM-Agents collaboration framework.
+
+vron et al., 2023) and GPT series (OpenAI, 2022). Specifically, we evaluate two versions of Llama2-Chat2, optimized for conversational use cases through alignment techniques, with model sizes of 13B and 70B parameters. Additionally, we include GPT-3.5-Turbo and GPT-4 in our evaluation.
+
+Methods enhanced by our methodTo examine the comparability of our method, we study the integration of various typical methods from two distinct categories with our method:
+
+* Prompt Engineering. Various prompt engineering methods are considered to conduct comprehensive experiments. We evaluate Chain-of-Thought prompting (CoT) (Wei et al., 2022), Zero-Shot Chain-of-Thought prompting (Zero-Shot Cot) (Kojima et al., 2022), and more sophisticated methods such as Solo Performance Prompting (SPP) (Wang et al., 2023c). Initially, these methods are applied with a single LLM query. We then increase the number of queries and employ majority voting to determine the most consistent answer as the final response.
+* Multiple LLM Agents Collaboration. We select LLM-Debate (Du et al., 2023) denoted as Debate, and self-reflection (Shinn et al., 2023) denoted as Reflection. Within these methods, we generate multiple samples by iteratively operating these methods and using majority voting to produce the final answer.
+
+Specifically, the effectiveness of our method is evaluated by averaging the results across \(10\) independent runs. During each run, we scale up the ensemble size to \(40\) to ensure maximum gains. However, when integrating our method with the Debate (Du et al., 2023), the ensemble size is limited to \(10\) due to the significant computational overhead introduced by the communication architecture. Detailed experimental settings are provided in the Appendix A.
+
+## 5 Experimental Results
+
+### Generalizability
+
+Table 2 and Figure 3 show that our method generally enhances performance across all tasks and LLMs by increasing the ensemble size. Specifically, in arithmetic reasoning tasks, the accuracy gains range from \(12\%\) to \(24\%\) on the GSM8K and from \(6\%\) to \(10\%\) on the MATH. In general reasoning tasks, the accuracy gains range from \(1\%\) to \(4\%\) on the Chess and from \(5\%\) to \(11\%\) on the MMLU. In code generation task, the accuracy gains range from \(4\%\) to \(9\%\) on HumanEval. Surprisingly, our method enables a smaller LLM to outperform a larger counterpart by simply scaling up the ensemble size. For instance, the enhanced Llama2-13B model achieves \(59\%\) accuracy on the GSM8K dataset, outperforming the Llama2-70B model, which scores \(54\%\).
+
+### Compatibility
+
+Table 3 shows that by integrating our method with other methods, the performance can be further improved across different LLMs and tasks, despite these methods have different implementations. To be specific, in arithmetic reasoning tasks, our method enhances these methods to further improvement, yielding increases between \(10\%\) and \(21\%\) on the GSM8K dataset, and between \(1\%\) and \(15\%\) on the MATH dataset. In general reasoning tasks, integration with other methods generally achieves performance gains ranging from \(1\%\) to \(13\%\) in the Chess task and from \(1\%\) to \(11\%\) in the MMLU task. In code generation task, when combined with other methods, gains range from \(2\%\) to \(7\%\). However, two notable exceptions are observed when integrated with the debate method with the Llama2-13B and Llama2-70B models, which result in failed cases. This failure in performance is attributed primarily to the noise generated by referencing the answers of other agents during the debate process. The synthesized responses, which incorporate input from multiple agents, disrupt the coherence of the code logic, leading to the observed performance degradation. All accuracy curves are provided in the Appendix B.
+
+\begin{table}
+\begin{tabular}{l c c c c c c c} \hline \hline \multirow{2}{*}{**Methods**} & \multirow{2}{*}{**Various LLMs**} & \multicolumn{3}{c}{**Tasks**} & \multicolumn{3}{c}{**Integrated with Methods**} \\ \cline{3-8}  & & & Arithmetic & General & Code & Prompt & Multiple LLM-Agents \\  & & & Reasoning & Reasoning & Generation & Engineering & Collaboration \\ \hline CoT-SC (Wang et al., 2023b) & ✓ & & ✓ & ✓ & & Only CoT (Wei et al., 2022) & \\ Complexity-CoT (Fu et al., 2023) & ✓ & & & ✓ & & Only CoT (Wei et al., 2022) & \\ Debate (Du et al., 2023) & & ✓ & & & & \\ Blended (Lu et al., 2024) & ✓ & ✓ & & & & \\ \hline Ours & ✓ & & ✓ & ✓ & ✓ & ✓ & ✓ \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: Comparing the conducted experiments with the most related works. Our comprehensive study encompasses various LLMs, multiple tasks, and the integration with multiple methods.
+
+[MISSING_PAGE_FAIL:5]
+
+perature \(T\)(Ficler and Goldberg, 2017) and the nucleus probability \(p\)(Radford et al., 2019), using the GPT-3.5-Turbo model over an average of 20 runs. As shown in Figure 4, scaling up ensemble size improves the LLM performance consistently across different tasks, despite the variation of these hyperparameters.
+
+## 6 Understanding the Performance Gains
+
+Table 2 shows that the efficacy of our method varies with the difficulty of the task. In this section, we aim to understand the underlying properties through controlled experiments.
+
+To start the analysis, we select two datasets with increasing difficulty, i.e., GSM8K and MATH, to calculate the relative performance gain. The relative performance gain \(\eta\) is given by: \(\eta=\frac{P_{\text{m}}-P_{\text{s}}}{P_{\text{s}}}\) where \(P_{\text{m}}\) and \(P_{\text{s}}\) are the performances (accuracy) with our method and a single LLM query, respectively. The results are shown in Table 5.
+
+It is noteworthy that the relative performance gain is more substantial with increasing task difficulty. Specifically, we observe that within the same task, the smaller model, Llama2-13B, gains ranging from \(28\%\)-\(200\%\), but only \(8\%\)-\(16\%\) over GPT-3.5-Turbo. Moreover, the more challenging task MATH yields gains of \(34\%\)-\(200\%\), in contrast to only \(16\%\)-\(69\%\) on the easier task GSM8K.
+
+To further analyze this correlation in detail, we categorize the difficulty of a given task into three orthogonal dimensions: 1) the inherent difficulty of the task; 2) the number of steps required to solve the task; 3) the prior probability of the correct answer. To investigate these dimensions, we conduct experiments that can isolate each dimension. And then, we delve into each dimension in detail.
+
+### Isolation
+
+To explicitly explore the impact of these dimensions, we conduct a mathematical task designed to isolate each one. Consider the task detailed below:
+
+\[\text{Find the interval }\Delta_{k}\text{ such that }\sum_{i=1}^{S}a_{i}\cdot b_{i} \in\Delta_{k}, \tag{1}\]
+
+where:
+
+* \(a_{i},b_{i}\) are randomly chosen integers from the closed
+
+\begin{table}
+\begin{tabular}{l c c c|c} \hline \hline
+**Method** +ours & **GPT-3.5** & **70B** & **13B** & **Overall** \\ \hline COT (Wei et al., 2022) & 2.8 & 3.6 & 3.6 & 3.3 \\ ZS-COT (Kojima et al., 2022) & 2.8 & **2.4** & 3 & 2.7 \\ SPP (Wang et al., 2023c) & 4.6 & 3.6 & 3.8 & 4 \\ Debate (Du et al., 2023) & 3.8 & 4.4 & 5 & 4.4 \\ Reflection (Shinn et al., 2023) & 3 & 4.0 & 3 & 3.3 \\ \hline Ours & **2.6** & 2.6 & **2.2** & **2.5** \\ \hline \hline \end{tabular}
+\end{table}
+Table 4: Our method achieved the highest average ranking across different LLMs and tasks. Rankings are derived from Table 3 and are based on the average rank each method achieves across all five tasks for a given LLM. The bolded instances indicate the top ranking.
+
+Figure 4: Our method improves accuracy over various hyperparameters and tasks.
+
+Figure 5: Illustration of three dimensions for a given task. Nodes represent steps, while dashed lines indicate alternative potential steps. The depth of nodes represents the number of steps, and the color intensity represents the level of inherent difficulty.
+
+interval \([-I,I]\). \(I\in\mathbb{Z}^{+}\) defines the range of integers. \(I\) represents the **inherent difficulty** of the question. A larger value of \(I\) indicates a more challenging task.
+* \(S\in\mathbb{Z}^{+}\) is the number of terms in the summation. \(S\) represents the **number of steps** required to solve the problem. A larger value of \(S\) indicates a more challenging task.
+* The result space is partitioned into \(K\) intervals \(\Delta_{1},\Delta_{2},\ldots,\Delta_{K}\) of equal probability. \(K\in\mathbb{Z}^{+}\) denotes the number of these intervals. \(1/K\) represents the **prior probability** of the correct answer. A lower prior probability indicates a more challenging task.
+
+In the following experiments, we analyze each dimension respectively based on GPT-3.5-Turbo. Note that we use GPT-3.5-Turbo for a case study, it can also be changed to other backbone models. The relative performance gains are measured by the difference between the maximum accuracy our method can achieve (sampling 40 times) and the accuracy of a single LLM query (sample once). Results are averaged over 10 runs.
+
+### Inherent Difficulty
+
+Property 1: _Gains increase then decrease by rising the inherent difficulty._ We investigate the inherent difficulty by varying \(I\) from \(10\) to \(400\), while keeping the values of \(S\) and \(K\) constant across four groups of different values, from small to large, respectively. Figure 6 (left) shows an initial uptick in performance gains with increases in \(I\), indicating that our method can significantly enhance performance in line with rising inherent difficulty. The most notable gains are seen at \(I=100\) and \(I=200\), consistent across all \(S\) and \(K\) settings. Yet, at \(I=400\), gains taper off, implying that excessive complexity may exceed the model's reasoning capabilities, leading to diminishing returns for our method under extreme task difficulty.
+
+### Number of Steps
+
+Property 2.1: _Gains increase with the number of steps._ We analyze the number of steps by isolating \(S\). We tune \(S\) from \(1\) to \(8\), while keeping the values of \(I\) and \(K\) constant across four groups of different values, ranging from small to large, respectively. Figure 6 (middle) shows that as the number of steps increases, there is a corresponding increase in performance gain. Additionally, we find that when \(I\) and \(K\) are increased (which indicates a higher difficulty), the performance gains are more significant, e.g., \(4\%\)-\(18\%\) gains over \(\{I=10,K=2\}\) compared to \(16\%\)-\(48\%\) over \(\{I=100,K=4\}\).
+
+Property 2.2: _Sampling-and-voting increases the performance for each step._ We conduct a fine-grained analysis for each step of a given task. We explicitly prompt the language model to output the result of each step. Subsequently, we utilize sampling-and-voting at each step to derive the answer for that step. Figure 7 (left) shows that although each step has equal inherent difficulty, the accumulation of errors from previous steps lead to a decrease in accuracy as the number of steps increases. However, our method mitigates the performance decrease encountered with increasing steps.
+
+Derivation. Based on Property 2, We propose stepwise sampling-and-voting can further enhance the performance.
+
+Step-wise sampling-and-voting initially prompts the LLM to decompose the task into multiple steps. It then proceeds with multi-round iterations to produce the final result. In each round, the process begins by selecting a current unprocessed step and using sampling-and-voting to determine the result of that step. Subsequently, it uses the result to update the task. This iterative process is repeated multiple times until the last step is processed. To evaluate the performance of step-wise sampling-and-voting, we fix \(S=8\) and \(K=4\), and tune \(I\) from \(100\) to \(400\). Figure 7 (middle) shows that compared to simple sampling-and-voting, step-wise sampling-and-voting yields greater improvements. e.g., we see \(15\%\)-\(42\%\) gains, which increase with inherent difficulty.
+
+### Prior Probability
+
+Property 3: _The performance increases with the prior probability._ We investigate the influence of prior probability on performance by tuning the parameter \(K\), while maintaining constant values for \(I\) and \(K\). As \(K\) represents the number of intervals, the prior probability is defined as \(1/K\). We vary \(K\) from \(4\) to \(32\), which equivalently alters the prior probability from \(1/4\) to \(1/32\). Through four experimental groups illustrated in Figure 6 (right), each characterized by different configurations of \(I\) and \(S\), we find that as the prior probability increases, so does the performance.
+
+Derivation. Based on Property 3, we propose hierarchical sampling-and-voting can further enhance the performance.
+
+As the performance is related to the prior probability, decomposing low-probability tasks into multiple high-probability subtasks and addressing them hierarchically can boost performance. Moreover, subtasks with varying prior probabilities can be addressed using different models. Additionally, cost savings can be achieved by using simpler, less expensive models for the easier, higher-probability subtasks.
+
+In our experiments, the task is to solve the problem with \(K=32\). GPT-3.5-Turbo is used in homogeneous combination experiment and GPT-3.5-Turbo and GPT-4 are used in heterogeneous combination experiment. The results are presented in Figure 7 (right).
+
+In homogeneous combination experiment, by employing the hierarchical method, we start with \(K=8\) to obtain an intermediate answer and then find the solution with \(K=32\), focusing on intervals identified by the intermediate answer. This method enhances the performance from \(21\%\) to \(31\%\), demonstrating that the hierarchical method can further enhance the performance.
+
+In heterogeneous combination experiment, GPT-3.5-Turbo is used for generating the intermediate answer with \(K=8\), and GPT-4 is then employed to solve for the final answer with \(K=32\). In Figure 7 (right), compared with the result of GPT-4 with \(K=32\), the hierarchical method improves performance from \(35\%\) to \(47\%\), suggesting the deployment of different LLMs at the corresponding level of problem-solving can improve the performance in a cost-effective manner.
+
+## 7 Conclusions and Future Work
+
+In this paper, we report that _more agents is all you need_, i.e., simply adding more instantiated LLM agents is what you need to obtain a better LLM performance in processing complex tasks, without bothering complicated methods, such as CoT pipelines, multi-agent collaboration frameworks, etc. We have conducted the first comprehensive study in the literature to understand such a "scaling law", including when it holds and how to facilitate its occurrence.
+
+The results indicate that our simple sampling-and-voting method for instantiating agents can generally improve the performance of LLMs by increasing the ensemble size. Importantly, this method is orthogonal to different existing methods, which can lead to further improvements when combined with them.
+
+Furthermore, we observe that the performance gains are influenced by the difficulty of the task. To explore this correlation, we isolate and analyze three dimensions of task difficulty: the inherent difficulty, the length of reasoning steps, and the prior probability of a correct answer. We find that: 1) the performance gains increase then decrease by rising the inherent difficulty; 2) performance gains increase with the number of steps; and 3) performance increases with the prior probability. Based on these properties, we also develop ways to boost the effectiveness of "More Agents".
+
+Considering that each input remains the same when we increase the number of agents, the sampling phase can be optimized to reduce the cost. Nonetheless, such a challenge of escalating costs commonly exist in works requiring multiple LLM calls (Wang et al., 2023; Du et al., 2023). We leave it as a future work to optimize.
+
+Figure 6: (Left) The relative performance gains increase and then decrease with rising inherent difficulty. (Middle) The relative performance gains increase with the number of steps. (Right) The absolute performance increases with the prior probability. We analyze each dimension by fixing the other two dimensions.
+
+Figure 7: (Left) Our method increases the performance for each step. Blue bars show the accuracy of various steps for a single sample, and orange bars show the gains for 40 samples. (Middle) Step-wise sampling-and-voting can further enhance the performance across different levels of inherent difficulty. (Right) Hierarchical sampling-and-voting can further enhance the performance with homogeneous and heterogeneous model combinations.
+
+## Impact Statement
+
+This paper introduces a simple method designed to enhance the performance of Large Language Models (LLMs). While the proposed method aims to improve the efficacy of LLMs in various tasks, it is necessary to acknowledge the potential risks. LLMs can sometimes produce outputs that, while plausible, may be factually incorrect or nonsensical. Such hallucinations can lead to the misguidance of decision-making processes and the propagation of biases. These concerns are particularly acute in the context of critical decision-making scenarios, where the accuracy and reliability of information are paramount. The broader adoption of LLMs, without adequate safeguards against these risks, could exacerbate these issues. Therefore, it is crucial to continue developing mechanisms to mitigate the potential adverse effects of LLM hallucinations to ensure that the deployment of these powerful models is both responsible and beneficial.
+
+## References
+
+* Chen et al. (2023) Chen, G., Dong, S., Shu, Y., Zhang, G., Sesay, J., Karlsson, B. F., Fu, J., and Shi, Y. Autoagents: A framework for automatic agent generation. _CoRR_, abs/2309.17288, 2023a.
+* Chen et al. (2023) Chen, L., Zaharia, M., and Zou, J. Frugalgpt: How to use large language models while reducing cost and improving performance. _CoRR_, abs/2305.05176, 2023b.
+* Chen et al. (2021) Chen, M., Tworek, J., Jun, H., Yuan, Q., de Oliveira Pinto, H. P., Kaplan, J., Edwards, H., Burda, Y., Joseph, N., Brockman, G., Ray, A., Puri, R., Krueger, G., Petrov, M., Khlaaf, H., Sastry, G., Mishkin, P., Chan, B., Gray, S., Ryder, N., Pavlov, M., Power, A., Kaiser, L., Bavarian, M., Winter, C., Tillet, P., Such, F. P., Cummings, D., Plappert, M., Chantzis, F., Barnes, E., Herbert-Voss, A., Guss, W. H., Nichol, A., Paino, A., Tezak, N., Tang, J., Babuschkin, I., Balaji, S., Jain, S., Saunders, W., Hesse, C., Carr, A. N., Leike, J., Achiam, J., Misra, V., Morikawa, E., Radford, A., Knight, M., Brundage, M., Murati, M., Mayer, K., Welinder, P., McGrew, B., Amodei, D., McCandlish, S., Sutskever, I., and Zaremba, W. Evaluating large language models trained on code. _CoRR_, abs/2107.03374, 2021.
+* Chen et al. (2023c) Chen, W., Su, Y., Zuo, J., Yang, C., Yuan, C., Qian, C., Chan, C., Qin, Y., Lu, Y., Xie, R., Liu, Z., Sun, M., and Zhou, J. Agentverse: Facilitating multi-agent collaboration and exploring emergent behaviors in agents. _CoRR_, abs/2308.10848, 2023c.
+* Cobbe et al. (2021) Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C., and Schulman, J. Training verifiers to solve math word problems. _CoRR_, abs/2110.14168, 2021a.
+* Cobbe et al. (2021) Cobbe, K., Kosaraju, V., Bavarian, M., Chen, M., Jun, H., Kaiser, L., Plappert, M., Tworek, J., Hilton, J., Nakano, R., Hesse, C., and Schulman, J. Training verifiers to solve math word problems. _CoRR_, abs/2110.14168, 2021b.
+* Du et al. (2023) Du, Y., Li, S., Torralba, A., Tenenbaum, J. B., and Mordatch, I. Improving factuality and reasoning in language models through multiagent debate. _CoRR_, abs/2305.14325, 2023.
+* Ficler & Goldberg (2017) Ficler, J. and Goldberg, Y. Controlling linguistic style aspects in neural language generation. _CoRR_, abs/1707.02633, 2017.
+* Fu et al. (2023) Fu, Y., Peng, H., Sabharwal, A., Clark, P., and Khot, T. Complexity-based prompting for multi-step reasoning. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023.
+* Hendrycks et al. (2021) Hendrycks, D., Burns, C., Basart, S., Zou, A., Mazeika, M., Song, D., and Steinhardt, J. Measuring massive multitask language understanding. In _9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021_. OpenReview.net, 2021a.
+* Hendrycks et al. (2021) Hendrycks, D., Burns, C., Kadavath, S., Arora, A., Basart, S., Tang, E., Song, D., and Steinhardt, J. Measuring mathematical problem solving with the MATH dataset. In Vanschoren, J. and Yeung, S. (eds.), _Proceedings of the Neural Information Processing Systems Track on Datasets and Benchmarks 1, NeurIPS Datasets and Benchmarks 2021, December 2021, virtual_, 2021b.
+* Hong et al. (2023) Hong, S., Zheng, X., Chen, J., Cheng, Y., Wang, J., Zhang, C., Wang, Z., Yau, S. K. S., Lin, Z., Zhou, L., Ran, C., Xiao, L., and Wu, C. Metagpt: Meta programming for multi-agent collaborative framework. _CoRR_, abs/2308.00352, 2023.
+* Jiang et al. (2023) Jiang, D., Ren, X., and Lin, B. Y. Llm-blender: Ensembling large language models with pairwise ranking and generative fusion. In Rogers, A., Boyd-Graber, J. L., and Okazaki, N. (eds.), _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023_, pp. 14165-14178. Association for Computational Linguistics, 2023.
+* Kojima et al. (2022) Kojima, T., Gu, S. S., Reid, M., Matsuo, Y., and Iwasawa, Y. Large language models are zero-shot reasoners. In _NeurIPS_, 2022.
+* Li et al. (2023) Li, G., Hammoud, H. A. A. K., Irani, H., Khizbullin, D., and Ghanem, B. CAMEL: communicative agents for "mind" exploration of large scale language model society. _CoRR_, abs/2303.17760, 2023a.
+
+Li, Y., Lin, Z., Zhang, S., Fu, Q., Chen, B., Lou, J.-G., and Chen, W. Making language models better reasoners with step-aware verifier. In Rogers, A., Boyd-Graber, J., and Okazaki, N. (eds.), _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pp. 5315-5333, Toronto, Canada, July 2023b. Association for Computational Linguistics.
+* Liang et al. (2023) Liang, T., He, Z., Jiao, W., Wang, X., Wang, Y., Wang, R., Yang, Y., Tu, Z., and Shi, S. Encouraging divergent thinking in large language models through multi-agent debate. _CoRR_, abs/2305.19118, 2023.
+* Lin et al. (2023) Lin, L., Fu, J., Liu, P., Wan, J., Zhang, F., Wang, Z., Zhang, D., and Gai, K. Ask one more time: Self-agreement improves reasoning of language models in (almost) all scenarios. _CoRR_, abs/2311.08154, 2023.
+* Liu et al. (2023) Liu, Z., Zhang, Y., Li, P., Liu, Y., and Yang, D. Dynamic llm-agent network: An llm-agent collaboration framework with agent team optimization. _CoRR_, abs/2310.02170, 2023.
+* Lu et al. (2023) Lu, K., Yuan, H., Lin, R., Lin, J., Yuan, Z., Zhou, C., and Zhou, J. Routing to the expert: Efficient reward-guided ensemble of large language models. _CoRR_, abs/2311.08692, 2023.
+* Lu et al. (2024) Lu, X., Liusie, A., Raina, V., Zhang, Y., and Beauchamp, W. Blending is all you need: Cheaper, better alternative to trillion-parameters llm. _arXiv preprint arXiv:2401.02994_, 2024.
+* OpenAI (2022) OpenAI. Chatgtp: Optimizing language models for dialogue, 2022. URL [https://openai.com/blog/chatgtpct](https://openai.com/blog/chatgtpct).
+* Papineni et al. (2002) Papineni, K., Roukos, S., Ward, T., and Zhu, W.-J. Bleu: a method for automatic evaluation of machine translation. In _Proceedings of the 40st Annual Meeting of the Association for Computational Linguistics ACL 2002, Philadelphia, USA, July, 2002_, pp. 311-318. Association for Computational Linguistics, 2002.
+* Post (2018) Post, M. A call for clarity in reporting bleu scores. _arXiv preprint arXiv:1804.08771_, 2018.
+* Radford et al. (2019) Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I., et al. Language models are unsupervised multitask learners. _OpenAI blog_, 1(8):9, 2019.
+* Shinn et al. (2023) Shinn, N., Cassano, F., Gopinath, A., Narasimhan, K. R., and Yao, S. Reflexion: Language agents with verbal reinforcement learning. In _Thirty-seventh Conference on Neural Information Processing Systems_, 2023.
+* Shnitzer et al. (2022) Shnitzer, T., Ou, A., Silva, M., Soule, K., Sun, Y., Solomon, J., Thompson, N., and Yurochkin, M. Large language model routing with benchmark datasets. _CoRR_, abs/2309.15789, 2023.
+* Thoppilan et al. (2022) Thoppilan, R., Freitas, D. D., Hall, J., Shazeer, N., Kulshreshtha, A., Cheng, H., Jin, A., Bos, T., Baker, L., Du, Y., Li, Y., Lee, H., Zheng, H. S., Ghafouri, A., Menegaldi, M., Huang, Y., Krikun, M., Lepikhin, D., Qin, J., Chen, D., Xu, Y., Chen, Z., Roberts, A., Bosma, M., Zhou, Y., Chang, C., Krivokon, I., Rusch, W., Pickett, M., Meier-Hellstern, K. S., Morris, M. R., Doshi, T., Santos, R. D., Duke, T., Soraker, J., Zevenbergen, B., Prabhakaran, V., Diaz, M., Hutchinson, B., Olson, K., Molina, A., Hoffman-John, E., Lee, J., Aroyo, L., Rajakumar, R., Butryna, A., Lamm, M., Kuzmina, V., Fenton, J., Cohen, A., Bernstein, R., Kurzweil, R., y Arcas, B. A., Cui, C., Croak, M., Chi, E. H., and Le, Q. Lamda: Language models for dialog applications. _CoRR_, abs/2201.08239, 2022.
+* Touvron et al. (2024) Touvron, H., Martin, L., Stone, K., Albert, P., Almahairi, A., Babaei, Y., Bashlykov, N., Batra, S., Bhargava, P., Bhosale, S., Bikel, D., Blecher, L., Canton-Ferrer, C., Chen, M., Cucurull, G., Esiobu, D., Fernandes, J., Fu, J., Fu, W., Fuller, B., Gao, C., Goswami, V., Goyal, N., Hartshorn, A., Hosseini, S., Hou, R., Inan, H., Kardas, M., Kerkez, V., Khabsa, M., Kloumann, I., Korenev, A., Koura, P. S., Lachaux, M., Lavril, T., Lee, J., Liskovich, D., Lu, Y., Mao, Y., Martinet, X., Mihaylov, T., Mishra, P., Molybog, I., Nie, Y., Poulton, A., Reizenstein, J., Rungta, R., Saladi, K., Schelten, A., Silva, R., Smith, E. M., Subramanian, R., Tan, X. E., Tang, B., Taylor, R., Williams, A., Kuan, J. X., Xu, P., Yan, Z., Zarov, I., Zhang, Y., Fan, A., Kambadur, M., Narang, S., Rodriguez, A., Stojnic, R., Edunov, S., and Scialom, T. Llama 2: Open foundation and fine-tuned chat models. _CoRR_, abs/2307.09288, 2023.
+* Wan et al. (2024) Wan, F., Huang, X., Cai, D., Quan, X., Bi, W., and Shi, S. Knowledge fusion of large language models. _arXiv preprint arXiv:2401.10491_, 2024.
+* Wang et al. (2023a) Wang, H., Polo, F. M., Sun, Y., Kundu, S., Xing, E. P., and Yurochkin, M. Fusing models with complementary expertise. _CoRR_, abs/2310.01542, 2023a.
+* Wang et al. (2023b) Wang, X., Wei, J., Schuurmans, D., Le, Q. V., Chi, E. H., Narang, S., Chowdhery, A., and Zhou, D. Self-consistency improves chain of thought reasoning in language models. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023b.
+* Wang et al. (2023c) Wang, Z., Mao, S., Wu, W., Ge, T., Wei, F., and Ji, H. Unleashing cognitive synergy in large language models: A task-solving agent through multi-persona self-collaboration. _CoRR_, abs/2307.05300, 2023c.
+* Wei et al. (2022) Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B., Xia, F., Chi, E. H., Le, Q. V., and Zhou, D. Chain-of-thought prompting elicits reasoning in large language models. In _NeurIPS_, 2022.
+* Wu et al. (2023) Wu, Q., Bansal, G., Zhang, J., Wu, Y., Zhang, S., Zhu, E., Li, B., Jiang, L., Zhang, X., and Wang, C. Autogen: Enabling next-gen LLM applications via multi-agent conversation framework. _CoRR_, abs/2308.08155, 2023.
+* Xiong et al. (2023) Xiong, K., Ding, X., Cao, Y., Liu, T., and Qin, B. Examining the inter-consistency of large language models: An in-depth analysis via debate. _CoRR_, abs/2305.11595, 2023.
+* Zhang et al. (2023) Zhang, J., Xu, X., and Deng, S. Exploring collaboration mechanisms for llm agents: A social psychology view. _arXiv preprint arXiv:2310.02124_, 2023.
+* Zhao et al. (2023) Zhao, W. X., Zhou, K., Li, J., Tang, T., Wang, X., Hou, Y., Min, Y., Zhang, B., Zhang, J., Dong, Z., Du, Y., Yang, C., Chen, Y., Chen, Z., Jiang, J., Ren, R., Li, Y., Tang, X., Liu, Z., Liu, P., Nie, J.-Y., and Wen, J.-R. A survey of large language models. _arXiv preprint arXiv:2303.18223_, 2023.
+
+## Appendix A Detailed Experiment Settings
+
+### Common Settings
+
+In all experiments involving GPT-3.5-Turbo presented in Section 4, we utilize the model version gpt-3.5-turbo-0613. In Table 2, the notation GPT-4 corresponds to the model version gpt-4-0613. For the experiments conducted with GPT-3.5-Turbo in Section 6, we employ the model version gpt-3.5-turbo-1106 with the JSON mode enabled. Similarly, GPT-4 in this context refers to gpt4-1106-Preview operating in JSON mode.
+
+### Experiments on Arithmetic Reasoning Tasks
+
+For the implementation of the sampling-and-voting method to arithmetic reasoning tasks within the GSM8K and MATH datasets, we execute the initial sampling phase by Algorithm 1. Samples are extracted from the responses by matching "boxed\(\{\)X\(\}\)", where "X" denotes a numerical value or a mathematical expression.
+
+In the subsequent voting phase, to evaluate the similarity between samples, as outlined in Algorithm 1, we employ mathematical equivalence comparisons for each sample. The most probable sample is chosen as the final answer. This answer is subjected to a comparison of mathematical equivalence with the ground truth to ascertain the correctness of the result.
+
+### Experiments on General Reasoning Tasks
+
+For general reasoning tasks, as encountered in the MMLU and Chess datasets, the sampling-and-voting method is applied following Algorithm 1 during the sampling phase. Samples are extracted by matching the pattern "(X" or "(X)", where "X" corresponds to the options A, B, C, or D in MMLU task and the chessboard position in Chess task.
+
+During the voting phase, we calculate similarity by counting the frequency of each option's occurrence within the samples. The most frequently occurring option is then chosen as the final answer. This selected answer is compared with the ground truth to determine the accuracy of the result.
+
+### Experiments on Code Generation Task
+
+In the code generation task, we apply the sampling-and-voting method to produce Python code using the HumanEval dataset. During the sampling phase, we extract Python code snippets from the model's responses.
+
+In the voting phase, we compute the BLEU score using _sacreBLEU_(Post, 2018) to evaluate the similarity between each of the generated samples. The sample with the highest cumulative BLEU score is selected as the final answer. This method ensures that the final output is the most representative and accurate piece of code as determined by consensus through similarity scoring among the samples.
+
+## Appendix B Detailed Experiment Results
+
+In this section, we provide the accuracy curves of our experiments across various datasets when utilizing different LLMs. From these curves, we demonstrate that our method has the following properties:
+
+* **Generalizability.** By using our method standalone, the performance can be generally enhanced by increasing the ensemble size.
+* **Compatibility.** Our method can generally enhance other methods by increasing the ensemble size.
+
+Figure 11: Debate accuracy curves across various datasets using the Llama2-13B model.
+
+Figure 8: Accuracy curves across various datasets using the Llama2-13B model.
+
+Figure 10: Accuracy curves across various datasets using the GPT-3.5-Turbo model.
+
+Figure 9: Accuracy curves across various datasets using the Llama2-70B model.
+
+Figure 12: Debate accuracy curves across various datasets using the Llama2-70B model.
+
+Figure 13: Debate accuracy curves across various datasets using the GPT-3.5-Turbo model.
