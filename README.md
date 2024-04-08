@@ -13,6 +13,7 @@
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
 | 2403.19270v1 | sDPO Dont Use Your Data All at Once | [arXiv](https://arxiv.org/abs/2403.19270v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.19270v1) |
+| 2403.18167v1 | Mechanisms of non-factual hallucinations in language models | [arXiv](https://arxiv.org/abs/2403.18167v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.18167v1) |
 | 2403.18103v1 | Tutorial on Diffusion Models for Imaging and Vision | [arXiv](https://arxiv.org/abs/2403.18103v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.18103v1) |
 | 2403.17887v1 | The Unreasonable Ineffectiveness of the Deeper Layers | [arXiv](https://arxiv.org/abs/2403.17887v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.17887v1) |
 | 2403.16971v2 | AIOS LLM Agent Operating System | [arXiv](https://arxiv.org/abs/2403.16971v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.16971v2) |

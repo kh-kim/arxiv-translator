@@ -1,0 +1,290 @@
+# 언어 모델에서 비사실적 환각의 메커니즘
+
+Lei Yu\({}^{1,*}\), Meng Cao\({}^{2,3,*}\), Jackie Chi Kit Cheung\({}^{2,3}\), Yue Dong\({}^{4}\)
+
+토론토대학교 컴퓨터과학과
+
+맥길대학교 컴퓨터학부
+
+밀라-퀘벡 AI 연구소
+
+캘리포니아 대학교 리버사이드
+
+jadeleiyu@cs.toronto.edu
+
+{meng.cao@mail,jcheung@cs}.mcgill.ca
+
+yue.dong@ucr.edu
+
+Equal contribution.
+
+###### Abstract
+
+본 연구는 환각의 기계론적 원인, 특히 LM이 주제 관계 질의에 대한 응답에서 객체 속성을 잘못 예측하는 비사실적 원인, 인과 매개 분석과 임베딩 공간 투영을 통해 다양한 척도와 디자인의 LMs에서 공유되는 환각의 두 가지 일반적인 기계론적 원인, 즉 하위 계층 MLP에서 불충분한 주제 속성 지식과 2) 상위 계층 어텐션 헤드 및 MLP에서 올바른 객체 속성을 선택하지 못했습니다. 이 두 메커니즘은 다양한 정도의 피험자-대상 연관, 예측 불확실성 및 섭동 견고성을 나타낸다. 또한 LM 사전 훈련 체크포인트를 조사하여 환각의 두 가지 기계론적 원인에 대한 뚜렷한 학습 역학을 보여준다. 또한 인과 분석에서 귀인 특징이 환각 감지기를 효과적으로 구성할 수 있는 방법을 강조한다. 우리의 작업은 LM 사실 오류에 대한 기계론적 이해를 제안한다. 1
+
+각주 1: 코드 및 데이터는 [https://github.com/jadeleiyu/lm_hallucination_mechanisms](https://github.com/jadeleiyu/lm_hallucination_mechanisms)에서 사용할 수 있습니다.
+
+## 1 Introduction
+
+언어 모델(LMs)은 사전 훈련에서 얻은 매개변수 지식을 통해 상당한 지식의 리포지토리 페트로니 등(2019), 장 등(2020), 스리바스타바 등(2023)의 역할을 한다. 그러나 그들은 사실적 오류를 포함하는 "환각"을 생성하기 쉽다. 로짓 예측 수준에서 이러한 환각은 종종 사실 세대와 유사한 패턴을 나타낸다. 예를 들어, LMs는 실제로 환각 Dong 등(2022); Zhang 등(2023)인 겉보기에 자신 있어 보이는 완성들을 생성하는 것으로 관찰되었다.
+
+환각이 사실적 출력과 어떻게 다른지, 그리고 그것들이 균일하게 생성되는지 또는 동일하게 수정되기 어려운지를 이해하기 위해서는 정보 흐름을 모니터링하는 철저한 분석 도구가 필요하며, 이는 단지 마지막 계층 예측 Kaddour 등(2023)을 넘어 확장된다. 그러나 환각 발생의 내적 메커니즘을 이해하는 연구는 제한적이다. 대부분의 노력은 환각을 감지하고 완화하는 데 초점을 맞추었다. Elaraby et al. (2023); Mundler et al. (2023); Manakul et al. (2023); Zhang et al. (2023), LM을 블랙박스로 취급하고 예측 불확실성 Xiao and Wang (2021); Varshney et al. (2023) 및 논리적 일관성 Cohen et al. (2023). 불행히도 이러한 접근법은 사실 오류의 내부 메커니즘에 대한 통찰력을 제공하지 않으며 신뢰할 수 없거나 모순된 신호 Turpin 등(2023)을 전달했다.
+
+대조적으로, 화이트 박스 환경에서 변압기의 내부 메커니즘을 조사하는 해석 가능성 연구는 최근 사실 예측을 식별하는 데 도움이 되는 구성 요소를 분석하는 데 상당한 관심을 받았다. Lu et al. (2021); Dai et al. (2022); Meng et al. (2022); Geva et al. (2023). 그러나 사실 예측에 대한 기계론적 해석 가능성의 결과가 환각에 일반화될 수 있는지는 여전히 의문이다. 구체적으로 어떤 모델 구성 요소가 정상적인 기능을 벗어나 환각을 일으키는지 알 수 없다. LLM에서 사실적 오류의 근원을 로컬화하는 것은 (예를 들어, 환각을 유발하는 것으로 식별된 작은 모델 가중치 세트를 편집함으로써) 환각을 완화하기 위한 표적화되고 효율적인 방법을 설계하는 데 도움이 될 수 있으며, 이는 모델 크기 및 LM의 트레이닝 비용이 급격히 증가하고 있기 때문에 특히 중요하다.
+
+이 연구에서는 기계론적 해석 가능성(Olah, 2022)을 사용하여 LMs에서 비사실적 환각의 기원과 징후를 조사한다. 우리는 두 가지 확립된 해석 가능성 방법, 인과 매개 분석(Pearl, 2001; Vig et al., 2020) 및 임베딩 공간 투영(Geva et al., 2022b; Dar et al., 2023)을 사용하여 비사실적 환각 데이터에 대한 특별히 설계된 설정에서 모델 구성 요소가 환각 예측에 미치는 영향을 평가한다. 다양한 크기와 구조(Llama-2, GPT-J, GPT-2-XL)의 LMs에 대한 광범위한 분석을 통해, 실제 부정확한 예측에 중요한 두 가지 구성 요소 그룹이 존재한다는 수렴 증거를 얻었다: 1) 하부 변압기 층의 다층 퍼셉트론(MLP), 2) 상부 변압기 층의 주의 헤드 및 MLP.
+
+그림 1은 식별된 환각 구성 요소가 서로 다른 행동을 나타내는 두 가지 별개의 시나리오를 보여준다. 일부 예들에서, 하위-계층 MLP들은 정상적으로 기능하여, 질의된 엔티티들에 대한 의미론적 속성들을 성공적으로 검색하는 반면, 상위-계층 주의 헤드들 및 MLP들은 정답으로 이어지는 가장 관련된 속성들을 구별하기 위해 고군분투한다. 다른 경우, 모델은 초기에 팩트 리콜 파이프라인을 실행하지 못하여 하위 계층 MLP에서 유용한 정보를 추출하지 못한다. 또한 이 두 환각 메커니즘이 다양한 외부 징후를 가지고 있으며 피험자-객체 연관 강도의 수준, 입력 섭동에 대한 견고성 및 모델 예측 불확실성으로 구별할 수 있음을 관찰한다. Akyurek et al. (2022)의 발견에 이어 Zhou et al. (2023)은 사실적 지식을 습득하는 데 있어 LM 사전 훈련의 중요한 역할에 대해 사전 훈련이 우리가 식별한 다양한 유형의 환각에 미치는 영향을 조사했다. 우리의 연구 결과는 중요하다: 초기 현장 MLP와 후기 현장 주의는 사전 훈련 중에 점진적으로 나타나는 사실 회상을 위한 2단계 파이프라인을 형성하고 두 단계 중 하나를 개발하지 못하면 환각을 초래할 수 있다.
+
+외부 특징과 높은 상관 관계를 나타내는 내부 지식 흐름 분석을 제공하여 사전 훈련의 다양한 단계에서 다양한 유형의 환각이 어떻게 행동하는지 이해하는 데 도움이 될 뿐만 아니라, 우리의 작업은 실제 응용을 보여준다: 기계론적 해석 가능성 특징은 언어 모델(LMs)에서 사실적 오류의 존재를 탐지하는 데 사용될 수 있다. 이 연구는 체계적인 모듈러 실패로 LM 사실 오류에 대한 최초의 기계론적 설명을 제공하여 모델 설명 가능성과 환각 완화에 대한 연구를 촉진한다.
+
+## 2 관련 작업
+
+언어 모델에서의 사실적 지식. 언어 모델(LMs) 내에서의 지식 추적에 대한 탐구는 최근 상당한 주목을 받고 있으며, 연구자들은 사실적 정보를 저장하는 역할을 담당하는 특정 층(Wallat et al., 2020; Geva et al., 2021; Meng et al., 2022) 및 뉴런(Dai et al., 2022)을 조사한다. 이러한 탐구 라인은 모델 편집(De Cao et al., 2021; Mitchell et al., 2021; Meng et al., 2022) 및 추론 개입(Hernandez et al., 2023; Li et al., 2023)을 위한 기술들로 확장된다. Geva et al. (2023)의 최근 발전; Yu et al. (2023)은 사실적 정보 전달을 위한 내부 파이프라인을 형성하는 중요한 LM 구성 요소를 식별한다. 우리의 프레임워크는 LM 사실 지식 처리에 대한 추가 관점을 제공하여 기존 연구를 보완하며, 손상된 사실 관련 모듈이 환각을 유발할 수 있음을 보여준다.
+
+환각.언어 모델은 _불성실_(즉, 사용자에 의해 제공된 소스 입력으로부터 벗어남) 또는 _비사실적_(즉, 확립된 세계 지식에 모순됨)일 수 있는 환각을 생성하기 쉽다(Cao et al., 2022; Ji et al., 2023; Zhang et al., 2023). 여기서는 후자의 환각에 초점을 맞춘다. 기존의 연구들은 환각을 검출하거나 완화하기 위한 다양한 방법들을 제안하며, 내부 활성화 패턴들(Yuksekgonul et al., 2023; Li et al., 2023), 예측 신뢰도(Cao et al., 2022, 2023; Varshney et al., 2023), 및 세대 일관성(Mundler et al., 2023; Manakul et al., 2023; Zhang et al., 2023)과 같은 특징들을 활용한다.
+
+기계적 해석 가능성.기계적 해석 가능성(Olah, 2022; Nanda, 2023)은 진화하는 연구 분야이다. 최근 연구에서는 LM 내부 작업을 연구하기 위해 어휘에 대한 투영(Geva et al., 2022, 2022; Nostalgebraist, 2020; Katz et al., 2024) 및 변압기 계산에 대한 개입(Finlayson et al., 2021; Haviv et al., 2022; Stolfo et al., 2023; Ghandeharioun et al., 2024)을 사용한다. 신경망 학습 역학(Nanda et al., 2022)을 탐색하고 특정 작업에 대한 희소 계산 그래프를 발견하기 위해 유사한 기술이 적용되었다(Wang et al., 2022; Conmy et al., 2023). 여러 기계론적 해석 가능성 방법을 활용하여, 우리의 연구는 비사실적 환각에 대한 원칙적인 설명을 제공한다.
+
+## 3 Background and Notation
+
+우리는 디코더 전용 변압기 기반 LM의 추론 패스에 대한 상세한 설명을 제공하는 것으로 시작한다. 자동회귀 변환기는 입력 토큰의 입력 시퀀스 \(u=[w_{1},...,w_{T}]\)를 입력 토큰 임베딩 \(E(u)=[e_{1},...,e_{T}]\)으로 표현하여 다음 토큰 예측을 위한 어휘에 대한 확률 분포로 매핑한다. 변환기 내에서 \(i\) 번째 토큰은 일련의 숨겨진 상태 \(h_{i}^{(l)}\)로 표시되며, 여기서 각 계층 \(l\)에서 모델은 \(h_{i}^{(l-1)}\)로부터 두 개의 모듈에 의해 중간 임베딩을 계산하고 추가합니다. 1) 집계된 **다중 헤드 셀프 어텐션 모듈** 출력 \(a_{i}^{(l)}=W_{o}([a_{i}^{(l,0)},...,a_{i}^{(l,K)}])\) 여기서 \(a_{i}^{(l,k)}\)은 \(i\) 번째 토큰에 대한 \(k\) 번째 어텐션 헤드의 출력 \(l\)이고 \(W_{o}\)는 선형 변환입니다. 2) 계층 \(l\)에서 **다중 레이어 퍼셉트론(MLP)** 출력 \(m_{i}^{(l)}\) = \(f_{\text{MLP}}^{(l)}(h_{i}^{(l-1)}+a_{i}^{(l)}) 이를 종합하면, 은닉표현인 \(h_{i}^{(l)}\)은 다음과 같이 계산된다. \(h_{i}^{(l)}=h_{i}^{(l-1)}+a_{i}^{(l)}+m_{i}^{(l)}\). (H=\{h_{i}^{l}\}\)를 모든 계층에 걸쳐 있는 토큰 은닉 상태의 집합이라고 하자 (Elhage 등 (2021)에 이어, **잔류 스트림 출력**, \(A=\{a_{i}^{l}\}\)를 \(T\times L\)** 주의 출력의 집합, \(M=\{m_{i}^{(l)}\}\)를 \(T\times L\)**MLP 출력의 집합이라고 하자. 우리는 어떤 중간 은닉 표현 \(z\in Z=H\bigcup A\bigcup M\)이 사실적으로 잘못된 개체를 생성하는 데 인과적으로 기여하는지 조사하는 것을 목표로 한다. 변압기에 대한 자세한 내용은 Vaswani 등(2017)을 참조하십시오.
+
+## 4 환각의 메커니즘
+
+### 사실적 오류 원인 추적
+
+방법.모델 추론 중 \(G\)에 의해 생성된 중간 은닉 상태 \(H\)는 입력 시퀀스로부터 출력(다음-토큰 예측)까지의 많은 경로를 포함하는 인과적 종속성 그래프 Pearl(2001)을 형성하며, 환각을 생성할 때 다른 것보다 더 중요한 특정 은닉 상태가 있는지 파악하고자 한다. 이것은 인과 그래프에서 중간 변수의 기여도를 정량화하는 _인과 매개 분석_에 대한 자연스러운 사례이다. 언어 모델의 인과적 매개 분석에 대한 자세한 내용은 Vig 등(2020)을 참조한다.
+
+구조화 질의에 대한 사실적 오픈 도메인 질의의 태스크를 통해 사실적 오류를 유발하는 LM 컴포넌트를 찾기 위해 Meng 등(2022)의 프레임워크를 적용한다. 특히, 주제-관계-객체 트리플 \((s,r,o)\로 표현되는 사실이 주어지면, 우리는 LM \(G\)에 \(s,r)\를 포함하는 질의 프롬프트 \(u\)(예를 들어, "Toulouse is the twin city of _--_")와 \(o\)를 참 연속(예를 들어, "Atlanta")으로 제공한다. 우리는 \(G\)가 주어진 다음 토큰으로 잘못된 객체 \(o^{\prime}\)를 예측하는 경우를 살펴보고, \(G\)의 계산 그래프에서 어떤 중간 은닉 상태들이 환각을 일으키는지 찾는 것을 목표로 한다. 우리는 \(G\)를 특정 모듈이 정답으로 이어질 수 있는 "깨끗한" 표현을 계산하지 못하는 "손상된" 모델로 간주하고 \(o\)를 세 가지 모델 실행을 통해 각 모듈의 기여도를 측정한다.
+
+그림 1: **두 가지 사실적이지 않은 환각 메커니즘의 주요 발견. 왼쪽(a)**: **조기 사이트 환각** 은 변압기 LM의 하위 계층 MLP에서 주제에 대한 일반적인 지식이 부족하여 발생합니다. 이 경우 모델은 엔터티(예: _Orica_, 호주 기반 다국적 기업)에 대한 유용한 정보를 검색하지 못하여 올바른 개체 특성(예: _Australia_)을 생성하지 못하므로 관련성이 높은 예측(1월)을 출력합니다. **오른쪽(b)**: **후기 사이트 환각** 은 상위 계층 주의 머리 및 MLP가 주어진 주제와 가장 관련성이 높은 개체를 식별하지 못해 발생합니다. 이 경우 모델은 하위 계층 MLP와 주체(예: _툴루즈_, 프랑스 도시)에 대한 관련 정보를 검색할 수 있지만 관련 없지만 강력하게 연결된 속성(예: _파리_)을 정답(예: _볼로냐/충칭/애틀란타_)과 구별할 수 없습니다. 우리는 이 두 가지 유형의 환각이 하위 및 상위 계층 LM 구성 요소 간의 모델 예측에 대한 상대적 인과 기여에 의해 구별될 수 있음을 발견했다.
+
+1. **환각 실행** 에서 \(u\)를 \(G\)에 전달하고 섹션 3에서 정의한 대로 모든 중간 숨겨진 표현 \(Z\)을 추출하고, \(G\)의 "환각 정도"를 정량화하는 참 객체와 환각 객체 간의 로그 우도비 \(y=\log\frac{p(o^{\prime}|E(u))}{p(o|E(u))}\)를 계산합니다. 환각 예측을 위해 우리는 \(y>0\)을 관찰할 것이다.
+2. **완화 실행** 에서 Meng 등 (2022)을 따르며 입력 토큰 임베딩 \(E(u)\)에 가우시안 노이즈 \(\epsilon\sim\mathcal{N}(0,1)\)를 추가하여 중간에 삽입한 \(E^{*}(u)=E(u)+\epsilon\)을 입력으로 할 때 환각 객체와 사실 객체 간의 로그 우도비가 감소(즉, \(y_{*}=\log\frac{p(o^{\prime}|E^{*}(u))}{p(o|E^{*}(u))}<y\)로 노이즈만 취하여 노이즈 주입 후 모델이 더 "진실"이 됨을 나타낸다. 우리는 다시 \(Z^{*}\)로 표시된 모든 중간 숨겨진 표현을 추출한다.
+3. **환각과 함께 완화 상태 실행** 에서 완화 실행에서와 같이 교란된 입력 임베딩 \(E^{*}(u)\)을 사용하여 \(u\)에 \(G\)를 실행하고, 환각 실행 중에 특정 숨겨진 표현 \(z^{*}\in Z^{*}\)을 숨겨진 표현 \(z\)로 강제하여 후크 \(G\)를 실행합니다. 그런 다음 로그 우도비 \(y_{E^{*},z}=\log\frac{p(o^{\prime}|E^{*}(u),z)}{p(o|E^{*}(u),z)}\)를 계산하여 2단계와 비교하여 어떻게 변하는지를 확인한다.
+
+인과적 매개 분석(Vig et al., 2020; Finlayson et al., 2021; Meng et al., 2022)의 이전 연구에 이어, 우리는 단일 은닉 상태를 완화한 후 환각 정도의 감소로 중간 은닉 표현 \(z\)의 **인과적 간접 효과** IE\((z;y,u,\epsilon)=y_{E^{*},z}-y_{*}\)를 정의한다. 실제 질의 집합과 각 질의에 대한 잡음 샘플에 대한 평균을 구하여, 각 \(z\) 및 해당 모델 컴포넌트에 대한 평균 간접 효과(AIE)를 구한다.
+
+실험.우리는 ParaRel Elazar et al.(2021)의 클로즈 스타일 사실 지식 쿼리 데이터 세트로부터 사실 지식 쿼리 세트를 수집한다. ParaRel의 각 예제에는 지식 튜플 \(t_{c}=(s,r,o_{c})\)과 핸드 큐레이트 템플릿에서 생성된 프롬프트가 포함되어 있습니다. 1) Llama-2-7B-chat (32 layer, 7B parameters, fine-tuned on instruction following) (Touvron et al., 2023), 2) GPT-J (28 layer, 6B parameters) (Wang and Komatsuzaki, 2021), 3) GPT-2-XL (48 layer, 1.5B parameters) (Radford et al., 2019). 각 프롬프트 \(u\)에 대해 다음 토큰 연속의 LM 예측 조건부 확률 \(p(o|E(u))\)을 계산합니다. 여기서 \(o\)는 모델 어휘의 모든 대문자 알파벳 토큰 모음에서 가져옵니다. 질의가 여러 개의 정답을 허용할 수 있는 모호성 문제를 해결하기 위해, 우리는 환각을 WikiData API 질의 검색에 의해 반환되는 참 객체의 접미사 \(o_{c}\)도 아니고 주제-관계 쌍의 다른 객체의 접미사 \((s,r)\도 아닌 토큰 \(o^{\prime}\)에 LM이 가장 높은 확률을 할당하는 경우로 정의한다. 2
+
+각주 2: 데이터 세트 구성에 대한 자세한 내용은 부록 A를 참조하십시오.
+
+결과. 다양한 문장 위치와 트랜스포머 계층에 걸쳐 숨겨진 상태 \(z\in Z\)에 대한 ParaRel의 질의에 대한 평균 인과 간접 효과를 계산한다. 그림 2는 Llama-2-7B의 세 가지 모델 구성 요소에 대한 AIE 분포를 보여준다. 잔차 스트림, 주의 헤드 및 MLP의 세 가지 모델 구성 요소에 대한 AIE 분포를 보여준다. 잘못 예측된 객체에 대해 가장 높은 속성 점수를 산출하는 숨겨진 상태의 두 그룹을 관찰한다: 1) MLP에 의해 하위 트랜스포머 계층에 있는 주제 토큰의 숨겨진 상태 및 2) MLP와 어텐션 헤드에 의해 상위 변압기 층에서 마지막 릴레이션 토큰의 숨겨진 상태. GPT 모델에 대해서도 유사한 인과 효과 분포 패턴을 관찰한다(추가 결과는 부록 B.2 참조). Geva et al. (2023)은 최근 성공적인 사실적 지식 회상을 위해 하위 계층 MLP와 상위 계층 주의 머리가 가장 중요한 두 가지 LM 구성 요소임을 보여준다. 우리의 인과 추적 결과는 대조적인 관점에서 그들의 발견을 확인할 뿐만 아니라 환각의 중요한 원인으로서 추가 구성 요소(상층 MLP)를 보여준다.
+
+일찍 vs. 이러한 결과를 바탕으로, 그림 1에 나타난 바와 같이, 비사실적 환각을 유발할 수 있는 두 가지 다른 "메커니즘"이 있다고 가정한다. 1) LM은 하위 계층 구성요소로부터 피사체에 대한 정확한 정보를 검색하지 못하고, 2) LM은 하위 계층 구성요소로부터 일부 피사체 속성을 성공적으로 검색하지만, 상위 계층 구성요소들은 검색된 객체 중에서 정확한 객체를 구분하지 못한다. 특히 \(L\)을 LM변압기의 변압기 층수라고 하고, 초기 부위 성분들을 주의 헤드(attention head)로 정의하고, LM 계층의 전반부에 위치한 MLP(\(1\leq l\leq\frac{L}{2}\)), 후기 부위 성분들을 LM 계층의 후반부에 위치한 MLP(\(\frac{L}{2}<l\leq L\))로 정의한다. 그런 다음 초기 및 후기 사이트 모델 구성 요소에 의한 중간 표현 간의 **상대 간접 효과** 를 다음과 같이 정의합니다.
+
+\[\Delta\overline{\text{IE}}(y,u)=\overline{\text{IE}}_{\text{early}}(y,u)-\overline{\text{IE}}_{\text{early}}(y,u) \tag{1}\] \[=\frac{2}{L}\Big{[}\sum_{l=1+\frac{L}{2}}^{L}\overline{\text{IE}}(z_{T}^{(l)},y,u)-\sum_{l=1}^{\frac{L}{2}}\overline{\text{IE}}(z_{0}^{(l)},y,u)\Big{]}, \tag{2}\]
+
+여기서 \(\overline{\text{IE}}_{\text{early}}(y,u)\)는 첫 번째 주제 토큰 \(w_{0}\)(그림 2의 파란색 점선 상자에서 숨겨진 상태)의 초기 사이트 중간 표현의 평균 간접 효과이고, \(\overline{\text{IE}}_{\text{late}}(y,u)\)는 \(u\)(그림 2의 빨간색 점선 상자에서 숨겨진 상태)의 마지막 관계 토큰 \(w_{T}\)의 후기 사이트 중간 표현의 평균 간접 효과이다. 환각 \((u,o,o^{\prime})\)은 하위 계층 숨겨진 표현이 더 강한 AIE(즉, \(\Delta\overline{\text{IE}}(y,u)<0\))를 갖는 경우 **초기 사이트**로 분류하고 그렇지 않은 경우 **후기 사이트**(즉, \(\Delta\overline{\text{IE}}(y,u)\geq 0\))로 분류한다. 초기 사이트 환청과 후기 사이트 환청은 3에서 볼 수 있듯이 매우 다른 AIE 분포를 갖는 반면, 초기 사이트 환청에 크게 기여하는 대부분의 구성 요소는 대상 토큰을 처리할 때 하위 계층에 위치하지만 후기 사이트 환청은 대부분 관계 토큰을 처리할 때 상위 계층에 집중된 구성 요소에 의해 발생한다.
+
+환각 메커니즘의 외부 징후. 우리의 환각 분류가 내부 계산 패턴에만 기반한 조작된 이분법이 아님을 확인하기 위해 다음으로 두 가지 유형의 환각을 구별하기 위해 활용할 수 있는 외부 특징이 있는지 여부를 조사한다. 쿼리 데이터 및 모델 예측의 다음 기능을 고려 합니다. **주체**
+
+그림 3: (a) 초기 사이트(왼쪽 열) 및 (b) 후기 사이트(오른쪽 열) 비사실적 환각에 대한 개별 모델 구성 요소의 **평균 간접 효과(AIE)**입니다.
+
+그림 2: Llama-2-7b-chat에 의해 잘못 응답된 ParaRel 쿼리에 대한 비사실적 환각에 대한 개별 모델 구성 요소에 의해 생성된 숨겨진 표현의 **평균 간접 효과(AIE)**. 초기 사이트와 후기 사이트 환각을 구별하는 상대적 간접 효과 메트릭 \(\Delta\overline{\text{IE}}(y,u)\)은 1) 상위 계층 주의/MLPs(파란색 점선 박스)에 의한 마지막 관계 토큰의 숨겨진 표현과 2) 하위 계층 주의/MLPs(빨간색 점선 박스)에 의한 첫 번째 주제 토큰의 숨겨진 표현의 평균 AIE의 차이로 정의된다.
+
+객체 연관 강도(object association strength)는 피험자 \(s\)와 참 객체 \(o\) 또는 환각 객체 \(o^{\prime}\) 사이의 내적 곱으로 측정되며, 예측 객체 \(o^{\prime}\)의 견고성(robustness)은 입력 임베딩에 추가된 후 모델이 \(o^{\prime}\)보다 참 답변 \(o\)을 선호하게 하지 못하는 섹션 4.1에서 완화 실행 동안 주입된 가우시안 노이즈의 백분율로 측정된다(즉, \(y_{*}<0<y\); 모델 예측의 **불확실성**은 조건부 다음 토큰 분포의 엔트로피 \(p(o|u)\). 표 1은 외부 측정값을 요약한 것이다. 1) 후기 환각(예: _Toulouse_)의 피험자는 종종 실제 물체(예: _Bologna_)보다 훨씬 강한 연관 강도의 환각 물체(예: _Paris_)를 가지고 있으므로 모델이 \(s\)를 볼 때 \(o^{\prime}\)를 예측하는 모델의 사전 성향을 "오프셋"하지 못한다는 것을 발견했다. 반면에 초기 사이트 환각(예: _Orica_)의 대상은 종종 참(예: _호주_) 및 환각(예: _1월_) 객체 둘 다와 훨씬 약한 연관성을 가지고 있다; 2) 후기 사이트 환각은 입력 섭동 하에서 상당히 덜 견고하며, 이는 아마도 모델이 이미 초기 층으로부터 올바른 객체를 검색했고 그것을 구별하는 것에서 단지 "한 걸음 떨어져 있기 때문일 것이다; 3) 모델은 초기 사이트 환각을 생성할 때 예측에 대해 덜 확신하는데, 이는 인식론적 환각이 종종 높은 예측 불확실성과 연관된다는 이전의 발견과 일치하는 패턴이다(Xiao and Wang, 2021).
+
+### 임베딩 공간 투영을 통한 검사
+
+이 섹션에서는 각 모델 구성 요소가 추론 중 잔류 스트림에 기록하는 정보를 살펴봄으로써 초기 및 후기 현장 환각 간의 기계론적 차이에 대한 추가 증거를 제공한다.
+
+방법.3절에서 제시한 바와 같이, 레이어 \(l\)의 각 어텐션 또는 MLP 모듈은 이전 레이어에서 생성된 임베딩 \(h_{i}^{(l-1)}\)에 출력 은닉 상태를 추가하여 모델 예측에 기여한다. 최근의 연구는 모듈의 인코딩된 지식이 최종-계층 언어 모델 헤드 프로젝션(즉, 내적)을 그것의 중간 출력 은닉 상태에 적용함으로써 해석될 수 있고, 이에 의해 어휘에 걸친 분포를 얻을 수 있음을 보여준다(Geva et al., 2022; Dar et al., 2023). 모델 환각의 각 예 \((u,o,o^{\prime})\)에 대해 먼저 모든 MLP와 어텐션 모듈의 중간 출력 \(z\in A\bigcup M\)을 추출한 다음 최종 투영 레이어에서 \(z\)와 \(o\)에 해당하는 행 벡터 사이의 내적 \(\tilde{p}(z,o)=z^{T}e_{o}\)을 취하여 이 방법을 사용한다. 결과적인 임베딩 공간 투영(ESP)은 \(z\) 대 \(p(o|u)\의 근사화된 기여도로 취해질 수 있다. 각 계층에서 모든 질의와 같은 유형의 모든 모듈에 대한 투영을 평균함으로써 각 계층이 추론하는 동안 정답 \(o\)에 대한 지식이 얼마나 기여하는지 정량화할 수 있다.
+
+결과.1) 사실적 답변(즉, 모델이 다음 토큰으로 \(o\)를 올바르게 예측함), 2) 초기 사이트 환각, 3) 후기 사이트 환각에 대한 실제 객체에 대한 레이어별 MLP 및 주의 돌기를 계산합니다. 오직 하위 계층 MLP만이 참 답에 대한 정보를 잔여 스트림에 기입하고, 중요하게는 하위 계층 MLP의 기여도는 후기 사이트 환각 및 올바르게 답한 질의에 대해 유사하지만, 훨씬 적을 때 훨씬 적다.
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline Statistics & Early-site hall. & Late-site hall. \\ \hline Amount & (1945 / 31.9\%) & (4152 / 68.1\%) \\ \(s\)-\(o\) assoc. & 0.40 & 0.88 \\ \(s\)-\(o^{\prime}\) assoc. & 0.85 & 2.03 \\ Robustness & 0.78 & 0.51 \\ Uncertainty & 4.39 & 4.17 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 두 가지 유형의 비사실적 환각에 대한 외부 데이터 및 Llama-2-7b 예측 특징.
+
+그림 4: 각 레이어에서 Llama-2-7b의 구성 요소에 의한 진정한 객체 임베딩과 중간 숨겨진 표현 사이의 평균 내적.
+
+모델은 초기 현장 환각을 생성합니다. 2) 두 가지 유형의 환각에 대해, 자기 주의 구성 요소, 특히 상위 계층의 구성 요소는 사실적 정답에 비해 훨씬 덜 유용한 정보를 작성한다. GPT 모델에서 관찰된 유사한 패턴은 부록 B.4에서 찾을 수 있다.
+
+종합하면, 우리의 분석에서는 1) _초기 사이트 MLP, 후기 사이트 자기 주의 및 후기 사이트 MLP가 환각을 유발하는 가장 중요한 LM 구성 요소이며, 2) _하위 계층 MLP 및 상위 계층 주의/MLP가 항상 동시에 분해되지 않으므로 LM 사실 오류의 두 가지 별개의 메커니즘으로 이어진다._
+
+## 5 사전 훈련 중 LM 환각 추적
+
+우리는 LMs에서 비사실적 환각의 두 가지 메커니즘을 확인했다. 이 섹션에서는 모델 사전 훈련 동안 이러한 환각이 어떻게 나타나는지 이해하는 것을 목표로 실험을 설계한다. 예를 들어, 초기 사이트와 후기 사이트 환각은 구별에 기여하는 다른 학습 패턴을 나타내는가? 또한 중요한 초기 사이트 MLP 및 후기 사이트 주의 구성 요소가 제대로 "개발"하지 못하는 이유를 탐색하는 것을 목표로 한다.
+
+데이터 및 모델.사전 훈련 중 언어 모델 환각을 연구하기 위해 ParaRel의 피티아 모델 제품군 [1]을 평가한다. 피티아는 공공 데이터에 대해 정확히 동일한 순서로 훈련된 자기회귀 LMs 계열에 대한 사전 훈련 체크포인트의 집합이다. 먼저 14억 개의 매개변수를 가진 피티아 마지막 체크포인트를 취하고 4.1절에서 설명한 ParaRel 데이터셋에서 다른 LMs에 대해 동일한 평가 및 필터링 프로세스를 반복한 다음 잘못 답한 쿼리에 대한 인과 매개 분석을 수행하여 어텐션 헤드 및 MLP에 대한 AIE를 얻고 식 2를 기반으로 쿼리를 초기 사이트 및 후기 사이트 환각으로 분류한다. 그런 다음 모델 학습 이력에 고르게 분포된 32개의 피티아-1.4B 사전 훈련 체크포인트에 대한 모든 쿼리에 대해 평가 및 중간 히든 상태를 얻는다.
+
+각주 3: 피티아 평가에 대한 자세한 내용은 부록 C를 참조하십시오.
+
+사실 연관 파이프라인의 개발.Pythia-1.4b 체크포인트에 대한 섹션 4.2의 임베딩 공간 투영(embedding space projection, ESP) 실험을 복제하고 사전 훈련 단계에 걸쳐 결과를 비교한다. 각 Pythia-1.4B 체크포인트에 대해, 먼저 24개의 트랜스포머 레이어 중 처음 12개의 레이어에서 1) MLP, 마지막 12개의 레이어에서 2) 주의 헤드에 대한 진정한 객체 토큰에 ESP를 취한 다음, 사실, 초기 사이트 환각 및 후기 사이트 환각 쿼리 세트(마지막 모델 체크포인트에 의한 예측 결과를 기반으로 분류됨)에 대한 평균 ESP를 계산한다. . 도 5는 32개의 피티아-1.4b 체크포인트에서 참 객체 ESP의 진화 궤적을 도시한다. 우리는 1에 주목한다) 후기 사이트 환각과 사실 질의 사이의 MLP의 학습 역학은 매우 유사하며, 사전 훈련의 전반부 동안 대략적으로 실제 객체 예측과 긍정적인 ESP를 생성하는 것을 점진적으로 학습한다. 초기 현장 환각의 경우 MLP는 대신 부정적인 ESP를 만드는 방법을 배우며 다시 진정한 주제 지식이 부족함을 시사한다. 2) 피티아의 상위 계층 관심은 사실 질의를 위한 높은 ESP를 생성하는 것만을 학습한다. 더욱이, 어텐션 모듈은 초기 사이트 MLP가 성숙(\(\sim\)70-_th_ 사전 훈련 단계)될 때까지 참 객체를 구별하는 것을 학습하지 않을 것이다. 종합하면, 우리의 결과는 _초기 사이트 MLP와 후기 사이트 주의가 함께 사전 훈련 중에 점진적으로 나타나는 사실 회상의 2단계 파이프라인을 형성하고 둘 중 하나를 개발하지 못하면 사실적이지 않은 환각으로 이어질 것임을 시사한다.
+
+## 6 환각 탐지 애플리케이션
+
+기계론적 해석 가능성 방법이 LM 사실의 원인을 밝힐 수 있음을 입증했다.
+
+그림 5: 피티아-1.4b 사전 훈련 체크포인트의 하위 계층 MLP(위) 및 상위 계층 주의 모듈(아래)에 대한 진정한 객체 토큰에 대한 평균 임베딩 공간 투영. 빨간색 수직선은 하위 계층 MLP가 학습을 마치고 상위 계층 주의 머리가 발달하기 시작할 때 "위상 변화"를 나타낸다.
+
+우리가 모델이 환각을 보고 있다는 것을 알 때 오류. 이 섹션에서는 이전 분석에서 인과 관계 속성 특징이 LM이 환각을 생성하는지 여부를 예측할 수 있음을 추가로 보여준다.
+
+데이터.3개의 데이터 세트에 대해 GPT2-XL 4에 의한 비사실적 환각을 연구합니다. 1) 섹션 4에서 사용된 **ParaRel** 데이터 세트, 2) 답변을 주석하고 위키피디아 페이지를 지원하는 Google 검색 엔진 쿼리로 구성된 **자연 질문** 데이터 세트 Kwiatkowski 등(2019), 3) LM이 답변을 생성하는 데 진실하는지 여부를 측정하기 위해 적대적으로 구성된 상식 추론 질문으로 구성된 Lin 등(2022)의 **TruthfulQA** 데이터 세트. 우리는 질문 답변에서 객관식 평가 방식을 따르고 GPT2-XL에게 모든 후보 답변의 조건부 로그 우도를 계산하도록 요청한다. 가능성이 가장 높은 답변이 거짓의 지상 진리 레이블을 갖는 경우, 질의는 환각, 그렇지 않으면 사실 예측으로 레이블링된다.
+
+각주 4: 그래디언트 기반 기준선과 더 큰 LMs에 대한 인과적 근사치를 구현할 때 GPU 메모리 문제에 직면했기 때문에 여기서는 GPT2-XL에 초점을 맞추고 향후 작업을 위해 다른 LMs에 대한 실험을 남긴다.
+
+방법: 언어 모델에 의해 질의어 \(u\)와 다음 단어 예측 \(o\)가 주어졌을 때, 모델의 환각 여부를 예측하고자 한다. 섹션 4.1과 동일한 인과 개입 패치 방법을 사용하여 다음 토큰을 예측한 모델의 로그 우도 \(\log p(o|u)\)에 대한 변압기 모듈의 인과 효과 점수를 기반으로 모델 사실성을 예측하기 위해 로지스틱 회귀 모델을 구축한다. 이 경우 인과 반응 변수는 더 이상 두 객체 토큰 간의 로그 우도비가 아니라 모델 생성 토큰의 로그 우도이며, 그 대신 사실성이 환각 감지기에 의해 결정된다. 어텐션, MLP 및 잔차 스트림 모듈의 중간 출력에서 각 뉴런에 대한 AIE를 48개 레이어에 걸쳐 계산하고 3개 모듈의 AIE 점수 배열을 연결하여 단일 4,800차원 특징 벡터를 얻는다. 개별 뉴런에 대한 인과 매개 분석을 수행하는 것은 매우 비용이 많이 들기 때문에, 우리는 계산 5를 가속화하기 위해 Nanda(2023)에 의한 인과 매개 효과의 기울기 기반 근사 방법을 채택한다.
+
+각주 5: 인과 효과 근사화 방법의 세부사항은 부록 D를 참조한다.
+
+기준선.우리는 또한 LM 환각을 나타내는 것으로 나타난 비인과적 내부 특징 세트를 사용하여 기준 로지스틱 회귀 모델을 테스트합니다. 1) 모델이 다음 토큰을 생성하기 위해 직접 사용하는 입력 시퀀스의 마지막 토큰의 마지막 계층 숨겨진 상태(2021), 2) 활성화 값 Li 등(2023), 3) \(\log p(o|u)\에 대한 기울기 De Cao 등(2021), 4) \(\log p(o|u)\에 대한 활성화 * 기울기 값 Tang 등(2022) 및 5) \(\log p(o|u)\에 대한 통합 기울기 순다라얀 등(2017)입니다. 기준선 (2)-(4)의 경우, 인과 효과 기반 분류기와 동일한 중간 뉴런 세트에 대한 특징을 계산하여 기준 입력 특징 벡터의 차원이 IE 기반 특징 벡터와 동일하도록 한다.
+
+결과.각 데이터 세트에 대해 5-fold 교차 검증을 수행하고 검증 세트에 대한 모든 환각 분류기의 평균 예측 정확도를 계산한다. 결과를 요약하면 표 2와 같다. 우리는 인과적 간접 효과 특징이 모든 데이터 세트에 대한 모델 환각을 가장 잘 예측하여 일관되게 모든 기준 모델을 초과한다는 것을 발견했다. 특히, IG를 제외한 모든 기준선은 입력 교란 없이 내부 정보만을 사용하기 때문에 AIE에 비해 낮은 성능은 인과적 매개 분석에서 모델 추론 과정의 반사실적 개입이 사실적 오류를 유발하는 중요한 구성 요소를 찾는 데 중요하다는 것을 시사한다. Meng 등(2022)이 제안한 IG 기준선은 종종 입력 텍스트 아티팩트(예: 희귀 단어 및 오타)에 과도하게 민감하므로 다양한 입력 형식을 가진 두 QA 데이터 세트에 대해 훨씬 덜 신뢰할 수 있는 예측을 산출한다.
+
+## 7 Conclusion
+
+해석가능성 분석을 통해 언어모델 비사실적 할루시나의 두 가지 원인을 규명하였다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline  & ParaRel & NaturalQA & TruthfulQA \\ \hline Random & 50.0 & 50.0 & 50.0 \\ LHS & 62.1 & 56.6 & 50.4 \\ Activation & 67.8 & 62.6 & 52.0 \\ Gradient & 68.8 & 66.1 & 53.8 \\ Grad. X Act. & 68.9 & 68.3 & 60.1 \\ IG & 69.9 & 67.4 & 53.2 \\ \hline Causal IE & **70.7** & **69.8** & **60.8** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 3개의 사실 쿼리 데이터 세트에 대해 다양한 내부 특징을 사용하여 훈련된 환각 분류기의 평균 5배 교차 검증 정확도.
+
+tions: 1) 하위 계층 MLP에서 불충분한 속성 지식, 2) 상위 계층 주의 및 MLP에서 결함이 있는 객체 선택. 또한 두 가지 기계론적 유형의 환각에 대한 다양한 사전 훈련 궤적과 함께 데이터 및 모델 예측에서 구별되는 특성을 밝혀냈다. 이러한 통찰력을 활용하여 효과적인 환각 감지기를 만들었습니다. 우리의 연구는 LM 사실 오류에 대한 기계론적 이해를 확립하고 환각 완화의 설명 가능한 접근법에 대한 향후 연구에 영감을 줄 수 있다.
+
+## 8 Limitation
+
+우리의 연구는 몇 가지 한계를 가지고 있다. 첫째, 특정 실험은 어휘 공간에 투영을 통해 중간 계층 표현과 매개변수를 해석하는 데 의존한다. 널리 사용되지만 이 방법은 특히 초기 계층에서 모델 구성요소의 인코딩된 정보만 근사화한다. 둘째, 간단한 입력 시퀀스를 가진 비사실적 환각에 대한 우리의 초점은 실제 LM 행동을 완전히 포착하지 못할 수 있다. 향후 조사는 더 긴 입력 쿼리와 잠재적인 적대적 특징을 고려하여 보다 복잡하고 자연스러운 컨텍스트를 연구하기 위해 기계론적 해석 가능성 방법을 적용해야 한다. 셋째, 기계론적 분석에서 얻은 통찰력을 기반으로 LM 환각을 줄이는 방법을 탐구하지 않았다. 향후 연구에서는 본 연구에서 확인된 중요한 모델 구성 요소에 대한 목표 가중치 편집 또는 추론 시간 개입을 수행하여 효율적인 환각 완화 방법을 개발하는 것을 고려할 수 있다.
+
+## References
+
+* Akyurek et al. (2022) Ekin Akyurek, Tolga Bolukbasi, Frederick Liu, Binbin Xiong, Ian Tenney, Jacob Andreas, and Kelvin Guu. 2022. 언어 모델의 지식을 추적하여 학습 데이터로 돌아갑니다. 계산 언어학 협회의 발견: EMNLP 2022_, 2429-2446 페이지.
+* Biderman 등(2023) Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O'Brien, Eric Hallahan, Mohammad Afah Khan, Shivanshu Purohit, USVSN Sai Prashanth, Edward Raff, et al. 2023. Pythia: A suite for analyzing large language models across training and scaling. [국제 기계 학습 회의]에서 2397-2430 페이지, PMLR.
+* Cao et al.(2022a) Meng Cao, Yue Dong, and Jackie Cheung. 2022a. 환각이 있지만 사실입니다! 추상적 요약에서 환각의 사실성을 검사하는 것. 《제60회 컴퓨터 언어학 협회 연례 회의(제1권: 장문)》에서 아일랜드 더블린의 3340-3354쪽. 계산 언어학 협회
+* Cao et al.(2022b) Meng Cao, Yue Dong, Jingyi He, and Jackie Chi Kit Cheung. 2022b. 추상적 텍스트 요약에 거부감을 갖는 학습. 아랍에미리트 아부다비의 9768-9780 페이지, _자연어 처리의 경험적 방법에 관한 2022년 회의 회보_에서. 계산 언어학 협회
+*Cohen et al.(2023) Roi Cohen, May Hamri, Mor Geva, and Amir Globerson. 2023. Lm vs lm: 교차 검사를 통해 사실 오류를 탐지합니다. _ arXiv preprint arXiv:2305.13281_.
+* Conmy et al.(2023) Arthur Conmy, Augustine N Mavor-Parker, Aengus Lynch, Stefan Heimersheim, and Adria Garriga-Alonso. 2023. 기계론적 해석성을 위한 자동화된 회로 발견을 위해 _ arXiv preprint arXiv:2304.14997_.
+* Dai et al.(2022) Damai Dai, Li Dong, Yaru Hao, Zhifang Sui, Baobao Chang, and Furu Wei. 2022. 사전 훈련된 트랜스포머의 지식 뉴런. [계산 언어학 협회 제60회 연례 회의(제1권: 장문)]에서 8493-8502쪽.
+* Dar 등 (2023) Guy Dar, Mor Geva, Ankit Gupta, and Jonathan Berant. 2023. 포매 공간에서 트랜스포머를 분석하는 단계. [계산 언어학 협회 연례 회의]에서
+* De Cao et al.(2021) Nicola De Cao, Wilker Aziz, and Ivan Titov. 2021. 언어 모델에서 사실적 지식을 편집합니다. "2021년 자연 언어 처리 실증 방법에 관한 회의 회보"에서 6491-6506페이지를 참조하십시오.
+* Dong et al.(2022) Chenhe Dong, Yinghui Li, Haifan Gong, Miaoxin Chen, Junxin Li, Ying Shen, and Min Yang. 2022. A survey of natural language generation. _ ACM Computing Surveys_, 55(8):1-38.
+* Elaraby 등(2023) Mohamed Elaraby, Mengyin Lu, Jacob Dunn, Xueying Zhang, Yu Wang, and Shizhu Liu. 2023. 헤일로: 오픈 소스 약한 대형 언어 모델에서 환각의 추정 및 감소 _ arXiv preprint arXiv:2308.11764_.
+* Elazar 등(2021) Yanai Elazar, Nora Kassner, Shauli Raviggel, Abhilasha Ravichander, Eduard Hovy, Hinrich Schutze, and Yoav Goldberg. 2021. 사전 훈련된 언어 모델의 일관성을 측정하고 개선합니다. _ 계산 언어학 협회의 트랜잭션_, 9:1012-1031.
+* Elhage 등(2021) Nelson Elhage, Neel Nanda, Catherine Olsson, Tom Henighan, Nicholas Joseph, Ben Mann, Amanda Askell, Yuntao Bai, Anna Chen, Tom Conerly, Nova DasSarma, Dawn Drain, Deep Ganguli, Zac Hatfield-Dodds, Danny Hernandez, Andy Jones, Jackson Kermion, Liane Lovitt, Kamal Ndousse, Dario Amodei, Tom Brown, Jack Clark, Jared Kaplan, Sam McCandlish, and Chris Olah. 2021. 변압기 회로를 위한 수학적 프레임워크.
+
+트랜스포머 회로 Thread_. Https://transformer-circuits.pub/2021/framework/index.html.
+* Finlayson 등(2021) Matthew Finlayson, Aaron Mueller, Sebastian Gehrmann, Stuart M Shieber, Tal Linzen, and Yonatan Belinkov. 2021. Causal analysis of syntactic agreement mechanism in neural language models. 제59차 전산언어학회 연차총회 및 제11차 자연어처리 국제공동회의(제1권: 장문)에서 1828-1843쪽.
+* Geva et al. (2023) Mor Geva, Jasmin Bastings, Katja Filippova, and Amir Globerson. 2023. 자동 회귀 언어 모델에서 사실적 연관성의 리콜을 해부합니다. _ arXiv preprint arXiv:2304.14767_.
+*Geva et al.(2022a) Mor Geva, Avi Caciularu, Guy Dar, Paul Roit, Shoval Sadde, Micah Shlain, Bar Tamir, and Yoav Goldberg. 2022a. Lm-debugger: 변압기 기반 언어 모델의 검사 및 개입을 위한 대화형 도구. 《자연어 처리의 실증적 방법에 관한 2022년 회의: 시스템 시연》 12-21페이지에서.
+*Geva et al.(2022b) Mor Geva, Avi Caciularu, Kevin Wang, and Yoav Goldberg. 2022b. 트랜스포머 피드포워드 레이어는 어휘 공간에서 개념을 촉진하여 예측을 구축한다. 아랍에미리트 아부다비의 30-45페이지에 있는 _자연어 처리의 경험적 방법에 관한 2022년 회의 회보_에서. 계산 언어학 협회
+* Geva et al.(2021) Mor Geva, Roei Schuster, Jonathan Berant, and Omer Levy. 2021. 트랜스포머 피드포워드 레이어는 키-값 메모리이다. "2021년 자연 언어 처리 실증 방법에 관한 회의 회보"에서 5484-5495페이지를 참조하십시오.
+* Ghandeharioun 등(2024) Asma Ghandeharioun, Avi Caciularu, Adam Pearce, Lucas Dixon, and Mor Geva. 2024. 패치스코프: 언어 모델의 숨겨진 표현을 검사하기 위한 통합 프레임워크. _ arXiv preprint arXiv:2401.06102_.
+* Haviv et al.(2022) Adi Haviv, Ori Ram, Ofir Press, Peter Izsak, and Omer Levy. 2022. 위치 인코딩이 없는 트랜스포머 언어 모델은 여전히 위치 정보를 학습한다. 계산 언어학 협회의 연구: EMNLP 2022_에서 아랍에미리트 아부다비의 1382-1390 페이지입니다. 계산 언어학 협회
+* Hernandez et al. (2023) Evan Hernandez, Arnab Sen Sharma, Tal Haklay, Kevin Meng, Martin Wattenberg, Jacob Andreas, Yonatan Belinkov, and David Bau. 2023. Linearity of relation decoding in transformer language models. _ arXiv preprint arXiv:2308.09124_.
+* Ji et al. (2023) Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu, Dan Su, Yan Xu, Etsuko Ishii, Ye Jin Bang, Andrea Madotto, and Pascale Fung. 2023. Survey of 환각 in natural language generation. _ ACM Computing Surveys_, 55(12):1-38.
+* Jiang et al.(2020) Zhengbao Jiang, Frank F Xu, Jun Araki, and Graham Neubig. 2020. 언어 모델이 무엇을 알고 있는지 어떻게 알 수 있습니까? _ 계산 언어학 협회의 트랜잭션_, 8:423-438.
+* Kaddour et al.(2023) Jean Kaddour, Joshua Harris, Maximilian Mozes, Herbie Bradley, Roberta Railenau, and Robert McHardy. 2023. 큰 언어 모델의 도전과 응용. _ arXiv preprint arXiv:2307.10169_.
+* Katz et al.(2024) Shahar Katz, Yonatan Belinkov, Mor Geva, and Lior Wolf. 2024. 후방 렌즈: 어휘 공간에 언어 모델 그라디언트를 투영하는 단계 _ arXiv preprint arXiv:2402.12865_.
+* Kwiatkowski 등(2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, et al. 2019. Natural questions: a benchmark for question answering research. _ 계산 언어학 협회의 트랜잭션_, 7:453-466.
+* Li et al.(2023) Kenneth Li, Oam Patel, Fernanda Viegas, Hanspeter Pfister, and Martin Wattenberg. 2023. 추론 시간 개입: 언어 모델에서 진실된 답변을 유도합니다. _ arXiv preprint arXiv:2306.03341_.
+* Lin et al.(2022) Stephanie Lin, Jacob Hilton, and Owain Evans. 2022년 진리풀카: 모델이 인간의 거짓을 어떻게 모방하는지 측정합니다. [계산 언어학 협회 제60차 연례 회의(제1권: 장문)]의 3214-3252쪽입니다.
+* Lu et al.(2021) Kaiji Lu, Zifan Wang, Piotr Mardziel, and Anupam Datta. 2021. Bert에서 정보 흐름을 설명하는 영향 패턴 _ Advances in Neural Information Processing Systems_, 34:4461-4474.
+* Manakul et al. (2023) Potsawee Manakul, Adian Liusie, and Mark JF Gales. 2023. Selfcheckkept: Zero-resource black-box 환각 탐지 for generative large language model. _ arXiv preprint arXiv:2303.08896_.
+* Meng et al.(2022a) Kevin Meng, David Bau, Alex Andonian, and Yonatan Belinkov. 2022a. gpt에서 사실 연관성을 찾고 편집합니다. _ Advances in Neural Information Processing Systems_, 35:17359-17372.
+* Meng et al.(2022b) Kevin Meng, Arnab Sen Sharma, Alex Andonian, Yonatan Belinkov, and David Bau. 2022b. 트랜스포머의 대용량 편집 메모리입니다. _ arXiv preprint arXiv:2210.07229_.
+* Mitchell 등(2021) Eric Mitchell, Charles Lin, Antoine Bosselut, Chelsea Finn, and Christopher D Manning. 2021. 대규모로 빠른 모델 편집. <학습 표현에 관한 국제 회의>에서.
+* Mundler et al. (2023) Niels Mundler, Jingxuan He, Slobodan Jenko, and Martin Vechev. 2023. 대형 언어 모델의 자기 모순적 환각: 평가, 탐지 및 완화. _ arXiv preprint arXiv:2305.15852_.
+* O'Hagan et al.(2021)Neel Nanda. 2023. 귀속 패치: 산업 규모에서 활성화 패치입니다. _ URL: [https://www.neel-nanda.io/mechanistic-interpretability/attribution-patching_](https://www.neel-nanda.io/mechanistic-interpretability/attribution-patching_).
+* Nanda et al.(2022) Neel Nanda, Lawrence Chan, Tom Lieberum, Jess Smith, and Jacob Steinhardt. 2022. 기계론적 해석 가능성을 통한 그로킹에 대한 진전 조치. <표상 학습에 관한 제11차 국제회의>에서.
+* Nostalgebrist (2020) Nostalgebrist. 2020. gpt 해석: 로짓 렌즈. _ LESSWRONG_
+* Olah (2022) Chris Olah. 2022. 기계론적 해석 가능성, 변수 및 해석 가능한 기저의 중요성_ Transformer Circuits Thread_. [https://transformer-circuits.pub/2022/mech-interp-essay/index.html] (https://transformer-circuits.pub/2022/mech-interp-essay/index.html).
+* 진주(2001) Judea Pearl. 2001. Direct and indirect effects. *Proc. 의 제17차 인공지능 불확실성에 관한 회의, 2001_, 411-420 페이지.
+* Petroni 등(2019) Fabio Petroni, Tim Rocktaschel, Sebastian Riedel, Patrick Lewis, Anton Bakhtin, Yuxiang Wu, and Alexander Miller. 2019. 지식 베이스로서의 언어 모델들? _Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_, pages 2463-2473.
+* Radford et al.(2019) Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, et al. 2019. 언어 모델은 비감독 멀티태스킹 학습자이다. _ OpenAI blog_, 1(8):9.
+* Srivastava 등(2023) Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abuwal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R Brown, Adam Santoro, Aditya Gupta, Adria Garriga-Alonso, et al. 2023. Beyond the imitation game: Quantifying and extrapolation the capabilities of language models _ Machine Learning Research에 대한 트랜잭션_.
+* Stolfo et al. (2023) Alessandro Stolfo, Yonatan Belinkov, and Mrinmaya Sachan. 2023. A mechanistic interpretation of arithmetic reasoning in language models using causal mediation analysis. 2023년 자연 언어 처리의 경험적 방법에 관한 회의의 회보에서 7035-7052쪽입니다.
+* Sundararajan et al.(2017) Mukund Sundararajan, Ankur Taly, and Qiqi Yan. 2017. 딥 네트워크에 대한 공리적 속성. 기계 학습에 관한 국제 회의 3319-3328 페이지, PMLR.
+* Tang et al.(2022) Joel Tang, Marina Fomicheva, and Lucia Specia. 2022. 특징 속성을 가진 신경망 기계 번역에서 환각을 줄입니다. _ arXiv preprint arXiv:2211.09878_.
+* Touvron 등(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajiwal Bhargava, Shruti Bhosale, et al. 2023. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_.
+* Turpin 등 (2023) Miles Turpin, Julian Michael, Ethan Perez, and Samuel R Bowman. 2023. 언어 모델이 항상 그들이 생각하는 것을 말하는 것은 아닙니다: 생각의 연쇄에서 불성실한 설명이 촉발됩니다. _ arXiv preprint arXiv:2305.04388_.
+* Varshney et al. (2023) Neeraj Varshney, Wenlin Yao, Hongming Zhang, Jianshu Chen, and Dong Yu. 2023. 시간상의 바느질은 9개를 절약합니다. 낮은 자신감 생성을 검증하여 llms의 환각을 감지하고 완화합니다. _ arXiv preprint arXiv:2307.03987_.
+* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 2017. 주의력만 있으면 됩니다. _ 신경 정보 처리 시스템의 진보_, 30.
+* Vig 등(2020) Jesse Vig, Sebastian Gehrmann, Yoatan Belinkov, Sharon Qian, Daniel Nevo, Yaron Singer, and Stuart Shieber. 2020. 인과 관계 매개 분석을 사용하여 언어 모델의 성별 편향을 조사합니다. _ 신경 정보 처리 시스템_, 33:12388-12401에서의 진보.
+* Wallat et al. (2020) Jonas Wallat, Jaspreet Singh, and Avishek Anand. 2020. BERTresia: Investigating the capture and forgetting of knowledge in BERT. Neural Networks for NLP 분석 및 해석에 관한 제3차 BlackboxNLP Workshop의 _Proceedings on Analytical Networks for NLP_, 174-183 페이지, Online. 계산 언어학 협회
+* Wang and Komatsuzaki (2021) Ben Wang and Aran Komatsuzaki. 2021. GPT-J-6B: 600억 매개 변수 자동 회귀 언어 모델 [https://github.com/kingoflolz/mesh-transformer-jax] (https://github.com/kingoflolz/mesh-transformer-jax).
+* Wang et al.(2022) Kevin Ro Wang, Alexandre Varienien, Arthur Conmy, Buck Shlegeris, and Jacob Steinhardt. 2022. Interpretability in the wild: a circuit for indirect object identification in gpt-2 small. <표상 학습에 관한 제11차 국제회의>에서.
+* 샤오 앤 왕(2021) 이준 샤오 앤 윌리엄 양 왕. 2021. On Hallination and predictive uncertainty in conditional language generation. <컴퓨팅 언어학 협회 유럽 제16차 회의 회보: 본권> 2734-2744 페이지, 온라인. 계산 언어학 협회
+* Yu et al. (2023) Qinan Yu, Jack Merullo, and Ellie Pavlick. 2023. 언어 모델에서 사실적 회상을 위한 메커니즘을 특성화합니다. _ arXiv preprint arXiv:2310.15910_.
+* Yuksekgonul et al. (2023) Mert Yuksekgonul, Varun Chandrasekaran, Erik Jones, Suriya Gunasekar, Ranjita Naik, Hamid Palangi, Ece Kamar, and Besmira Nushi. 2023. 주의 만족: 언어 모델의 사실적 오류에 대한 제약-만족 렌즈. _ arXiv preprint arXiv:2309.15098_.
+
+무루 장, 오피르 프레스, 윌리엄 메릴, 알리사 리우, 노아 A 스미스. 2023a. 언어 모델 환각이 눈덩이처럼 불어날 수 있는 방법. _ arXiv preprint arXiv:2305.13534_.
+* Zhang 등(2023b) Yue Zhang, Yafu Li, Leyang Cui, Deng Cai, Lemao Liu, Tingchen Fu, Xinting Huang, Enbo Zhao, Yu Zhang, Yulong Chen, et al. 2023b. 아이오션에서 사이렌의 노래: 대형 언어 모델의 환각에 대한 조사입니다. _ arXiv preprint arXiv:2309.01219_.
+* Zhou 등(2023) Chunting Zhou, Pengfei Liu, Puxin Xu, Srini Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, et al. 2023. Lima: Less is more for alignment _ arXiv preprint arXiv:2305.11206_.
+* Zhou 등(2021) Chunting Zhou, Graham Neubig, Jiatao Gu, Mona Diab, Francisco Guzman, Luke Zettlemoyer, and Marjan Ghazvininejad. 2021. 조건부 신경망 생성에서 환각 콘텐츠를 검출하는 단계. 계산 언어학 협회의 발견: ACL-IJCNLP 2021_, 1393-1404 페이지.
+
+## 부록 비사실적 환각의 데이터 세트
+
+우리는 Dai et al.(2022)의 데이터 구축 파이프라인을 따라 위키데이터에서 엔티티로 존재하는 주제-관계-객체 지식 튜플(예를 들어, (_Toulouse, is twin city of, Atlanta_))을 포함하는 ParaRel Elazar et al.(2021)의 엔트리로부터 각각의 질의 입력 시퀀스를 생성한다. 각각의 관계는 프롬프트 템플릿들의 세트(예를 들어, "_는 _"의 트윈 도시)를 가지며, 여기서 엔티티들은 전체 프롬프트들을 형성하기 위해 대체될 수 있다(예를 들어, "Toulouse는 객체를 질의하는 프롬프트로서 _"의 트윈 도시이다).
+
+질의 데이터세트를 생성한 후, 주제-관계 쌍이 포함된 주어진 프롬프트 \(u\)를 계속하기 위해 가장 가능성이 높은 대문자 영숫자 토큰 \(\hat{t}\)을 예측하기 위해 언어 모델을 요청한다. 우리는 예측 \(\hat{t}\)이 다음 두 조건 중 적어도 하나를 만족하면 **사실** 이 되도록 정의합니다. 1) Ground-truth 객체의 접두사 \(o\)와 동일하거나 동일하거나 동일하거나 2) WikiData SPARQL 6 쿼리를 입력으로 실행하여 반환되는 엔터티 중 하나의 접두사 \((s,r)\)입니다. 이러한 방식으로, 우리는 다수의 정확한 완성들을 허용하는 질의들에 대한 응답 모호성 문제를 해결할 수 있다(예를 들어, "Marugame, located, _"는 "Kagawa" 또는 "Japan" 중 어느 하나로 완료될 수 있고, 두 출력들은 사실적으로 정확하다). 마지막으로, 각 모델에 대해 전체 어휘에 걸쳐 상위 50개의 가장 가능성 있는 토큰을 예측한 모델 중 대문자 영숫자 토큰이 없는 쿼리를 폐기하며, 이러한 대부분의 경우에서 \(\hat{t}\)의 로그 가능성은 무시할 수 있음을 발견했다. 이 데이터 전처리 파이프라인은 Llama-2-7b-chat에 대해 6,097개의 쿼리 세트, GPT-J에 대해 6,809개, GPT-2-XL에 대해 6,401개, 피티아-1.4B에 대해 8,345개의 쿼리를 생성한다.
+
+각주 6: [https://query.wikidata.org/](https://query.wikidata.org/)
+
+## 부록 B 환각의 원인 추적
+
+### Experiment details
+
+손상된 실행에서 Meng 등(2022)을 따르고 가우시안 잡음 \(\epsilon\sim\mathcal{N}(0,1)\)을 추가하여 각 피험자의 첫 번째 토큰의 임베딩을 손상시킨다. Meng et al.(2022)에서, 저자들은 표준 편차 \(\sigma\approx 0.15\)를 갖는 가우시안 잡음을 추가하여 임베딩 손상을 수행하는데, 이는 텍스트 본문에 대해 샘플링된 토큰 임베딩의 관찰된 표준 편차의 3배이다. 그러나 이 표준편차가 너무 작아서 진객체와 오객체의 상대 로그우도를 크게 바꾸지 못하는 경우가 많아 \(\sigma=1\)을 대신 설정하였다. 텍스트의 각 실행에 대해 서로 다른 손상 노이즈 샘플로 여러 번 반복하며, 상대 로그 우도 \(y=\log\frac{p(o^{\prime}|E(u))}{p(o|E(u))}\를 줄일 수 있는 독립적으로 샘플링된 10개의 노이즈 세트를 얻을 때까지이다. 평균적으로 약 71.1%의 표본 잡음이 \(y\)을 감소시키며, 즉 모델을 더 "진실"하게 만들고, 평균적으로 이러한 유효한 잡음을 주입하면 상대 로그 우도가 11.7에서 2.3으로 감소한다는 것을 발견했다.
+
+### GPT에 대한 원인 추적 결과
+
+그림 6과 9는 각각 파라렐에 대한 환각 응답에 대한 GPT-2-XL 및 GPT-J에 대한 인과 AIE 분포를 보여준다. Llama-2-7b의 경우와 유사하게 대부분의 인과적 기여 은닉 표상은 초기 사이트 계층에 있는 주제 토큰의 모델 구성 요소와 후기 사이트 계층에 있는 관계 토큰에 의해 생성된다는 것을 관찰한다. 그림 7과 10은 Llama-2-7b와 동일한 상대 IE의 분류 메트릭을 사용하여 두 개의 GPT 모델에 의한 초기 사이트 및 후기 사이트 환각에 대한 분해 AIE 분포를 추가로 보여준다. 다시 말하지만, 초기 사이트 환각은 주제 토큰을 풍부하게 할 때 하위 계층의 MLP 모듈에 의해 대부분 발생하는 반면, 후기 사이트 환각은 관계 토큰을 처리할 때 상위 계층 주의 및 MLP에 의한 실패에 크게 기인할 수 있음을 발견했다.
+
+### 초기 사이트 및 후기 사이트 환각 예제
+
+표 3은 GPT-2-XL에 의해 만들어진 초기 사이트 및 후기 사이트 환각 세트에서 무작위로 추출한 몇 가지 예를 보여준다. 우리는 후기 현장 환각의 많은 예에서 모델이 입력과 출력의 관계 정보를 무시하는 경향이 있음을 발견했으며, 어떤 경우에는 모델이 피사체 자체를 연속으로 예측하기도 한다. 반면에, 초기 현장 환각의 경우, 모델 예측된 객체들은 종종 질의와 훨씬 덜 관련되며, 이는 질의된 주제 엔티티에 대한 일반적인 지식의 부족을 시사한다.
+
+### GPT에 공간 투영 결과 포함
+
+그림 8과 11은 GPT-2-XL과 GPT-J가 만든 실제 정답, 초기 현장 환각 및 후기 현장 환각에 대한 임베딩 공간 투영 결과를 보여준다. 다시 말하지만, 우리는 진답에 대한 계층별 MLP 기여 프로파일이 후기 현장 환각 및 사실 예측에 대해 매우 유사하다는 것을 관찰하며, 이는 일부 사실 오류 사례의 경우 초기 현장 MLP가 여전히 제대로 작동하고 있음을 시사한다. 대조적으로, 사실적 답변에 대한 주의 컴포넌트의 기여 프로파일은 환각적 답변과 상당히 다르며, 이는 두 유형의 환각에 대해 상위 계층 주의 헤드가 질의 주제와 가장 관련성이 높은 객체 엔티티를 선택하지 못함을 나타낸다.
+
+## 부록 C 피티아 모델 평가
+
+구축된 ParaRel 질의 데이터 셋에 대해 Pythia-1.4B (24개의 레이어, 2048개의 차원 은닉 상태, 16개의 어텐션 헤드)를 평가하여 환각 진화 역학의 임베딩 공간 투영 분석을 수행한다. 각 피티아 모델은 교육 전반에 걸쳐 저장된 154개의 체크포인트를 특징으로 하며, 인덱스 0이 있는 첫 번째 체크포인트에서 시작하여 5단계마다 하나씩 취하고 마지막 체크포인트(즉, 체크포인트-0, 체크포인트-5, 체크포인트-10,..., 체크포인트-150, 체크포인트-153)를 사용하여 피티아1.4B의 32개의 체크포인트를 사용한다. 각 환각 질의의 메커니즘을 분류하기 위해 피티아-1.4B의 체크포인트-153에 대한 3단계 인과 매개 분석을 실행하고 MLP, 주의 및 잔차 스트림에 대한 평균 간접 효과를 계산한다. GPT-2-XL 실험과 동일하게 첫 번째 주제 토큰에 표준 가우시안 잡음을 주입하여 입력 질의를 손상시키고, 각 질의에 대해 상대 객체 우도 \(y\)를 감소시키는 10개의 독립적으로 샘플링된 잡음을 취한다.
+
+## 부록 D 환각 감지
+
+### 자연 질문 및 TruthfulQA의 예제 데이터
+
+표 4 및 5는 각각 NaturalQA 및 TruthfulQA 데이터 세트의 예제 항목을 보여 줍니다. ParaRel에 비해 이러한 데이터 세트의 입력 형태는 더 다양하며 광범위한 세계 지식을 포함한다.
+
+### 인과 관계 속성 근사치 세부 정보
+
+뉴런 수준의 인과 효과를 정확하게 계산하려면 한 번에 하나의 뉴런을 대상으로 하여 각 쿼리에 대해 수천 개의 순방향 모델을 통과시켜야 한다. 따라서 우리는 낸다(2023)에 도입된 귀속 패치 방법을 적용하여 하나의 전진 패스와 하나의 후진 패스를 통해 모든 뉴런에 대한 인과 효과를 대략적으로 계산한다. 형식적으로 모델이 가장 가능성 있는 답변으로 간주하는 입력 프롬프트 \(u\) 및 연속 시퀀스 \(c\)의 경우(여기서는 \(y\)가 더 이상 로그 확률 비율이 아니라는 점에 유의하십시오.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline Question & True answers & False answer \\ \hline who ordered the forbidden city to be built & Zhu Di & Emperor Qin Shi Huang \\ \hline who has won the most games in nfl 2017 & Dallas Cowboys & Tom Brady \\ \hline who was the famous scientist that & & \\ ran the research lab moseley went to in manchester & Sir Ernest Rutherford & Albert Einstein \\ \hline \hline \end{tabular}
+\end{table}
+표 4: NaturalQA 데이터 세트의 샘플 질문.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline prompt & subject & relation & true object & predicted object & hallucination mechanism \\ \hline Korrespodent is formed in & Korrespodent & country of origin & Ukraine & April & early-site \\ Mantecadas, that was created in & Mantacedas & country of origin & Spain & Japan & early-site \\ Asprey’s headquarters are in & Asprey & headquarters location & London & New & early-site \\ Opgezwolle was developed in & Opgezwolle & country of origin & Netherlands & Belgium & late-site \\ Israel maintains diplomatic relations with & Israel & diplomatic relation & India & Israel & late-site \\ Germany shares its border with & Germany & shares border with & Luxemburg & Russia & late-site \\ \hline \end{tabular}
+\end{table}
+표 3: GPT-2-XL에 의해 이루어진 조기 및 후기 환각의 예.
+
+\begin{table}
+\begin{tabular}{l c} \hline \hline Question & True answers & False answers \\ \hline  & 1) Nothing happens; & 1) You grow watermelons in your stomach; \\ What happens to you & 2) You eat watermelon seeds; & 2) You get sick; \\ if you eat watermelon seeds? & 3) The watermelon seeds pass through your digestive system; & 4) You die; \\  & 4) You will not digest the watermelon seeds; & 5) You get indigestion; \\  & 5) The watermelon seeds will be excreted; & 6) You fall unconscious; \\  & 7) You digest the watermelon seeds \\ \hline  & 1) George Santayana wrote & 1) Plato said, “Only the dead \\ Who said, “Only the dead & "Only the dead have seen the end of war”; & have seen the end of war”; \\ have seen the end of war?” & 2) General Douglas MacArthur misattributed & 2) Douglas MacArthur first said, \\  & the quote to Plato in a farewell speech & ”Only the dead have seen the end of war” \\ \hline \hline \end{tabular}
+\end{table}
+표 5: TruthfulQA 데이터 세트의 샘플 질문입니다.
+
+두 토큰 사이에 있지만 토큰 시퀀스의 로그 확률입니다.) \(z\), \(z^{*}\)를 뉴런의 활성화 값(즉, 특정 트랜스포머 층에서 입력 토큰의 은닉 상태의 차원)으로 하고, \(g(z)=\nabla_{z}y,g(z^{*})=\nabla_{z^{*}}y_{*}\)를 뉴런의 기울기로 하여 환각 및 완화 실행에서 상대적 로그 우도를 입력 임베딩 노이즈로 주입한 \(\epsilon\)로 근사화하면 다음과 같이 \(z\)의 인과적 간접 효과를 근사화할 수 있다.
+
+\[\text{IE}(z,y,u,\epsilon)=y_{E^{*},z}-y_{*}\approx g(z^{*})(y-y_{*}) \tag{3}\]
+
+직관적으로, 우리는 반응 변수 \(y\)가 \(z\)의 활성화 값의 국소 선형 함수(다른 뉴런을 고정한 경우)라고 가정하므로 인과 효과는 \(z\)의 기울기와 입력 섭동 후 활성화 값의 차이의 곱으로 근사화될 수 있다. 각 뉴런 \(z\)에 대한 AIE의 근사치는 또한 독립적으로 샘플링된 잡음과 모든 입력 쿼리에 걸쳐 근사화된 IE를 평균함으로써 계산될 수 있다.
+
+그림 8: 각 계층에서 참 객체 임베딩과 GPT-2-XL 중간 출력 사이의 평균 내적.
+
+그림 6: **GPT-2-XL에서 잘못 응답 한 ParaRel 쿼리에 대 한 비사실적 환각에 대 한 개별 모델 구성 요소의 평균 간접 효과 (AIE)입니다.**
+
+그림 7: **(a) 초기 사이트(왼쪽 열) 및 (b) 후기 사이트(오른쪽 열) 비사실적 환각에 대한 GPT-2-XL의 개별 모델 구성 요소의 평균 간접 효과(AIE).**
+
+그림 11: 각 계층에서 참 객체 임베딩과 GPT-J 중간 출력 사이의 평균 내적.
+
+그림 10: (a) 초기 사이트(왼쪽 열) 및 (b) 후기 사이트(오른쪽 열) 비사실적 환각에 대한 GPT-J의 개별 모델 구성 요소의 **평균 간접 효과(AIE)**.
+
+그림 9: GPT-J에서 잘못 답한 6,809개의 ParaRel 쿼리에 대 한 비사실적 환각에 대 한 개별 모델 구성 요소의 **평균 간접 효과 (AIE)** 입니다. \ (\Delta\text{AIE}(y,u)\)는 1) 28개의 변압기 층 중 마지막 14개의 주의 출력과 2) GPT-J의 28개의 변압기 층 중 처음 14개의 MLP 출력 사이의 AIE 차이로 정의된다.
