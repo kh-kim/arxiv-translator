@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Fabrics : Evaluating faithfulness and content selection in book-length summarization\n' +
+      '\n' +
+      'Yekyung Kim\\({}^{\\circledS}\\), Yapei Chang\\({}^{\\circledS}\\), Marzena Karpinska\\({}^{\\circledS}\\), Aparna Garimella\\({}^{\\circledS}\\),\n' +
+      '\n' +
+      '**Varun Manjunatha\\({}^{\\circledS}\\), Kyle Lo\\({}^{\\circledS}\\), Tanya Goyal\\({}^{\\circledS}\\), Mohit Iyyer\\({}^{\\circledS}\\)**\n' +
+      '\n' +
+      'UMass Amherst\\({}^{\\circledS}\\), Adobe\\({}^{\\circledS}\\), Allen Institute for AI\\({}^{\\circledS}\\), Princeton\\({}^{\\circledS}\\)\n' +
+      '\n' +
+      '{yekyungkim, yapeichang, mkarpinska, miyyer}@umass.edu\n' +
+      '\n' +
+      '{garimell, vmanjuna}@adobe.com, kylel@allenai.org, tanyagoyal@princeton.edu\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'While long-context large language models (LLMs) can technically summarize book-length documents (\\(>\\) 100K tokens), the length and complexity of the documents have so far prohibited evaluations of input-dependent aspects like faithfulness. In this paper, we conduct the first large-scale human evaluation of faithfulness and content selection on LLM-generated summaries of fictional books. Our study mitigates the issue of data contamination by focusing on summaries of books published in 2023 or 2024, and we hire annotators who have fully read each book prior to the annotation task to minimize cost and cognitive burden. We collect Fables, a dataset of annotations on 3,158 claims made in LLM-generated summaries of 26 books, at a cost of $5.2K USD, which allows us to rank LLM summarizers based on faithfulness: Claude-3-Opus significantly outperforms all closed-source LLMs, while the open-source Mktral is on par with GPT-3.5-Turbo. An analysis of the annotations reveals that most unfaithful claims relate to events and character states, and they generally require indirect reasoning over the narrative to invalidate. While LLM-based auto-raters have proven reliable for factuality and coherence in other settings, we implement several LLM raters of faithfulness and find that none correlates strongly with human annotations, especially with regard to detecting unfaithful claims. Our experiments suggest that detecting unfaithful claims is an important future direction not only for summarization evaluation but also as a testbed for long-context understanding. Finally, we move beyond faithfulness by exploring content selection errors in book-length summarization: we develop a typology of omission errors related to crucial narrative elements and also identify a systematic over-emphasis on events occurring towards the end of the book. We release Fables to spur further research on the evaluation of book-length summarization.\n' +
+      '\n' +
+      '[https://github.com/mungg/FABLES](https://github.com/mungg/FABLES)\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Advances in long-context language models have sparked interest in summarizing book-length documents (\\(>\\)100K tokens). Despite the importance of faithfulness and content relevance for summary quality, recent work in this regime focuses only on input-agnostic aspects like coherence (Chang et al., 2023b). This is due to the length and complexity of the input documents: hiring human annotators to read and understand them is expensive and time-consuming. Our work fills this gap by presenting the first large-scale human evaluation of faithfulness and other content selection errors in book-length summarization.\n' +
+      '\n' +
+      'We mitigate challenges associated with document complexity by hiring workers who have already read a book published in 2023 or 2024 (to avoid data contamination) for enjoyment prior to beginning the annotation task. We produce summaries for these books via fiveconfigurations of the hierarchical summarization methodology described in Chang et al. (2023b), each of which varies the base LLM and chunk size. Following prior work on faithfulness and factuality evaluation, such as LongEval (Krishna et al., 2023) and FactScore (Min et al., 2023), we decompose each summary into a list of claims which are then individually verified against the input document.\n' +
+      '\n' +
+      'In total, our Tables dataset (Faithfulness Annotations for Book-Length Summarization) contains **3,158** claim-level annotations of faithfulness across **26** narrative texts, along with evidence for each claim in the form of quotations from the book as well as free-form comments at both the claim and summary level (Figure 1).1 Overall, we observe that Claude-3-Opus is the most faithful book-length summarizer by a significant margin, followed by GPT-4-Turbo. Beyond ranking LLMs, our annotations also shed light on the following previously unexplored questions:\n' +
+      '\n' +
+      'Footnote 1: We publicly release all summaries and corresponding annotations. Although we cannot release the full text of the books, we will also provide links to purchase each of the 26 books for reproducibility.\n' +
+      '\n' +
+      '**What kinds of faithfulness errors do LLM summarizers make? (SS3)** A qualitative analysis of Tables reveals that the majority of claims marked as unfaithful are related to _events_ or _states_ of characters and relationships. Furthermore, most of these claims can only be invalidated via multi-hop reasoning over the evidence, highlighting the task\'s complexity and its difference from existing fact-verification settings (Min et al., 2023; Kamoi et al., 2023).\n' +
+      '\n' +
+      '**Can faithfulness be evaluated automatically? (SS4)** Collecting human annotations on 26 books cost us **SS5.2K**, demonstrating the difficulty of scaling our workflow to new domains and datasets. We thus implement multiple LLM-based raters of faithfulness, following prior work such as BooookScore (Chang et al., 2023b) and FactScore (Min et al., 2023) that achieve high correlation with human judgments. However, all of our metric configurations struggle to reliably identify unfaithful claims. Our best-performing method operates similarly to "needle-in-the-haystack"-style evaluations (Kamradt, 2023; Gemini Team, 2024) by feeding as much of the book as possible into a long-context LLM along with a single claim to verify. We promote this claim-level verification task as both important for book-length summarization evaluation as well as a challenging benchmark for long-context understanding.\n' +
+      '\n' +
+      '**What other errors, beyond faithfulness, do LLM summarizers make? (SS5)** By coding all of the summary-level free-form comments in Tables, we find that annotators frequently point out _omissions_ of critical information. We develop the first taxonomy of omission errors in book-length summarization and observe that key events, details, and themes are frequently omitted by all LLMs. We also observe other content selection errors: for example, even our strongest summarizers, Claude-3-Opus and GPT-4-Turbo, over-emphasize content towards the end of books to the detriment of the beginning.\n' +
+      '\n' +
+      'All prompts used in this paper can be found in SSB.\n' +
+      '\n' +
+      'Figure 1: Our pipeline for collecting faithfulness annotations in book-length summarization (Tables). First, (a) we generate summaries through hierarchical merging. Next, (b) we prompt GPT-4 to extract decontextualized claims. Finally, (c) we conduct a human evaluation of these claims, requiring annotators to validate each claim and provide their reasoning and evidence for the assigned label.\n' +
+      '\n' +
+      '## 2 Collecting human annotations\n' +
+      '\n' +
+      'In this section, we describe our pipeline for collecting Fables, which consists of human annotations of both faithfulness and overall quality of LLM-generated book summaries.\n' +
+      '\n' +
+      'Collecting a corpus of newly-published fictional books:It is infeasible, both in terms of cost and time, to ask annotators to read long books (\\(\\geq 100K\\) tokens) for the sole purpose of annotating LLM-generated summaries. While we can remove this burden by choosing famous books that many people have already read, such as those in BookSum (Kryscinski et al., 2022), LLMs have also likely seen these books and their summaries during pretraining (Chang et al., 2023a), which can skew the evaluation of generated claims. Instead, we use an annotator-driven workflow to sidestep these issues. We recruit a pool of annotators via Upwork2 who self-report having read one or more English books published in 2023 or 2024. Our final annotator pool consists of **14** native English speakers, and we purchase electronic copies of 26 books listed by them.3 The mean length of books in our dataset is **121K** tokens (see Table 1 for statistics).\n' +
+      '\n' +
+      'Footnote 2: [https://www.upwork.com](https://www.upwork.com)\n' +
+      '\n' +
+      'Footnote 3: We convert epubs to text files preserving all information including front and back matter.\n' +
+      '\n' +
+      'Prompting LLMs to generate book summaries:To summarize book-length documents, we adopt the hierarchical merging strategy from (Chang et al., 2023b); see Figure 1 for an illustration of the method. We use GPT-3.5-Turbo, GPT-4, GPT-4-Turbo (OpenAI, 2023), Mixtral (Jiang et al., 2024), and Claude-3-Opus (Anthropic, 2023) as the backbone models.4\n' +
+      '\n' +
+      'Footnote 4: All summaries were generated in February 2024 using the following checkpoints: gpt-3.5-turbo, gpt-4-0613, gpt-4-0125-preview,Mixtral-8x7B-Instruct-v0.1, and Claude-3-opus-20240229.\n' +
+      '\n' +
+      'Decomposing summaries into claims:Following prior works on evaluating long-form summary faithfulness (Krishna et al., 2023; Min et al., 2023; Wei et al., 2024), we decompose our summaries into _atomic claims_ to enable fine-grained annotation. We prompt an LLM (GPT-4) with two primary instructions: (1) each atomic claim must be fully understandable on its own without requiring additional context from the summary (e.g., resolved pronouns), and (2) whenever possible, each claim should be situated within its relevant temporal, locational, and causal context. Human validation by the authors of a random sample of 100 extracted claims demonstrated 100% precision (i.e., each claim can be traced to the summary without any extra or incorrect information). See Figure 2 for example of summary and its extracted claims; see SB for exact prompt.\n' +
+      '\n' +
+      'Collecting human annotations:The Upwork annotators were tasked with two primary objectives:\n' +
+      '\n' +
+      '* accurate reflection of the narrative, (b) _unfaithful_\n' +
+      '- misrepresentation of the narrative, (c) _partial support_\n' +
+      '- partially corroborated by\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline  & \\multicolumn{3}{c}{**Books \\(\\overline{\\approx}\\)**} & \\multicolumn{3}{c}{**Annotations \\(\\overline{\\not}\\)**} \\\\ \\cline{2-7}  & **Documents** _(n=26)_ & _Summaries_ _(n=130)_ & _Claims_ _(n=3,158)_ & _Reasons_ _(n=1,513)_ & _Evidence_ _(n=3,051)_ & _Comments_ _(n=130)_ \\\\ \\hline Mean & 121,467 & 594.3 & 19.8 & 37.6 & 194.7 & 155 \\\\ St. dev. & 35,836 & 119.5 & 6.4 & 33.4 & 218.5 & 148.4 \\\\ Max & 243,965 & 798 & 58 & 281 & 2435 & 823 \\\\ Min & 49,762 & 172 & 6 & 2 & 5 & 6 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Number of tokens across books and Fables annotations; based on tiktoken ([https://github.com/openai/tiktoken](https://github.com/openai/tiktoken)) tokenizer.\n' +
+      '\n' +
+      'the narrative, or (d) _can\'t verify_ - indeterminable. They provided free-form textual justifications to support their selections, including _evidence_ in the form of quotations from the book when relevant.\n' +
+      '* **Summary-level:** Provide free-form summary-level comments on the overall quality of the summaries. Annotators critiqued the claim set as a whole, identifying omissions, inaccuracies, disproportionate emphasis on trivial plot points, or other concerns.\n' +
+      '\n' +
+      'The annotators used a customized interface,5 which provided them full access to the book text for reference. Each annotator was assigned to annotate all five LLM-generated summaries for their assigned book, which were presented in a randomized order. Annotators received $200 for this task, which took \\(\\sim\\)11 hours to complete (STD=6.34). In total, Fables contains 3,158 annotated claims from 130 summaries across 26 books at a cost of $5.2K USD.\n' +
+      '\n' +
+      'Footnote 5: Refer to SC for the screenshots of the interface and the exact wording of the task.\n' +
+      '\n' +
+      '## 3 Developing a taxonomy of faithfulness errors in Fables\n' +
+      '\n' +
+      'In this section, we present results from our statistical and qualitative analysis of the 3,158 claim-level faithfulness annotations in Fables, which include both free-form comments and citation evidence to support or refute these claims.6 Broadly, we observe that Claude-3-Opus is the most faithful LLM summarizer, with 90% of its claims rated as faithful, followed by GPT-4 and GPT-4-Turbo at 78%, GPT-3.5-Turbo at 72%, and Mixtral at 70% (Table 2).\n' +
+      '\n' +
+      'Footnote 6: For 107 claims, the annotators were unable to cite evidence either in favor or against the claim.\n' +
+      '\n' +
+      'Analysis of unfaithful claims:To further study the nature of unfaithful claims, we characterize all 205 such claims along two dimensions: claim type and reasoning type (see\n' +
+      '\n' +
+      'Figure 2: Example summary generated by Claude-3-Opus and claims extracted by GPT-4.\n' +
+      '\n' +
+      'Table 3 for taxonomy and frequency counts).8 Most unfaithful claims are about specific _events_ (31.5%) or the _state_ of some character or relationship (38.6%). Crucially, a majority of unfaithful claims require _indirect reasoning_ to refute (50.2%), making this a more challenging faithfulness evaluation setting compared to prior work (Kamoi et al., 2023; Min et al., 2023). More details on this analysis can be found in SSD.\n' +
+      '\n' +
+      'Footnote 8: There are actually 247 annotations with unfaithful claims, but for this analysis we leave out 42 unclear ones that require further clarification from the annotators. Note that since the claims sometimes contain multiple subclaims, we allow each annotation to have multiple labels.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l|l l l l} \\hline \\hline\n' +
+      '**Model** & **Chunk size** & **Avg \\# Claims\\({}_{\\text{STD}}\\)** & **Faithful** & **Unfaithful** & **Partial support** & **Can’t verify** \\\\ \\hline GPT-3.5-Tuero & 2,0487  & 23.00,14 & 72.07 & 10.52 & 13.01 & 4.41 \\\\ Mvital & 2,048 & 26.92,485 & 70.04 & 10.46 & 16.72 & 2.78 \\\\ GPT-4 & 2,048 & 26.36,355 & 78.55 & 4.54 & 15.53 & 1.38 \\\\ GPT-4-Urro & 100,000 & 21.68,240 & 78.16 & 7.62 & 11.41 & 2.82 \\\\ Claude-3-Opus & 180,000 & 23.32,434 & 90.66 & 2.03 & 7.06 & 0.26 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Percentage of claims extracted from LLM-generated summaries rated by humans as _faithful_, _unfaithful_, _partial support_ or _can’t verify_. Chunk size denotes the token count per chunk used for summarization across models; we also include the mean and standard deviation of claim counts in generated summaries.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l} \\hline \\hline Label & Freq & Example claim & Reason for rejection \\\\ \\hline \\hline \\multicolumn{5}{l}{**Claim Type**} \\\\ \\hline State & 38.6 & _Roman Kitt is under pressure from his father to join the family business._ & Roman is not under pressure, his father bribes people so he gets his dream job. \\\\ \\hline Event & 31.5 & _Patricia Liu, Athan’s mother, discovers that June has sold Athan’s manuscript and confronts her._ & Patricia never confronts June. \\\\ \\hline Cause/effect & 11.2 & _Lilly ausive ex-louffrani, Alan Bushy, becomes a suspect due to the practitioners nature of the murders._ & He becomes a suspect because he was abusive to Lilly. \\\\ \\hline High-level & 11.2 & _The narrative is non-linear and features flashbacks, switches between alternate worlds or viewpoints, and present-day conversations between Sally and Danny._ & The narrative is largely linear. \\\\ \\hline Introspection & 7.5 & _Juniper Song encounters Athan Liu at a literary event, triggering feelings of admiration, intimidation, and self-deatht._ & No part of the book shows that Juniper admires Athena. \\\\ \\hline Indirect & 50.2 & _Dean stirs up tensions with palacar server Faun._ & This encounter is merely Rennick being protective of Amedia, tension can’t be inferred from the book. \\\\ \\hline Direct & 36.8 & _The narrative reveals that Maggio had a brief affair with a doctor named Danny in Bangkuk while she was being followed by unknown entities._ & The book directly states that they are married, so it’s not a brief affair. \\\\ \\hline Subjective & 7.2 & _Forest is torn between his desire to protect Iris and confronting his past actions._ & I don’t think Forest makes any real effort to confront his past actions \\\\ \\hline Extra info & 5.7 & _The book “Wildfuse” is the first in the lectureker series._ & It’s not stated in the book, but this is actually the second in the series. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: Taxonomy of faithfulness errors with respect to claim type and reasoning type in Tables. For each label, we report its _frequency_ and provide an _example_ claim-reason pair. More examples and the general labeling scheme can be found in Table 15.\n' +
+      '\n' +
+      'Challenges with automatic faithfulness evaluation\n' +
+      '\n' +
+      'While insightful, human annotation of faithfulness in book-length summarization is simply not scalable: our annotations cost $40 USD per summary for a total cost of $5.2K USD, which is prohibitively expensive for usage during model development and with bigger corpora. In this section, inspired by methods such as FactScore (Min et al., 2023) and BooookScore (Chang et al., 2023b), we develop LLM-powered automatic raters of faithfulness that operate at the claim level. However, our best method, which relies on prompting Claude-3-Opus with the entire book to verify a single claim, is expensive and unreliable at detecting unfaithful claims in Tables, suggesting important directions for future work.\n' +
+      '\n' +
+      'Automatic raters of faithfulness:We implement our automatic raters by prompting an LLM in a zero-shot manner to verify a single claim given evidence from the book (Table 13), where the evidence can be one of the following:\n' +
+      '\n' +
+      '* **None**: As a lower bound, we evaluate the faithfulness of claims without any evidence from the book.\n' +
+      '* **Human evidence**: We can also use human-annotated evidence from Fables obtained via the pipeline described in SS2. This evidence is always related to the claim, but it often takes the form of short, highly-contextual spans that may or may not be sufficient to support claim verification.\n' +
+      '* **BM25 retrieval**: We employ BM25 (Robertson et al., 1995) to retrieve passages from the book using the claim as a query. We concatenate the \\(k\\) most relevant passages to use as evidence for our evaluation prompt. We set \\(k=5\\) and chunk passages up to 256 tokens. See SS4 for performance changes when varying passage length.\n' +
+      '* **Entire book (EB)**: Retrieval is especially challenging in our setting due to the complexity of both the query and document. Intuitively, long-context LLMs can bypass explicit retrieval by simply fitting the entire book into the context as evidence. This setting resembles "needle-in-the-haystack" evaluations of prior work (Kamradt, 2023; Levy et al., 2024), except that it tests a much deeper understanding of the input document.\n' +
+      '\n' +
+      'Dataset for experiments:Due to budget constraints associated with the "entire book" setting, we select seven books, each shorter than 125K tokens, to evaluate the performance of our auto-rater configurations. This results in 723 total claims, 69 of which are marked as _Unt faithful_ and 654 as _Faithful_ by our human annotators. Note that we do not consider partially supported or unverifiable claims in our experiments due to the increased subjectivity associated with these labels. Detailed information regarding this dataset and experiment costs can be found in SF.\n' +
+      '\n' +
+      'Results:We evaluate the performance of each auto-rater configuration by comparing its predictions to the ground-truth labels (_Faithful_ and _Unt faithful_) from our human annotations. Due to the class imbalance, we report separate F1 scores for each label, split across claims generated by different LLMs, in Table 5.9 As a sanity check, the "no evidence" setting performs extremely poorly; more interestingly, human evidence underperforms both retrieval and the entire book setting, suggesting that the LLM requires more context to judge claim validity. The best performing auto-rater is Claude-3-Opus in the entire book setting, which significantly outperforms both GPT-4-Turbo in the same setting as well as BM25.\n' +
+      '\n' +
+      'Footnote 9: We note that scores for _Unt faithful_ claims on a per-model level should be taken with a grain of salt due to the small sample size, particularly for Claude-3-Opus summaries.\n' +
+      '\n' +
+      'Conclusion:Despite it having the best performance in Table 5, Claude-3-Opus ultimately performs too poorly to be a reliable auto-rater (47.5 F1 when classifying _Unt faithful_ claims). This comes as a surprise as this pattern of decompose-then-verify has been shown to correlate with human judgments in other settings, like Min et al. (2023). Manual analysis of the errors reveals that Claude-3-Opus struggles most with claims involving non-narrative information (23.1%), assessments often based on common sense reasoning (20.5%), and character confusions (12.8%), which often require a deep understanding of the entire book; see confusion matrix in Figure 10 and examples in Figure 3. Qualitatively, we can also gauge from annotator comments (Table 4) the difficulty of this claim verification task as evidence may be difficult to localize (in "needle-in-the-haystack" manner) and require full document reasoning.\n' +
+      '\n' +
+      '**Discussion:** It is generally agreed that benchmarking the faithfulness of LLM-generated text is important. However, recent efforts have primarily focused on verifying entity-centric facts (Min et al., 2023). Our work, and others (Zhu et al., 2023; Tang et al., 2024; Mishra et al., 2024), show that these do not provide coverage over all types of LLM errors, especially in more challenging settings like book summarization. Moreover, the retrieve-then-verify framework that forms the backbone of most past evaluation techniques (Bohnet et al., 2022;\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{34.1pt} p{34.1pt}} \\hline \\hline  & Comments \\\\ \\hline \\(\\heartsuit\\) & _The hardest part was that some of the claims were very general about the text, such as describing overall character arcs, which made it hard to find specific textual support._ \\\\ \\(\\heartsuit\\) & _The most difficult part for me was how general some of the sentences were. Because the material was so broad, I felt that I could use 20 or 30 quatations. For example, this book is about many stories of a private investigator in Africa (not exactly what it said, but close). I could recite the entire book._ \\\\ \\(\\heartsuit\\) & _The most difficult part for me was finding supporting quatations for claims that were more abstract (e.g. "The book grapples with the scars of colonialism."). Although I was able to tell right away whether the claim was true or false, based on my own reading, it was at times difficult to find a specific quotation that best proved the claim. The themes were more often implicit in the text, rather than explicit._ \\\\ \\(\\heartsuit\\) & _The most difficult part was to give citations for claims about writing style and intent. The reason was that these claims are usually based on the book as a whole, so an accurate citation would be the whole book._ \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: Annotator comments highlighting the challenges in evidence retrieval.\n' +
+      '\n' +
+      'Figure 3: Examples of mistakes in label prediction made by Claude-3-Opus and GPT-4-Turbo accompanied by annotator labels and reasoning. More examples can be found in Figure 11.\n' +
+      '\n' +
+      'Gao et al., 2023) completely fails for our significantly more challenging setting. Given this evidence, we call for broadening the scope of error types and task settings (including our current task of book-length summarization) considered by current faithfulness evaluation benchmarks.\n' +
+      '\n' +
+      '## 5 Beyond faithfulness: content selection errors in book summarization\n' +
+      '\n' +
+      'As book-length summarization is still a nascent area, research into other error types beyond coherence (Chang et al., 2023b) and faithfulness (SS3) is still lacking. In this section, we perform qualitative coding over all _130_ free-form, summary-level comments from Fables and present a taxonomy of content selection errors (e.g., omissions) that may prove more difficult to detect than faithfulness.10\n' +
+      '\n' +
+      'Footnote 10: Details of the annotation scheme used to analyze the comments are in Table 21 in the SE\n' +
+      '\n' +
+      'General issues with LLM-generated summaries:Table 6 summarizes the percentage of summaries affected by specific issues as per annotators\' comments.11 Our analysis shows that every LLM makes chronological errors, though these were less pronounced in models with extended context (Claude-3-Opus and GPT-4-Turbo). All models were also criticized for omitting important information, with Claude-3-Opus being the least affected (52%), compared to 80.8% and 84.6% for GPT-4-Turbo and GPT-3.5-Turbo, respectively. The least faithful models, GPT-3.5-Turbo and Mlxtral, also both have a tendency to generate overly generic statements (38.5%). Finally, we look also at cases where the summary was explicitly praised for being good or comprehensive. Claude-3-Opus received the most praise (48% and 54% respectively), while GPT-3.5-Turbo received the least (11.5% and 15.4% respectively).\n' +
+      '\n' +
+      'Exploring omission errors:As mentioned above, omission of key information plagues all LLM summarizers. To better understand the nature of the omission errors identified by our annotators, we categorize them into the following categories: _characters_, _events_, _details_, _relationships_, _themes_.12 Figure 4 shows a heatmap of omission errors broken down by model. A large proportion of summaries (33.3% to 65.4%) lack mentions of key events, creating gaps in the overall narrative, and we also note omissions of significant details about the characters, events, or objects (16.7% to 38.5%). Furthermore, GPT-4-Turbo and Mlxtral have a tendency to entirely omit mentions of crucial characters (23.1%).\n' +
+      '\n' +
+      'Footnote 11: In two cases, Claude-3-Opus refused to merge two summaries, as they were affected by the extra information available in the front and back matter and did not constitute a logical story. We excluded these cases from this analysis.\n' +
+      '\n' +
+      'Footnote 12: Since annotators did not identify every specific omission, we focused on a binary classification: whether a summary was impacted by a given omission type, rather than counting the total number of omissions by type. See Table 22 in the SE for more details.\n' +
+      '\n' +
+      'Long-context models overemphasize book endings:One interesting observation is that Claude-3-Opus and GPT-4-Turbo, which both have chunk sizes \\(\\geq\\) 100K, tend to place more emphasis on the endings of the books to the detriment of the beginning. Since these models were often provided with the entire book context during prompting, this\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c} \\hline \\hline \\multirow{2}{*}{_Summized by_} & \\multicolumn{2}{c}{**No-Context**} & \\multicolumn{2}{c}{**Human Evidence**} & \\multicolumn{2}{c}{**BM25**} & \\multicolumn{2}{c}{**EB (GPT-4-Turbo)**} & \\multicolumn{2}{c}{**EB (Claude-3-Opus)**} \\\\ \\cline{2-11}  & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ \\\\ \\hline GPT-3.5-Turbo & 0.396 & 0.248 & 0.686 & 0.369 & 0.801 & 0.373 & 0.887 & 0.357 & 0.911 & 0.570 \\\\ METAL & 0.248 & 0.178 & 0.760 & 0.361 & 0.807 & 0.312 & 0.946 & 0.440 & 0.957 & 0.371 \\\\ GPT-4-Turbo & 0.337 & 0.146 & 0.657 & 0.229 & 0.739 & 0.162 & 0.909 & 0.220 & 0.966 & 0.494 \\\\ GPT-4-Turbo & 0.261 & 0.217 & 0.680 & 0.264 & 0.794 & 0.241 & 0.918 & 0.109 & 0.905 & 0.100 \\\\ Claude-3-Opus & 0.242 & 0.018 & 0.510 & 0.022 & 0.692 & 0.000 & 0.962 & 0.000 & 0.967 & 0.000 \\\\ \\hline Overall & 0.305 & 0.167 & 0.675 & 0.259 & 0.779 & 0.249 & 0.932 & 0.386 & **0.950** & **0.476** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: F1 scores for _Faithful_ and _Unfaithful_ label across models with evaluators on 7 books. The best results of each label are in bold. EB refers to the entire book method evaluating faithfulness from large (125k) chunks using either GPT-4-Turbo or Claude-3-Opus.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:9]\n' +
+      '\n' +
+      '2022) dataset. Closely related to our work is Chang et al. (2023), but while they focus on evaluating summary coherence (which requires only judging the model generation), we address faithfulness and content selection (which requires relating model generations back to the long source inputs).\n' +
+      '\n' +
+      'Faithfulness and content selection in summarization:Our paper builds on prior work in evaluating hallucination and inconsistency in summarization (Maynez et al., 2020; Kryscinski et al., 2020; Ladhak, 2024) which are even challenging for humans (Daume and Marcu, 2005). Pagnoni et al. (2021) introduce the FRANK dataset, where they use human annotations of generated summaries to produce a taxonomy of factual errors based on linguistic analysis, resembling the work of Goyal and Durrett (2020) and Goyal and Durrett (2021). Closest to our work, Krishna et al. (2023) perform human evaluation of faithfulness on summaries of short stories, whereas we study book-length inputs. Our exploration of omission errors is rooted in prior research on content selection (Nenkova and Passonneau, 2004; Gillick and Liu, 2010; Ladhak et al., 2020).\n' +
+      '\n' +
+      'Claim verification for evaluating summaries:Our paper also relates to prior work on claim verification, where claims are verified given reference to some knowledge source (Thorne et al., 2018; Wadden et al., 2020; Schuster et al., 2021). Min et al. (2023) propose FActScore, an LLM-based metric of factual precision in biography generation, which was expanded upon in SAFE (Wei et al., 2024). Manakul et al. (2023) propose SelfCheckGPT, which uses LLMs to evaluate the faithfulness of GPT-3 generated texts on a dataset of Wikipedia-style passages about people.\n' +
+      '\n' +
+      '## 7 Conclusion\n' +
+      '\n' +
+      'We present Tables, the first large-scale human evaluation of faithfulness and content selection in book-length summarization. By recruiting annotators who had read recently-published books for enjoyment, we collect 3,158 claim-level faithfulness annotations from LLM-generated summaries of 26 narratives. This allows us to rank LLM summarizers based on faithfulness, revealing that Claude-3-Opus is the most faithful book-length summarizer, followed by GPT-4-Turoo. Next, we experiment with using LLMs for automatic claim verification. Our results expose the limitations of both retrieval and long-context understanding: LLM auto-raters cannot reliably detect _unfaithful_ claims, even when prompted with the full book text. Our analysis shows that unfaithful claims primarily pertain to states and events, often necessitating reasoning over extended contexts, which makes them complicated to detect for both humans and machines. Finally, we move beyond faithfulness to explore and characterize common content selection errors such as omissions of key events, attributes, and characters, as well as the over-emphasis of content from the end of the book.\n' +
+      '\n' +
+      '## Ethical considerations\n' +
+      '\n' +
+      'All annotators consented to the use and publication of their annotations. The dataset excludes copyrighted texts, containing only annotations done on model-generated summary claims. Additionally, we ensured annotators received fair compensation for their contributions.\n' +
+      '\n' +
+      '## Acknowledgments\n' +
+      '\n' +
+      'We extend special gratitude to the Upwork annotators for their hard work, and to members from the UMass NLP lab for their feedback. This project was partially supported by awards IIS-2202506 and IIS-2312949 from the National Science Foundation (NSF) as well as an award from Adobe.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Anthropic (2023) Anthropic. Model Card: Claude 3. Technical report, Anthropic, 2023. URL [https://www-cdn.anthropic.com/de8bagb81c5ab7cbabf5c33b8b80fbbc618857627/Model_Card_Claude_3.pdf](https://www-cdn.anthropic.com/de8bagb81c5ab7cbabf5c33b8b80fbbc618857627/Model_Card_Claude_3.pdf). Accessed: 2024-03-25.\n' +
+      '* Bohnet et al. (2022) Bernd Bohnet, Vinh Q Tran, Pat Verga, Roee Aharoni, Daniel Andor, Livio Baldini Soares, Massimiliano Ciaramita, Jacob Eisenstein, Kuzman Ganchev, Jonathan Herzig, et al. Attributed question answering: Evaluation and modeling for attributed large language models. _arXiv preprint arXiv:2212.08037_, 2022.\n' +
+      '* Chang et al. (2023) Kent Chang, Mackenzie Cramer, Sandeep Soni, and David Bamman. Speak, memory: An archaeology of books known to ChatGPT/GPT-4. In Houda Bouamor, Juan Pino, and Kalika Bali (eds.), _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pp. 7312-7327, Singapore, December 2023a. Association for Computational Linguistics. doi: 10.18653/v1/2023.emnlp-main.453. URL [https://aclanthology.org/2023.emnlp-main.453](https://aclanthology.org/2023.emnlp-main.453).\n' +
+      '* Chang et al. (2023b) Yapei Chang, Kyle Lo, Tanya Goyal, and Mohit Iyyer. Booookscore: A systematic exploration of book-length summarization in the era of lms. _ArXiv_, abs/2310.00785, 2023b. URL [https://arxiv.org/abs/2310.00785](https://arxiv.org/abs/2310.00785).\n' +
+      '* Chen et al. (2022) Mingda Chen, Zewei Chu, Sam Wiseman, and Kevin Gimpel. Summscreen: A dataset for abstractive screenplay summarization, 2022.\n' +
+      '* Daume and Marcu (2005) Hal Daume and D. Marcu. Bayesian summarization at duc and a suggestion for extrinsic evaluation. In _Document understanding conference_, 2005/// 2005.\n' +
+      '* Gao et al. (2023) Tianyu Gao, Howard Yen, Jiatong Yu, and Danqi Chen. Enabling large language models to generate text with citations. _arXiv preprint arXiv:2305.14627_, 2023.\n' +
+      '* Team (2024) Google Gemini Team. Gemini 1.5: Unlocking multimodal understanding across millions of tokens of context, 2024.\n' +
+      '* Gillick and Liu (2010) Dan Gillick and Yang Liu. Non-expert evaluation of summarization systems is risky. In Chris Callison-Burch and Mark Dredze (eds.), _Proceedings of the NAACL HLT 2010 Workshop on Creating Speech and Language Data with Amazon\'s Mechanical Turk_, pp. 148-151, Los Angeles, June 2010. Association for Computational Linguistics. URL [https://aclanthology.org/W10-0722](https://aclanthology.org/W10-0722).\n' +
+      '* Goyal and Durrett (2020) Tanya Goyal and Greg Durrett. Evaluating factuality in generation with dependency-level entailment. In Trevor Cohn, Yulan He, and Yang Liu (eds.), _Findings of the Association for Computational Linguistics: EMNLP 2020_, pp. 3592-3603, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.findings-emnlp.322. URL [https://aclanthology.org/2020.findings-emnlp.322](https://aclanthology.org/2020.findings-emnlp.322).\n' +
+      '* Goyal and Durrett (2021) Tanya Goyal and Greg Durrett. Annotating and modeling fine-grained factuality in summarization, 2021.\n' +
+      '* Jiang et al. (2022) Albert Q. Jiang, Alexandre Sablayrolles, Antoine Roux, Arthur Mensch, Blanche Savary, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Emma Bou Hanna, Florian Bressand, Gianna Lengyel, Guillaume Bour, Guillaume Lample, Lelio Renard Lavaud, Lucile Saulnier, Marie-Anne Lachaux, Pierre Stock, Sandeep Subramanian, Sophia Yang, Szymon Antoniak, Teven Le Scao, Theophile Gervet, Thibaut Lavril, Thomas Wang, Timothee Lacroix, and William El Sayed. Mixtral of experts, 2024.\n' +
+      '* Kamoi et al. (2023) Ryo Kamoi, Tanya Goyal, Juan Diego Rodriguez, and Greg Durrett. Wice: Real-world entailment for claims in wikipedia, 2023.\n' +
+      '* Kamradt (2023) Greg Kamradt. Needle in a haystack. [https://github.com/gkamradt/LLMTest_NeedleInAHaystack](https://github.com/gkamradt/LLMTest_NeedleInAHaystack), 2023.\n' +
+      '* Kamradt et al. (2024)Kalpesh Krishna, Erin Bransom, Bailey Kuehl, Mohit Iyyer, Pradeep Dasigi, Arman Cohan, and Kyle Lo. LongEval: Guidelines for human evaluation of faithfulness in long-form summarization. In Andreas Vlachos and Isabelle Augenstein (eds.), _Proceedings of the 17th Conference of the European Chapter of the Association for Computational Linguistics_, pp. 1650-1669, Dubrovnik, Croatia, May 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.eacl-main.121. URL [https://aclanthology.org/2023.eacl-main.121](https://aclanthology.org/2023.eacl-main.121).\n' +
+      '* Kryscinski et al. (2020) Wojciech Kryscinski, Bryan McCann, Caiming Xiong, and Richard Socher. Evaluating the factual consistency of abstractive text summarization. In Bonnie Webber, Trevor Cohn, Yulan He, and Yang Liu (eds.), _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pp. 9332-9346, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.emnlp-main.750. URL [https://aclanthology.org/2020.emnlp-main.750](https://aclanthology.org/2020.emnlp-main.750).\n' +
+      '* Kryscinski et al. (2022) Wojciech Kryscinski, Nazneen Rajani, Divyansh Agarwal, Caiming Xiong, and Dragomir Radev. BOOKSUM: A collection of datasets for long-form narrative summarization. In Yoav Goldberg, Zornitsa Kozareva, and Yue Zhang (eds.), _Findings of the Association for Computational Linguistics: EMNLP 2022_, pp. 6536-6558, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.findings-emnlp.488. URL [https://aclanthology.org/2022.findings-emnlp.488](https://aclanthology.org/2022.findings-emnlp.488).\n' +
+      '* Ladhak (2024) Faisal Ladhak. Faithfulness in abstractive summarization: Progress and challenges, 2024.\n' +
+      '* Ladhak et al. (2020) Faisal Ladhak, Bryan Li, Yaser Al-Onaizan, and Kathleen McKeown. Exploring content selection in summarization of novel chapters. In Dan Jurafsky, Joyce Chai, Natalie Schluter, and Joel Tetreault (eds.), _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pp. 5043-5054, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.453. URL [https://aclanthology.org/2020.acl-main.453](https://aclanthology.org/2020.acl-main.453).\n' +
+      '* Levy et al. (2024) Mosh Levy, Alon Jacoby, and Yoav Goldberg. Same task, more tokens: the impact of input length on the reasoning performance of large language models, 2024.\n' +
+      '* Mahbub et al. (2023) Ridwan Mahbub, Ifrad Khan, Samiha Anuva, Md Shihab Shahriar, Md Tahmid Rahman Laskar, and Sabbir Ahmed. Unveiling the essence of poetry: Introducing a comprehensive dataset and benchmark for poem summarization. In Houda Bouamor, Juan Pino, and Kalika Bali (eds.), _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pp. 14878-14886, Singapore, December 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.emnlp-main.920. URL [https://aclanthology.org/2023.emnlp-main.920](https://aclanthology.org/2023.emnlp-main.920).\n' +
+      '* Manakul et al. (2023) Potsawee Manakul, Adian Liusie, and Mark JF Gales. Selfcheckgpt: Zero-resource black-box hallucination detection for generative large language models. _EMNLP_, 2023.\n' +
+      '* Maynez et al. (2020) Joshua Maynez, Shashi Narayan, Bernd Bohnet, and Ryan McDonald. On faithfulness and factuality in abstractive summarization. In Dan Jurafsky, Joyce Chai, Natalie Schluter, and Joel Tetreault (eds.), _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pp. 1906-1919, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.173. URL [https://aclanthology.org/2020.acl-main.173](https://aclanthology.org/2020.acl-main.173).\n' +
+      '* Min et al. (2023) Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Wei Koh, Mohit Iyyer, Luke Zettlemoyer, and Hannaneh Hajishirzi. Factscore: Fine-grained atomic evaluation of factual precision in long form text generation. In Houda Bouamor, Juan Pino, and Kalika Bali (eds.), _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pp. 12076-12100. Association for Computational Linguistics, 2023. URL [https://aclanthology.org/2023.emnlp-main.741](https://aclanthology.org/2023.emnlp-main.741).\n' +
+      '* Mishra et al. (2024) Abhika Mishra, Akari Asai, Vidhisha Balachandran, Yizhong Wang, Graham Neubig, Yulia Tsvetkov, and Hannaneh Hajishirzi. Fine-grained hallucination detection and editing for language models. _arXiv preprint arXiv:2401.06855_, 2024.\n' +
+      '* Mosh et al. (2020)- May 7 2004. Association for Computational Linguistics. URL [https://aclanthology.org/N04-1019](https://aclanthology.org/N04-1019).\n' +
+      '* OpenAI (2023) OpenAI. GPT-4 technical report. _CoRR_, abs/2303.08774, 2023. doi: 10.48550/ARXIV.2303.08774. URL [https://doi.org/10.48550/arXiv.2303.08774](https://doi.org/10.48550/arXiv.2303.08774).\n' +
+      '* Pagnoni et al. (2021) Artidoro Pagnoni, Vidhisha Balachandran, and Yulia Tsvetkov. Understanding factuality in abstractive summarization with FRANK: A benchmark for factuality metrics. In Kristina Toutanova, Anna Rumshisky, Luke Zettlemoyer, Dilek Hakkani-Tur, Iz Beltagy, Steven Bethard, Ryan Cotterell, Tanmoy Chakraborty, and Yichao Zhou (eds.), _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pp. 4812-4829, Online, June 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.naacl-main.383. URL [https://aclanthology.org/2021.naacl-main.383](https://aclanthology.org/2021.naacl-main.383).\n' +
+      '* Robertson et al. (1995) Stephen E. Robertson, Steve Walker, Susan Jones, Micheline M. Hancock-Beaulieu, Mike Gatford, et al. Okapi at trec-3. _NIST Special Publication SP_, 109:109, 1995.\n' +
+      '* Schuster et al. (2021) Tal Schuster, Adam Fisch, and Regina Barzilay. Get your vitamin Cl robust fact verification with contrastive evidence. In Kristina Toutanova, Anna Rumshisky, Luke Zettlemoyer, Dilek Hakkani-Tur, Iz Beltagy, Steven Bethard, Ryan Cotterell, Tanmoy Chakraborty, and Yichao Zhou (eds.), _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pp. 624-643, Online, June 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.naacl-main.52. URL [https://aclanthology.org/2021.naacl-main.52](https://aclanthology.org/2021.naacl-main.52).\n' +
+      '* Subbiah et al. (2024) Melanie Subbiah, Sean Zhang, Lydia B. Chilton, and Kathleen McKeown. Reading subtext: Evaluating large language models on short story summarization with writers, 2024.\n' +
+      '* Tang et al. (2024) Liyan Tang, Igor Shalyminov, Amy Wing-mei Wong, Jon Burnsky, Jake W Vincent, Yu\'an Yang, Siffi Singh, Song Feng, Hwanjun Song, Hang Su, et al. Tofueval: Evaluating hallucinations of llms on topic-focused dialogue summarization. _arXiv preprint arXiv:2402.13249_, 2024.\n' +
+      '* Thorne et al. (2018) James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. FEVER: a large-scale dataset for fact extraction and VERification. In Marilyn Walker, Heng Ji, and Amanda Stent (eds.), _Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers)_, pp. 809-819, New Orleans, Louisiana, June 2018. Association for Computational Linguistics. doi: 10.18653/v1/N18-1074. URL [https://aclanthology.org/N18-1074](https://aclanthology.org/N18-1074).\n' +
+      '* Wadden et al. (2020) David Wadden, Shanchuan Lin, Kyle Lo, Lucy Lu Wang, Madeleine van Zuylen, Arman Cohan, and Hannaneh Hajishirzi. Fact or fiction: Verifying scientific claims. In Bonnie Webber, Trevor Cohn, Yulan He, and Yang Liu (eds.), _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pp. 7534-7550, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.emnlp-main.609. URL [https://aclanthology.org/2020.emnlp-main.609](https://aclanthology.org/2020.emnlp-main.609).\n' +
+      '* Wang et al. (2022) Alex Wang, Richard Yuanzhe Pang, Angelica Chen, Jason Phang, and Samuel R. Bowman. SQuALITY: Building a long-document summarization dataset the hard way. In Yoav Goldberg, Zornitsa Kozareva, and Yue Zhang (eds.), _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pp. 1139-1156, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.emnlp-main.75. URL [https://aclanthology.org/2022.emnlp-main.75](https://aclanthology.org/2022.emnlp-main.75).\n' +
+      '* Wei et al. (2024) Jerry Wei, Chengrun Yang, Xinying Song, Yifeng Lu, Nathan Hu, Dustin Tran, Daiyi Peng, Ruibo Liu, Da Huang, Cosmo Du, and Quoc V. Le. Long-form factuality in large language models, 2024.\n' +
+      '* Zhang et al. (2020)\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:14]\n' +
+      '\n' +
+      'and clicking on it triggers a popup window to appear (see Figure 7). Given that completing the annotation process takes a considerable amount of time (approximately 1.5h-2.5h), we have implemented a feature that allows annotators to save their work at any point during the annotation process. Upon completing the annotations, the annotator is required to provide a comment on the overall quality of the summary claims by clicking on _general comments_ (see Figure 8).\n' +
+      '\n' +
+      'How do annotators perceive the task?Annotators highlighted several challenges in assessing the summaries, particularly when dealing with broad claims about themes rather than specific plot points, making it difficult to find relevant supporting evidence within the text. Abstract concepts, like emotions or thematic claims, posed significant obstacles, with some annotators struggling to locate quotations that precisely supported or refuted these claims. They also pointed out the difficulty of evaluating claims that were only partially true, which required more detailed support (see Table 4 for actual comments).\n' +
+      '\n' +
+      'Collected AnnotationsWe collected annotations for a total of 3,158 claims across 26 books. Table 14 shows the distribution of collected labels distribution of collected labels broken down by claim source (i.e., the model that generated the claim).\n' +
+      '\n' +
+      '## Appendix D Analysis of Faithfulness Annotations\n' +
+      '\n' +
+      'In this section, we provide additional details on our analysis of faithfulness annotations involving unfaithful claims. Refer to Table 15 for our general labeling scheme and examples for each category. Table 17 shows the reasoning type distribution for each claim type.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l} \\hline \\hline Title & Author & Gender & Genre & Length & Publication & Lang \\\\ \\hline _A Haunting on the Hill_ & Elizabeth Hand & F & horror, Gothic & 117,577 & Oct 3, 2023 & AmE \\\\ _Agency for Scandal_ & Laura Wood & F & historical fiction, & 116,809 & Jan 5, 2023 & BrE \\\\ _Divine Rivals_ & Rebecca Ross & F & fantasy, romance, & 137,616 & Apr 4, 2023 & AmE \\\\ _Fairytale of New York_ & Zoe Folbigg & F & romance & 134,369 & Aug 28, 2023 & BrE \\\\ _Fairless_ & Elsie Silver & F & romance & 119,580 & Jun 24, 2022 & CanE \\\\ _Fourtip Wing_ & Rebecca Yarros & F & fantasy & 243,965 & May 2, 2023 & AmE \\\\ _Modern Dietination_ & Isabel Agajanian & F & urban fantasy & 167,568 & Jan 30, 2023 & AmE \\\\ _Only for the Week_ & Natasha Bisho & F & African American & 87,056 & May 11, 2023 & AmE \\\\ _Pet_ & Catherine & F & thrilter, mystery & 124,679 & July 13, 2023 & NZE \\\\ _Romantic Comady_ & Curtis Stintenfeld & F & romance & 116,560 & Apr 4, 2023 & AmE \\\\ _Same Time Next Year_ & Tessa Bailey & F & romance & 49,762 & Dec 1, 2023 & AmE \\\\ _Sie is a Hunting_ & Trang Thanh Tran & F & romance & 106,659 & Feb 28, 2023 & AmE \\\\ _Stic Sorced Roass_ & Carissa Broadbent & F & fantasy romance & 54,841 & Mar 21, 2023 & AmE \\\\ _Sororque and Bliss_ & Meg Mason & F & mental health & 112,468 & Sep 2, 2020 & AusE \\\\ _The Menquent Murders_ & Jenifer Ruff & F & mystery, thriller & 105,493 & Apr 14, 2023 & AmE \\\\ _The Guest_ & Emma Cline & F & thriller & 89,977 & May 16, 2023 & AmE \\\\ _The Marriage Act_ & John Marrs & M & thriller, mystery, & 135,901 & Jan 19, 2023 & BrE \\\\ _The Spy Coast_ & Tess Gerritsen & F & mystery, thriller & 128,918 & Nov 1, 2023 & AmE \\\\ _The Wager_ & David Grann & M & nonfiction, & 156,022 & Apr 18, 2023 & AmE \\\\ _The White Lady_ & Jacqueline & F & historical fiction, & 126,051 & Mar 21, 2023 & BrE \\\\ _This Impressible_ & Jessica Bryant & F & mystery, fantasy & 119,115 & Feb 1, 2024 & AmE \\\\ _Brightness_ & Klagmann & & & & & \\\\ _Viciously Yours_ & Jamie Applegate & F & fantasy, romance & 86,774 & Jan 23, 2024 & AmE \\\\ _Wrapperd_ & Emilia Hart & F & historical fiction, & 128,728 & Feb 2, 2023 & AusE \\\\ _Wildfire_ & Hannah Grace & F & romance, sport & 140,060 & Oct 3, 2023 & BrE \\\\ _Yellowface_ & R.F. Kuang & F & thriller & 114,346 & May 25, 2023 & AmE \\\\ _You, Again_ & Kate Goldbeck & F & romance & 137,624 & Sep 12, 2023 & AmE \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: Details of the 26 books used for summaries. Length of each book is provided in tokens as computed with tiktoken.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:16]\n' +
+      '\n' +
+      'The proposed of the theory is a young gait earned Jurning web here is an unspecified constant lower.\n' +
+      '\n' +
+      'Jeline loss for mother and online a distributed, Mrs. Price.\n' +
+      '\n' +
+      'Jurning list in allergies by participants towards Mrs. Price, her struggle with epilepsy, and the death of her friend days.\n' +
+      '\n' +
+      'The story primarily takes place in 1984 when Jurning is a student at 8.3. Michael, a Catholic stock.\n' +
+      '\n' +
+      'Mr. Price, from heart for their unconventional methods and reputation per unit, Jurning and Arrays include Mrs. Price, with 1984.\n' +
+      '\n' +
+      'Jurning filter, lost, works on Plosing Time Arrays, a deep frequently wildly by Mrs. Price.\n' +
+      '\n' +
+      'After the death of Jurning mother, lost and Mrs. Price grow slower and decides to nearly adults inside early experiences about lost and Mrs. Price wedding but later becomes very at this point.\n' +
+      '\n' +
+      'Jurning supports Mrs. Price of leading series of frame that altogether turn the school.\n' +
+      '\n' +
+      'Jurning meets this report that a sheer of standing increases only inside white attack light, serving an acronym model in the story.\n' +
+      '\n' +
+      'The story often matches back to Jurning childhood, producing context about her children and the relationship with my.\n' +
+      '\n' +
+      'Jurning discover a hidden on his brain. Prison house filled with action-team from school and the group size.\n' +
+      '\n' +
+      'Jurning maintains winning what further, Nash becomes natural when he initially discussed her concerns about his motion. When he was in the middle of a school, she was able to learn a more complex, and the story is not a good choice.\n' +
+      '\n' +
+      'Jurning himself, who is a good choice, supports Jurning throughout the story.\n' +
+      '\n' +
+      'The story then matches back to Jurning childhood, producing context about her children and the relationship with my.\n' +
+      '\n' +
+      'Jurning discover a hidden on his brain. Prison house filled with action-team from school and the group size.\n' +
+      '\n' +
+      'Jurning maintains winning what further, Nash becomes natural when he initially discussed her concerns about his motion. When he was in the middle of a school, she was able to learn a more complex, and the story is not a good choice.\n' +
+      '\n' +
+      'Jurning himself, who is a good choice, supports Jurning throughout the story.\n' +
+      '\n' +
+      'The story then plays the role of his own life.\n' +
+      '\n' +
+      'Jurning search, who are commercial and actions. Also one is confident in the\n' +
+      '\n' +
+      'Figure 6: Screenshot of the interface for the annotation task described in §2.\n' +
+      '\n' +
+      'Figure 8: Pop-up window prompting the annotator to provide a free-form comment on the quality of summary claims highlighting _omissions_, _salience_, _chronology_, and _factuality_ issues.\n' +
+      '\n' +
+      'Figure 7: Pop-up window showing the interface where the annotators have to select the faithfulness label supplemented by free-form reasoning and evidence extracted from the book.\n' +
+      '\n' +
+      'Evidence coverage and reasoning-claim relationshipTo investigate the quality of evidence provided by annotators, we analyze the coverage of evidence with respect to the annotators\' reasoning. In addition, we also analyze the relationship between the claim and the annotators\' reasoning. Results are summarized in Table 16. 51.6% of the time, annotators provide some evidence to justify every component of their reasoning (i.e., _complete coverage_). In 56% of _partial coverage_ (i.e., some part of the reasoning does not have corresponding evidence) cases and all cases of _N/A coverage_ (i.e., no evidence is provided at all), the missing evidence is due to the annotator\'s inability to find any relevant information that either supports or refutes the claim. Qualitatively, for all matched reasoning-evidence pairs, we\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{284.5pt}} \\hline \\hline Claude-3-Opus \\\\ \\hline _Iris Winnow, an aspiring writer, works at the Oath Gazette newspaper in the city of Oath, competing with her rival Roman Kitt for a columnist position. Iris’s brother Forest is fighting in a war between the gods Enva and Dacre. She hasn’t heard from him in months and decides to become a war correspondent to find him. Iris and Roman develop feelings for each other through letters they exchange via enchatured therapeutics, nor realizing they are writing to each other. Roman, engaged to Elinor Little through an arranged marriage by his father, breaks off the engagement and follows Iris to the war front. In the town of Avalon Bluff near the front lines, Iris stays with Marisol, who runs a bed and breakfast, and befriends fellow correspondent Attie. Roman arrives and he and Iris fall in love, getting married just before an attack on the town by Dacre’s forces. During the attack, Iris is saved by a disqualised soldier who she later realizes is her brother Forest. Forest, who was supposed to have led from his wounds but was loaded by Dacre, deserted and has been fighting for the enemy. In the chaos, Iris is separated from Roman, who is badly wounded. Iris and Forest return to Oath, where Iris learns the full story of Forest’s service to Dacre. She discovers a letter from Roman in her room, confirming he knew her identity while variting to her. Meanwhile, the god Dacre finds the dying Roman out the battlefield and, sensing his strong spirit, decides to take him to hold his wounds and have him fight for his army. The story ends with Dacre turning his sights towards finding Erru in the east._ \\\\ \\hline\n' +
+      '1. Iris Winnow works at the Oath Gazette newspaper in the city of Oath. \\\\\n' +
+      '2. Iris Winnow is competing with Roman Kitt for a columnist position at the Oath Gazette. \\\\\n' +
+      '3. Iris Winnow’s brother, Forest, is involved in a war between the gods Enva and Dacre. \\\\\n' +
+      '4. Iris Winnow decides to become a war correspondent after not hearing from her brother, Forest, for months. \\\\ \\hline\n' +
+      '5. Iris Winnow and Roman Kitt develop feelings for each other through letters they exchange via enschanted typewriters. \\\\\n' +
+      '6. Iris Winnow and Roman Kitt do not initially realize they are writing letters to each other. \\\\\n' +
+      '7. Roman Kitt was engaged to Elinor Little through an arranged marriage by his father. \\\\\n' +
+      '8. Roman Kitt breaks off his engagement to Elinor Little and follows Iris Winnow to the war front. \\\\ \\hline\n' +
+      '9. Iris Winnow stays with Marisol at a bed and breakfast in the town of Avalon Bluff near the front lines. \\\\\n' +
+      '10. Iris Winnow befriends fellow correspondent Attie in Avalon Bluff. \\\\\n' +
+      '11. Roman Kitt arrives at Avalon Bluff and he and Iris Winnow fall in love. \\\\\n' +
+      '12. Roman Kitt and Iris Winnow get married just before an attack on Avalon Bluff by Dacre’s forces. \\\\ \\hline\n' +
+      '13. During the attack on Avalon Bluff, Iris Winnow is saved by a soldier who she later realizes is her brother, Forest. \\\\\n' +
+      '14. Forest was supposed to have died from his wounds but was healed by Dacre. \\\\\n' +
+      '15. Forest deserted from his original side and has been fighting for Dacre. \\\\\n' +
+      '16. Iris Winnow is separated from Roman Kitt, who is badly wounded during the attack on Avalon Bluff. \\\\ \\hline\n' +
+      '17. Iris Winnow and Forest return to Oath after the attack. \\\\\n' +
+      '18. Iris Winnow learns the full story of Forest’s service to Dacre once they return to Oath. \\\\\n' +
+      '19. Iris Winnow finds a letter from Roman Kitt in her room, which confirms he knew her identity while writing to her. \\\\\n' +
+      '20. Dacre finds the dying Roman Kitt on the battlefield and decides to take him to heal his wounds. \\\\\n' +
+      '21. Dacre plans for the healed Roman Kitt to fight for his army. \\\\\n' +
+      '22. The story ends with Dacre planning to find Enva in the east. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 8: Example of a summary produced by Claude-3-Opus along with the extracted set of claims for “Divine Rivals,” a novel by Rebecca Ross. Examples by the other models can be found in Table 9, Table 10, Table 11 and Table 12.\n' +
+      '\n' +
+      'find that the evidence often does not provide enough context that would allow someone who has not read the book to determine the faithfulness of the claim. As a result of decontestualization, claims always refer to people by name, but evidence often use pronouns instead. The annotator would need to quote a much larger chunk from the book in order for the evidence to include names as well. An even trickier case is that when dealing with high-level claims like "X is the protagonist of the story" or "The themes of the story are X, Y, and Z," one needs knowledge of the entire book, but citing the entire book as evidence is trivial. If annotators were to collect self-contained and sufficient evidence for every claim, the task would become significantly more challenging, sometimes even impossible. This difficulty with evidence gathering sheds light on why automatic evaluation does not work so well for this task.\n' +
+      '\n' +
+      'Model-wise analysisWe report model-wise results on reasoning type and reasoning-claim relationship in Table 18 and Table 19.\n' +
+      '\n' +
+      '## Appendix E Comment Analysis\n' +
+      '\n' +
+      'In this section, we provide additional details regarding our analysis of the comments provided by annotators on the summary claims. Table 20 features examples of such comments. These comments were further annotated based on the criteria outlined in Table 21 and Table 22. The distribution of errors is depicted in Figure 9 and Table 23.\n' +
+      '\n' +
+      'Table 24 displays examples where the models\' generation was influenced by information in the front and back matter. Table 25 highlights comments indicating that models may sometimes overly focus on the latter parts of the stories. Lastly, Table 4 shares annotators\' feedback on the annotation task.\n' +
+      '\n' +
+      'Impact of front and back matter on the summary qualityBooks frequently contain additional information beyond the main narrative, including the author\'s biography, table of contents, dedications, and more, positioned at the beginning or the end of the book. Ideally, models should exclude this extraneous content, focusing solely on summarizing the core story. However, we have noted that models are sometimes unduly influenced by these elements, which can dominate a significant part of the summary and occasionally compromise its accuracy. Overall, between 19.23% (GPT-3.5-Turbo and GPT-4) and 34.62% (Mixtral) of summaries were affected by such content, either through focusing on this information,14 confusing story characters with names found in the front and/or back matter,15 or making up entire narrative based on a single mention.16Claude-3-Opus was the only model seemingly unaffected by the additional information. However, when faced with two summaries--where one primarily summarized the content of the back matter, since it represented the final chunk--the model declined to perform the task. We regard this cautious approach as preferable to introducing unfounded details or irrelevant content. Examples of such cases are shown in Table 24.\n' +
+      '\n' +
+      'Footnote 14: _This summary includes a description of who the author thanks at the end of the book which is not important to the plot of the book.”_\n' +
+      '\n' +
+      'Footnote 15: _Clair is not a character in this book. The comments are factual, but of Charlie not Chiar.”_\n' +
+      '\n' +
+      'Footnote 16: _...claims are very focused on the idea of themes of digital age and the story doesn’t cover that at all. Its not even based on a modern world.” – author’s social media accounts are mentioned at the very end of the book.\n' +
+      '\n' +
+      '## Appendix F Details on Experimental Setup\n' +
+      '\n' +
+      'In this section, we provide further details on our experimental setup complemented with further results.\n' +
+      '\n' +
+      'Figure 9: Percentage summaries affected by specific issue mentioned in comments by model.\n' +
+      '\n' +
+      '### Implementation details\n' +
+      '\n' +
+      'For BM25-based evidence retrieval, we use the text of e-books purchased from amazon.com, split into passages of up to 256 tokens each. The search is restricted to the book content, and we set \\(k=5\\) to retrieve the top 5 most relevant passages as evidence.\n' +
+      '\n' +
+      '### Additional Results\n' +
+      '\n' +
+      'Results for each evidence extraction method broken down by summarizer can be found in Table 26. We also report book-wise precision and recall for each evidence extraction method: (1) No-Context (Table 27); (2) BM25 (Table 29); (3) Human evidence (Table 28); (4) Entire book (Table 30). Further results for the entire book (EB) prompting can be found in SF3.\n' +
+      '\n' +
+      '### Prompting LLMs with the Entire Book (EB)\n' +
+      '\n' +
+      'Prompting LLMs with large chunks (_entire books_) to evaluate the faithfulness of each claim is prohibitively expensive (see SSF.5). Hence, for this experiment, we select 7 books based on: (1) token length (\\(<\\)125K), and (2) presence of at least one _Unfaithful_ claim. This sub-dataset includes: (1) "Yellowface," (2) "Only For The Week," (3) "Viciously Yours," (4) "Six Scorched Roses," (5) "Sorrow and Bliss," (6) "She Is a Haunting," and (7) "Pet." Table Table 31 shows the number of claims per label in the sub-dataset. Further details on each book can be found in Table 7.\n' +
+      '\n' +
+      'Claim verification with the entire booksWe prompt Claude-3-Opus and GPT-4-Turbo models with the entire book content and each claim in order to obtain the _Faithful_/_Unfaithful_ labels. Figure 10 shows confusion matrix comparing human labels to models\' predictions. Table 32 presents a confusion matrix broken down by claim source (i.e., the model that generated the claim) and prediction model (Claude-3-Opus and GPT-4-Turbo). Figure 11 shows examples of misidentified labels by label-type and prediction model along with human labels and reasoning. Table 30 shows average precision (Pr) and recall (Re) broken down by model and book.\n' +
+      '\n' +
+      '### Ablation study\n' +
+      '\n' +
+      'Varying length of tokens used in BM25As we increase the length of BM25-retrieved passages, the overall performance improves (Figure 12). However, this approach remains less effective for identifying unfaithful claims than our best performing method, i.e., prompting the model with the content of the entire book. This is likely due to the fact that even longer passages may not provide the entire context needed for verification of broader claims.\n' +
+      '\n' +
+      'Figure 10: Confusion matrix comparing human annotations to model predictions for the claim verification task. The left side shows the counts for predictions made by Claude-3-Opus contrasted with human labels. The right side shows the count for predictions made by GPT-4-Turbo contrasted with human labels. A more detailed breakdown is presented in Table 32.\n' +
+      '\n' +
+      'Figure 11: Examples of claims accompanied by annotator labels and reasoning, along with predictions made by Claude-3-Opus and GPT-4-Turbo.\n' +
+      '\n' +
+      '### API costs\n' +
+      '\n' +
+      'Generating book-length summariesThe total cost of summarization for all 130 summaries amounted to about $288 USD.17\n' +
+      '\n' +
+      'Footnote 17: $64.6 for Claude-3-Opus, $169.4 for GPT-4, $47.5 for GPT-4-Turbo, $2.8 for GPT-3.5-Turbo, and $3.4 for Mixtral. All in USD.\n' +
+      '\n' +
+      'Extracting claimsThe total cost of claim extraction for all 130 summaries amounted to about $8 USD, as the input and output sequence is relatively short.\n' +
+      '\n' +
+      'Prompting with the entire bookThis experiment costed roughly $720 USD for GPT-4-Turbo and $1070 USD for Claude-3-Opus (corresponding to the last two columns in Table 5).\n' +
+      '\n' +
+      'Figure 12: F1 score varying chunk size for BM25.\n' +
+      '\n' +
+      'GPT-4-Turbo _In the epic narrative of "Divine Rivals,"_ _are are introduced to Iris Winnow, a tenacious young woman propelled into the role of a war correspondent amidst a devastating conflict influenced by the ancient deities Etru and Dacre. Iris\'s journey into the heart of battle is not just professional but deeply personal, fueled by the disappearance of her beloved brother, Forest, who had enlisted to fight, and the anguish over her mother\'s demise. Her quest for truth and understanding is set against the backdrop of the war-torn Avalon Bluff, close to the war\'s front lines, where she encounters the stark realities of conflict, from the silent hope of a garden amidst destruction to the horror of wounded soldiers and the terror of artillery fire. Roman Kitt, previously Iris\'s rival at the Cath Gazette, emerges as a significant figure in her narrative, joining her as a fellow correspondent. Despite their history of competitive antagonism, their relationship evolves, highlighted by Roman\'s mysterious decision to leave behind a promising career and a broken engagement to be by Iris\'s side. Their dynamic is further complicated and enriched by their shared experiences on the battlefield and Roman\'s unspoken feelings for Iris, culminating in a poignant moment of sacrifice during a trench attack where Roman shields Iris with his body from a grande explosion. Adding a magical element to the story, Iris maintains a correspondence with Carver, a mysterious figure, through enchanted typewriters. These letters offer Iris solace and a metaphysical connection that transcends the chaos surrounding her, underscoring themes of hope and connection. As the narrative unfolds, shocking revelations come to light. Forest, Iris\'s brother, believed to have been fighting for Enro, is discovered to have been forcefully converted by Dacre after a near-death experience. This discovery updfalls through a dramatic reunion where Forest saves Iris from one of Dacre\'s deally gas attacks, only to reveal his changed allegance by decaying her and leaving Roman behind, presumed dead or captured. The heart of the story explores Iris and Roman\'s profound relationship, against the backdrop of war and dicine manipulation. Moments from their past, including their secret wedding in a garden before a devastating attack by Dacre\'s forces, and Roman\'s heartfelt letter confessing his love, serve as poignant reminders of what they fight for. This emotional core is juxtaposed with the chaos of the present, wherein Iris must confront the bertual of her brother and the uncertainty of Roman\'s fate. "Divine Rivals" delves into themes of love, loyalty, and the harrowing choices faced by individuals caught in the machinations of gods and war. Iris, within the turmoil of her personal and professional world, remains determined to uncover the truth, seeking to reclaim agency and hope amidst depsur. Her journey is not just a search for her brother and Roman but an exploration of the resilience of the human spirit in the face of dicine conflicts and the devastation of war. Through Iris\'s eyes, the story weaves a complex tapsty of human emotions, the indonitable will to survive, and the quest for truth in a reality marred by capricious gods and endless conflict._\n' +
+      '\n' +
+      '1. Iris Winnow is the main character in the book "Divine Rivals."\n' +
+      '\n' +
+      '2. Iris Winnow becomes a war correspondent during a conflict influenced by the deities Enva and Dacre.\n' +
+      '\n' +
+      '3. Iris\'s brother, Forest, has disappeared after enlisting to fight in the war. 4. Iris is devastated by her mother\'s death.\n' +
+      '\n' +
+      '5. Iris\'s journey takes her to Avalon Bluff, a location close to the war\'s front lines.\n' +
+      '\n' +
+      '6. Iris encounters the realities of war, including wounded soldiers and artillery fire.\n' +
+      '\n' +
+      '7. Roman Kitt is a significant character in the narrative and joins Iris as a fellow war correspondent.\n' +
+      '\n' +
+      '8. Roman Kitt was Iris\'s rival at the Cath Gazette before they became colleagues.\n' +
+      '\n' +
+      '9. Their relationship evolves, despite a history of competitive antagonism.\n' +
+      '\n' +
+      '10. Roman Kitt leaves a promising career and a broken engagement to join Iris.\n' +
+      '\n' +
+      '11. Roman Kitt shields Iris from a gennade explosion during a trench attack.\n' +
+      '\n' +
+      '12. Iris maintains a magical correspondence with a mysterious figure named Carver through enchanted typewriters.\n' +
+      '\n' +
+      '13. The letters from Carver offer Iris solace and a metaphysical connection.\n' +
+      '\n' +
+      '14. Forest was believed to be fighting for deity Enva, but is revealed to have been forcefully conscribed by deity Dacre.\n' +
+      '\n' +
+      '15. This revelation comes after Forest saves Iris from a gas attack by Dacre and then deceives her by leaving Roman behind.\n' +
+      '\n' +
+      '16. Iris and Roman had a secret wedding in a garden before an attack by Dacre\'s forces.\n' +
+      '\n' +
+      '17. Roman writes a letter confessing his love for Iris.\n' +
+      '\n' +
+      '18. Iris must confront her brother\'s betrayal and uncertainty over Roman\'s fate.\n' +
+      '\n' +
+      '19. Iris is determined to uncover the truth and reclaim agency and hope amidst depsur.\n' +
+      '\n' +
+      '20. Iris\'s journey is a search for her brother and Roman, and an exploration of human resilience in the face of conflict and divine manipulation.\n' +
+      '\n' +
+      '21. The story of "Divine Rivals" explores themes of love, loyalty, and the difficult choices faced by individuals in times of war.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline GPT-4-Turbo _In the epic narrative of "Divine Rivals,"_ _are are introduced to Iris Winnow, a tenacious young woman propelled into the role of a war correspondent amidst a devastating conflict influenced by the ancient deities Etru and Dacre. Iris’s journey into the heart of battle is not just professional but deeply personal, fueled by the disappearance of her beloved brother, Forest, who had enlisted to fight, and the anguish over her mother’s demise. Her quest for truth and understanding is set against the backdrop of the war-torn Avalon Bluff, close to the war’s front lines, where she encounters the stark realities of conflict, from the silent hope of a garden amidst destruction to the horror of wounded soldiers and the terror of artillery fire. Roman Kitt, previously Iris’s rival at the Cath Gazette, emerges as a significant figure in her narrative, joining her as a fellow correspondent. Despite their history of competitive antagonism, their relationship evolves, highlighted by Roman’s mysterious decision to leave behind a promising career and a broken engagement to be by Iris’s side. Their dynamic is further complicated and enriched by their shared experiences on the battlefield and Roman’s unspoken feelings for Iris, culminating in a poignant moment of sacrifice during a trench attack where Roman shields Iris with his body from a grande explosion. Adding a magical element to the story, Iris maintains a correspondence with Carver, a mysterious figure, through enchanted typewriters. These letters offer Iris solace and a metaphysical connection that transcends the chaos surrounding her, underscoring themes of hope and connection. As the narrative unfolds, shocking revelations come to light. Forest, Iris\'s brother, believed to have been fighting for Enro, is discovered to have been forcefully converted by Dacre after a near-death experience. This discovery updfalls through a dramatic reunion where Forest saves Iris from one of Dacre\'s deally gas attacks, only to reveal his changed allegance by decaying her and leaving Roman behind, presumed dead or captured. The heart of the story explores Iris and Roman’s profound relationship, against the backdrop of war and dicine manipulation. Moments from their past, including their secret wedding in a garden before a devastating attack by Dacre’s forces, and Roman’s heartfelt letter confessing his love, serve as poignant reminders of what they fight for. This emotional core is juxtaposed with the chaos of the present, wherein Iris must confront the bertual of her brother and the uncertainty of Roman’s fate. “Divine Rivals” delves into themes of love, loyalty, and the harrowing choices faced by individuals caught in the machinations of gods and war. Iris, within the turmoil of her personal and professional world, remains determined to uncover the truth, seeking to reclaim agency and hope amidst depsur. Her journey is not just a search for her brother and Roman but an exploration of the resilience of the human spirit in the face of dicine conflicts and the devastation of war. Through Iris’s eyes, the story weaves a complex tapsty of human emotions, the indonitable will to survive, and the quest for truth in a reality marred by capricious gods and endless conflict._\n' +
+      '\n' +
+      '1. Iris Winnow is the main character in the book “Divine Rivals.”\n' +
+      '\n' +
+      '2. Iris Winnow becomes a war correspondent during a conflict influenced by the deities Enva and Dacre.\n' +
+      '\n' +
+      '3. Iris’s brother, Forest, has disappeared after enlisting to fight in the war. 4. Iris is devastated by her mother’s death.\n' +
+      '\n' +
+      '5. Iris\'s journey takes her to Avalon Bluff, a location close to the war’s front lines.\n' +
+      '\n' +
+      '6. Iris encounters the realities of war, including wounded soldiers and artillery fire.\n' +
+      '\n' +
+      '7. Roman Kitt is a significant character in the narrative and joins Iris as a fellow war correspondent.\n' +
+      '\n' +
+      '8. Roman Kitt was Iris’s rival at the Cath Gazette before they became colleagues.\n' +
+      '\n' +
+      '9. Their relationship evolves, despite a history of competitive antagonism.\n' +
+      '\n' +
+      '10. Roman Kitt leaves a promising career and a broken engagement to join Iris.\n' +
+      '\n' +
+      '11. Roman Kitt shields Iris from a gennade explosion during a trench attack.\n' +
+      '\n' +
+      '12. Iris maintains a magical correspondence with a mysterious figure named Carver through enchanted typewriters.\n' +
+      '\n' +
+      '13. The letters from Carver offer Iris solace and a metaphysical connection.\n' +
+      '\n' +
+      '14. Forest was believed to be fighting for deity Enva, but is revealed to have been forcefully conscribed by deity Dacre.\n' +
+      '\n' +
+      '15. This revelation comes after Forest saves Iris from a gas attack by Dacre and then deceives her by leaving Roman behind.\n' +
+      '\n' +
+      '16. Iris and Roman had a secret wedding in a garden before an attack by Dacre’s forces.\n' +
+      '\n' +
+      '17. Roman writes a letter confessing his love for Iris.\n' +
+      '\n' +
+      '18. Iris must confront her brother’s betrayal and uncertainty over Roman’s fate.\n' +
+      '\n' +
+      '19. Iris is determined to uncover the truth and reclaim agency and hope amidst depsur.\n' +
+      '\n' +
+      '20. Iris’s journey is a search for her brother and Roman, and an exploration of human resilience in the face of conflict and divine manipulation.\n' +
+      '\n' +
+      '21. The story of “Divine Rivals” explores themes of love, loyalty, and the difficult choices faced by individuals in times of war.\n' +
+      '\n' +
+      '\\end{table}\n' +
+      'Table 9: Example of a summary produced by GPT-4-Turbo along with the extracted set of claims for “Divine Rivals,” a novel by Rebecca Ross. Examples by the other models can be found in Table 8, Table 10, Table 11 and Table 12.\n' +
+      '\n' +
+      'GPT-4\n' +
+      '\n' +
+      '_Divine Rivuls is an intricate narrative set in a dystopian world at war, invoked by two resurrected rival detities, Erwa and Dacre. The plot centres around Iris Winnow, a sensitive and tenacious employee at the Catha Gazette newspaper in the city of Catha, and her professional rival Roman Kitt. Iris is uncurrollit ille spirish into chaos with her brother, Forest, joining the gods\' uur, lerque her vithin the responsibility of their alcoholic mother, Aster. Cought in a whirlord of personal and professional rivalry, Iris\'s bond with Roman depers in unexpected turse when Roman amounously receives and responds to Iris\'s emotionally rare letters intended for Forest. Iris uses a magical turseytter to send these tiers, lading to an anonymous correspondence that amplifies their unspoken connection. Roman\'s social standing is a stark contrast to Iris\'s modest background, he is estimated to a high society woman, Elinor Little, and faces the challenges of striking a balance between his family\'s aspirations and his new role at Cath Gazette. Following their mother\'s sudden passing, Iris impulsively resigns from her job at Catha Gazette. Detrimed to locate Forest and report on the escalating gods\' uur, she accepts a position as a uur correspondent with the Inridridate Tribune newspaper. Iris embratus on a perious journey to Ataban Blif, a town near the uur front, accompanied by another correspondent, Then "Attie" Attworod. Their hostess in the erie tours, Marsiol Torres, warns the pair about the regular thrust from different mythical creatures such as hounds and eiltratus that desolitate their surroundings. Roman\'s arrival in Ataban Blif reignies their convoluted relationship. He assists Iris in documenting the harrowing realities of the war while managing the growing tension between them. As Roman becomes severely injured during a horricite encounter at the wavefront, Iris, who has grown deeply linked in reporting the soldiers\' personal narratives, fights her uuy to ensure his safety. This life-threatening event leads Iris to recognise Roman as Carrer, her mysterious pen part, triggering an intense turnout of guilt and suspicion over Roman\'s shortage. Amid her growing concern for Roman\'s fate and her convited feelings about his description, a shocking twist reveals that Forest, previously presumed dead, has surried and fought for Dacre, the enemy detips. Further ensuing chaos sees Roman disappear, leaving Iris prepared between her obligations towards her effectively nationous brother and the desperate search for her missing lose interest. "Diving Rivuls\' intervenes Iris\'s personal story of resilience and growth against the hockdrop of an escalating war. As she metamorphoses from a correspondent to a key player in the uur, Iris embodies the human spirit\'s ability to endure and adapt amidst ancestry. The narrative encapsulates the strength of character, familial obligations, professional rivalries, societal norms, and profound transformations at the heart of the story. Despite the evolving relationships and hardships, Iris pledges to remain by Forest\'s side and continue her search for Roman. The story of "Diving Rivuls\' is a testament to human endurance, love, and loyalty amidst a surral world at war._\n' +
+      '\n' +
+      '1. Divine Rivuls is a narrative set in a dystopian world at war.\n' +
+      '\n' +
+      '2. The war in the world of "Diving Rivuls\' is invoked by two resurrected rival detities, Enva and Dacre.\n' +
+      '\n' +
+      '3. The story\'s plot focuses on Iris Winnow, an employee at the Oath Gazette newspaper in the city of Oath.\n' +
+      '\n' +
+      '4. Iris Winnow has a professional rival named Roman Kitt.\n' +
+      '\n' +
+      '5. Iris Winnow\'s brother, Forest, joins the god\'s war.\n' +
+      '\n' +
+      '6. Iris Winnow is left with the responsibility of their alcoholic mother, Aster, after 7. Forest joins the war.\n' +
+      '\n' +
+      '8. Iris Winnow\'s bond with Roman Kitt deepens when Roman anonymously receives and responds to Iris\'s letters intended for Forest.\n' +
+      '\n' +
+      '9. Iris Winnow uses a magical vintage typewriter to send letters to Roman Kitt.\n' +
+      '\n' +
+      '10. Roman Kitt is engaged to a high society woman named Elinor Little.\n' +
+      '\n' +
+      '11. Roman Kitt faces challenges balancing his family\'s aspirations and his role at the Oath Gazette.\n' +
+      '\n' +
+      '12. Iris Winnow resigns from her job at the Oath Gazette after their mother\'s sudden death.\n' +
+      '\n' +
+      '13. Iris Winnow accepts a position as a war correspondent with the Inridridation Tribune newspaper.\n' +
+      '\n' +
+      '14. Iris Winnow journeys to Avalon Blufl, a town near the war front, with another correspondent named Thea "Attie" Attworod.\n' +
+      '\n' +
+      '15. In Avalon Blufl, Marsiol Torres warns Iris Winnow and Thea Attwood about the regular threats from mythical creatures.\n' +
+      '\n' +
+      '16. Roman Kitt arrives in Avalon Blufl and assists Iris Winnow in documenting the war.\n' +
+      '\n' +
+      '17. Roman Kitt is severely injured during an encounter at the varfront.\n' +
+      '\n' +
+      '18. Iris Winnow realizes Roman Kitt is Carver, her mysterious pen pal, after he is severely injured.\n' +
+      '\n' +
+      '19. Iris Winnow feels guilt and suspicion over Roman Kitt\'s deception.\n' +
+      '\n' +
+      '20. It is revealed that Forest, previously assumed dead, survived and fought for Dacre, the enemy detips.\n' +
+      '\n' +
+      '21. Roman Kitt disappears, leaving Iris Winnow torn between her obligations towards her brother and the search for Roman.\n' +
+      '\n' +
+      '22. Iris Winnow evolves from a correspondent to a key player in the war.\n' +
+      '\n' +
+      '23. Iris Winnow pledges to stay by her brother\'s side and continue her search for Roman Kitt.\n' +
+      '\n' +
+      '24. The story of "Diving Rivuls" is a testament to human endurance, love, and loyalty during a war.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline GPT-4 \\\\ \\hline _Diving Rivuls is an intricate narrative set in a dystopian world at war, invoked by two resurrected rival detities, Erwa and Dacre. The plot centres around Iris Winnow, a sensitive and tenacious employee at the Catha Gazette newspaper in the city of Cath, and her professional rival Roman Kitt. Iris\'s uncurrollit ille spirish into chaos with her brother, Forest, joining the gods’ uur, lerque her vithin the responsibility of their alcoholic mother, Aster. Cought in a whirlord of personal and professional rivalry, Iris’s bond with Roman depers in unexpected turse when Roman amounously receives and responds to Iris\'s emotionally rare letters intended for Forest. Iris uses a magical turseytter to send these tiers, leading to an anonymous correspondence that amplifies their unspoken connection. Roman’s social standing is a stark contrast to Iris’s modest background, he is estimated to a high society woman, Elinor Little, and faces the challenges of striking a balance between his family’s aspirations and his new role at Cath Gazette. Following their mother’s sudden passing, Iris impulsively resigns from her job at Oath Gazette. Detrimed to locate Forest and report on the escalating gods’ uur, she accepts a position as a uur correspondent with the Inridate Tribune newspaper. Iris embratus on a perious journey to Avalon Blufl, a town near the war front, accompanied by another correspondent, Then “Attie” Attworod. Their hostess in the erie tours, Marsiol Torres, warns the pait about the regular thrust from different mythical creatures such as hounds and eiltratus that desolitate their surroundings. Roman’s arrival in Avalon Blufl requires their convoluted relationship. He assists Iris in documenting the harrowing realities of the war while managing the growing tension between them. As Roman becomes severely injured during a horricite encounter at the wavefront, Iris, who has grown deeply linked in reporting the soldiers’ personal narratives, fights her uuy to ensure his safety. This life-threatening event leads Iris to recognise Roman as Carrer, her mysterious pen part, triggering an intense turnout of guilt and suspicion over Roman’s shortage. Amid her growing concern for Roman’s fate and he vorilled feelings about his description, a shocking twist reveals that Forest, previously presumed dead, has surried and fought for Dacre, the enemy detips. Further ensuing chaos sees Roman disappear, leaving Iris imprisoned between the obligations towards her effectively nationous brother and the desperate search for her missing lose interest._ _Diving Rivuls’ intervenes Iris’s personal story of resilience and growth against the hockdrop of an escalating war. As she metamorphoses from a correspondent to a key player in the uur, Iris embodies the human spirit’s ability to endure and adapt amidst ancestry. The narrative encapsulates the strength of character, familial obligations, professional rivalries, societal norms, and profound transformations at the heart of the story. Despite the evolving relationships and hardships, Iris pledges to remain by Forest’s side and continue her search for Roman. The story of “Diving Rivuls’ is a testament to human endurance, love, and loyalty amidst a surral world at war._\n' +
+      '\n' +
+      '1. Divine Rivuls is a narrative set in a dystopian world at war.\n' +
+      '\n' +
+      '2. The war in the world of “Diving Rivuls” is invoked by two resurrected rival detities, Enva and Dance.\n' +
+      '\n' +
+      '3. The story’s plot focuses on Iris Winnow, an employee at the Oath Gazette newspaper in the city of Oath.\n' +
+      '\n' +
+      '4. Iris Winnow has a professional rival named Roman Kitt.\n' +
+      '\n' +
+      '5. Iris Winnow\'s brother, Forest, joins the god’s war.\n' +
+      '\n' +
+      '6. Iris Winnow is left with the responsibility of their alcoholic mother, Aster, after 7. Forest joins the war.\n' +
+      '\n' +
+      '8. Iris Winnow\'s bond with Roman Kitt deepens when Roman anonymously receives and responds to Iris\'s letters intended for Forest.\n' +
+      '\n' +
+      '9. Iris Winnow uses a magical turseytter to send letters to Roman Kitt.\n' +
+      '\n' +
+      '10. Roman Kitt is engaged to a high society woman named Elinor Little.\n' +
+      '\n' +
+      '11. Roman Kitt faces challenges balancing his family’s aspirations and his role at the Oath Gazette.\n' +
+      '\n' +
+      '12. Iris Winnow resigns from her job at the Oath Gazette after their mother’s sudden death.\n' +
+      '\n' +
+      '13. Iris Winnow accepts a position as a war correspondent with the Inridridation Tribune newspaper.\n' +
+      '\n' +
+      '14. Iris Winnow journeys to Avalon Blufl, a town near the war front, with another correspondent named Thea “Attie” Attworod.\n' +
+      '\n' +
+      '15. In Avalon Blufl, Marsiol Torres warns Iris Winnow and Thea Attwood about the regular threats from mythical creatures.\n' +
+      '\n' +
+      '16. Roman Kitt arrives in Avalon Blufl and assists Iris Winnow in documenting the war.\n' +
+      '\n' +
+      '17. Roman Kitt is severely injured during an encounter at the varfront.\n' +
+      '\n' +
+      '18. Iris Winnow realizes Roman Kitt is Carver, her mysterious pen pal, after he is severely injured.\n' +
+      '\n' +
+      '19. Iris Winnow feels guilt and suspicion over Roman Kitt’s deception.\n' +
+      '\n' +
+      '20. It is revealed that Forest, previously assumed dead, survived and fought for Dacre, the enemy detips.\n' +
+      '\n' +
+      '21. Roman Kitt disappears, leaving Iris Winnow torn between her obligations towards her brother and the search for Roman.\n' +
+      '\n' +
+      '22. Iris Winnow evolves from a correspondent to a key player in the war.\n' +
+      '\n' +
+      '23. Iris Winnow pledges to stay by her brother’s side and continue her search for Roman Kitt.\n' +
+      '\n' +
+      '24. The story of “Diving Rivuls” is a testament to human endurance, love, and loyalty during a war.\n' +
+      '\n' +
+      '\\end{table}\n' +
+      'Table 10: Example of a summary produced by GPT-4 along with the extracted set of claims for “Diving Rivuls,” a novel by Rebecca Ross. Examples by the other models can be found in Table 8, Table 9, Table 11 and Table 12.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{284.5pt}} \\hline \\hline GPT-3.5-Turbo & \\\\ \\hline \\hline \\end{tabular} \n' +
+      '\\begin{tabular}{p{284.5pt}} \\hline \\hline _In the city of Oath, siblings Iris and Forest Winnow face separation as Forest departs for war, leaving Iris to care for their mother. As Iris grapples with loneliness and worry, a fierce rivalry emerges at the Oath Gazette between Iris and Roman Kitt, two ambitious journalists. The backdrop of an impending war between the goddesse Erva and god Dance adds tension and intrigue to their lives. Iris, driven by a desire to prove herself in a male-dominated field, finds herself entangled in personal challenges within navigating her complicated relationship with Roman. As the war escalates and mysterious creatures surface, Iris and Roman become immersed in a world of gods, magic, and journalism, facing both personal and professional dilemmms. Iris decides to resign from her job to embark on a journey to find her brother Forest, who becomes entrained in the conflict. Roman, haunted by his past and familial obligations, struggles to reconcile his feelings for Iris while maintaining his journalistic integrity. Their paths eventually converge in Avalon Bluff, where Iris becomes a war correspondent equipped with a mysterious typewater with a significant history. A Iris and Roman navigate the chaos of war, their interactions reveal deeper emotions and motivations, leading to a fiteful meeting at a high-end restaurant. Attie, a friend of Iris, discloses her talent for playing the violin amidst the turmonal of war, adding a layer of depth to the narrative. Roman’s vulnerability and inner turmonal are brought to the forefront when he is saved by Iris during an air radi, further strengthening their bond. As they confront personal and professional challenges amidst the impending battle, Iris reunites with Forest, only to discover his involvement with the opposing forces. Forest, for between protecting Iris and confronting his past actions, adds a layer of complexity and tension to the story. Amids the impending attack by Dorre, Iris and Roman make a decision to stay and assist in Avalon Bluff, preparing for the inevitable confrontation. The intertwining destines of the characters unravel themes of sacrifice, resilience, and the search for identity in a world plugued by war and loss. As truths unfold, loyalty is tested, blurring the lines between good and evil. Characters like Dance and Erva reveal stinister plans, setting the stage for a complex and emotional journey through with uncertainty and conflict. Through grief, rivalry, and love, Iris and Roman confront their vulnerabilities and ambitions, ultimately reshaping their destines amidst the backdrop of war and its significant consequences._ \\\\ \\hline\n' +
+      '1. Iris and Forest Winnow are siblings in the city of Oath. 2. Forest Winnow departs for war and Iris stays behind to care for their mother. 3. Iris struggles with feelings of loneliness and worry. 4. At the Oath Gazette, a fierce rivalry develops between Iris and Roman Kitt, both of whom are ambitious journalists. 5. An impending war between the goddess Enva and god Dacre adds tension and intrigue to Iris and Roman’s lives. 6. Iris aims to prove herself in the male-dominated field of journalism. 7. Iris faces personal challenges while navigating her complicated relationship with Roman. 8. As the war intensifies, Iris and Roman encounter mysterious creatures. 9. Iris resigns from her job at the Oath Gazette to search for her brother Forest, who is involved in the war. 10. Roman Kitt has a troubled past and family obligations that make it difficult for him to balance his feelings for Iris and his journalistic integrity. 11. Iris and Roman\'s paths intersect in Avalon Bluff, where Iris becomes a war correspondent. 12. Iris uses a typewriter with a significant past while working as a war correspondent. 13. Iris and Roman’s interactions during the war reveal deeper emotions and motivations. 14. Iris and Roman have a significant meeting at a high-end restaurant. 15. Attie, a friend of Iris, is talented at playing the violin. 16. Roman’s vulnerability is revealed when Iris saves him during an air raid. 17. Iris reunites with Forest during the war, discovering his involvement with the opposing forces. 18. Forest is torn between his desire to protect Iris and confronting his past actions. 19. Amidst the approaching attack by Dacre, Iris and Roman decide to stay and help in Avalon Bluff. 20. The characters’ intertwining destinies reveal themes of sacrifice, resilience, and identity search in a war-torn world. 21. The story explores blurred lines between good and evil as loyalties are tested. 22. Characters like Dacre and Enva have sinister plans. 23. Iris and Roman confront their vulnerabilities and ambitions, leading to a change in their destinies amid the backdrop of war. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 11: Example of a summary produced by GPT-3.5-Turbo along with the extracted set of claims for “Divine Rivals,” a novel by Rebecca Ross. Examples by the other models can be found in Table 8, Table 9, Table 10 and Table 12.\n' +
+      '\n' +
+      'In a world torn by a devastating uav between two drive families, the Skywards and the Underlings, "Divine Rivals" follows the journey of Iris Winnow, an organized junior reporter at the Chuth Cagette in the city of O\'A, as she strives to become a renowned journalist and uncover the truth about the uav that took her mother and brother, Forest, from her. The Skywards and Underlings\' conflict has left the realm of Cambria in chaos, where magic and mythology intertwine with the mortal world, and gas walk among humans, Iris\' dream of becoming a great journalist is fried by her love for her late brother and her desire to understand why he joined the uav. She faces face competition from her professional rival, Roman Kitts, at latented storyteller hailing from a wealthy family. While Iris longs to write about significant issues, Roman, was shares a complicated background with Iris, as asteroids in storytellig and is being presented by his father to join the family business. EdD Autry, the editor of the Oath Cagette, is reluctant to cover the urx, much to Iris\'s tisanya. Iris\' family is burdened with financial difficulties and personal struggles after losing her mother and brother to the urx. Driven by her determination to uncover the truth about the uav and her little brother\'s involvement, Iris fuss so like in her resolute. The Individual Tribune, a rival newspaper, announces an opportunity for urx correspondents, enticing its complete with Roman for the position. Iris\'s journey is further complicated by her mysterious correspondence with an unknown person who lancse here letters in her wardede, forming a unique box. As Iris computes for the position, she reflects on her past and her friendship with Forest, who introduced her to the world of journalism. Their differing views on the urx and the Skyward goldes, Erwa, drove them apart. Iris wanted to highlight the theory of soldiers, public Forest aimed to reveal Enru\'s manipulation of young minds to let the urx. Despite the challenges, Iris remains focused on her goal and finally manages to land a job as a way to understand for the hridridation Tribune. She chunks on a dangerous journey to cover the urx, facing various charges and hardships along the way. Iris continues to write letters to the mysterious stranger, who becomes her confidante and support straining her perilous journey. Meanwhile, the town of Audon Bluff programs for an unending battle against an unknown enemy - Dacre, the god of the Underlings. Iris, Roman, and other companies gather in Audon Bluff to aid the town\'s defense, as tensions rise with theft of emergency supply kits and Keegan\'s distracted behavior. Amited the chaos, Iris, and Roman reliable her connection, and Roman propose to Iris, offering a moment of hope in the face of destination. As the group prepares for battle, Iris witnesses ffstand the horrors of war, including the loss of innocent lives and the destruction of her childhood home, Cliver Hill. Despite the pain, Iris continues to report on the urx, using her words to both document the battles and search for Forest. "Dicine Rivals" is a compelling narrative that explores themes of identity, courage, and the power of words in the face of war. Iris\'s unwarving determination to make a difference by writing about the truth, seeking answers about her brother, and making her urx has a journalist resonators throughout the story. The author extends gratitude towards the individuals who helped her publish this captivating rule, acknowledging her literary agent, film agent, satheights team, editors, cover designer, copy editor, and fellow authors._\n' +
+      '\n' +
+      '1. Divine Rivals is set in a world affected by a war between two divine families, the Skywards and the Underlings.\n' +
+      '2. The protagonist of "Divine Rivals" is Iris Winnow, an orphan who works as a junior reporter at the Oath Gazette in the city of Oath.\n' +
+      '3. Iris Winnow\'s aspiration to become a renowned journalist is driven by her desire to uncover the truth about the war that resulted in the death of her mother and brother, Forest.\n' +
+      '4.The conflict between the Skywards and the Underlings has caused chaos in the realm of Cambria, a place where magic and mythology interact with the mortal world.\n' +
+      '5. Iris Winnow has a professional rival named Roman Kitt, a skilled storyteller from a wealthy family.\n' +
+      '6. Roman Kitt is under pressure from his father to join the family business.\n' +
+      '7. Zeb Autry, the editor of the Oath Gazette, does not want to cover the war, against Iris Winnow\'s wishes.\n' +
+      '8. After the loss of her mother and brother, Iris Winnow\'s family is facing financial and personal struggles.\n' +
+      '9. The Inkridation Tribune, a competing newspaper, advertises a job for war correspondents, leading both Iris Winnow and Roman Kit to compete for the position.\n' +
+      '10. Iris Winnow maintains a mysterious correspondence with an unidentified individual who leaves her letters in her wardebro.\n' +
+      '11. Iris Winnow\'s brother, Forest, introduced her to journalism.\n' +
+      '12. Iris Winnow and her brother Forest had differing views on the war and the Skyward goddess, Enva.\n' +
+      '13. Despite various challenges, Iris Winnow achieves her goal of becoming a war correspondent for the Inkridden Tribune.\n' +
+      '14. Iris Winnow embarks on a dangerous journey to cover the war.\n' +
+      '15. Iris Winnow continues to write letters to the unknown person who becomes her confidante during her journey.\n' +
+      '16. The town of Avalon Bluff is preparing for a battle against an unknown enemy.\n' +
+      '17. Dacre, the god of the Underlings.\n' +
+      '18. Amidset the chaos, Iris Winnow and Roman Kitt rekindle their connection, and Roman Kitt proposes to Iris Winnow.\n' +
+      '19. Iris Winnow experiences the horrors of war firsthand, including the loss of innocent lives and the destruction of her childhood home, Clover Hill.\n' +
+      '20. Despite the hardships, Iris Winnow continues to report on the war, using her writing to document the battles and search for her brother, Forest.\n' +
+      '21. Divine Rivals explores themes of identity, courage, and the power of words during war.\n' +
+      '22. Iris Winnow\'s determination to make a difference by writing about the truth and seeking answers about her brother is a central theme in "Divine Rivals".\n' +
+      '23. The author of "Divine Rivals" acknowledges her literary agent, film agent, subrights team, editors, cover designer, copy editor, and fellow authors for their assistance in publishing the book.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline \\multicolumn{1}{c}{Mixtral} & \\multicolumn{1}{c}{\n' +
+      '\\begin{tabular}{c} \\\\ \\end{tabular} } \\\\ \\hline \\hline \\multicolumn{1}{c}{_In a world torn by a devastating uav between two divine families, the Skywards and the Underlings, “Divine Rivals” follows the journey of Iris Winnow, an orphaned junior reporter at the Chuth Cagette in the city of O\'A, as she strives to become a renowned journalist and uncover the truth about the war that took her mother and brother, Forest, from her. The Skywards and Underlings’ conflict has left the realm of Cambria in chaos, where magic and mythology intertwine with the mortal world._\n' +
+      '\n' +
+      '1. Iris Winnow\'s aspiration to become a renowned journalist is driven by her desire to uncover the truth about the war that resulted in the death of her mother and brother, Forest.\n' +
+      '4.The conflict between the Skywards and the Underlings has caused chaos in the realm of Cambria, a place where magic and mythology interact with the mortal world.\n' +
+      '5. Iris Winnow has a professional rival named Roman Kitt, a skilled storyteller from a wealthy family.\n' +
+      '6. Roman Kitt is under pressure from his father to join the family business.\n' +
+      '7. Zeb Autry, the editor of the Oath Gazette, does not want to cover the war, against Iris Winnow’s wishes.\n' +
+      '8. After the loss of her mother and brother, Iris Winnow’s family is facing financial and personal struggles.\n' +
+      '9. The Inkridation Tribune, a competing newspaper, advertises a job for war correspondents, leading both Iris Winnow and Roman Kit to compete for the position.\n' +
+      '10. Iris Winnow maintains a mysterious correspondence with an unidentified individual who leaves her letters in her wardebro.\n' +
+      '11. Iris Winnow’s brother, Forest, introduced her to journalism.\n' +
+      '12. Iris Winnow and her brother Forest had differing views on the war and the Skyward goddess, Enva.\n' +
+      '13. Despite various challenges, Iris Winnow achieves her goal of becoming a war correspondent for the Inkridden Tribune.\n' +
+      '14. Iris Winnow embarks on a dangerous journey to cover the war.\n' +
+      '15. Iris Winnow continues to write letters to the unknown person who becomes her confidante during her journey.\n' +
+      '16. The town of Avalon Bluff is preparing for a battle against an unknown enemy.\n' +
+      '17. Dacre, the god of the Underlings.\n' +
+      '18. Amidset the chaos, Iris Winnow and Roman Kitt rekindle their connection, and Roman Kitt proposes to Iris Winnow.\n' +
+      '19. Iris Winnow experiences the horrors of war firsthand, including the loss of innocent lives and the destruction of her childhood home, Clover Hill.\n' +
+      '20. Despite the hardships, Iris Winnow continues to report on the war, using her writing to document the battles and search for her brother, Forest.\n' +
+      '21. Divine Rivals explores themes of identity, courage, and the power of words during war.\n' +
+      '22. Iris Winnow’s determination to make a difference by writing about the truth and seeking answers about her brother is a central theme in “Divine Rivals”.\n' +
+      '23. The author of “Divine Rivals” acknowledges her literary agent, film agent, subrights team, editors, cover designer, copy editor, and fellow authors for their assistance in publishing the book.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:29]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{71.1pt} p{142.3pt} p{142.3pt}} \\hline \\hline Label & Definition & Example (Claim // Reason) \\\\ \\hline \\hline \\multirow{2}{*}{Event} & Concrete event where someone does something, something pens to someone, etc. & _Maggei reunites with her old friends and fellow retired spies._ // _Maggei does not reunite with these people._ \\\\ \\hline \\multirow{2}{*}{Introspection} & Characters’ thoughts, feelings, opinions, etc. & _Jastine feels guilty about Amy’s death and is hautted by the idea that Amy might be watching her._ // _Jastine doesn’t feel guilty._ \\\\ \\hline \\multirow{2}{*}{Cause/effect} & Goals, motivation, or purposes & _Charlie Broun decides to return to New York to confront Harry Taylor and pursue a connection with Pete Makers after discovering Harry’s infidelity._ // _He is not there to confront Harry._ \\\\ \\cline{2-3}  & Causes or effects of events, actions, thoughts, etc. & _The discovery of the love story sparks Jade’s advisout about the house and its past inhabitants._ // _Jade’s curiosity is not sparked by the love story, but by a dream she had._ \\\\ \\hline \\multirow{2}{*}{State} & Relationship between characters & _Maggei reunites with her old friends and fellow retired spies._ // _Maggei does not reunite with these people._ \\\\ \\cline{2-3}  & Traits of a character & _The magic of real life in ”Viciously Yours” manifests after twenty-five years._ // \\(I\\) _I_ _does not manifest after 25 years but becomes full strength at 25 years. They are born with magic._ \\\\ \\cline{2-3}  & State of a character, place, etc. & _Phillip Hardwicke, a wealthy businessman who was believed to be dead, is revealed to be alive in the story._ // _Bella Hardwicke is revealed to be alive, not Phillip._ \\\\ \\hline \\multirow{2}{*}{High-level} & Characteristics of the narrative & _The narrative style of the book is non-linear and features flashbacks and switches between alternate worlds or viewpoints._ // _The book is almost exclusively from Aurelia’s point of view and is linear._ \\\\ \\cline{2-3}  & General story setting & _The narrative style of the book is non-linear and features flashbacks and switches between alternate worlds or viewpoints._ // _H’s’ set in Adcova, Nyuzia is the name of the goddess._ \\\\ \\cline{2-3}  & Themes & _The narrative of ”The Guest” explores themes of memory, identity, and the pursuit of understanding within human relationships._ // _H’s set in Adcova, Nyuzia is the name of the goddess._ \\\\ \\hline \\hline \\multirow{2}{*}{Direct} & Reasoning requires only one hop & _Alex attends a gathering at Victor’s house._ // _The book states that the gathering is in Helen’s house._ \\\\ \\hline \\multirow{2}{*}{Indirect} & Reasoning requires more than one hop & _Alex and Jack bond over their shared experiences._ // _They don’t have any shared experiences, Jack is from a wealthy, privileged home, and while we aren’t told much about Alex’s background, we know she doesn’t live a cosested life like him._ \\\\ \\cline{2-3}  & Annotator is arguing for a lack of support & _Maggei is portrayed as a skilled assassin in addition to being a former intelligence officer._ // _No information in the book really supports that._ \\\\ \\hline Subjective & Requires subjective judgment & _Forest is torn between his desire to protect Iris and confronting his past actions._ // _I don’t think Forest makes any real effort to confront his past actions, his main motivation is protecting Iris._ \\\\ \\hline Extra info & Requires extra/meta information & _The book “Wildfire” is the first in the ICDraker series._ _// No evidence in the book, but this is the second in the series, after ”Icebreaker”._ \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 15: General scheme for assigning labels in our faithfulness annotation analysis along with more examples. This table complements Table 3.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l} \\hline \\hline \\multicolumn{1}{c}{Evidence Coverage} & \\multicolumn{2}{c}{Reasoning-Claim Rel.} \\\\ \\hline Type & Freq & Type & Freq \\\\ \\hline Complete & 56.1 & Direct cont. & 50.5 \\\\ Partial & 34.7 & Indirect cont. & 30.1 \\\\ Irrel. & 1.5 & Lack of support & 19.4 \\\\ N/A & 7.7 & & \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 16: Results from our analysis on evidence coverage and reasoning-claim relationship.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c c c} Model & Total count & Direct evidence & Logical inference & Subjective interpretation & Requires meta info \\\\ \\hline Claude-3-Opus & 12 & 66.7 & 25 & 0 & 8.3 \\\\ GPT-4 & 26 & 20 & 68 & 12 & 0 \\\\ GPT-4-Turo & 48 & 27.5 & 62.7 & 3.9 & 5.9 \\\\ GPT-3-5-Turo & 63 & 31.2 & 51.6 & 10.9 & 6.2 \\\\ Mytral & 76 & 38.5 & 48.7 & 6.4 & 6.4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 17: Distribution of reasoning type for each claim type. Apart from total count, all numbers are reported as a percentage.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c c} Model & Total count & Direct evidence & Logical inference & Subjective interpretation & Requires meta info \\\\ \\hline Claude-3-Opus & 12 & 66.7 & 25 & 0 & 8.3 \\\\ GPT-4 & 26 & 20 & 68 & 12 & 0 \\\\ GPT-4-Turo & 48 & 27.5 & 62.7 & 3.9 & 5.9 \\\\ GPT-3-5-Turo & 63 & 31.2 & 51.6 & 10.9 & 6.2 \\\\ Mytral & 76 & 38.5 & 48.7 & 6.4 & 6.4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 18: Distribution of reasoning type for different models. Apart from total count, all numbers are reported as a percentage.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|c c c c} Model & Total count & Direct contradiction & Indirect contradiction & Lack of support \\\\ \\hline Claude-3-Opus & 12 & 66.7 & 33.3 & 0 \\\\ GPT-4 & 26 & 48.3 & 27.6 & 24.1 \\\\ GPT-4-Turo & 48 & 24.5 & 34.7 & 40.8 \\\\ GPT-3.5-Turo & 63 & 44.1 & 30.9 & 25 \\\\ Mytral & 76 & 57.7 & 19.2 & 23.1 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 19: Distribution of reasoning-claim relationship for different models. Apart from total count, all numbers are reported as a percentage.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:32]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l} \\hline \\hline\n' +
+      '**Issue** & **Definition** & **Example** \\\\ \\hline Chronology & Issues with the chronological ordering of claims. & _(...) though it has some chronology problems_ \\\\  & _(Arti’s proposal comes after the run in the city,_ \\\\  & _which comes after loshi and Kathiga open the_ \\\\  & _pop-up) (...)_ \\\\ Omissions & The annotator mentions any omissions of content that should have been included in the summary. & _mriown what she was a tranager until she_ \\\\  & _turn 18 and then started an intimate relationship. He later leaves Summer and marrive her sister. Even after he is married, he doesn’t let Summer move on._ \\\\ Factuality & Issues with factuality are explicitly mentioned by the annotator. Note that this category correlates partially with the annotated factuality errors._ & _There were some serious issues with this summary. The first thing that the look is referred to as “The Refinement Plan” twice in the summary which is the incorrect title._ \\\\ Overemphasis & Too much emphasis put on less significant events or characters. & _Salience: Charles is not an important character, he is the manager of the guest house_ _where she stays in New York, and she only_ _chats to him a couple of times._ \\\\ Undermphasis & Certain events or characters are mentioned but to little emphasis is put on their importance for the story. & _There is not enough emphasis on the relationship between Justine and Dom, who later becomes her husband._ \\\\ Vague/Generic & Vague or generic claims included in the summary. & _Most of the sentences at the end of the summary are generalized and there are no substantial facts._ \\\\ Repetitive & Repetitive claims included in the summary. & _As noted in the annotations, claims 16 and 17 weretitious and not necessary._ \\\\ Data-influenced & The summary was influenced by front and/or back matter. & [n/a: judgment for this category was made by one of the co-authors during analysis] \\\\ \\hline Comprehensive & The annotator praises the summary for being comprehensive. & _Out of all the summary claims, this feds the most relevant and comprehensive of the key events that take place._ \\\\ Well-done & The annotator praises the summary for being well-done. & _This was good, things were in sequence, and the main points were covered._ \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 21: Categories used for the analysis of annotators’ comments on the quality of the entire summary.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l} \\hline \\hline\n' +
+      '**Omission Type** & **Definition** & **Example** & & \\\\ \\hline Characters & Summary fails to mention important characters. & & _This summary excluded a lot of the main plot points (...) and the very important principal antagonists Alma, Thomas, and Marion. Alma and Thomas are present-day representations of colonization and investors in the project to turn Nha Hoa into a bed-and-breakfast_. & _Some important events in the book were omitted, such as the part where Alex follows a group of young people to a house and has sex with a girl’s bovfriend, the part where she she meals into a club and pretends to be a little boy’s manny, and the part where she follows Margaret to her home. These events are filled with tension, showcase Alex’s daring exploits, add a deeper layer of meaning to the story, and ultimately propel the narrative, so they should have been included. Alex almost drows in the beginning of the novel, a frightening incident that she mentions to Victor during the party._ & _(...) but the overall summary misses a huge plot point of Carver and Roman being the same person._ & _There is no mention of Clover and Amos the Desert King being males. Nor Fawn and Dean the Garden King being mates._ & _Dearn the Garden King being mates._ & _Water, pools, and beaches are recurring metaphors in the book, yet they aren’t mentioned or highlighted in any of the claims._ \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 22: Description of omission categories used for annotating comments provided by our evaluators. Omissions were annotated in two steps: (1) a binary choice (either omissions were mentioned or not), and (2) categorization.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l} \\hline \\hline\n' +
+      '**Omission Type** & **Claude-3-Opus** & GPT-4-Turbo & GPT-4 & GPT-3.5-Turbo & Mistral \\\\ \\hline Characters & 4.17 & 23.08 & 7.69 & 7.69 & 23.08 \\\\ Events & 33.33 & 57.69 & 38.46 & 65.38 & 38.46 \\\\ Attributes & 16.67 & 38.46 & 34.62 & 34.62 & 38.46 \\\\ Relations & 8.33 & 11.54 & 11.54 & 11.54 & 15.38 \\\\ Theme & 12.50 & 15.38 & 3.85 & 15.38 & 19.23 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 23: Percentage of summaries affected by specific type of omission error by model.\n' +
+      '\n' +
+      '_This summary is largely factual and looks at the overall arc of the text, though it has some chronology problems (Ar\'s proposal comes after the run in the city, which comes after Josh and Radhyu open the pub-up), and focuses disproportionately on the author\'s access, despite their complex emotional journey. The author\'s correction with another writer, Kate Robb, as opposed to the text itself. It also doesn\'t discuss the nonlinear storyellings._\n' +
+      '\n' +
+      '**NOTE:** The model includes back matter information. While accurate, it should not have been included in the summary.\n' +
+      '\n' +
+      '_This set of summary claims are very focused on the idea of themes of digital age and the story doesn\'t cover that all. This not even based on a modern world. Chronology wasn\'t relevant as majority of the claims weren\'t correct, applicable or verifiable. Factuality was on zero and the claims don\'t cover any of the key events that occurs except that there was themes of life and death._\n' +
+      '\n' +
+      '**NOTE:** The model hallucinates information based on brief mentions of author\'s social media accounts.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l} \\hline \\hline\n' +
+      '**Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} (...) & _Goldbeck\'s insightful writing and clever comedic timing_ \\\\ _create the narrative, making it stand out and resolute with a broad variety of readers. Reflecting upon shared preferences like requiliat and various NYC spots, Goldbeck successfully manages to craft relatable characters with everyday experiences, despite their complex emotional journey. The author’s creative process in the narrative, including the decision to cut a subplot involving Ari working as a companion on a cruise shigly, adds a layer of interesting behind-the-scenes perspective. The narrative style, which pays home to classic 2000s romantic comdies, echoes elements of escapism, emphasizing the importance of literature during unprecatented times like the global pandemic._ (...) \\\\ \\hline \\end{tabular} _This set of summary claims are very focused on the idea of themes of digital age and the story doesn’t cover that all. This not even based on a modern world. Chronology wasn’t relevant as majority of the claims weren\'t correct, applicable or verifiable. Factuality was on zero and the claims don’t cover any of the key events that occurs except that there was themes of life and death._\n' +
+      '\n' +
+      '**NOTE:** The model hallucinates information based on brief mentions of author’s social media accounts.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create the book. Please note that the quotes I included below don’t necessarily prove any of the claims wrong (or right, for that matter)._ \\\\ \\hline \\end{tabular} _**NOTE:** The model declines to merge two summaries due to significant discrepancies in content.\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline\n' +
+      '**Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._ \\\\ \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Model** & **Comment** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested.\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Model** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._\n' +
+      '\n' +
+      '\\begin{tabular}{l l} \\hline \\hline \\multirow{2}{*}{_Update_} & **Model** & **Model** \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._ \\\\ \\hline \\hline \\multirow{7}{*}{_None of the claims is completely fact \n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c} \\hline \\hline \\multirow{2}{*}{_Summarized by_} & \\multicolumn{2}{c}{**No-Context**} & \\multicolumn{2}{c}{**BM25**} & \\multicolumn{2}{c}{**Human Evidence**} \\\\ \\cline{2-7}  & _Faithfulful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ \\\\ \\hline \\multicolumn{7}{l}{_F1 score against the human annotations_} & & & & & \\\\ GPT-3.5-Turo & 0.727 & 0.261 & 0.835 & 0.476 & 0.712 & 0.430 \\\\ Mitral & 0.643 & 0.183 & 0.837 & 0.244 & 0.784 & 0.406 \\\\ GPT-4 & 0.687 & 0.130 & 0.794 & 0.088 & 0.721 & 0.207 \\\\ GPT-4-Turo & 0.634 & 0.033 & 0.887 & 0.080 & 0.792 & 0.139 \\\\ Claude-3-Opus & 0.674 & 0.000 & 0.738 & 0.000 & 0.684 & 0.031 \\\\ \\hline Overall & 0.681 & 0.124 & **0.826** & 0.215 & 0.755 & **0.259** \\\\ \\hline \\multicolumn{7}{l}{_Token length of the given evidence against prediction label_} & & & & \\\\ GPT-3.5-Turo & 0.0 & 1136.4 & 1131.0 & 292.4 & 126.5 \\\\ Mitral & 0.0 & 1139.5 & 1132.9 & 211.7 & 153.4 \\\\ GPT-4 & 0.0 & 1138.6 & 1132.5 & 241.7 & 160.8 \\\\ GPT-4-Turo & 0.0 & 1141.9 & 1138.3 & 257.8 & 152.9 \\\\ Claude-3-Opus & 0.0 & 1134.5 & 1128.6 & 214.4 & 151.5 \\\\ \\hline Average & 0.0 & 1138.2 & 1132.6 & 243.6 & 149.0 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 26: Comparison of automatic evaluation using GPT-4-Turo based on different evidence extraction methods. We also presents the F1 score and token length of the extracted evidence for each summarizer. Overall mean values were calculated using all the claims across Tables.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c} \\hline \\hline Model & Comments \\\\ \\hline Claude-3-Opus & _“It also focuses extensively on the last couple chapters of the book. This is the only summary so far that has included claims about the very last chapter of the book that is from Dacre’s point of view.”_ \\\\ Claude-3-Opus & _“(...) and hits the main thematic elements of the text, though it disproportionately addresses the epilogue over other portions of the text (...)”_ \\\\ Claude-3-Opus & _“This summary included a lot of true elements, but also included many irrelevant details not integral to the plot. This is especially true for the end of the book.”_ \\\\ GPT-4-Turo & _“This summary focuses heavily on the end of the book and misses plot points that happen in the beginning of the book.”_ \\\\ GPT-4 & _“(...) and focuses disproportionately on the author’s conversation with another writer, Kate Robb, as opposed to the text itself.”_ [the interview is included at the end of the book] \\\\ Mixtral & _“The summary puts an emphasis on Part 4 of the book which is not in proportion to the rest of the book”_ [Part 4 is the last part] \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 25: Comments from annotators on models’ focus towards the book’s end\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\\\ \\hline A Haunting on the & 0.821 & 0.329 & 0.230 & 0.650 \\\\ Hill & & & & \\\\ Agency for Scandal & 0.960 & 0.133 & 0.034 & 0.833 \\\\ Divine Rivals & 0.960 & 0.156 & 0.140 & 0.917 \\\\ Fairplate of New York & 1.000 & 0.123 & 0.174 & 1.000 \\\\ Flavless & 0.950 & 0.217 & 0.012 & 0.500 \\\\ Fourth Wing & 1.000 & 0.169 & 0.112 & 1.000 \\\\ Modern Divination & 1.000 & 0.062 & 0.092 & 1.000 \\\\ Only For The Week & 0.893 & 0.186 & 0.056 & 0.500 \\\\ Pet & 0.871 & 0.151 & 0.121 & 0.881 \\\\ Romantic Comedy & 1.000 & 0.170 & 0.020 & 1.000 \\\\ Same Time Next Year & 0.667 & 0.161 & 0.204 & 0.700 \\\\ She Is a Haunting & 0.917 & 0.220 & 0.065 & 0.667 \\\\ Six Scorched Roses & 0.750 & 0.179 & 0.228 & 0.701 \\\\ Sorrow and Bliss & 0.983 & 0.197 & 0.029 & 0.750 \\\\ The Attonement & 1.000 & 0.067 & 0.069 & 1.000 \\\\ Murders & & & & \\\\ The Guest & 0.688 & 0.182 & 0.253 & 0.810 \\\\ The Marriage Act & 1.000 & 0.101 & 0.041 & 1.000 \\\\ The Spy Coast & 0.864 & 0.151 & 0.103 & 0.790 \\\\ The Wager & 1.000 & 0.495 & 0.085 & 1.000 \\\\ The White Lady & 0.750 & 0.045 & 0.151 & 0.938 \\\\ This Impossible & 1.000 & 0.147 & 0.044 & 1.000 \\\\ Brightness & & & & \\\\ Viciously Yours & 0.950 & 0.200 & 0.113 & 0.833 \\\\ Weyward & 0.947 & 0.504 & 0.161 & 0.750 \\\\ Wilfire & 1.000 & 0.229 & 0.036 & 1.000 \\\\ You, Again & 1.000 & 0.214 & 0.041 & 1.000 \\\\ Yellowface & 0.933 & 0.163 & 0.119 & 0.938 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 27: Precision (P\\(\\mathrm{R}\\)) and Recall (\\(\\mathrm{Re}\\)) from LM evaluation using GPT-4-Turbo **no context** for each book.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\\\ \\hline A Haunting on the Hill & 0.967 & 0.517 & 0.337 & 0.950 \\\\ Agency for Scandal & 1.000 & 0.570 & 0.063 & 1.000 \\\\ Divine Rivals & 0.980 & 0.427 & 0.190 & 0.917 \\\\ Fairtale of New York & 1.000 & 0.230 & 0.195 & 1.000 \\\\ Flavless & 1.000 & 0.352 & 0.033 & 1.000 \\\\ Fourth Wing & 0.985 & 0.662 & 0.244 & 0.950 \\\\ Modern Divination & 1.000 & 0.409 & 0.138 & 1.000 \\\\ Only For The Week & 1.000 & 0.509 & 0.119 & 1.000 \\\\ Pet & 0.981 & 0.676 & 0.242 & 0.833 \\\\ Romantic Comedy & 1.000 & 0.204 & 0.024 & 1.000 \\\\ Same Time Next Year & 0.851 & 0.780 & 0.300 & 0.600 \\\\ She Is a Haunting & 0.985 & 0.641 & 0.186 & 0.750 \\\\ Six Scorched Roses & 0.907 & 0.521 & 0.334 & 0.759 \\\\ \\hline Sorrow and Bliss & 1.000 & 0.340 & 0.038 & 1.000 \\\\ The Attonement & 1.000 & 0.333 & 0.093 & 1.000 \\\\ The Guest & 0.868 & 0.644 & 0.391 & 0.589 \\\\ The Marriage Act & 1.000 & 0.360 & 0.049 & 1.000 \\\\ The Spy Coast & 0.975 & 0.392 & 0.168 & 0.933 \\\\ The Wager & 1.000 & 0.810 & 0.220 & 1.000 \\\\ The White Lady & 1.000 & 0.311 & 0.201 & 1.000 \\\\ This Impossible & 1.000 & 0.378 & 0.049 & 1.000 \\\\ Brightness & & & & \\\\ Viciously Yours & 0.921 & 0.508 & 0.156 & 0.688 \\\\ Weyward & 1.000 & 0.598 & 0.157 & 1.000 \\\\ Wildlife & 1.000 & 0.387 & 0.042 & 1.000 \\\\ You, Again & 0.967 & 0.469 & 0.048 & 0.667 \\\\ Yellowface & 0.935 & 0.461 & 0.153 & 0.813 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 28: Results of average Precision (\\(\\mathrm{Pr}\\)) and Recall (\\(\\mathrm{Re}\\)) estimated by **human evidence** and LM evaluation using GPT-4-Turbo for each book.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c} \\hline \\hline Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\\\ \\hline A Haunting on the Hill & 0.902 & 0.781 & 0.520 & 0.550 \\\\ Agency for Scandal & 0.974 & 0.721 & 0.067 & 0.333 \\\\ Diving Rivals & 0.907 & 0.541 & 0.209 & 0.556 \\\\ Fairaytale of New York & 0.874 & 0.712 & 0.263 & 0.556 \\\\ Flawless & 1.000 & 0.663 & 0.056 & 1.000 \\\\ Fourth Wing & 0.953 & 0.759 & 0.244 & 0.600 \\\\ Modern Divination & 0.950 & 0.644 & 0.142 & 0.700 \\\\ Only For The Week & 0.967 & 0.789 & 0.167 & 0.417 \\\\ Pet & 0.907 & 0.604 & 0.175 & 0.649 \\\\ Romantic Comedy & 1.000 & 0.675 & 0.044 & 1.000 \\\\ Same Time Next Year & 0.836 & 0.859 & 0.333 & 0.425 \\\\ She Is a Haunting & 0.949 & 0.772 & 0.100 & 0.250 \\\\ Six Scorched Roses & 0.816 & 0.500 & 0.269 & 0.616 \\\\ Sorrow and Bliss & 1.000 & 0.588 & 0.077 & 1.000 \\\\ The Attenement Murders & 1.000 & 0.642 & 0.115 & 1.000 \\\\ The Guest & 0.845 & 0.737 & 0.395 & 0.598 \\\\ The Marriage Act & 0.987 & 0.833 & 0.119 & 0.833 \\\\ The Spy Coast & 0.953 & 0.527 & 0.216 & 0.738 \\\\ The Wager & 0.958 & 0.862 & 0.100 & 0.167 \\\\ The White Lady & 0.836 & 0.628 & 0.097 & 0.250 \\\\ This Impossible & 0.961 & 0.607 & 0.022 & 0.250 \\\\ Brightness & & & & \\\\ Viciously Yours & 0.929 & 0.725 & 0.172 & 0.521 \\\\ Weyward & 0.969 & 0.774 & 0.300 & 0.583 \\\\ Wildfire & 0.980 & 0.664 & 0.043 & 0.750 \\\\ You, Again & 0.960 & 0.609 & 0.015 & 0.333 \\\\ Yellowface & 0.941 & 0.695 & 0.204 & 0.562 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 31: Number of claims per label for each model in the sub-dataset of seven books.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c} \\hline \\hline Evaluation LM & Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\\\ \\hline \\multirow{4}{*}{GPT-4-Turbo} & Only For The Week & 0.960 & 0.972 & 0.333 & 0.167 \\\\  & Pet & 0.921 & 0.923 & 0.333 & 0.262 \\\\  & She Is a Haunting & 0.957 & 0.949 & 0.417 & 0.333 \\\\  & Six Scorched Roses & 0.794 & 0.958 & 0.625 & 0.288 \\\\  & Sorrow and Bliss & 1.000 & 0.868 & 0.139 & 1.000 \\\\  & Viciously Yours & 0.919 & 0.919 & 0.367 & 0.354 \\\\  & Yellowface & 0.952 & 0.948 & 0.450 & 0.438 \\\\ \\hline \\multirow{4}{*}{Claude-3-Opus} & Only For The Week & 0.973 & 0.963 & 0.333 & 0.250 \\\\  & Pet & 0.927 & 0.949 & 0.500 & 0.524 \\\\  & She Is a Haunting & 0.968 & 0.970 & 0.542 & 0.583 \\\\  & Six Scorched Roses & 0.784 & 0.993 & 0.667 & 0.122 \\\\  & Sorrow and Bliss & 1.000 & 0.970 & 0.467 & 1.000 \\\\  & Viciously Yours & 0.932 & 0.930 & 0.320 & 0.438 \\\\  & Yellowface & 0.946 & 0.954 & 0.625 & 0.500 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 29: Results of average Precision (Pr) and Recall (Re) estimated by **BM25** retriever and LM evaluation using GPT-4-Turbo for each book.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|l|c c|c c} \\hline \\hline \\multirow{2}{*}{**Human**} & \\multirow{2}{*}{**Claim Source**} & \\multicolumn{2}{c|}{GPT-4-Turbo} & \\multicolumn{2}{c}{Claude-3-Opus} \\\\ \\cline{3-6}  & & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ \\\\ \\hline \\multirow{4}{*}{**Human**} & Claude-3-Opus & 0 & 1 & 0 & 1 \\\\  & GPT-4-Turbo & 3 & 14 & 3 & 14 \\\\  & GPT-4 & 6 & 5 & 9 & 2 \\\\  & GPT-3.5-Turbo & 8 & 14 & 10 & 12 \\\\  & Mixtral & 11 & 7 & 8 & 10 \\\\ \\hline \\multirow{4}{*}{**Human**} & Claude-3-Opus & 10 & 130 & 8 & 132 \\\\  & GPT-4-Turbo & 0 & 107 & 3 & 104 \\\\  & GPT-4 & 20 & 132 & 8 & 144 \\\\  & GPT-3.5-Turbo & 10 & 101 & 6 & 105 \\\\  & Mixtral & 8 & 136 & 2 & 142 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 32: Count of labels predicted by Claude-3-Opus and GPT-4-Turbo contrasted with human-annotated labels, segmented by the model that generated each claim.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

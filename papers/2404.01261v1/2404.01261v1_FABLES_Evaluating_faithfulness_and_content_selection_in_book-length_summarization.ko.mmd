@@ -1,0 +1,725 @@
+# Fabrics : 책장 요약에서 충실도와 내용 선택 평가
+
+예경김\({}^{\circledS}\), 야페이창\({}^{\circledS}\), 마르제나카르핀스카\({}^{\circledS}\), 아스파르나가리멜라\({}^{\circledS}\)
+
+**Varun Manjunatha\({}^{\circledS}\), Kyle Lo\({}^{\circledS}\), Tanya Goyal\({}^{\circledS}\), Mohit Iyyer\({}^{\circledS}\)**
+
+UMass Amherst\({}^{\circledS}\), Adobe\({}^{\circledS}\), Allen Institute for AI\({}^{\circledS}\), Princeton\({}^{\circledS}\)
+
+{yekyungkim, yapeichang, mkarpinska, miyyer}@umass.edu
+
+{garimell, vmanjuna}@adobe.com, kylel@allenai.org, tanyagoyal@princeton.edu
+
+###### Abstract
+
+장문 대형 언어 모델(LLM)은 기술적으로 장부 길이의 문서(\(>\) 100K 토큰)를 요약할 수 있지만, 문서의 길이와 복잡성은 지금까지 충실성과 같은 입력 의존적 측면에 대한 평가를 금지했다. 본 논문에서는 소설 책의 LLM 생성 요약에 대한 충실성과 내용 선택에 대한 최초의 대규모 인간 평가를 수행한다. 본 연구는 2023년 또는 2024년에 출판된 책의 요약에 초점을 맞추어 데이터 오염 문제를 완화하고 주석 작업에 앞서 각 책을 완전히 읽은 주석자를 고용하여 비용과 인지적 부담을 최소화한다. 우리는 26권의 LLM 생성 요약에서 만든 3,158개의 주장에 대한 주석 데이터 세트인 페이블을 5.2K 달러의 비용으로 수집하며, 이를 통해 충실성을 기반으로 LLM 요약자의 순위를 매길 수 있다. Claude-3-Opus는 모든 폐쇄 소스 LLM보다 훨씬 나은 반면 오픈 소스 Mktral은 GPT-3.5-Turbo와 동등하다. 주석을 분석한 결과 대부분의 불성실한 주장은 사건 및 성격 상태와 관련이 있으며 일반적으로 서사를 무효화하기 위해 서사에 대한 간접 추론을 필요로 한다. LLM 기반 자동 평가기는 다른 설정에서 사실성과 일관성에 대해 신뢰할 수 있는 것으로 입증되었지만, 우리는 충실의 여러 LLM 평가기를 구현하고 특히 불성실한 주장을 감지하는 것과 관련하여 인간 주석과 강한 상관관계가 없음을 발견했다. 우리의 실험은 불성실한 주장을 탐지하는 것이 요약 평가뿐만 아니라 장기적인 맥락 이해를 위한 테스트 베드로서 중요한 미래 방향임을 시사한다. 마지막으로, 장서 요약에서 내용 선택 오류를 탐색함으로써 충실성을 넘어 중요한 서술 요소와 관련된 누락 오류 유형을 개발하고 책의 끝에서 발생하는 사건에 대한 체계적인 과잉 강조를 식별한다. 우리는 책장 요약의 평가에 대한 추가 연구에 박차를 가하기 위해 우화를 발표한다.
+
+[https://github.com/mungg/FABLES](https://github.com/mungg/FABLES)
+
+## 1 Introduction
+
+장문 언어 모델의 발전은 장서 문서를 요약하는 데 관심을 불러일으켰다(\(>\)100K 토큰). 요약 품질에 대한 충실성 및 내용 관련성의 중요성에도 불구하고, 이 레짐에서의 최근 작업은 일관성과 같은 입력-불가지론적 측면에만 초점을 맞춘다(Chang et al., 2023b). 이것은 입력 문서의 길이와 복잡성 때문이다: 인간 주석자를 고용하여 그것들을 읽고 이해하는 것은 비용이 많이 들고 시간이 많이 걸린다. 우리의 작업은 책장 요약에서 충실성과 기타 내용 선택 오류에 대한 최초의 대규모 인간 평가를 제시함으로써 이러한 격차를 메운다.
+
+주석 작업을 시작하기 전에 (데이터 오염을 방지하기 위해) 2023년 또는 2024년에 출판된 책을 이미 읽은 작업자를 고용하여 문서 복잡성과 관련된 문제를 완화합니다. 우리는 Chang 등(2023b)에 설명된 계층적 요약 방법론의 5가지 구성을 통해 이러한 책에 대한 요약을 생성하며, 각각은 기본 LLM과 청크 크기를 변경한다. LongEval(Krishna et al., 2023) 및 FactScore(Min et al., 2023)와 같은 성실성 및 사실성 평가에 대한 선행 연구에 따라, 우리는 각각의 요약을 청구 목록으로 분해한 다음 입력 문서에 대해 개별적으로 검증된다.
+
+총괄적으로, 우리의 테이블 데이터 세트(책-길이 요약에 대한 충실성 주석)에는 책에서 인용된 형태의 각 클레임에 대한 증거와 청구 및 요약 수준 모두에서 자유 형식 주석과 함께 **26** 서술 텍스트에 걸쳐 충실성의 **3,158** 클레임 수준 주석이 포함되어 있다(그림 1).1 전반적으로 Claude-3-Opus가 가장 충실한 책-길이 요약자이며 GPT-4-Turbo가 그 뒤를 잇고 있음을 관찰한다. LLM의 순위를 매기는 것 외에도 우리의 주석은 이전에 탐구되지 않은 다음 질문에 대해서도 조명한다.
+
+각주 1: 모든 요약 및 해당 주석을 공개적으로 공개합니다. 도서 전문은 공개할 수 없지만 재현성을 위해 26권의 책을 각각 구매할 수 있는 링크도 제공할 예정입니다.
+
+**LLM 요약자는 어떤 종류의 충실성 오류를 만들까요? (SS3)** 표의 정성적 분석에서는 불성실하다고 표시된 대부분의 클레임이 문자 및 관계의 _이벤트_ 또는 _상태_와 관련이 있음을 보여줍니다. 더욱이, 이러한 주장들의 대부분은 증거에 대한 멀티-홉 추론을 통해서만 무효화될 수 있어, 태스크의 복잡성 및 기존의 사실-검증 설정들로부터의 그 차이를 강조한다(Min et al., 2023; Kamoi et al., 2023).
+
+**충성도는 자동으로 평가될 수 있습니까? (SS4)** 26권의 인간 주석을 수집하면 **SS5.2K** 비용이 들어 워크플로를 새 도메인 및 데이터 세트로 확장하는 데 어려움이 있음을 보여줍니다. 따라서 우리는 인간의 판단과 높은 상관 관계를 달성하는 BooookScore(Chang et al., 2023b) 및 FactScore(Min et al., 2023)와 같은 선행 작업에 따라 충실성의 다중 LLM 기반 평가자를 구현한다. 그러나 모든 메트릭 구성은 불성실한 클레임을 확실하게 식별하기 위해 고군분투합니다. 우리의 최고의 수행 방법은 검증할 단일 주장과 함께 긴 맥락의 LLM으로 가능한 한 많은 책을 공급함으로써 "건초더미에서 바늘 찾기" 스타일의 평가(캄라트, 2023; 쌍둥이 팀, 2024)와 유사하게 작동한다. 이 클레임 수준 검증 작업은 장부 요약 평가에 중요하고 긴 컨텍스트 이해에 대한 도전적인 벤치마크로 추진된다.
+
+**신뢰를 넘어 LLM 요약자가 만드는 다른 오류는 무엇입니까? (SS5)** 표의 요약 수준 자유 형식 주석을 모두 코딩하여 주석자가 중요한 정보의 _작업_ 을 자주 지적한다는 것을 알아냅니다. 우리는 장부 요약에서 누락 오류에 대한 첫 번째 분류법을 개발하고 주요 사건, 세부 사항 및 주제가 모든 LLM에 의해 자주 생략됨을 관찰한다. 우리는 또한 다른 콘텐츠 선택 오류를 관찰한다: 예를 들어, 우리의 가장 강력한 요약자 Claude-3-Opus와 GPT-4-Turbo조차도 책의 끝을 향해 콘텐츠를 과도하게 강조하여 시작에 해를 끼친다.
+
+이 문서에 사용된 모든 프롬프트는 SSB에서 찾을 수 있다.
+
+도 1: 책-길이 요약(표)에서 충실한 주석을 수집하기 위한 우리의 파이프라인. 먼저 (a) 계층적 병합을 통해 요약을 생성한다. 다음으로, (b) GPT-4가 탈맥락화된 클레임을 추출하도록 촉구한다. 마지막으로, (c) 주석이 각 주장을 검증하고 할당된 라벨에 대한 추론과 증거를 제공해야 하는 이러한 주장에 대한 인간 평가를 수행한다.
+
+## 2 인간 주석 수집
+
+이 섹션에서는 LLM 생성 책 요약의 충실성과 전반적인 품질에 대한 인간 주석으로 구성된 우화 수집 파이프라인을 설명한다.
+
+새로 출판된 허구 서적의 코퍼스 수집: LLM 생성 요약에 주석을 달기 위한 유일한 목적으로 주석자에게 긴 책(\(\geq 100K\) 토큰)을 읽도록 요청하는 것은 비용과 시간 측면에서 불가능하다. 북섬(Kryscinski et al., 2022)의 책과 같이 이미 많은 사람들이 읽은 유명한 책을 선택함으로써 이러한 부담을 제거할 수 있지만 LLM은 사전 훈련 동안 이러한 책과 요약본(Chang et al., 2023a)을 보았을 가능성이 있으며, 이는 생성된 클레임의 평가를 왜곡할 수 있다. 대신 주석자 기반 워크플로우를 사용하여 이러한 문제를 피합니다. 2023년 또는 2024년에 출판된 하나 이상의 영어 책을 읽은 자가 보고자인 Upwork2를 통해 주석자 풀을 모집합니다. 최종 주석자 풀은 **14** 원어민 화자로 구성되며, 그들이 나열한 26권의 전자 사본을 구입합니다. 3 데이터 세트의 평균 책 길이는 **121K** 토큰입니다(통계는 표 1 참조).
+
+각주 2: [https://www.upwork.com](https://www.upwork.com)
+
+각주 3: 앞뒤 문제를 포함한 모든 정보를 보존하는 텍스트 파일로 epubs를 변환합니다.
+
+책 요약들을 생성하기 위해 LLM들을 프롬프트하는 것:책-길이 문서들을 요약하기 위해, 우리는 (Chang 등, 2023b)로부터의 계층적 병합 전략을 채택한다; 방법의 예시는 도 1을 참조한다. 우리는 GPT-3.5-Turbo, GPT-4, GPT-4-Turbo (OpenAI, 2023), Mixtral (Jiang et al., 2024), Claude-3-Opus (Anthropic, 2023)를 백본 모델로 사용한다.4
+
+각주 4: 모든 요약은 gpt-3.5-터보, gpt-4-0613, gpt-4-0125-프리뷰, 믹스트랄-8x7B-인스트럭트-v0.1 및 Claude-3-opus-20240229와 같은 체크포인트를 사용하여 2024년 2월에 생성되었다.
+
+요약을 클레임으로 분해: 긴 형식의 요약 충실성을 평가하는 이전 작업에 따라(Krishna et al., 2023; Min et al., 2023; Wei et al., 2024), 요약 내용을 _원자 클레임_ 으로 분해하여 세밀한 주석을 사용할 수 있습니다. 우리는 두 가지 주요 지침으로 LLM(GPT-4)을 촉구한다: (1) 각 원자 클레임은 요약에서 추가 컨텍스트(예: 해결된 대명사)를 요구하지 않고 자체적으로 완전히 이해할 수 있어야 하며, (2) 가능한 경우 각 클레임은 관련 시간적, 위치적 및 인과적 컨텍스트 내에 위치해야 한다. 100개의 추출된 클레임의 무작위 샘플의 저자에 의한 인간 검증은 100% 정밀도를 입증했다(즉, 각 클레임은 추가 또는 잘못된 정보 없이 요약으로 추적될 수 있다). 요약 및 그 추출된 클레임의 예는 도 2를 참조하고, 정확한 프롬프트는 SB를 참조한다.
+
+인간 주석 수집:업워크 주석자는 두 가지 주요 목표로 작업되었다.
+
+* 내러티브의 정확한 반영, (b) _불성실한_
+- 서술의 잘못된 표현, (c) _부분적 지지_
+- 부분적으로 확증된,
+
+\begin{table}
+\begin{tabular}{l c c c c c c} \hline \hline  & \multicolumn{3}{c}{**Books \(\overline{\approx}\)**} & \multicolumn{3}{c}{**Annotations \(\overline{\not}\)**} \\ \cline{2-7}  & **Documents** _(n=26)_ & _Summaries_ _(n=130)_ & _Claims_ _(n=3,158)_ & _Reasons_ _(n=1,513)_ & _Evidence_ _(n=3,051)_ & _Comments_ _(n=130)_ \\ \hline Mean & 121,467 & 594.3 & 19.8 & 37.6 & 194.7 & 155 \\ St. dev. & 35,836 & 119.5 & 6.4 & 33.4 & 218.5 & 148.4 \\ Max & 243,965 & 798 & 58 & 281 & 2435 & 823 \\ Min & 49,762 & 172 & 6 & 2 & 5 & 6 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 책 및 표 주석의 토큰 수. tiktoken([https://github.com/openai/tiktoken](https://github.com/openai/tiktoken)) tokenizer를 기반으로 합니다.
+
+내러티브 또는 (d) _확인할 수 없음_ - 불확정입니다. 그들은 관련되었을 때 책에서 인용문 형식으로 _증거_를 포함하여 선택을 지원하기 위해 자유 형식 텍스트 정당화를 제공했다.
+* **요약 수준:** 요약의 전체 품질에 대한 자유 형식 요약 수준 주석을 제공합니다. 주석들은 전체로 설정된 주장을 비판하면서 누락, 부정확성, 사소한 플롯 포인트에 대한 불균형한 강조 또는 기타 우려를 식별했다.
+
+주석자는 참조를 위해 책 텍스트에 대한 전체 액세스를 제공하는 맞춤형 인터페이스, 5를 사용했다. 각 주석자는 할당된 책에 대해 5개의 LLM 생성 요약 모두에 주석을 달도록 할당되었으며, 이는 무작위 순서로 제시되었다. 주석은 이 작업에 대해 $200를 받았고, 완료하는 데 \(\sim\)11시간이 걸렸다(STD=6.34). 총 5.2K 달러의 비용으로 26권의 책에 걸쳐 130개의 요약본에서 3,158개의 주석이 달린 클레임이 포함되어 있습니다.
+
+각주 5: 인터페이스의 스크린샷 및 작업의 정확한 문구는 SC를 참조한다.
+
+## 3 소설의 충실성 오류 분류법 개발
+
+이 섹션에서는 이러한 주장을 지지하거나 반박하기 위한 자유 형식 주석과 인용 증거를 모두 포함하는 Fables의 3,158개의 주장 수준 충실성 주석에 대한 통계 및 정성적 분석 결과를 제시한다. 6 Broadly, Claude-3-Opus가 가장 충실한 LLM 요약자이며 청구의 90%가 충실한 것으로 평가되었으며 GPT-4 및 GPT-4-Turbo 78%, GPT-3.5-Turbo 72%, Mixtral 70%가 그 뒤를 잇고 있음을 관찰한다(표 2).
+
+각주 6: 107개의 주장에 대해 주석자는 주장에 찬성하거나 반대하는 증거를 인용할 수 없었다.
+
+불성실 클레임 분석:불성실 클레임의 본질을 추가로 연구하기 위해 클레임 유형과 추론 유형(참조)의 두 가지 차원을 따라 205개의 이러한 클레임 모두를 특성화합니다.
+
+그림 2: Claude-3-Opus에 의해 생성된 예제 요약 및 GPT-4에 의해 추출된 클레임.
+
+분류법 및 빈도 수에 대한 표 3.8 대부분의 불성실한 주장은 특정 _이벤트_(31.5%) 또는 일부 특성 또는 관계의 _상태_(38.6%)에 대한 것이다. 결정적으로, 불성실한 주장들의 대다수는 반박하기 위해 _간접적인 추론_ 을 요구한다 (50.2%). 이것은 이전 작업에 비해 더욱 도전적인 충실성 평가 세팅이 된다 (Kamoi et al., 2023; Min et al., 2023). 이 분석에 대한 자세한 내용은 SSD에서 확인할 수 있습니다.
+
+각주 8: 불성실한 주장이 있는 주석은 실제로 247개이지만 이 분석을 위해 주석자의 추가 설명이 필요한 불분명한 42개를 제외한다. 클레임은 때때로 여러 하위 클레임을 포함하기 때문에 각 주석이 여러 레이블을 가질 수 있도록 합니다.
+
+\begin{table}
+\begin{tabular}{l l l|l l l l} \hline \hline
+**Model** & **Chunk size** & **Avg \# Claims\({}_{\text{STD}}\)** & **Faithful** & **Unfaithful** & **Partial support** & **Can’t verify** \\ \hline GPT-3.5-Tuero & 2,0487  & 23.00,14 & 72.07 & 10.52 & 13.01 & 4.41 \\ Mvital & 2,048 & 26.92,485 & 70.04 & 10.46 & 16.72 & 2.78 \\ GPT-4 & 2,048 & 26.36,355 & 78.55 & 4.54 & 15.53 & 1.38 \\ GPT-4-Urro & 100,000 & 21.68,240 & 78.16 & 7.62 & 11.41 & 2.82 \\ Claude-3-Opus & 180,000 & 23.32,434 & 90.66 & 2.03 & 7.06 & 0.26 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 인간이 _충성_, _불충성_, _부분 지원_ 또는 _검증할 수 없음_으로 평가한 LLM 생성 요약에서 추출한 클레임의 백분율입니다. 청크 크기는 모델 간 요약에 사용되는 청크당 토큰 수를 나타내며, 생성된 요약에 클레임 카운트의 평균 및 표준 편차도 포함합니다.
+
+\begin{table}
+\begin{tabular}{l l l l} \hline \hline Label & Freq & Example claim & Reason for rejection \\ \hline \hline \multicolumn{5}{l}{**Claim Type**} \\ \hline State & 38.6 & _Roman Kitt is under pressure from his father to join the family business._ & Roman is not under pressure, his father bribes people so he gets his dream job. \\ \hline Event & 31.5 & _Patricia Liu, Athan’s mother, discovers that June has sold Athan’s manuscript and confronts her._ & Patricia never confronts June. \\ \hline Cause/effect & 11.2 & _Lilly ausive ex-louffrani, Alan Bushy, becomes a suspect due to the practitioners nature of the murders._ & He becomes a suspect because he was abusive to Lilly. \\ \hline High-level & 11.2 & _The narrative is non-linear and features flashbacks, switches between alternate worlds or viewpoints, and present-day conversations between Sally and Danny._ & The narrative is largely linear. \\ \hline Introspection & 7.5 & _Juniper Song encounters Athan Liu at a literary event, triggering feelings of admiration, intimidation, and self-deatht._ & No part of the book shows that Juniper admires Athena. \\ \hline Indirect & 50.2 & _Dean stirs up tensions with palacar server Faun._ & This encounter is merely Rennick being protective of Amedia, tension can’t be inferred from the book. \\ \hline Direct & 36.8 & _The narrative reveals that Maggio had a brief affair with a doctor named Danny in Bangkuk while she was being followed by unknown entities._ & The book directly states that they are married, so it’s not a brief affair. \\ \hline Subjective & 7.2 & _Forest is torn between his desire to protect Iris and confronting his past actions._ & I don’t think Forest makes any real effort to confront his past actions \\ \hline Extra info & 5.7 & _The book “Wildfuse” is the first in the lectureker series._ & It’s not stated in the book, but this is actually the second in the series. \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 표의 주장 유형 및 추론 유형에 대한 충실성 오류 분류. 각 레이블에 대해 _빈도_ 를 보고하고 _예시_ 클레임-이유 쌍을 제공합니다. 더 많은 예와 일반적인 라벨링 방식은 표 15에서 찾을 수 있다.
+
+자동 충실도 평가를 통한 과제
+
+통찰력이 있는 반면, 책 길이 요약에 대한 인간의 충실한 주석은 단순히 확장 가능하지 않으며, 우리의 주석은 총 5.2K달러의 비용에 대해 요약당 40달러이며, 이는 모델 개발 중 및 더 큰 말뭉치를 사용하는 데 엄청나게 비싸다. 이 섹션에서는 FactScore(Min et al., 2023) 및 BooookScore(Chang et al., 2023b)와 같은 방법에서 영감을 받아 클레임 수준에서 작동하는 충실성의 LLM 구동 자동 평가기를 개발합니다. 그러나 단일 주장을 확인하기 위해 전체 책으로 Claude-3-Opus를 프롬프트하는 데 의존하는 우리의 가장 좋은 방법은 표에서 불성실한 주장을 감지하는 데 비싸고 신뢰할 수 없으며 향후 작업에 중요한 방향을 제안한다.
+
+성실의 자동 평가자: 우리는 책(표 13)으로부터 주어진 단일 주장을 검증하기 위해 제로 샷 방식으로 LLM을 프롬프트함으로써 자동 평가자를 구현하며, 여기서 증거는 다음 중 하나일 수 있다.
+
+* **없음**: 하한으로 책의 증거 없이 클레임의 충실성을 평가합니다.
+* **인간 증거**: SS2에 설명된 파이프라인을 통해 얻은 Fables에서 인간 주석이 달린 증거를 사용할 수도 있습니다. 이 증거는 항상 클레임과 관련이 있지만 클레임 확인을 지원하기에 충분하거나 충분하지 않을 수 있는 짧고 문맥이 높은 범위의 형태를 취하는 경우가 많습니다.
+* **BM25 검색**: 클레임을 쿼리로 사용하여 책에서 구절을 검색하기 위해 BM25(Robertson 등, 1995)를 사용합니다. 우리는 평가 프롬프트의 증거로 사용하기 위해 가장 관련성이 높은 \(k\) 구절을 연결한다. 우리는 \(k=5\)와 청크 통로를 최대 256개의 토큰으로 설정했다. 통과 길이를 변경할 때 성능이 변경되면 SS4를 참조하십시오.
+* **전체 책(EB)**: 쿼리와 문서의 복잡성으로 인해 검색이 설정에서 특히 어렵습니다. 직관적으로, 긴 컨텍스트 LLM은 단순히 전체 책을 컨텍스트에 증거로 피팅함으로써 명시적 검색을 우회할 수 있다. 이 설정은 입력 문서에 대한 훨씬 더 깊은 이해를 테스트한다는 점을 제외하고는 선행 작업(Kamradt, 2023; Levy et al., 2024)에 대한 "needle-in-the-haystack" 평가와 유사하다.
+
+실험을 위한 데이터 세트: "전체 책" 설정과 관련된 예산 제약으로 인해, 우리는 자동 평가자 구성의 성능을 평가하기 위해 각각 125K 토큰보다 짧은 7개의 책을 선택한다. 그 결과 총 723건의 클레임이 발생했으며 그 중 69건은 인간 주석자에 의해 _충실하지 않음_으로 표시되고 654건은 _충실함_으로 표시된다. 이러한 레이블과 관련된 주관성 증가로 인해 실험에서 부분적으로 지원되거나 검증할 수 없는 주장을 고려하지 않는다. 이 데이터 세트 및 실험 비용에 대한 자세한 정보는 SF에서 찾을 수 있다.
+
+결과: 각 자동 평가기 구성의 성능을 평가하기 위해 인간의 주석을 기반으로 한 ground-truth 레이블(_Faithful_ 및 _Unt faithful_)과 비교하였다. 클래스 불균형으로 인해 표 5.9에서 서로 다른 LLM에 의해 생성된 클레임 간에 분할된 각 레이블에 대한 별도의 F1 점수를 보고한다. 정상성 검사로 "증거 없음" 설정은 매우 저조하게 수행되며, 더 흥미롭게도 인간 증거는 검색 및 전체 책 설정 모두에서 성능을 저하하여 LLM이 클레임 유효성을 판단하기 위해 더 많은 컨텍스트를 필요로 함을 시사한다. 가장 성능이 좋은 자동 평가기는 전체 책 설정에서 Claude-3-Opus이며, 이는 BM25뿐만 아니라 동일한 설정에서 GPT-4-Turbo를 모두 크게 능가한다.
+
+각주 9: 모델당 수준에 대한 _충실하지 않은_ 클레임에 대한 점수는 특히 Claude-3-Opus 요약의 경우 표본 크기가 작기 때문에 가감하여 취해야 한다.
+
+결론:표 5에서 가장 좋은 성능을 보였음에도 불구하고 Claude-3-Opus는 궁극적으로 신뢰할 수 있는 자동 평가기( _Unt faithful_ 클레임을 분류할 때 47.5 F1)가 되기에는 너무 저조한 성능을 보인다. 이것은 분해 후 검증의 이러한 패턴이 Min 등(2023)과 같은 다른 환경에서 인간의 판단과 상관관계가 있는 것으로 나타났기 때문에 놀라운 일이다. 오류를 수동으로 분석한 결과, Claude-3-Opus는 비내러티브 정보(23.1%), 상식 추론에 기반한 평가(20.5%), 문자 혼동(12.8%)과 관련된 주장으로 대부분의 어려움을 겪고 있으며, 이는 종종 전체 책에 대한 깊은 이해를 필요로 한다. [그림 10]의 혼동 행렬과 [그림 3]의 예를 참조한다. 질적으로, 우리는 또한 주석자 주석(표 4)으로부터 이 주장 검증 작업의 어려움을 측정할 수 있는데, 이는 증거가 로컬화하기 어려울 수 있고("니들-인-더-헤이스택" 방식으로) 완전한 문서 추론이 필요할 수 있다.
+
+**토론:** 일반적으로 LLM 생성 텍스트의 충실성을 벤치마킹하는 것이 중요하다는 데 동의합니다. 그러나, 최근의 노력들은 주로 엔티티-중심적 사실들을 검증하는 것에 초점을 맞추고 있다(Min et al., 2023). 우리의 작업과 다른 것들(Zhu et al., 2023; Tang et al., 2024; Mishra et al., 2024)은 특히 책 요약과 같은 더 어려운 설정에서 이러한 것들이 모든 유형의 LLM 오류에 대한 범위를 제공하지 않는다는 것을 보여준다. 더욱이, 대부분의 과거 평가 기법들의 백본을 형성하는 검색-텐-검증 프레임워크(Bohnet et al., 2022);
+
+\begin{table}
+\begin{tabular}{p{34.1pt} p{34.1pt}} \hline \hline  & Comments \\ \hline \(\heartsuit\) & _The hardest part was that some of the claims were very general about the text, such as describing overall character arcs, which made it hard to find specific textual support._ \\ \(\heartsuit\) & _The most difficult part for me was how general some of the sentences were. Because the material was so broad, I felt that I could use 20 or 30 quatations. For example, this book is about many stories of a private investigator in Africa (not exactly what it said, but close). I could recite the entire book._ \\ \(\heartsuit\) & _The most difficult part for me was finding supporting quatations for claims that were more abstract (e.g. "The book grapples with the scars of colonialism."). Although I was able to tell right away whether the claim was true or false, based on my own reading, it was at times difficult to find a specific quotation that best proved the claim. The themes were more often implicit in the text, rather than explicit._ \\ \(\heartsuit\) & _The most difficult part was to give citations for claims about writing style and intent. The reason was that these claims are usually based on the book as a whole, so an accurate citation would be the whole book._ \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 증거 검색의 문제를 강조하는 주석자 주석.
+
+그림 3: 주석이 달린 라벨과 추론을 동반한 Claude-3-Opus와 GPT-4-Turbo에 의해 이루어진 라벨 예측의 실수 사례. 더 많은 예들은 도 11에서 찾을 수 있다.
+
+Gao et al., 2023)은 훨씬 더 어려운 환경에 대해 완전히 실패한다. 이러한 증거를 감안할 때, 우리는 현재 충실도 평가 벤치마크가 고려하는 오류 유형 및 작업 설정(현재 책 길이 요약 작업 포함)의 범위를 확장할 것을 요구한다.
+
+## 5 충실성 너머: 책 요약에서 내용 선택 오류
+
+책장 요약은 아직 초기 영역이기 때문에 일관성(Chang 등, 2023b)과 충실성(SS3)을 넘어서는 다른 오류 유형에 대한 연구는 여전히 부족하다. 이 섹션에서는 모든 _130_ 자유 형식, 페이블의 요약 수준 댓글에 대해 정성 코딩을 수행하고 충실성보다 감지하기 더 어려울 수 있는 콘텐츠 선택 오류(예: 누락)의 분류법을 제시한다.
+
+각주 10: 댓글 분석에 사용되는 주석 체계의 상세 내용은 SE의 표 21에 있다.
+
+LLM 생성 요약의 일반적인 문제: 표 6은 주석자의 주석에 따라 특정 문제에 의해 영향을 받는 요약의 백분율을 요약한다. 11 우리의 분석에 따르면 모든 LLM은 시간 오류가 발생하지만 확장된 컨텍스트를 가진 모델에서는 덜 두드러진다(Claude-3-Opus 및 GPT-4-Turbo). 모든 모델은 또한 GPT-4-터보 및 GPT-3.5-터보의 경우 각각 80.8% 및 84.6%에 비해 Claude-3-Opus가 가장 적은 영향을 받는 것으로(52%) 중요한 정보를 생략했다는 비판을 받았다. 가장 덜 충실한 모델인 GPT-3.5-터보와 Mlxtral도 둘 다 지나치게 포괄적인 진술(38.5%)을 생성하는 경향이 있다. 마지막으로 요약이 훌륭하거나 포괄적이라고 명시적으로 찬사를 받은 사례도 살펴본다. Claude-3-Opus가 48%, 54%로 가장 많은 칭찬을 받았고 GPT-3.5-Turbo가 11.5%, 15.4%로 가장 적은 칭찬을 받았다.
+
+누락 오류 탐색: 위에서 언급한 바와 같이 주요 정보의 누락은 모든 LLM 요약자를 괴롭힌다. 주석이 식별한 누락 오류의 특성을 더 잘 이해하기 위해 다음 범주로 분류합니다. _문자_, _이벤트_, _세부 정보_, _관계_, _테마_.12 그림 4는 모델별로 세분화된 누락 오류 히트맵을 보여줍니다. 요약의 많은 비율(33.3%~65.4%)은 주요 사건에 대한 언급이 부족하여 전체 서사에 공백이 발생하고 있으며, 인물, 사건 또는 대상에 대한 중요한 세부 사항(16.7%~38.5%)도 누락되었다. 또한 GPT-4-Turbo와 Mlxtral은 중요한 문자(23.1%)에 대한 언급을 완전히 생략하는 경향이 있다.
+
+각주 11: 두 가지 사례에서 Claude-3-Opus는 앞뒤 문제에 사용할 수 있는 추가 정보에 영향을 받고 논리적 스토리를 구성하지 않았기 때문에 두 요약의 병합을 거부했다. 우리는 이 분석에서 이러한 사례를 제외했다.
+
+각주 12: 주석이 모든 특정 누락을 식별하지 않았기 때문에 유형별 누락의 총 수를 세기보다는 요약이 주어진 누락 유형에 의해 영향을 받았는지 여부라는 이진 분류에 초점을 맞췄다. 자세한 내용은 SE의 표 22를 참조하십시오.
+
+한 가지 흥미로운 관찰은 청크 크기 \(\geq\) 100K를 가진 Claude-3-Opus와 GPT-4-Turbo가 책의 결말을 더 강조하는 경향이 있다는 것이다. 이 모델들은 프롬프트 동안 종종 전체 책 컨텍스트와 함께 제공되었기 때문에, 이것은
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c} \hline \hline \multirow{2}{*}{_Summized by_} & \multicolumn{2}{c}{**No-Context**} & \multicolumn{2}{c}{**Human Evidence**} & \multicolumn{2}{c}{**BM25**} & \multicolumn{2}{c}{**EB (GPT-4-Turbo)**} & \multicolumn{2}{c}{**EB (Claude-3-Opus)**} \\ \cline{2-11}  & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ \\ \hline GPT-3.5-Turbo & 0.396 & 0.248 & 0.686 & 0.369 & 0.801 & 0.373 & 0.887 & 0.357 & 0.911 & 0.570 \\ METAL & 0.248 & 0.178 & 0.760 & 0.361 & 0.807 & 0.312 & 0.946 & 0.440 & 0.957 & 0.371 \\ GPT-4-Turbo & 0.337 & 0.146 & 0.657 & 0.229 & 0.739 & 0.162 & 0.909 & 0.220 & 0.966 & 0.494 \\ GPT-4-Turbo & 0.261 & 0.217 & 0.680 & 0.264 & 0.794 & 0.241 & 0.918 & 0.109 & 0.905 & 0.100 \\ Claude-3-Opus & 0.242 & 0.018 & 0.510 & 0.022 & 0.692 & 0.000 & 0.962 & 0.000 & 0.967 & 0.000 \\ \hline Overall & 0.305 & 0.167 & 0.675 & 0.259 & 0.779 & 0.249 & 0.932 & 0.386 & **0.950** & **0.476** \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 7권의 책에서 평가자가 있는 모델에 걸쳐 _Faithful_ 및 _Unfithful_ 라벨에 대한 F1 점수. 각 라벨의 최상의 결과는 굵게 표시되어 있습니다. EB는 GPT-4-터보 또는 Claude-3-Opus를 사용하여 큰(125k) 청크에서 충실성을 평가하는 전체 책 방법을 나타낸다.
+
+[MISSING_PAGE_FAIL:9]
+
+2022) 데이터셋. 우리의 작업과 밀접하게 관련된 것은 Chang 등(2023)이지만, 그들은 요약 일관성(모델 생성만을 판단해야 함)을 평가하는 데 중점을 두지만, 우리는 충실성 및 콘텐츠 선택(모델 생성과 긴 소스 입력을 다시 연결해야 함)을 다룬다.
+
+요약에서의 충실성 및 내용 선택: 본 논문은 인간에게조차 도전적인 요약(Maynez et al., 2020; Kryscinski et al., 2020; Ladhak, 2024)의 환각과 불일치를 평가하는 사전 작업을 기반으로 한다. Pagnoni et al.(2021)은 FRANK 데이터세트를 소개하는데, 여기서 그들은 생성된 요약의 인간 주석을 사용하여 언어 분석에 기초한 사실적 오류의 분류학을 생성하며, 이는 Goyal and Durrett(2020) 및 Goyal and Durrett(2021)의 작업과 유사하다. 본 연구에서 가장 근접한 Krishna et al. (2023)은 단편 소설의 요약에 대한 인간의 충실성 평가를 수행하는 반면, 우리는 책 길이의 입력에 대해 연구한다. 누락 오류에 대한 우리의 탐색은 콘텐츠 선택에 관한 선행 연구(Nenkova and Passonneau, 2004; Gillick and Liu, 2010; Ladhak et al., 2020)에 뿌리를 두고 있다.
+
+요약들을 평가하기 위한 청구 검증: 본 논문은 또한 청구 검증에 관한 선행 작업과 관련되며, 여기서 청구는 일부 지식 소스에 참조되어 검증된다(Thorne et al., 2018; Wadden et al., 2020; Schuster et al., 2021). Min et al.(2023)은 FActScore, a LLM-based metric of factual precision in biography generation, which was expanded in SAFE(Wei et al., 2024). Manakul et al. (2023)은 SelfCheckGPT를 제안하는데, 이는 LLMs를 사용하여 사람들에 대한 위키피디아 스타일 패시지의 데이터세트 상에서 GPT-3 생성 텍스트들의 충실성을 평가한다.
+
+## 7 Conclusion
+
+우리는 책장 요약에서 충실성과 내용 선택에 대한 최초의 대규모 인간 평가인 표를 제시한다. 즐거움을 위해 최근에 출판된 책을 읽은 주석자를 모집하여 26개의 내러티브의 LLM 생성 요약에서 3,158개의 클레임 수준 충실성 주석을 수집한다. 이를 통해 충실성을 기반으로 LLM 요약자의 순위를 매길 수 있으며 Claude-3-Opus가 가장 충실한 책 길이 요약자이고 GPT-4-Turoo가 그 뒤를 잇고 있음을 알 수 있다. 다음으로, 자동 클레임 검증을 위해 LLM을 사용하는 것을 실험한다. 우리의 결과는 검색 및 긴 컨텍스트 이해의 한계를 노출한다: LLM 자동 등급은 전체 책 텍스트로 메시지가 표시되더라도 _불성실한_ 클레임을 안정적으로 감지할 수 없다. 우리의 분석에서는 불성실한 주장이 주로 상태와 사건과 관련이 있으며 종종 확장된 맥락에 대한 추론을 필요로 하므로 인간과 기계 모두에 대해 감지하기 복잡하다는 것을 보여준다. 마지막으로, 우리는 충실함을 넘어 주요 사건, 속성, 등장인물의 누락과 같은 공통적인 내용 선택 오류와 책의 끝 부분부터 내용이 과도하게 강조되는 것을 탐색하고 특성화한다.
+
+## Ethical considerations
+
+모든 주석자는 주석을 사용하고 게시하는 데 동의했습니다. 데이터 세트는 모델 생성 요약 클레임에 수행된 주석만 포함하는 저작권이 있는 텍스트를 제외합니다. 또한 주석자가 기여에 대해 공정한 보상을 받을 수 있도록 했습니다.
+
+## Acknowledgments
+
+업워크 주석자의 노고에 대한 특별한 감사와 피드백에 대한 UMass NLP 연구소의 구성원에게 감사를 표합니다. 이 프로젝트는 국립 과학 재단(NSF)의 IIS-2202506 및 IIS-2312949 상과 어도비 상에서 부분적으로 지원되었다.
+
+## References
+
+* Anthropic(2023) Anthropic. 모델 카드: Claude 3. 기술 보고서, Anthropic, 2023. URL [https://www-cdn.anthropic.com/de8bagb81c5ab7cbabf5c33b8b80fbbc618857627/Model_Card_Claude_3.pdf](https://www-cdn.anthropic.com/de8bagb81c5ab7cbabf5c33b8b80fbbc618857627/Model_Card_Claude_3.pdf). 접속됨: 2024-03-25
+* Bohnet et al.(2022) Bernd Bohnet, Vinh Q Tran, Pat Verga, Roee Aharoni, Daniel Andor, Livio Baldini Soares, Massimiliano Ciaramita, Jacob Eisenstein, Kuzman Ganchev, Jonathan Herzig, et al. Attributed question answering: Evaluation and modeling for attributed large language models _ arXiv preprint arXiv:2212.08037_, 2022.
+* Chang et al.(2023) Kent Chang, Mackenzie Cramer, Sandeep Soni, and David Bamman. Speak, memory: An archaeology of books known to ChatGPT/GPT-4. In Houda Bouamor, Juan Pino, and Kalika Bali(eds.), _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pp. 7312-7327, Singapore, December 2023a. 계산 언어학 협회 doi: 10.18653/v1/2023.emnlp-main.453. URL [https://aclanthology.org/2023.emnlp-main.453](https://aclanthology.org/2023.emnlp-main.453)
+* Chang et al.(2023b) Yapei Chang, Kyle Lo, Tanya Goyal, and Mohit Iyyer. Booookscore: lms 시대의 책장 요약에 대한 체계적인 탐색 _ ArXiv_, abs/2310.00785, 2023b. URL [https://arxiv.org/abs/2310.00785](https://arxiv.org/abs/2310.00785).
+* Chen et al.(2022) Mingda Chen, Zewei Chu, Sam Wiseman, and Kevin Kimpel. 요약: 추상적 시나리오 요약을 위한 데이터 세트, 2022.
+* Daume and Marcu (2005) Hal Daume and D. Marcu. Duc에서의 베이지안 요약과 외재적 평가를 위한 제안. [문서 이해 회의]에서 2005/2005.
+*Gao et al.(2023) Tianyu Gao, Howard Yen, Jiatong Yu, and Danqi Chen. 큰 언어 모델을 사용 하 여 인용을 사용 하 여 텍스트를 생성 합니다. _ arXiv preprint arXiv:2305.14627_, 2023.
+* 팀(2024) 구글 제미니 팀. 제미니 1.5: 2024년 수백만 개의 문맥의 토큰에 걸친 복합적 이해의 잠금 해제.
+* Gillick and Liu (2010) Dan Gillick and Yang Liu. 요약 시스템에 대한 비전문가 평가는 위험하다. In Chris Callison-Burch and Mark Dredze(eds.), _Proceedings of the NAACL HLT 2010 Workshop on Creating Speech and Language Data with Amazon's Mechanical Turk_, pp. 148-151, Los Angeles, June 2010. Association for Computational Linguistics. URL [https://aclanthology.org/W10-0722](https://aclanthology.org/W10-0722).
+* Goyal and Durrett (2020) Tanya Goyal and Greg Durrett. 의존성 수준의 수반으로 세대 내 사실성을 평가하는 것. Trevor Cohn, Yulan He, and Yang Liu(eds.), _Findings of the Association for Computational Linguistics: EMNLP 2020_, pp. 3592-3603, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.findings-emnlp.322. URL [https://aclanthology.org/2020.findings-emnlp.322](https://aclanthology.org/2020.findings-emnlp.322)
+* Goyal and Durrett (2021) Tanya Goyal and Greg Durrett. 2021년 요약에서 세밀한 사실성에 주목하고 모델링합니다.
+* Jiang et al.(2022) Albert Q. 장, 알렉산드르 사블라롤레스, 앙투안 루, 아서 멘쉬, 블랑슈 사바리, 크리스 뱀포드, 데벤드라 싱 채플롯, 디에고 드 라스 카사스, 엠마 부 한나, 플로리안 브레산드, 지아나 렝야엘, 기욤 부르, 기욤 람플, 엘리오 레나르 라부드, 루실레 사울니에, 마리안 라쇼, 피에르 스톡, 산딥 수브라만안, 소피아 양, 시몬 안토니악, 테벤 르 스카오, 테오필레 거베트, 티보 라브릴, 토마스 왕, 티모티 라크루아, 윌리엄 엘 세이드. 전문가들의 혼합물 2024년
+* Kamoi 등(2023) Ryo Kamoi, Tanya Goyal, Juan Diego Rodriguez, and Greg Durrett. 와이스: 2023년 위키피디아에서 주장하는 것을 수반하는 현실 세계.
+* Kamradt (2023) Greg Kamradt. [https://github.com/gkamradt/LLMTest_NeedleInAHaystack] (https://github.com/gkamradt/LLMTest_NeedleInAHaystack), 2023.
+* Kamradt 등(2024)Kalpesh Krishna, Erin Bransom, Bailey Kuehl, Mohit Iyyer, Pradeep Dasigi, Arman Cohan, and Kyle Lo. LongEval: 긴 형식의 요약에서 신의성실의 인간 평가를 위한 지침. Andreas Vlachos and Isabelle Augenstein(eds.), _Proceedings of the 17th Conference of the European Chapter of the Association for Computational Linguistics_, pp. 1650-1669, Dubrovnik, Croatia, May 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.eacl-main.121. URL [https://aclanthology.org/2023.eacl-main.121](https://aclanthology.org/2023.eacl-main.121).
+* Kryscinski 등(2020) Wojciech Kryscinski, Bryan McCann, Caiming Xiong, and Richard Socher. 추상적 텍스트 요약의 사실적 일관성 평가 Bonnie Webber, Trevor Cohn, Yulan He, and Yang Liu(eds.), _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pp. 9332-9346, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.emnlp-main.750. URL [https://aclanthology.org/2020.emnlp-main.750](https://aclanthology.org/2020.emnlp-main.750).
+* Kryscinski et al. (2022) Wojciech Kryscinski, Nazneen Rajani, Divyansh Agarwal, Caiming Xiong, and Dragomir Radev. 북섬: 긴 형식의 내러티브 요약을 위한 데이터 세트 모음입니다. Yoav Goldberg, Zornitsa Kozareva, and Yue Zhang(eds.), _Findings of the Association for Computational Linguistics: EMNLP 2022_, pp. 6536-6558, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.findings-emnlp.488. URL [https://aclanthology.org/2022.findings-emnlp.488](https://aclanthology.org/2022.findings-emnlp.488)
+* Ladhak(2024) Faisal Ladhak. 추상적 요약의 충실성: 진전과 도전, 2024.
+* Ladhak 등(2020) Faisal Ladhak, Bryan Li, Yaser Al-Onaizan, and Kathleen McKeown. 소설 챕터 요약에서 내용 선택 탐색 Dan Jurafsky, Joyce Chai, Natalie Schluter, and Joel Tetreault(eds.), _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pp. 5043-5054, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.453. URL [https://aclanthology.org/2020.acl-main.453](https://aclanthology.org/2020.acl-main.453)
+* Levy et al.(2024) Mosh Levy, Alon Jacoby, and Yoav Goldberg. 동일한 작업, 더 많은 토큰: 입력 길이가 대형 언어 모델의 추론 성능에 미치는 영향, 2024.
+* Mahbub et al. (2023) Ridwan Mahbub, Ifrad Khan, Samiha Anuva, Md Shihab Shahriar, Md Tahmid Rahman Laskar, and Sabbir Ahmed. 시의 본질을 밝히기: 시 요약에 대한 포괄적인 데이터 세트와 벤치마크를 소개합니다. Houda Bouamor, Juan Pino, and Kalika Bali(eds.), _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_, pp. 14878-14886, Singapore, December 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.emnlp-main.920. URL [https://aclanthology.org/2023.emnlp-main.920](https://aclanthology.org/2023.emnlp-main.920).
+* Manakul et al. (2023) Potsawee Manakul, Adian Liusie, and Mark JF Gales. Selfcheckgpt: 생성형 대형 언어 모델에 대한 제로 리소스 블랙박스 환각 탐지 _ EMNLP_, 2023.
+* Maynez et al.(2020) Joshua Maynez, Shashi Narayan, Bernd Bohnet, and Ryan McDonald. 추상적 요약에서 충실성과 사실성에 대해. Dan Jurafsky, Joyce Chai, Natalie Schluter, and Joel Tetreault(eds.), _Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics_, pp. 1906-1919, Online, July 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.acl-main.173. URL [https://aclanthology.org/2020.acl-main.173](https://aclanthology.org/2020.acl-main.173)
+* Min et al. (2023) Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike Lewis, Wen-tau Yih, Pang Wei Koh, Mohit Iyyer, Luke Zettlemoyer, and Hannaneh Hajishirzi. 팩트스코어: 긴 형태의 텍스트 생성에서 사실적 정밀도에 대한 세립질 원자 평가. Houda Bouamor, Juan Pino 및 Kalika Bali(eds.), _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pp. 12076-12100. Association for Computational Linguistics, 2023. URL [https://aclanthology.org/2023.emnlp-main.741](https://aclanthology.org/2023.emnlp-main.741)
+* Mishra et al.(2024) Abhika Mishra, Akari Asai, Vidhisha Balachandran, Yizhong Wang, Graham Neubig, Yulia Tsvetkov, and Hannaneh Hajishirzi. 언어 모델에 대한 세립한 환각 감지 및 편집. _ arXiv preprint arXiv:2401.06855_, 2024.
+* Mosh et al.(2020) - May 7 2004. Association for Computational Linguistics. URL [https://aclanthology.org/N04-1019](https://aclanthology.org/N04-1019).
+* OpenAI (2023) OpenAI. GPT-4 기술 보고서입니다. _ CoRR_, abs/2303.08774, 2023. doi: 10.48550/ARXIV.2303.08774. URL [https://doi.org/10.48550/arXiv.2303.08774](https://doi.org/10.48550/arXiv.2303.08774)
+* Pagnoni 등 (2021) Artidoro Pagnoni, Vidhisha Balachandran, and Yulia Tsvetkov. FRANK를 사용한 추상적 요약에서 사실성을 이해: 사실성 메트릭에 대한 벤치마크. Kristina Toutanova에서, Anna Rumshisky, Luke Zettlemoyer, Dilek Hakkani-Tur, Iz Beltagy, Steven Bethard, Ryan Cotterell, Tanmoy Chakraborty, and Yichao Zhou(eds.), _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pp. 4812-4829, Online, June 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.naacl-main.383. URL [https://aclanthology.org/2021.naacl-main.383](https://aclanthology.org/2021.naacl-main.383)
+* Robertson et al. (1995) Stephen E. Robertson, Steve Walker, Susan Jones, Micheline M. Hancock-Beaulieu, Mike Gatford, et al. Okapi at trec-3. _NIST Special Publication SP_, 109:109, 1995.
+* Schuster 등(2021) Tal Schuster, Adam Fisch, and Regina Barzilay. 대조적인 증거로 비타민 Cl의 강력한 사실 검증을 받으십시오. Kristina Toutanova에서, Anna Rumshisky, Luke Zettlemoyer, Dilek Hakkani-Tur, Iz Beltagy, Steven Bethard, Ryan Cotterell, Tanmoy Chakraborty, and Yichao Zhou(eds.), _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pp. 624-643, Online, June 2021. Association for Computational Linguistics. doi: 10.18653/v1/2021.naacl-main.52. URL [https://aclanthology.org/2021.naacl-main.52](https://aclanthology.org/2021.naacl-main.52).
+* Subbiah et al.(2024) Melanie Subbiah, Sean Zhang, Lydia B. Chilton, and Kathleen McKeown. 읽기 하위 텍스트: 작가와의 짧은 이야기 요약에 대한 대규모 언어 모델 평가, 2024.
+* Tang 등(2024) Liyan Tang, Igor Shalyminov, Amy Wing-mei Wong, Jon Burnsky, Jake W Vincent, Yu'an Yang, Siffi Singh, Song Feng, Hwanjun Song, Hang Su, et al. Tofueval: Evaluating 환각 of llms on topic-focused dialogue summaryization. _ arXiv preprint arXiv:2402.13249_, 2024.
+* Thorne et al.(2018) James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. FEVER: 사실 추출 및 VERification을 위한 대규모 데이터 세트. Marilyn Walker, Heng Ji, and Amanda Stent(eds.), _Proceedings of the 2018 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1(Long Papers)_, pp. 809-819, New Orleans, Louisiana, June 2018. Association for Computational Linguistics. doi: 10.18653/v1/N18-1074. URL [https://aclanthology.org/N18-1074](https://aclanthology.org/N18-1074).
+* Wadden et al. (2020) David Wadden, Shanchuan Lin, Kyle Lo, Lucy Lu Wang, Madeleine van Zuylen, Arman Cohan, and Hannaneh Hajishirzi. 사실 또는 허구: 과학적 주장을 검증하는 것. Bonnie Webber, Trevor Cohn, Yulan He, and Yang Liu(eds.), _Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pp. 7534-7550, Online, November 2020. Association for Computational Linguistics. doi: 10.18653/v1/2020.emnlp-main.609. URL [https://aclanthology.org/2020.emnlp-main.609](https://aclanthology.org/2020.emnlp-main.609)
+* Wang et al.(2022) Alex Wang, Richard Yuanzhe Pang, Angelica Chen, Jason Phang, and Samuel R. 보우먼 SQuALITY: 긴 문서 요약 데이터 세트를 어렵게 구축합니다. Yoav Goldberg, Zornitsa Kozareva, and Yue Zhang(eds.), _Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pp. 1139-1156, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational Linguistics. doi: 10.18653/v1/2022.emnlp-main.75. URL [https://aclanthology.org/2022.emnlp-main.75](https://aclanthology.org/2022.emnlp-main.75).
+* Wei 등 (2024) Jerry Wei, Chengrun Yang, Xinying Song, Yifeng Lu, Nathan Hu, Dustin Tran, Daiyi Peng, Ruibo Liu, Da Huang, Cosmo Du, and Quoc V. 레 2024년 대형 언어 모델에서의 긴 형식적 사실성
+* Zhang 등(2020)
+
+[MISSING_PAGE_FAIL:14]
+
+를 클릭하면 팝업 창이 나타납니다(도 7 참조). 주석 프로세스를 완료하는 데 상당한 시간(약 1.5h-2.5h)이 걸린다는 점을 감안할 때 주석 프로세스 중 어느 지점에서든 주석자가 작업을 저장할 수 있는 기능을 구현했다. 주석을 완료하면 주석자는 _일반 주석_ 을 클릭하여 요약 클레임의 전체 품질에 대한 주석을 제공해야 합니다 (도 8 참조).
+
+주석이 작업을 어떻게 인식합니까?주석들은 특히 특정 플롯 포인트보다는 주제에 대한 광범위한 주장을 다룰 때 요약을 평가하는 데 몇 가지 문제를 강조하여 텍스트 내에서 관련 뒷받침 증거를 찾기 어렵게 만든다. 감정이나 주제 주장과 같은 추상적 개념은 상당한 장애물을 제기했으며 일부 주석자는 이러한 주장을 정확하게 지지하거나 반박하는 인용을 찾기 위해 고군분투했다. 그들은 또한 부분적으로만 사실인 주장을 평가하는 데 어려움을 지적했는데, 이는 더 자세한 지원을 필요로 했다(실제 의견은 표 4 참조).
+
+수집된 주석 26권에 걸쳐 총 3,158건의 주장에 대한 주석을 수집했다. 표 14는 클레임 소스(즉, 클레임을 생성한 모델)에 의해 분해된 수집된 라벨의 수집된 라벨 분포의 분포를 나타낸다.
+
+## 부록 D Faithfulness 주석 분석
+
+이 섹션에서는 불성실한 주장과 관련된 충실성 주석 분석에 대한 추가 세부 정보를 제공한다. 일반적인 라벨링 체계와 각 범주에 대한 예는 표 15를 참조하십시오. 표 17은 청구 유형별 추론 유형 분포를 보여준다.
+
+\begin{table}
+\begin{tabular}{l l l l l l} \hline \hline Title & Author & Gender & Genre & Length & Publication & Lang \\ \hline _A Haunting on the Hill_ & Elizabeth Hand & F & horror, Gothic & 117,577 & Oct 3, 2023 & AmE \\ _Agency for Scandal_ & Laura Wood & F & historical fiction, & 116,809 & Jan 5, 2023 & BrE \\ _Divine Rivals_ & Rebecca Ross & F & fantasy, romance, & 137,616 & Apr 4, 2023 & AmE \\ _Fairytale of New York_ & Zoe Folbigg & F & romance & 134,369 & Aug 28, 2023 & BrE \\ _Fairless_ & Elsie Silver & F & romance & 119,580 & Jun 24, 2022 & CanE \\ _Fourtip Wing_ & Rebecca Yarros & F & fantasy & 243,965 & May 2, 2023 & AmE \\ _Modern Dietination_ & Isabel Agajanian & F & urban fantasy & 167,568 & Jan 30, 2023 & AmE \\ _Only for the Week_ & Natasha Bisho & F & African American & 87,056 & May 11, 2023 & AmE \\ _Pet_ & Catherine & F & thrilter, mystery & 124,679 & July 13, 2023 & NZE \\ _Romantic Comady_ & Curtis Stintenfeld & F & romance & 116,560 & Apr 4, 2023 & AmE \\ _Same Time Next Year_ & Tessa Bailey & F & romance & 49,762 & Dec 1, 2023 & AmE \\ _Sie is a Hunting_ & Trang Thanh Tran & F & romance & 106,659 & Feb 28, 2023 & AmE \\ _Stic Sorced Roass_ & Carissa Broadbent & F & fantasy romance & 54,841 & Mar 21, 2023 & AmE \\ _Sororque and Bliss_ & Meg Mason & F & mental health & 112,468 & Sep 2, 2020 & AusE \\ _The Menquent Murders_ & Jenifer Ruff & F & mystery, thriller & 105,493 & Apr 14, 2023 & AmE \\ _The Guest_ & Emma Cline & F & thriller & 89,977 & May 16, 2023 & AmE \\ _The Marriage Act_ & John Marrs & M & thriller, mystery, & 135,901 & Jan 19, 2023 & BrE \\ _The Spy Coast_ & Tess Gerritsen & F & mystery, thriller & 128,918 & Nov 1, 2023 & AmE \\ _The Wager_ & David Grann & M & nonfiction, & 156,022 & Apr 18, 2023 & AmE \\ _The White Lady_ & Jacqueline & F & historical fiction, & 126,051 & Mar 21, 2023 & BrE \\ _This Impressible_ & Jessica Bryant & F & mystery, fantasy & 119,115 & Feb 1, 2024 & AmE \\ _Brightness_ & Klagmann & & & & & \\ _Viciously Yours_ & Jamie Applegate & F & fantasy, romance & 86,774 & Jan 23, 2024 & AmE \\ _Wrapperd_ & Emilia Hart & F & historical fiction, & 128,728 & Feb 2, 2023 & AusE \\ _Wildfire_ & Hannah Grace & F & romance, sport & 140,060 & Oct 3, 2023 & BrE \\ _Yellowface_ & R.F. Kuang & F & thriller & 114,346 & May 25, 2023 & AmE \\ _You, Again_ & Kate Goldbeck & F & romance & 137,624 & Sep 12, 2023 & AmE \\ \hline \hline \end{tabular}
+\end{table}
+표 7: 요약에 사용된 26권의 세부사항. 각 책의 길이는 틱토큰으로 계산된 토큰으로 제공됩니다.
+
+[MISSING_PAGE_FAIL:16]
+
+이론의 제안은 여기서 저닝 웹이 얻는 젊은 걸음걸이가 불특정 일정한 하한이라는 것이다.
+
+어머니의 젤린 손실과 온라인 배포된 프라이스 부인
+
+참가자들이 프라이스 부인을 향한 알레르기 목록, 간질과의 투쟁, 친구 시절의 사망을 거부했다.
+
+이 이야기는 주로 1984년 저닝이 8.3세의 학생일 때 일어난다.
+
+프라이스씨, 그들의 파격적인 방법과 단위당 평판으로 부터, 저닝 앤 어레이는 1984년 프라이스 부인을 포함한다.
+
+잃어버린 여과기는 프라이스 부인에 의해 자주 거칠게 전개되는 '시간 배열 작성'에서 작동한다.
+
+버닝 모친이 죽은 후, 길을 잃고 프라이스 부인은 더 느리게 성장하며, 길 잃음과 프라이스 부인의 결혼에 대한 초기 경험 속에서 거의 성인으로 결정하지만 나중에 이 시점에서 매우 좋아진다.
+
+Jurning은 학교를 완전히 뒤집는 일련의 선도적인 프레임의 Mrs. Price를 지지합니다.
+
+버닝은 이야기의 약어 모델을 서빙하면서 하얀 공격등 안에서만 순전히 서 있는 것이 증가한다는 이 보고서를 만난다.
+
+그 이야기는 종종 저닝의 어린 시절과 일치하여 그녀의 아이들과 나의 관계에 대한 맥락을 생산한다.
+
+버닝은 그의 뇌에 숨겨진 것을 발견한다. 교도소에는 학교에서 온 액션 팀과 단체 규모가 가득하다.
+
+저닝은 더 이상 승리하지 않고, 내쉬는 처음에 그의 움직임에 대한 그녀의 우려에 대해 논의했을 때 자연스러워진다. 그가 학교 중간에 있을 때, 그녀는 더 복잡한 것을 배울 수 있었고, 이야기는 좋은 선택이 아닙니다.
+
+좋은 선택인 자기는 이야기 내내 자기를 응원한다.
+
+그 이야기는 다시 저닝의 어린 시절과 일치하여 그녀의 아이들과 나의 관계에 대한 맥락을 생산한다.
+
+버닝은 그의 뇌에 숨겨진 것을 발견한다. 교도소에는 학교에서 온 액션 팀과 단체 규모가 가득하다.
+
+저닝은 더 이상 승리하지 않고, 내쉬는 처음에 그의 움직임에 대한 그녀의 우려에 대해 논의했을 때 자연스러워진다. 그가 학교 중간에 있을 때, 그녀는 더 복잡한 것을 배울 수 있었고, 이야기는 좋은 선택이 아닙니다.
+
+좋은 선택인 자기는 이야기 내내 자기를 응원한다.
+
+그런 다음 이야기는 자신의 삶의 역할을 합니다.
+
+상업적이고 행동적인 뒤바뀌기. 또한 한 사람은 자신 있다.
+
+도 6: §2에 설명된 주석 작업에 대한 인터페이스의 스크린샷.
+
+[그림 8]: 주석이 _업무_, _중요도_, _연대_ 및 _사실성_ 문제를 강조 표시 하는 요약 클레임의 품질에 대 한 자유 형식 주석을 제공 하도록 프롬프트 하는 팝업 창입니다.
+
+그림 7: 주석자가 책에서 추출한 자유 형식 추론과 증거에 의해 보완된 성실성 라벨을 선택해야 하는 인터페이스를 보여주는 팝업 창이다.
+
+주석자가 제공하는 증거의 질을 조사하기 위해 주석자의 추론과 관련하여 증거의 범위를 분석한다. 또한 주석자의 추론과 주장 사이의 관계를 분석한다. 결과는 표 16에 요약되어 있다. 51.6%의 시간 동안 주석자는 추론의 모든 구성 요소(즉, _완전한 범위_)를 정당화하는 몇 가지 증거를 제공한다. 56%의 _부분 적용 범위_(즉, 추론의 일부 부분이 해당 증거가 없음) 사례와 모든 _N/A 적용 범위_(즉, 증거가 전혀 제공되지 않음) 사례에서 누락된 증거는 주석이 주장을 지지하거나 반박하는 관련 정보를 찾을 수 없기 때문이다. 질적으로 모든 일치된 추론-증거 쌍에 대해, 우리는
+
+\begin{table}
+\begin{tabular}{p{284.5pt}} \hline \hline Claude-3-Opus \\ \hline _Iris Winnow, an aspiring writer, works at the Oath Gazette newspaper in the city of Oath, competing with her rival Roman Kitt for a columnist position. Iris’s brother Forest is fighting in a war between the gods Enva and Dacre. She hasn’t heard from him in months and decides to become a war correspondent to find him. Iris and Roman develop feelings for each other through letters they exchange via enchatured therapeutics, nor realizing they are writing to each other. Roman, engaged to Elinor Little through an arranged marriage by his father, breaks off the engagement and follows Iris to the war front. In the town of Avalon Bluff near the front lines, Iris stays with Marisol, who runs a bed and breakfast, and befriends fellow correspondent Attie. Roman arrives and he and Iris fall in love, getting married just before an attack on the town by Dacre’s forces. During the attack, Iris is saved by a disqualised soldier who she later realizes is her brother Forest. Forest, who was supposed to have led from his wounds but was loaded by Dacre, deserted and has been fighting for the enemy. In the chaos, Iris is separated from Roman, who is badly wounded. Iris and Forest return to Oath, where Iris learns the full story of Forest’s service to Dacre. She discovers a letter from Roman in her room, confirming he knew her identity while variting to her. Meanwhile, the god Dacre finds the dying Roman out the battlefield and, sensing his strong spirit, decides to take him to hold his wounds and have him fight for his army. The story ends with Dacre turning his sights towards finding Erru in the east._ \\ \hline
+1. Iris Winnow는 선서 도시의 선서 가제트 신문사에서 일한다. \\
+2. 아이리스 위나우는 로만 키트와 선서 가제트에서 칼럼니스트 자리를 놓고 경쟁하고 있습니다. \\
+3. 아이리스 위노우의 형인 포레스트는 엔바와 다크르 신들 사이의 전쟁에 연루되어 있다. \\
+4. Iris Winnow decides to become a war correspondent after not hearing from her brother, Forest, for months. \\ \hline
+5. 아이리스 위나우(Iris Winnow)와 로만 키트(Roman Kitt)는 안주형 타자기를 통해 주고받는 편지를 통해 서로에 대한 감정을 발전시킨다. \\
+6. Iris Winnow와 Roman Kitt는 처음에 그들이 서로에게 편지를 쓰고 있다는 것을 깨닫지 못한다. \\
+7. 로만 키트는 엘리너 리틀과 아버지의 중매결혼을 통해 약혼하였다. \\
+8. Roman Kitt breaks off his engagement to Elinor Little and follows Iris Winnow to the war front. \\ \hline
+9. 아이리스 위나우는 최전방 아발론 블러프 마을의 민박집에서 마리솔과 함께 머문다. \\
+10. Iris Winnow는 Avalon Bluff의 동료 특파원 Attie와 친구가 됩니다. \\
+11. Roman Kitt는 Avalon Bluff에 도착하고 그와 Iris Winnow는 사랑에 빠진다. \\
+12. Roman Kitt and Iris Winnow get married just before an attack on Avalon Bluff by Dacre’s forces. \\ \hline
+13. 아발론 블러프를 공격하는 동안 아이리스 위나우는 나중에 그녀의 오빠인 포레스트라는 것을 깨닫는 군인에 의해 구원됩니다. \\
+14. 숲은 그의 상처로 죽은 것으로 추정되었으나 Dacre에 의해 치유되었다. \\
+15. 숲은 원래 곁에서 버려졌고, Dacre를 위해 싸워왔다. \\
+16. Iris Winnow is separated from Roman Kitt, who is badly wounded during the attack on Avalon Bluff. \\ \hline
+17. 아이리스 위나우와 포레스트는 공격 후 선서로 돌아갑니다. \\
+18. Iris Winnow는 그들이 선서로 돌아오면 Dacre에 대한 포레스트의 서비스에 대한 전체 이야기를 배웁니다. \\
+19. 아이리스 위나우는 그녀의 방에서 로만 키트의 편지를 발견하는데, 이는 그가 그녀에게 편지를 쓰면서 그녀의 신원을 알았음을 확인시켜준다. \\
+20. Dacre는 전쟁터에서 죽어가는 로마 Kitt를 발견하고 그의 상처를 치료하기 위해 그를 데려가기로 결정합니다. \\
+21. Dacre는 그의 군대를 위해 싸우기 위해 치유된 Roman Kitt를 계획한다. \\
+22. The story ends with Dacre planning to find Enva in the east. \\ \hline \hline \end{tabular}
+\end{table}
+표 8: 레베카 로스의 소설 "신성한 라이벌즈"에 대한 추출된 클레임 세트와 함께 Claude-3-Opus에 의해 생성된 요약의 예. 다른 모델에 의한 예는 표 9, 표 10, 표 11 및 표 12에서 찾을 수 있다.
+
+증거가 종종 책을 읽지 않은 사람이 청구의 충실성을 판단할 수 있는 충분한 맥락을 제공하지 않는다는 것을 발견한다. 경합 해제 결과, 청구는 항상 사람을 이름으로 지칭하지만, 증거는 종종 대신 대명사를 사용한다. 주석자는 증거에 이름도 포함되기 위해 책에서 훨씬 더 큰 덩어리를 인용해야 합니다. 더 까다로운 경우는 ‘X는 이야기의 주인공’이나 ‘이야기의 주제는 X, Y, Z’와 같은 고위급 주장을 다룰 때 책 전체에 대한 지식이 필요하지만 책 전체를 증거로 인용하는 것은 사소하다는 것이다. 주석이 모든 주장에 대해 독립적이고 충분한 증거를 수집한다면 작업은 훨씬 더 어렵고 때로는 불가능할 것이다. 증거 수집의 이러한 어려움은 자동 평가가 왜 이 작업에 그렇게 잘 작동하지 않는지를 조명한다.
+
+모델별 분석은 <표 18>과 <표 19>에서 추론 유형과 추론-주장 관계에 대한 모델별 결과를 보고한다.
+
+## 부록 E 주석 분석
+
+이 섹션에서는 요약 클레임에 대한 주석자가 제공한 주석 분석에 대한 추가 세부 정보를 제공합니다. 표 20은 그러한 코멘트의 예를 특징으로 한다. 이러한 주석은 표 21 및 표 22에 요약된 기준에 따라 추가로 주석이 달렸다. 오류의 분포는 그림 9 및 표 23에 나와 있다.
+
+표 24는 모델의 생성이 앞면과 뒷면의 정보에 영향을 받은 예를 보여준다. 표 25는 모델이 때때로 이야기의 후반부에 지나치게 집중할 수 있음을 나타내는 댓글을 강조한다. 마지막으로 표 4는 주석 작업에 대한 주석자의 피드백을 공유한다.
+
+앞뒤 문제가 요약 품질 책에 미치는 영향은 책의 시작이나 끝에 위치한 저자의 전기, 목차, 헌정 등을 포함한 주요 서사를 넘어 추가 정보를 포함하는 경우가 많다. 이상적으로 모델은 핵심 스토리를 요약하는 데만 초점을 맞추어 이 외부 콘텐츠를 제외해야 한다. 그러나 모델이 간혹 이러한 요소에 과도하게 영향을 받아 요약의 상당 부분을 지배하고 때로는 정확도를 손상시킬 수 있다는 점에 주목했다. 전반적으로 요약의 19.23%(GPT-3.5-Turbo and GPT-4)와 34.62%(Mixtral) 사이의 요약은 이러한 정보에 초점을 맞추어 앞/뒤에서 발견되는 이름을 가진 14명의 혼란스러운 이야기 등장인물, 15명 또는 단일 언급에 기반한 전체 서사를 구성하는 데 영향을 받았다. 16Claude-3-Opus는 추가 정보에 영향을 받지 않는 유일한 모델이었다. 그러나 최종 청크를 나타내기 때문에 뒷문 문제의 내용을 주로 요약한 두 가지 요약에 직면했을 때 모델은 작업 수행을 거부했다. 우리는 이 신중한 접근법이 근거 없는 세부 사항이나 관련 없는 내용을 소개하는 것보다 바람직하다고 생각한다. 이러한 경우의 예는 표 24에 나타나 있다.
+
+각주 14: _이 요약에는 책의 줄거리에 중요하지 않은 책의 끝에 저자가 감사하는 사람에 대한 설명이 포함되어 있습니다."_
+
+각주 15: _Clair는 이 책의 캐릭터가 아닙니다. 댓글은 사실이지만 찰리는 표어가 아니다."_
+
+각주 16: _...주장들은 디지털 시대의 테마에 매우 초점을 맞추고 있으며 이야기는 그것을 전혀 다루지 않습니다. 그것은 심지어 현대 세계를 기반으로 하지도 않습니다.” – 저자의 소셜 미디어 계정은 책의 맨 끝에 언급되어 있습니다.
+
+## 부록 F 세부 정보 실험 설정
+
+이 섹션에서는 추가 결과를 보완한 실험 설정에 대한 추가 세부 정보를 제공한다.
+
+그림 9: 모델별 주석에 언급된 특정 이슈에 의해 영향을 받는 요약 백분율입니다.
+
+### Implementation details
+
+BM25 기반 증거 검색을 위해 amazon.com에서 구입한 전자책의 텍스트를 사용하여 각각 최대 256 토큰의 구절로 나눈다. 검색은 책 내용으로 제한되며, \(k=5\)를 설정하여 가장 관련성이 높은 상위 5개의 구절을 증거로 검색한다.
+
+### Additional Results
+
+요약자에 의해 분해된 각 증거 추출 방법에 대한 결과는 표 26에서 찾을 수 있다. 또한 각 증거 추출 방법에 대한 장부별 정밀도 및 재현율을 보고한다: (1) 문맥 없음(표 27); (2) BM25(표 29); (3) 인간 증거(표 28); (4) 전체 장부(표 30). 전체 책(EB) 프롬프트에 대한 추가 결과는 SF3에서 찾을 수 있다.
+
+### 전체 책(EB)을 사용하여 LLM을 프롬프트
+
+각 클레임의 충실성을 평가하기 위해 큰 청크(전체 장부_)를 가진 LLM을 촉진시키는 것은 엄청나게 비싸다(SSF.5 참조). 따라서 본 실험을 위해 (1) 토큰 길이(\(<\)125K) 및 (2) 적어도 하나의 _Unfaithful_ 클레임의 존재 여부에 따라 7권의 책을 선택한다. 이 서브-데이터 세트는, (1) "Yellowface", (2) "Only For The Week", (3) "Viciously Yours", (4) "Six Scorched Roses", (5) "Sorrow and Bliss", (6) "She Is a Haunting", 및 (7) "Pet"을 포함한다. 표 표 31은 서브-데이터 세트의 라벨당 클레임 수를 나타낸다. 각 책에 대한 자세한 내용은 표 7에서 확인할 수 있다.
+
+전체 책에 대한 클레임 확인 _Faithful_/_Unfaithful_ 레이블을 얻기 위해 전체 책 내용과 각 클레임으로 Claude-3-Opus 및 GPT-4-Turbo 모델을 프롬프트합니다. 그림 10은 인간 라벨과 모델의 예측을 비교하는 혼동 행렬을 보여준다. 표 32는 클레임 소스(즉, 클레임을 생성한 모델) 및 예측 모델(Claude-3-Opus 및 GPT-4-Turbo)에 의해 분해된 혼동 매트릭스를 제시한다. 그림 11은 인간 레이블 및 추론과 함께 레이블 유형 및 예측 모델별로 잘못 식별된 레이블의 예를 보여준다. 표 30은 모델과 책별로 분해한 평균 정밀도(Pr)와 재현율(Re)을 나타낸 것이다.
+
+### Ablation study
+
+BM25에서 사용되는 토큰의 길이에 따라 BM25가 검색된 패시지의 길이를 증가시키면 전반적인 성능이 향상된다(그림 12). 그러나 이 접근법은 최고의 수행 방법, 즉 전체 책의 내용으로 모델을 프롬프트하는 것보다 불성실한 주장을 식별하는 데 덜 효과적이다. 이것은 심지어 더 긴 구절이 더 넓은 주장의 검증에 필요한 전체 맥락을 제공하지 않을 수 있다는 사실 때문일 수 있다.
+
+도 10: 청구 검증 태스크에 대한 모델 예측들에 대한 인간 주석들을 비교하는 혼동 행렬. 왼쪽은 Claude-3-Opus가 인간 라벨과 대조하여 만든 예측의 수를 보여준다. 오른쪽은 인간 라벨과 대조되는 GPT-4-터보의 예측 수를 보여준다. 보다 자세한 설명은 표 32에 나와 있다.
+
+그림 11: Claude-3-Opus 및 GPT-4-Turbo에 의해 이루어진 예측과 함께 주석자 라벨 및 추론을 수반하는 클레임의 예.
+
+### API costs
+
+책장 요약 생성 전체 130개 요약에 대한 요약 총 비용은 약 $288 USD.17입니다.
+
+각주 17: Claude-3-Opus의 경우 64.6달러, GPT-4의 경우 169.4달러, GPT-4-Turbo의 경우 47.5달러, GPT-3.5-Turbo의 경우 2.8달러, Mixtral의 경우 3.4달러. 모두 USD입니다.
+
+청구 범위를 추출하는 130개의 요약 모두에 대한 청구 범위 추출의 총 비용은 입력 및 출력 시퀀스가 상대적으로 짧기 때문에 약 $8 USD에 달했다.
+
+전체 책으로 홍보 이 실험의 비용은 GPT-4-터보의 경우 약 720달러, 클로드-3-오푸스의 경우 1070달러였다(표 5의 마지막 두 열에 해당).
+
+도 12: BM25에 대한 청크 크기를 변화시키는 F1 스코어.
+
+GPT-4-터보 "신성한 라이벌즈"의 서사에서는 고대 신 에트루와 다크르의 영향을 받은 파괴적인 갈등 속에서 전쟁 특파원의 역할을 추진한 집요한 젊은 여성 아이리스 위나우에게 소개된다. 전투의 중심부로 향하는 아이리스의 여정은 전문적일 뿐만 아니라 매우 개인적인 것이며, 싸움을 위해 입대했던 사랑하는 동생 포레스트의 실종과 어머니의 죽음에 대한 고통으로 인해 촉발된다. 진실과 이해에 대한 그녀의 탐구는 전쟁 최전선에 가까운 전쟁으로 황폐해진 아발론 블러프를 배경으로 설정되며, 그곳에서 그녀는 파괴 속에서 정원의 침묵한 희망에서부터 부상당한 군인들의 공포와 포격의 공포에 이르기까지 갈등의 엄연한 현실을 마주한다. 이전에 카스 가제트에서 아이리스의 라이벌이었던 로만 키트는 동료 통신원으로 합류하면서 그녀의 이야기에서 중요한 인물로 등장한다. 경쟁적 적대 관계의 역사에도 불구하고, 그들의 관계는 발전하는데, 유망한 경력을 남기려는 로마의 불가사의한 결정과 아이리스 곁에 있기 위한 깨진 약혼으로 강조된다. 그들의 역학은 전쟁터에 대한 그들의 공유된 경험과 아이리스에 대한 로마의 무언의 감정으로 더욱 복잡해지고 풍부해지며, 로마는 거대한 폭발로부터 아이리스를 몸으로 보호하는 참호 공격 동안 고통스러운 희생의 순간으로 절정에 달합니다. 이야기에 마법의 요소를 더한 아이리스는 신비로운 인물인 카버와 마법의 타자기를 통해 서신을 유지한다. 이 편지들은 아이리스 위안을 제공하고 그녀를 둘러싼 혼란을 초월한 형이상학적 연결을 제공하여 희망과 연결의 주제를 강조한다. 내러티브가 펼쳐지면서 충격적인 폭로가 드러난다. 엔로를 위해 싸웠던 것으로 추정되는 아이리스 형제인 포레스트는 사망에 가까운 경험을 한 뒤 다크레에 의해 강제로 개종된 것으로 드러났다. 이 발견은 드라마틱한 재결합을 통해 증가하는데, 포레스트는 다크레의 실질적인 가스 공격 중 하나로부터 아이리스를 구하고, 단지 그녀를 부패시키고 로만을 남겨두고 죽은 것으로 추정되거나 포획된 것으로 추정함으로써 그의 변화된 혐의를 드러낸다. 이야기의 핵심은 전쟁과 약물 조작을 배경으로 아이리스와 로마의 심오한 관계를 탐구한다. 다크르의 세력에 의해 파괴적인 공격을 받기 전 정원에서 비밀 결혼식을 하는 것, 사랑을 고백하는 로마의 진심 어린 편지 등 과거의 순간들은 그들이 무엇을 위해 싸우는지 가슴 아픈 일깨워주는 역할을 한다. 이 감정적 핵심은 아이리스가 형제의 버티얼과 로마의 운명의 불확실성에 직면해야 하는 현재의 혼란과 병치되어 있다. "신성한 라이벌즈"는 신과 전쟁의 음모에 사로잡힌 개인들이 직면한 사랑, 충성심, 참혹한 선택의 주제를 파고든다. 아이리스는 자신의 개인적, 직업적 세계의 혼란 속에서 진실을 밝히기로 결심하고, 뎁수르 속에서 기관과 희망을 되찾으려 한다. 그녀의 여정은 단지 그녀의 형제와 로마를 찾는 것이 아니라 약의 갈등과 전쟁의 황폐화에 직면한 인간 정신의 회복력에 대한 탐구이다. 아이리스의 눈을 통해 이야기는 인간 감정의 복잡한 탭스티, 생존을 위한 불굴의 의지, 그리고 변덕스러운 신들과 끝없는 갈등으로 얼룩진 현실 속의 진리에 대한 탐구를 엮는다._
+
+1. 아이리스 위나우는 책 "신성한 라이벌즈"의 주인공입니다.
+
+2. 아이리스 위나우(Iris Winnow)는 신 엔바와 다크레(Dacre)의 영향을 받은 분쟁 중에 종군기자가 된다.
+
+3. 아이리스의 동생인 포레스트는 전쟁에 참전하기 위해 입대한 후 사라졌다. 4. 아이리스는 어머니의 죽음으로 인해 망연자실해 있다.
+
+5. 아이리스의 여정은 그녀를 전쟁 최전선에 가까운 장소인 아발론 블러프로 데려간다.
+
+6. 아이리스는 부상당한 군인과 포격을 포함한 전쟁의 현실과 마주친다.
+
+7. 로만 키트는 서사에서 중요한 인물이며 동료 종군 기자로 아이리스에 합류한다.
+
+8. 로만 키트는 동료가 되기 전에 카스가제트에서 아이리스의 라이벌이었다.
+
+9. 경쟁적 적대 관계의 역사에도 불구하고 그들의 관계는 진화한다.
+
+10. 로만 키트는 아이리스에 합류하기 위해 유망한 경력 및 깨진 약혼을 남긴다.
+
+11. 로만 키트는 트렌치 공격 중에 발생한 네이드 폭발로부터 아이리스를 보호한다.
+
+12. 아이리스는 매혹적인 타자기를 통해 카버라는 신비로운 인물과 마법 같은 서신을 유지한다.
+
+13. 카버의 편지들은 아이리스 위안을 제공하고 형이상학적 연결을 제공한다.
+
+14. 숲은 신 엔바를 위해 싸우는 것으로 여겨졌지만, 신 다크레에 의해 강제로 징집된 것으로 드러난다.
+
+15. 이 폭로는 포레스트가 데이크레의 가스 공격으로부터 아이리스를 구한 후 로만을 남겨두고 그녀를 속인 후 발생한다.
+
+16. 아이리스와 로만은 정원에서 비밀 결혼식을 했어요 다크르의 군대가 공격하기 전에요
+
+17. 로만은 아이리스에 대한 사랑을 고백하는 편지를 쓴다.
+
+18. 아이리스는 로마의 운명에 대한 형의 배신과 불확실성에 맞서야 한다.
+
+19. 아이리스는 진실을 밝혀내고 데프서 가운데 기관과 희망을 되찾기로 결심했다.
+
+20. 아이리스의 여정은 그녀의 형제와 로마인에 대한 탐색이며, 갈등과 신의 조작에 직면한 인간의 회복력에 대한 탐구이다.
+
+21. "신성한 라이벌즈"의 이야기는 전쟁 시대에 개인이 직면한 사랑, 충성심, 어려운 선택의 주제를 탐구한다.
+
+\begin{table}
+\begin{tabular}{l} \hline \hline GPT-4-Turbo _In the epic narrative of "Divine Rivals,"_ _are are introduced to Iris Winnow, a tenacious young woman propelled into the role of a war correspondent amidst a devastating conflict influenced by the ancient deities Etru and Dacre. Iris’s journey into the heart of battle is not just professional but deeply personal, fueled by the disappearance of her beloved brother, Forest, who had enlisted to fight, and the anguish over her mother’s demise. Her quest for truth and understanding is set against the backdrop of the war-torn Avalon Bluff, close to the war’s front lines, where she encounters the stark realities of conflict, from the silent hope of a garden amidst destruction to the horror of wounded soldiers and the terror of artillery fire. Roman Kitt, previously Iris’s rival at the Cath Gazette, emerges as a significant figure in her narrative, joining her as a fellow correspondent. Despite their history of competitive antagonism, their relationship evolves, highlighted by Roman’s mysterious decision to leave behind a promising career and a broken engagement to be by Iris’s side. Their dynamic is further complicated and enriched by their shared experiences on the battlefield and Roman’s unspoken feelings for Iris, culminating in a poignant moment of sacrifice during a trench attack where Roman shields Iris with his body from a grande explosion. Adding a magical element to the story, Iris maintains a correspondence with Carver, a mysterious figure, through enchanted typewriters. These letters offer Iris solace and a metaphysical connection that transcends the chaos surrounding her, underscoring themes of hope and connection. As the narrative unfolds, shocking revelations come to light. Forest, Iris's brother, believed to have been fighting for Enro, is discovered to have been forcefully converted by Dacre after a near-death experience. This discovery updfalls through a dramatic reunion where Forest saves Iris from one of Dacre's deally gas attacks, only to reveal his changed allegance by decaying her and leaving Roman behind, presumed dead or captured. The heart of the story explores Iris and Roman’s profound relationship, against the backdrop of war and dicine manipulation. Moments from their past, including their secret wedding in a garden before a devastating attack by Dacre’s forces, and Roman’s heartfelt letter confessing his love, serve as poignant reminders of what they fight for. This emotional core is juxtaposed with the chaos of the present, wherein Iris must confront the bertual of her brother and the uncertainty of Roman’s fate. “Divine Rivals” delves into themes of love, loyalty, and the harrowing choices faced by individuals caught in the machinations of gods and war. Iris, within the turmoil of her personal and professional world, remains determined to uncover the truth, seeking to reclaim agency and hope amidst depsur. Her journey is not just a search for her brother and Roman but an exploration of the resilience of the human spirit in the face of dicine conflicts and the devastation of war. Through Iris’s eyes, the story weaves a complex tapsty of human emotions, the indonitable will to survive, and the quest for truth in a reality marred by capricious gods and endless conflict._
+
+1. 아이리스 위나우는 책 “신성한 라이벌즈”의 주인공입니다.
+
+2. 아이리스 위나우(Iris Winnow)는 신 엔바와 다크레(Dacre)의 영향을 받은 분쟁 중에 종군기자가 된다.
+
+3. 아이리스의 동생인 포레스트는 전쟁에 참전하기 위해 입대했다가 사라졌다. 4. 아이리스는 어머니의 죽음으로 망연자실해 있다.
+
+5. 아이리스의 여정은 그녀를 전쟁 최전선에 가까운 장소인 아발론 블러프로 데려간다.
+
+6. 아이리스는 부상당한 군인과 포격을 포함한 전쟁의 현실과 마주친다.
+
+7. 로만 키트는 서사에서 중요한 인물이며 동료 종군 기자로 아이리스에 합류한다.
+
+8. 로만 키트는 동료가 되기 전에 카스가제트에서 아이리스의 라이벌이었다.
+
+9. 경쟁적 적대 관계의 역사에도 불구하고 그들의 관계는 진화한다.
+
+10. 로만 키트는 아이리스에 합류하기 위해 유망한 경력 및 깨진 약혼을 남긴다.
+
+11. 로만 키트는 트렌치 공격 중에 발생한 네이드 폭발로부터 아이리스를 보호한다.
+
+12. 아이리스는 매혹적인 타자기를 통해 카버라는 신비로운 인물과 마법 같은 서신을 유지한다.
+
+13. 카버의 편지들은 아이리스 위안을 제공하고 형이상학적 연결을 제공한다.
+
+14. 숲은 신 엔바를 위해 싸우는 것으로 여겨졌지만, 신 다크레에 의해 강제로 징집된 것으로 드러난다.
+
+15. 이 폭로는 포레스트가 데이크레의 가스 공격으로부터 아이리스를 구한 후 로만을 남겨두고 그녀를 속인 후 발생한다.
+
+16. 아이리스와 로만은 정원에서 비밀 결혼식을 올렸다.
+
+17. 로만은 아이리스에 대한 사랑을 고백하는 편지를 쓴다.
+
+18. 아이리스는 로마의 운명에 대한 형의 배신과 불확실성에 맞서야 한다.
+
+19. 아이리스는 진실을 밝혀내고 데프서 가운데 기관과 희망을 되찾기로 결심했다.
+
+20. 아이리스의 여정은 그녀의 형제와 로마인에 대한 탐색이며, 갈등과 신의 조작에 직면한 인간의 회복력에 대한 탐구이다.
+
+21. "신성한 라이벌즈"의 이야기는 전쟁 시대에 개인이 직면한 사랑, 충성심, 어려운 선택의 주제를 탐구한다.
+
+\end{table}
+표 9: 레베카 로스의 소설 "신성한 라이벌즈"에 대한 추출된 클레임 세트와 함께 GPT-4-터보가 제작한 요약의 예. 다른 모델에 의한 예는 표 8, 표 10, 표 11 및 표 12에서 찾을 수 있다.
+
+GPT-4
+
+_신성한 리불스(Divine Rivuls)는 전쟁 중인 디스토피아 세계를 배경으로 한 복잡한 서술로, 부활한 두 경쟁자인 에르와(Erwa)와 다크르(Dacre)에 의해 발동된다. 그 줄거리는 카사 시의 카사 가제트 신문의 민감하고 끈질긴 직원인 아이리스 위나우와 그녀의 직업적 라이벌인 로만 키트를 중심으로 전개된다. 아이리스는 형제인 포레스트와 함께 혼돈에 빠지고, 신들의 우르에 합류하고, 알코올 중독자 어머니인 애스터의 책임에 굴복한다. 개인적이고 직업적인 라이벌의 소용돌이 속에서, 아이리스는 예상치 못한 거북이 속에서 로마의 적들과 유대감을 느꼈고, 로마는 이리스들의 감정적으로 희귀한 편지들을 무심코 받아 응답했다. 아이리스는 마법의 거북이를 사용하여 이러한 계층들을 보내고, 그들의 무언의 연결을 증폭시키는 익명의 서신으로 선착한다. 로마의 사회적 지위는 아이리스의 겸손한 배경과 극명한 대조를 이루며, 그는 상류 사회 여성 엘리노르 리틀로 추정되며, 그의 가족의 열망과 캐시 가제트에서 그의 새로운 역할 사이의 균형을 맞추는 문제에 직면해 있다. 아이리스는 어머니의 갑작스러운 사망에 따라 충동적으로 카사 가제트에서 직장을 그만둔다. 그녀는 숲을 찾고, 증가하는 신들의 우르에 대해 보도하기 위해 유죄 판결을 받은 인리드리데이트 트리뷴 신문의 우르 특파원으로서의 지위를 받아들인다. 아이리스 엠브라투스는 또 다른 특파원과 함께 uur 전선 근처의 마을인 Ataban Blif로 가는 위험한 여정을 하고, 그 다음 "Attie" Attworod. 에리 투어에서 그들의 안주인 마르술 토레스는 주변을 황폐하게 만드는 사냥개와 에일트라투스와 같은 다른 신화적인 생물들의 규칙적인 추진력에 대해 쌍에게 경고한다. 로마의 아타반 블리프 도착은 그들의 복잡한 관계를 재점화시킨다. 그는 아이리스가 전쟁의 참혹한 현실을 문서화하는 데 도움을 주면서 그들 사이의 증가하는 긴장을 관리한다. 로마가 파면에서의 끔찍한 만남 동안 심각한 부상을 입게 되면서, 병사들의 개인적인 서사를 보도하는 데 깊숙이 연결된 아이리스는 자신의 안전을 보장하기 위해 싸우게 된다. 이 생명을 위협하는 사건으로 인해 아이리스는 로마를 카러, 그녀의 불가사의한 펜 부분으로 인식하게 되고, 로마의 부족에 대한 죄책감과 의심의 강렬한 투표가 촉발된다. 로마의 운명과 그의 묘사에 대한 확신에 대한 그녀의 두려움이 커지면서, 충격적인 반전은 이전에 죽은 것으로 추정되는 포레스트가 다크레에 대한 그녀의 의무와 그의 묘사에 대한 확고한 감정 사이에 분노를 불러일으키는 것을 드러낸다. 더 나아가 혼란은 로마가 사라지는 것을 보여준다. 아이리스는 고조되는 전쟁을 배경으로 하여 라이스의 회복력과 성장에 대한 개인적인 이야기에 개입한다. 그녀는 특파원으로부터 변모하면서 조상의 속에서 인내하고 적응하는 인간 정신의 능력을 구현한다. 내러티브는 성격의 힘, 가족적 의무, 직업적 라이벌, 사회적 규범, 그리고 심오한 변화를 이야기의 핵심으로 압축한다. 진화하는 관계와 고난에도 불구하고 아이리스는 포레스트의 곁에 남아 로마를 계속 찾겠다고 다짐한다. "다이빙 리불스"의 이야기는 전쟁 속에서 인간의 인내, 사랑, 충성심에 대한 증거이다._
+
+1. 신성 리불스는 전쟁에서 디스토피아적 세계를 배경으로 한 이야기이다.
+
+2. "다이빙 리불스" 세계에서의 전쟁은 부활한 두 경쟁자인 엔바와 데크레에 의해 발동된다.
+
+3. 이야기의 줄거리는 선서 도시의 선서 가제트 신문의 직원인 아이리스 위나우(Iris Winnow)에 초점을 맞춘다.
+
+4. 아이리스 위나우는 로만 키트라는 프로 라이벌이 있다.
+
+5. 아이리스 위노우의 형 포레스트는 신의 전쟁에 참여한다.
+
+6. 아이리스 위나우는 7시 이후에 알코올 중독자 어머니인 애스터의 책임을 지게 된다. 숲은 전쟁에 참여한다.
+
+8. 로만이 익명으로 포리스트를 위해 의도된 아이리스의 편지들을 수신하고 이에 응답할 때, 아이리스 위노우의 로만 키트와의 유대감은 깊어진다.
+
+9. 아이리스 위나우는 마법의 빈티지 타자기를 사용하여 로만 키트에게 편지를 보낸다.
+
+10. 로만 키트는 엘리너 리틀이라는 상류층 여성과 약혼했다.
+
+11. 로만 키트는 그의 가족의 열망과 선서 가제트에서의 역할의 균형을 맞추는 도전에 직면해 있다.
+
+12. 아이리스 위노우는 어머니의 갑작스러운 죽음 이후 선서 가제트에서 직장을 그만둔다.
+
+13. Iris Winnow는 Inridridation Tribune 신문의 종군기자의 지위를 수락한다.
+
+14. 아이리스 위노우는 전쟁 전선 근처의 마을인 아발론 블루플로 여행하며, 또 다른 특파원 테아 "아티에" 애트워로드입니다.
+
+15. 아발론 블루플에서 마르시올 토레스는 아이리스 위나우와 테아 애트우드에게 신화적인 생물의 정기적인 위협에 대해 경고한다.
+
+16. 로만 키트는 아발론 블루플에 도착하여 아이리스 위나우가 전쟁을 기록하도록 돕는다.
+
+17. 로만 키트는 바프론트에서의 조우 중 중상을 입었다.
+
+18. 아이리스 위노우는 로만 키트가 심각한 부상을 입은 후 그녀의 신비한 펜팔 친구 카버라는 것을 깨닫는다.
+
+19. 아이리스 위노우는 로만 키트의 속임수에 대해 죄책감과 의심을 느낀다.
+
+20. 이전에 죽은 것으로 추정되는 포레스트가 생존하여 적인 Dacre를 위해 싸웠다는 것이 밝혀진다.
+
+21. 로만 키트는 사라지고, 아이리스 위노우는 그녀의 오빠에 대한 의무와 로만을 찾는 것 사이에서 고민하게 된다.
+
+22. 아이리스 위나우는 특파원으로부터 전쟁의 핵심 플레이어로 진화한다.
+
+23. 아이리스 위노우는 그녀의 오빠 옆에 머물면서 로만 키트를 계속 찾겠다고 약속합니다.
+
+24. "다이빙 리불스"의 이야기는 전쟁 중 인간의 지구력, 사랑, 의리의 증거이다.
+
+\begin{table}
+\begin{tabular}{l} \hline \hline GPT-4 \\ \hline _Diving Rivuls is an intricate narrative set in a dystopian world at war, invoked by two resurrected rival detities, Erwa and Dacre. The plot centres around Iris Winnow, a sensitive and tenacious employee at the Catha Gazette newspaper in the city of Cath, and her professional rival Roman Kitt. Iris's uncurrollit ille spirish into chaos with her brother, Forest, joining the gods’ uur, lerque her vithin the responsibility of their alcoholic mother, Aster. Cought in a whirlord of personal and professional rivalry, Iris’s bond with Roman depers in unexpected turse when Roman amounously receives and responds to Iris's emotionally rare letters intended for Forest. Iris uses a magical turseytter to send these tiers, leading to an anonymous correspondence that amplifies their unspoken connection. Roman’s social standing is a stark contrast to Iris’s modest background, he is estimated to a high society woman, Elinor Little, and faces the challenges of striking a balance between his family’s aspirations and his new role at Cath Gazette. Following their mother’s sudden passing, Iris impulsively resigns from her job at Oath Gazette. Detrimed to locate Forest and report on the escalating gods’ uur, she accepts a position as a uur correspondent with the Inridate Tribune newspaper. Iris embratus on a perious journey to Avalon Blufl, a town near the war front, accompanied by another correspondent, Then “Attie” Attworod. Their hostess in the erie tours, Marsiol Torres, warns the pait about the regular thrust from different mythical creatures such as hounds and eiltratus that desolitate their surroundings. Roman’s arrival in Avalon Blufl requires their convoluted relationship. He assists Iris in documenting the harrowing realities of the war while managing the growing tension between them. As Roman becomes severely injured during a horricite encounter at the wavefront, Iris, who has grown deeply linked in reporting the soldiers’ personal narratives, fights her uuy to ensure his safety. This life-threatening event leads Iris to recognise Roman as Carrer, her mysterious pen part, triggering an intense turnout of guilt and suspicion over Roman’s shortage. Amid her growing concern for Roman’s fate and he vorilled feelings about his description, a shocking twist reveals that Forest, previously presumed dead, has surried and fought for Dacre, the enemy detips. Further ensuing chaos sees Roman disappear, leaving Iris imprisoned between the obligations towards her effectively nationous brother and the desperate search for her missing lose interest._ _Diving Rivuls’ intervenes Iris’s personal story of resilience and growth against the hockdrop of an escalating war. As she metamorphoses from a correspondent to a key player in the uur, Iris embodies the human spirit’s ability to endure and adapt amidst ancestry. The narrative encapsulates the strength of character, familial obligations, professional rivalries, societal norms, and profound transformations at the heart of the story. Despite the evolving relationships and hardships, Iris pledges to remain by Forest’s side and continue her search for Roman. The story of “Diving Rivuls’ is a testament to human endurance, love, and loyalty amidst a surral world at war._
+
+1. 신성 리불스는 전쟁에서 디스토피아적 세계를 배경으로 한 이야기이다.
+
+2. "다이빙 리불스" 세계에서의 전쟁은 부활한 두 경쟁자인 엔바와 댄스에 의해 발동된다.
+
+3. 이 이야기의 줄거리는 선서 도시의 선서 가제트 신문의 직원인 아이리스 위나우에 초점을 맞춘다.
+
+4. 아이리스 위나우는 로만 키트라는 프로 라이벌이 있다.
+
+5. 아이리스 위노우의 형 포레스트는 신의 전쟁에 참여한다.
+
+6. 아이리스 위나우는 7시 이후에 알코올 중독자 어머니인 애스터의 책임을 지게 된다. 숲은 전쟁에 참여한다.
+
+8. 로만이 익명으로 포리스트를 위해 의도된 아이리스의 편지들을 수신하고 이에 응답할 때, 아이리스 위노우의 로만 키트와의 유대감은 깊어진다.
+
+9. 아이리스 위나우(Iris Winnow)는 마법의 거품을 사용하여 로마 키트(Roman Kitt)에게 편지를 보냅니다.
+
+10. 로만 키트는 엘리너 리틀이라는 상류층 여성과 약혼했다.
+
+11. 로만 키트는 그의 가족의 열망과 선서 가제트에서의 역할의 균형을 맞추는 도전에 직면해 있다.
+
+12. 아이리스 위노우는 그들의 어머니가 갑작스럽게 돌아가신 후 선서 가제트에서 직장을 그만둔다.
+
+13. Iris Winnow는 Inridridation Tribune 신문의 종군기자의 지위를 수락한다.
+
+14. 아이리스 위노우(Iris Winnow)는 전쟁 전선 근처의 마을인 아발론 블루플(Avalon Blufl)로 여행을 갑니다. Thea “Attie” Attworod라는 다른 특파원과 함께요.
+
+15. 아발론 블루플에서 마르시올 토레스는 아이리스 위나우와 테아 애트우드에게 신화적인 생물의 정기적인 위협에 대해 경고한다.
+
+16. 로만 키트는 아발론 블루플에 도착하여 아이리스 위나우가 전쟁을 기록하도록 돕는다.
+
+17. 로만 키트는 바프론트에서의 조우 중 중상을 입었다.
+
+18. 아이리스 위노우는 로만 키트가 심각한 부상을 입은 후 그녀의 신비한 펜팔 친구 카버라는 것을 깨닫는다.
+
+19. 아이리스 위노우는 로만 키트의 속임수에 대한 죄책감과 의심을 느낀다.
+
+20. 이전에 죽은 것으로 추정되는 포레스트가 생존하여 적인 Dacre를 위해 싸웠다는 것이 밝혀진다.
+
+21. 로만 키트는 사라지고, 아이리스 위노우는 그녀의 오빠에 대한 의무와 로만을 찾는 것 사이에서 고민하게 된다.
+
+22. 아이리스 위나우는 특파원으로부터 전쟁의 핵심 플레이어로 진화한다.
+
+23. 아이리스 위노우는 그녀의 남동생의 곁에 머물면서 로만 키트를 계속 찾겠다고 약속합니다.
+
+24. “다이빙 리불스”의 이야기는 전쟁 중 인간의 지구력, 사랑, 충성의 증거이다.
+
+\end{table}
+표 10: 레베카 로스의 소설 "다이빙 리불스"에 대한 추출된 청구항 세트와 함께 GPT-4에 의해 생성된 요약의 예. 다른 모델에 의한 예는 표 8, 표 9, 표 11 및 표 12에서 찾을 수 있다.
+
+\begin{table}
+\begin{tabular}{p{284.5pt}} \hline \hline GPT-3.5-Turbo & \\ \hline \hline \end{tabular}
+\begin{tabular}{p{284.5pt}} \hline \hline _In the city of Oath, siblings Iris and Forest Winnow face separation as Forest departs for war, leaving Iris to care for their mother. As Iris grapples with loneliness and worry, a fierce rivalry emerges at the Oath Gazette between Iris and Roman Kitt, two ambitious journalists. The backdrop of an impending war between the goddesse Erva and god Dance adds tension and intrigue to their lives. Iris, driven by a desire to prove herself in a male-dominated field, finds herself entangled in personal challenges within navigating her complicated relationship with Roman. As the war escalates and mysterious creatures surface, Iris and Roman become immersed in a world of gods, magic, and journalism, facing both personal and professional dilemmms. Iris decides to resign from her job to embark on a journey to find her brother Forest, who becomes entrained in the conflict. Roman, haunted by his past and familial obligations, struggles to reconcile his feelings for Iris while maintaining his journalistic integrity. Their paths eventually converge in Avalon Bluff, where Iris becomes a war correspondent equipped with a mysterious typewater with a significant history. A Iris and Roman navigate the chaos of war, their interactions reveal deeper emotions and motivations, leading to a fiteful meeting at a high-end restaurant. Attie, a friend of Iris, discloses her talent for playing the violin amidst the turmonal of war, adding a layer of depth to the narrative. Roman’s vulnerability and inner turmonal are brought to the forefront when he is saved by Iris during an air radi, further strengthening their bond. As they confront personal and professional challenges amidst the impending battle, Iris reunites with Forest, only to discover his involvement with the opposing forces. Forest, for between protecting Iris and confronting his past actions, adds a layer of complexity and tension to the story. Amids the impending attack by Dorre, Iris and Roman make a decision to stay and assist in Avalon Bluff, preparing for the inevitable confrontation. The intertwining destines of the characters unravel themes of sacrifice, resilience, and the search for identity in a world plugued by war and loss. As truths unfold, loyalty is tested, blurring the lines between good and evil. Characters like Dance and Erva reveal stinister plans, setting the stage for a complex and emotional journey through with uncertainty and conflict. Through grief, rivalry, and love, Iris and Roman confront their vulnerabilities and ambitions, ultimately reshaping their destines amidst the backdrop of war and its significant consequences._ \\ \hline
+1. Iris and Forest Winnow are siblings in the city of Oath. 2. Forest Winnow departs for war and Iris stays behind to care for their mother. 3. Iris struggles with feelings of loneliness and worry. 4. At the Oath Gazette, a fierce rivalry develops between Iris and Roman Kitt, both of whom are ambitious journalists. 5. An impending war between the goddess Enva and god Dacre adds tension and intrigue to Iris and Roman’s lives. 6. Iris aims to prove herself in the male-dominated field of journalism. 7. Iris faces personal challenges while navigating her complicated relationship with Roman. 8. As the war intensifies, Iris and Roman encounter mysterious creatures. 9. Iris resigns from her job at the Oath Gazette to search for her brother Forest, who is involved in the war. 10. Roman Kitt has a troubled past and family obligations that make it difficult for him to balance his feelings for Iris and his journalistic integrity. 11. Iris and Roman's paths intersect in Avalon Bluff, where Iris becomes a war correspondent. 12. Iris uses a typewriter with a significant past while working as a war correspondent. 13. Iris and Roman’s interactions during the war reveal deeper emotions and motivations. 14. Iris and Roman have a significant meeting at a high-end restaurant. 15. Attie, a friend of Iris, is talented at playing the violin. 16. Roman’s vulnerability is revealed when Iris saves him during an air raid. 17. Iris reunites with Forest during the war, discovering his involvement with the opposing forces. 18. Forest is torn between his desire to protect Iris and confronting his past actions. 19. Amidst the approaching attack by Dacre, Iris and Roman decide to stay and help in Avalon Bluff. 20. The characters’ intertwining destinies reveal themes of sacrifice, resilience, and identity search in a war-torn world. 21. The story explores blurred lines between good and evil as loyalties are tested. 22. Characters like Dacre and Enva have sinister plans. 23. Iris and Roman confront their vulnerabilities and ambitions, leading to a change in their destinies amid the backdrop of war. \\ \hline \hline \end{tabular}
+\end{table}
+표 11: 레베카 로스의 소설 "신성한 라이벌즈"에 대한 추출된 클레임 세트와 함께 GPT-3.5-터보에 의해 생성된 요약의 예. 다른 모델에 의한 예는 표 8, 표 9, 표 10 및 표 12에서 찾을 수 있다.
+
+두 드라이브 가족인 스카이워즈와 언더링스 사이의 파괴적인 uav에 의해 찢어진 세계에서, "신성한 라이벌즈"는 오아 시의 추스 카제트의 조직적인 주니어 기자 아이리스 위나우(Iris Winnow)가 유명한 저널리스트가 되기 위해 노력하고 어머니와 오빠인 포레스트(Forest)를 빼앗은 uav에 대한 진실을 밝히기 위해 노력하는 여정을 따라갑니다. 스카이워즈와 언더링스의 갈등은 마법과 신화가 인간의 세계와 얽히고설킨 혼돈 속에 캄브리아의 영역을 떠났고, 인간들 사이에서 가스 워킹, 위대한 저널리스트가 되려는 아이리스의 꿈은 돌아가신 오빠에 대한 사랑과 그가 왜 uav에 합류했는지 이해하려는 욕망에 의해 타버린다. 그녀는 부유한 가정에서 온 끈기 있는 이야기꾼으로 그녀의 프로 라이벌인 로만 키츠와의 경쟁에 직면해 있다. 아이리스가 주요 이슈에 대해 쓰고 싶어 하는 동안, 로만은 스토리텔리그의 소행성으로 아이리스와 복잡한 배경을 공유했으며 그의 아버지가 가업에 합류하기 위해 제시하고 있다. 선서 카제트의 편집자인 EdD Autry는 Iris의 티사냐에 비해 urx를 다루기를 꺼린다. 아이리스 가족은 어머니와 오빠를 성병에 빼앗긴 뒤 경제적 어려움과 개인적 고충에 시달리고 있다. Uav와 그녀의 남동생이 연루된 것에 대한 진실을 밝히려는 그녀의 결단에 이끌려, 아이리스는 단호한 것처럼 호들갑을 떨었다. 라이벌 신문인 개인 트리뷴은 urx 특파원들을 위한 기회를 발표하여 로만과 함께 그 자리를 완전히 유혹한다. 아이리스(Iris)의 여정은 여기에 랜크(lancse)를 쓴 알려지지 않은 사람과 신비로운 서신으로 더욱 복잡해지며 독특한 상자를 형성한다. 아이리스가 그 자리를 계산하면서, 그녀는 그녀를 저널리즘 세계에 소개한 포레스트와의 과거와 우정을 돌아봅니다. 우록스와 스카이워드의 황금인 에르와에 대한 그들의 견해는 그들을 갈라놓았다. 아이리스는 군인의 이론을 강조하고 싶었고, 공공의 숲은 엔루의 어린 마음을 조종하여 우르르 소리를 내도록 하는 것을 목표로 했다. 도전에도 불구하고, 아이리스는 여전히 그녀의 목표에 집중하고 마침내 트리뷴을 이해하기 위한 방법으로 일자리를 얻습니다. 그녀는 우럭을 덮기 위한 위험한 여행에서 덩어리를 쌓고, 그 과정에서 다양한 혐의와 고난에 직면한다. 아이리스는 그녀의 친구가 되어 그녀의 위험한 여정에 부담을 주는 것을 지지하는 미스터리한 낯선 사람에게 편지를 계속 쓴다. 한편, 오돈 블러프 마을은 알려지지 않은 적인 언더링스의 신 데이커와의 끊임없는 전투를 준비합니다. 아이리스, 로만, 그리고 다른 회사들은 오돈 블러프에 모여 마을의 방어를 돕습니다. 긴급 공급 키트의 도난과 키건의 산만한 행동으로 긴장이 고조되고 있기 때문입니다. 혼돈, 아이리스, 로마의 믿을 수 있는 연결을 생략하고 로마는 아이리스에게 청혼하여 목적지 앞에서 희망의 순간을 제공합니다. 이 단체가 전투를 준비하는 동안 아이리스 증인은 무고한 생명의 손실과 어린 시절의 집인 클리버 힐의 파괴를 포함하여 전쟁의 참상을 이해한다. 고통에도 불구하고, 아이리스는 전투를 기록하고 숲을 찾기 위해 그녀의 말을 사용하여 urx에 대해 계속 보고합니다. "디신 라이벌즈"는 전쟁 앞에서 정체성과 용기, 말의 힘이라는 주제를 탐구하는 설득력 있는 서사이다. 진실에 대해 글을 쓰고, 형에 대한 답을 찾고, 그녀의 성가심을 불러일으켜 변화를 일으키려는 아이리스의 완고한 결심은 이야기 전반에 걸쳐 저널리스트 공명자를 가지고 있다. 저자는 자신의 문학 에이전트, 영화 에이전트, 풍자 팀, 편집자, 표지 디자이너, 복사 편집자 및 동료 작가를 인정하면서 이 매혹적인 규칙을 출판하는 데 도움을 준 사람들에게 감사를 표한다._
+
+1. 신성한 라이벌즈는 스카이워즈와 언더링스의 두 신성한 가족 사이의 전쟁에 의해 영향을 받는 세계를 배경으로 한다.
+2. "신성한 라이벌즈"의 주인공은 선서 도시 선서 가제트에서 후배 기자로 일하는 고아 아이리스 위나우이다.
+3. 유명한 저널리스트가 되려는 아이리스 위노우의 열망은 어머니와 형인 포레스트의 죽음을 초래한 전쟁에 대한 진실을 밝혀내고자 하는 욕망에 의해 주도된다.
+4.스카이워즈와 언더링스의 갈등은 마법과 신화가 인간의 세계와 상호작용하는 장소인 캄브리아의 영역에 혼란을 야기했다.
+5. 아이리스 위나우는 부유한 가정의 숙련된 이야기꾼인 로만 키트라는 전문 라이벌이 있다.
+6. 로만 키트는 그의 아버지로부터 가업에 합류하라는 압력을 받고 있다.
+7. 선서 가제트의 편집자인 젝 오트리는 아이리스 위노우의 소원에 반하여 전쟁을 취재하기를 원하지 않는다.
+8. 그녀의 어머니와 남동생을 잃은 후, 아이리스 위노우의 가족은 재정적, 개인적 어려움에 직면해 있다.
+9. 경쟁 신문인 Inkridation Tribune은 종군 기자들의 일자리를 광고하여 아이리스 위나우와 로만 키트 둘 다 그 자리를 놓고 경쟁하도록 이끌고 있다.
+10. 아이리스 위나우는 그녀의 옷장에 편지를 남기는 정체불명의 개인과 신비한 서신을 유지한다.
+11. 아이리스 위노우의 오빠인 포레스트는 그녀를 저널리즘에 소개했습니다.
+12. 아이리스 위노우와 그녀의 동생 포레스트는 전쟁과 스카이워드의 여신 엔바에 대해 서로 다른 견해를 가지고 있었다.
+13. 다양한 도전에도 불구하고, Iris Winnow는 Inkridden Tribune의 종군기자가 되겠다는 그녀의 목표를 달성한다.
+14. 아이리스 위노우는 전쟁을 덮기 위해 위험한 여정을 시작합니다.
+15. 아이리스 위나우는 여행 중에 친구가 되는 알려지지 않은 사람에게 편지를 계속 씁니다.
+16. 아발론 블러프 마을은 알려지지 않은 적과의 전투를 준비하고 있다.
+17. 언더링스의 신 데이커.
+18. Amidset the chaos, Iris Winnow and Roman Kitt is rekinding their connection, and Roman Kitt proposes to Iris Winnow.
+19. 아이리스 위나우는 무고한 생명의 손실과 어린 시절의 집인 클로버 힐의 파괴를 포함하여 전쟁의 참상을 직접 경험한다.
+20. 고난에도 불구하고 아이리스 위나우는 자신의 글을 사용하여 전투를 기록하고 동생인 포리스트를 찾는 등 전쟁에 대해 계속 보고한다.
+21. 신성한 라이벌즈는 전쟁 중 정체성, 용기, 말의 힘이라는 주제를 탐구한다.
+22. 진실에 대해 쓰고 그녀의 형제에 대해 답을 구함으로써 변화를 만들겠다는 아이리스 위나우의 결심은 "신성한 라이벌즈"의 중심 주제이다.
+23. "신성한 라이벌즈"의 저자는 그녀의 문학 에이전트, 영화 에이전트, 하위 권리 팀, 편집자, 표지 디자이너, 복사 편집자 및 동료 저자가 책의 출판에 도움을 준 것을 인정한다.
+
+\begin{table}
+\begin{tabular}{l} \hline \hline \multicolumn{1}{c}{Mixtral} & \multicolumn{1}{c}{
+\begin{tabular}{c} \\ \end{tabular} } \\ \hline \hline \multicolumn{1}{c}{_In a world torn by a devastating uav between two divine families, the Skywards and the Underlings, “Divine Rivals” follows the journey of Iris Winnow, an orphaned junior reporter at the Chuth Cagette in the city of O'A, as she strives to become a renowned journalist and uncover the truth about the war that took her mother and brother, Forest, from her. The Skywards and Underlings’ conflict has left the realm of Cambria in chaos, where magic and mythology intertwine with the mortal world._
+
+1. 유명한 저널리스트가 되려는 아이리스 위노우의 열망은 어머니와 형인 포레스트의 죽음을 초래한 전쟁에 대한 진실을 밝혀내고자 하는 욕망에 의해 주도된다.
+4.스카이워즈와 언더링스의 갈등은 마법과 신화가 인간의 세계와 상호작용하는 장소인 캄브리아의 영역에 혼란을 야기했다.
+5. 아이리스 위나우는 부유한 가정의 숙련된 이야기꾼인 로만 키트라는 전문 라이벌이 있다.
+6. 로만 키트는 그의 아버지로부터 가업에 합류하라는 압력을 받고 있다.
+7. 선서 가제트의 편집자인 젭 오트리는 아이리스 위노우의 소원에 반하여 전쟁을 취재하기를 원하지 않는다.
+8. 그녀의 어머니와 남동생을 잃은 후, 아이리스 위노우의 가족은 재정적, 개인적 어려움에 직면해 있다.
+9. 경쟁 신문인 Inkridation Tribune은 종군 기자들의 일자리를 광고하여 아이리스 위나우와 로만 키트 둘 다 그 자리를 놓고 경쟁하도록 이끌고 있다.
+10. 아이리스 위나우는 그녀의 옷장에 편지를 남기는 정체불명의 개인과 신비한 서신을 유지한다.
+11. 아이리스 위노우의 오빠인 포레스트는 그녀를 저널리즘에 소개했습니다.
+12. 아이리스 위노우와 그녀의 동생 포레스트는 전쟁과 스카이워드의 여신 엔바에 대해 서로 다른 견해를 가지고 있었다.
+13. 다양한 도전에도 불구하고, Iris Winnow는 Inkridden Tribune의 종군기자가 되겠다는 그녀의 목표를 달성한다.
+14. 아이리스 위노우는 전쟁을 덮기 위해 위험한 여정을 시작합니다.
+15. 아이리스 위나우는 여행 중에 친구가 되는 알려지지 않은 사람에게 편지를 계속 씁니다.
+16. 아발론 블러프 마을은 알려지지 않은 적과의 전투를 준비하고 있다.
+17. 언더링스의 신 데이커.
+18. Amidset the chaos, Iris Winnow and Roman Kitt is rekinding their connection, and Roman Kitt proposes to Iris Winnow.
+19. 아이리스 위나우는 무고한 생명의 손실과 어린 시절의 집인 클로버 힐의 파괴를 포함하여 전쟁의 참상을 직접 경험한다.
+20. 고난에도 불구하고 아이리스 위나우는 자신의 글을 사용하여 전투를 기록하고 동생인 포리스트를 찾는 등 전쟁에 대해 계속 보고한다.
+21. 신성한 라이벌즈는 전쟁 중 정체성, 용기, 말의 힘이라는 주제를 탐구한다.
+22. 진실에 대해 쓰고 그녀의 형제에 대해 답을 찾음으로써 변화를 만들려는 아이리스 위노우의 결심은 “신성한 라이벌즈”의 중심 주제이다.
+23. "신성한 라이벌즈"의 저자는 그녀의 문학 에이전트, 영화 에이전트, 하위 권리 팀, 편집자, 표지 디자이너, 복사 편집자 및 동료 저자가 책의 출판에 도움을 준 것을 인정한다.
+
+[MISSING_PAGE_EMPTY:29]
+
+\begin{table}
+\begin{tabular}{p{71.1pt} p{142.3pt} p{142.3pt}} \hline \hline Label & Definition & Example (Claim // Reason) \\ \hline \hline \multirow{2}{*}{Event} & Concrete event where someone does something, something pens to someone, etc. & _Maggei reunites with her old friends and fellow retired spies._ // _Maggei does not reunite with these people._ \\ \hline \multirow{2}{*}{Introspection} & Characters’ thoughts, feelings, opinions, etc. & _Jastine feels guilty about Amy’s death and is hautted by the idea that Amy might be watching her._ // _Jastine doesn’t feel guilty._ \\ \hline \multirow{2}{*}{Cause/effect} & Goals, motivation, or purposes & _Charlie Broun decides to return to New York to confront Harry Taylor and pursue a connection with Pete Makers after discovering Harry’s infidelity._ // _He is not there to confront Harry._ \\ \cline{2-3}  & Causes or effects of events, actions, thoughts, etc. & _The discovery of the love story sparks Jade’s advisout about the house and its past inhabitants._ // _Jade’s curiosity is not sparked by the love story, but by a dream she had._ \\ \hline \multirow{2}{*}{State} & Relationship between characters & _Maggei reunites with her old friends and fellow retired spies._ // _Maggei does not reunite with these people._ \\ \cline{2-3}  & Traits of a character & _The magic of real life in ”Viciously Yours” manifests after twenty-five years._ // \(I\) _I_ _does not manifest after 25 years but becomes full strength at 25 years. They are born with magic._ \\ \cline{2-3}  & State of a character, place, etc. & _Phillip Hardwicke, a wealthy businessman who was believed to be dead, is revealed to be alive in the story._ // _Bella Hardwicke is revealed to be alive, not Phillip._ \\ \hline \multirow{2}{*}{High-level} & Characteristics of the narrative & _The narrative style of the book is non-linear and features flashbacks and switches between alternate worlds or viewpoints._ // _The book is almost exclusively from Aurelia’s point of view and is linear._ \\ \cline{2-3}  & General story setting & _The narrative style of the book is non-linear and features flashbacks and switches between alternate worlds or viewpoints._ // _H’s’ set in Adcova, Nyuzia is the name of the goddess._ \\ \cline{2-3}  & Themes & _The narrative of ”The Guest” explores themes of memory, identity, and the pursuit of understanding within human relationships._ // _H’s set in Adcova, Nyuzia is the name of the goddess._ \\ \hline \hline \multirow{2}{*}{Direct} & Reasoning requires only one hop & _Alex attends a gathering at Victor’s house._ // _The book states that the gathering is in Helen’s house._ \\ \hline \multirow{2}{*}{Indirect} & Reasoning requires more than one hop & _Alex and Jack bond over their shared experiences._ // _They don’t have any shared experiences, Jack is from a wealthy, privileged home, and while we aren’t told much about Alex’s background, we know she doesn’t live a cosested life like him._ \\ \cline{2-3}  & Annotator is arguing for a lack of support & _Maggei is portrayed as a skilled assassin in addition to being a former intelligence officer._ // _No information in the book really supports that._ \\ \hline Subjective & Requires subjective judgment & _Forest is torn between his desire to protect Iris and confronting his past actions._ // _I don’t think Forest makes any real effort to confront his past actions, his main motivation is protecting Iris._ \\ \hline Extra info & Requires extra/meta information & _The book “Wildfire” is the first in the ICDraker series._ _// No evidence in the book, but this is the second in the series, after ”Icebreaker”._ \\ \hline \hline \end{tabular}
+\end{table}
+표 15: 더 많은 예와 함께 우리의 성실성 주석 분석에서 레이블을 할당하기 위한 일반적인 계획. 이 표는 표 3을 보완한다.
+
+\begin{table}
+\begin{tabular}{l l l l} \hline \hline \multicolumn{1}{c}{Evidence Coverage} & \multicolumn{2}{c}{Reasoning-Claim Rel.} \\ \hline Type & Freq & Type & Freq \\ \hline Complete & 56.1 & Direct cont. & 50.5 \\ Partial & 34.7 & Indirect cont. & 30.1 \\ Irrel. & 1.5 & Lack of support & 19.4 \\ N/A & 7.7 & & \\ \hline \hline \end{tabular}
+\end{table}
+표 16: 증거 범위와 추론-청구 관계에 대한 분석 결과.
+
+\begin{table}
+\begin{tabular}{l|c c c c c} Model & Total count & Direct evidence & Logical inference & Subjective interpretation & Requires meta info \\ \hline Claude-3-Opus & 12 & 66.7 & 25 & 0 & 8.3 \\ GPT-4 & 26 & 20 & 68 & 12 & 0 \\ GPT-4-Turo & 48 & 27.5 & 62.7 & 3.9 & 5.9 \\ GPT-3-5-Turo & 63 & 31.2 & 51.6 & 10.9 & 6.2 \\ Mytral & 76 & 38.5 & 48.7 & 6.4 & 6.4 \\ \hline \hline \end{tabular}
+\end{table}
+표 17: 청구 유형별 추론 유형 분포. 총 수를 제외하고 모든 수는 백분율로 보고된다.
+
+\begin{table}
+\begin{tabular}{l|c c c c} Model & Total count & Direct evidence & Logical inference & Subjective interpretation & Requires meta info \\ \hline Claude-3-Opus & 12 & 66.7 & 25 & 0 & 8.3 \\ GPT-4 & 26 & 20 & 68 & 12 & 0 \\ GPT-4-Turo & 48 & 27.5 & 62.7 & 3.9 & 5.9 \\ GPT-3-5-Turo & 63 & 31.2 & 51.6 & 10.9 & 6.2 \\ Mytral & 76 & 38.5 & 48.7 & 6.4 & 6.4 \\ \hline \hline \end{tabular}
+\end{table}
+표 18: 상이한 모델들에 대한 추론 유형의 분포. 총 수를 제외하고 모든 수는 백분율로 보고된다.
+
+\begin{table}
+\begin{tabular}{l|c c c c} Model & Total count & Direct contradiction & Indirect contradiction & Lack of support \\ \hline Claude-3-Opus & 12 & 66.7 & 33.3 & 0 \\ GPT-4 & 26 & 48.3 & 27.6 & 24.1 \\ GPT-4-Turo & 48 & 24.5 & 34.7 & 40.8 \\ GPT-3.5-Turo & 63 & 44.1 & 30.9 & 25 \\ Mytral & 76 & 57.7 & 19.2 & 23.1 \\ \hline \hline \end{tabular}
+\end{table}
+표 19: 서로 다른 모델에 대한 추론-청구 관계의 분포. 총 수를 제외하고 모든 수는 백분율로 보고된다.
+
+[MISSING_PAGE_FAIL:32]
+
+\begin{table}
+\begin{tabular}{l l l} \hline \hline
+**Issue** & **Definition** & **Example** \\ \hline Chronology & Issues with the chronological ordering of claims. & _(...) though it has some chronology problems_ \\  & _(Arti’s proposal comes after the run in the city,_ \\  & _which comes after loshi and Kathiga open the_ \\  & _pop-up) (...)_ \\ Omissions & The annotator mentions any omissions of content that should have been included in the summary. & _mriown what she was a tranager until she_ \\  & _turn 18 and then started an intimate relationship. He later leaves Summer and marrive her sister. Even after he is married, he doesn’t let Summer move on._ \\ Factuality & Issues with factuality are explicitly mentioned by the annotator. Note that this category correlates partially with the annotated factuality errors._ & _There were some serious issues with this summary. The first thing that the look is referred to as “The Refinement Plan” twice in the summary which is the incorrect title._ \\ Overemphasis & Too much emphasis put on less significant events or characters. & _Salience: Charles is not an important character, he is the manager of the guest house_ _where she stays in New York, and she only_ _chats to him a couple of times._ \\ Undermphasis & Certain events or characters are mentioned but to little emphasis is put on their importance for the story. & _There is not enough emphasis on the relationship between Justine and Dom, who later becomes her husband._ \\ Vague/Generic & Vague or generic claims included in the summary. & _Most of the sentences at the end of the summary are generalized and there are no substantial facts._ \\ Repetitive & Repetitive claims included in the summary. & _As noted in the annotations, claims 16 and 17 weretitious and not necessary._ \\ Data-influenced & The summary was influenced by front and/or back matter. & [n/a: judgment for this category was made by one of the co-authors during analysis] \\ \hline Comprehensive & The annotator praises the summary for being comprehensive. & _Out of all the summary claims, this feds the most relevant and comprehensive of the key events that take place._ \\ Well-done & The annotator praises the summary for being well-done. & _This was good, things were in sequence, and the main points were covered._ \\ \hline \hline \end{tabular}
+\end{table}
+표 21: 전체 요약의 품질에 대한 주석자의 주석 분석에 사용되는 범주.
+
+\begin{table}
+\begin{tabular}{l l l l l l} \hline \hline
+**Omission Type** & **Definition** & **Example** & & \\ \hline Characters & Summary fails to mention important characters. & & _This summary excluded a lot of the main plot points (...) and the very important principal antagonists Alma, Thomas, and Marion. Alma and Thomas are present-day representations of colonization and investors in the project to turn Nha Hoa into a bed-and-breakfast_. & _Some important events in the book were omitted, such as the part where Alex follows a group of young people to a house and has sex with a girl’s bovfriend, the part where she she meals into a club and pretends to be a little boy’s manny, and the part where she follows Margaret to her home. These events are filled with tension, showcase Alex’s daring exploits, add a deeper layer of meaning to the story, and ultimately propel the narrative, so they should have been included. Alex almost drows in the beginning of the novel, a frightening incident that she mentions to Victor during the party._ & _(...) but the overall summary misses a huge plot point of Carver and Roman being the same person._ & _There is no mention of Clover and Amos the Desert King being males. Nor Fawn and Dean the Garden King being mates._ & _Dearn the Garden King being mates._ & _Water, pools, and beaches are recurring metaphors in the book, yet they aren’t mentioned or highlighted in any of the claims._ \\ \hline \hline \end{tabular}
+\end{table}
+표 22: 평가자에 의해 제공된 주석 주석에 사용되는 생략 카테고리에 대한 설명. 누락은 (1) 이진 선택(누락이 언급되었거나 언급되지 않았음) 및 (2) 범주화의 두 단계로 주석이 달렸다.
+
+\begin{table}
+\begin{tabular}{l l l l l} \hline \hline
+**Omission Type** & **Claude-3-Opus** & GPT-4-Turbo & GPT-4 & GPT-3.5-Turbo & Mistral \\ \hline Characters & 4.17 & 23.08 & 7.69 & 7.69 & 23.08 \\ Events & 33.33 & 57.69 & 38.46 & 65.38 & 38.46 \\ Attributes & 16.67 & 38.46 & 34.62 & 34.62 & 38.46 \\ Relations & 8.33 & 11.54 & 11.54 & 11.54 & 15.38 \\ Theme & 12.50 & 15.38 & 3.85 & 15.38 & 19.23 \\ \hline \hline \end{tabular}
+\end{table}
+표 23: 모형별 특정 유형의 누락 오류에 의해 영향을 받는 요약의 백분율입니다.
+
+_이 요약은 대체로 사실적이며 텍스트의 전반적인 호를 살펴보지만 몇 가지 연대기 문제가 있다(Ar의 제안은 조쉬와 라듀가 펍업을 연 후에 나오는 도시 운영 후에 나오며 복잡한 감정 여정에도 불구하고 저자의 접근에 불균형적으로 초점을 맞춘다). 작가가 텍스트 그 자체와는 반대로 다른 작가 케이트 롭과 교정한 것이다. 또한 비선형 스토리텔링에 대해 논의하지 않습니다._
+
+**참고:** 모델에 백 문제 정보가 포함되어 있습니다. 정확하지만, 그것은 요약에 포함되지 말았어야 했다.
+
+_이 요약 클레임 세트는 디지털 시대의 테마 아이디어에 매우 초점을 맞추고 있으며 이야기는 그 모든 것을 다루지 않습니다. 이것은 심지어 현대 세계를 기반으로 하지도 않는다. 연대론은 대부분의 주장이 옳거나 적용 가능하거나 검증 가능하지 않기 때문에 관련이 없었다. 사실성은 0에 있었고 주장은 삶과 죽음에 대한 주제가 있는 것 외에는 발생하는 주요 사건을 다루지 않습니다._
+
+**참고:** 모델은 저자의 소셜 미디어 계정에 대한 간략한 언급을 기반으로 정보를 환각합니다.
+
+\begin{table}
+\begin{tabular}{l l l} \hline \hline
+**Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} (...) & _Goldbeck's insightful writing and clever comedic timing_ \\ _create the narrative, making it stand out and resolute with a broad variety of readers. Reflecting upon shared preferences like requiliat and various NYC spots, Goldbeck successfully manages to craft relatable characters with everyday experiences, despite their complex emotional journey. The author’s creative process in the narrative, including the decision to cut a subplot involving Ari working as a companion on a cruise shigly, adds a layer of interesting behind-the-scenes perspective. The narrative style, which pays home to classic 2000s romantic comdies, echoes elements of escapism, emphasizing the importance of literature during unprecatented times like the global pandemic._ (...) \\ \hline \end{tabular} _This set of summary claims are very focused on the idea of themes of digital age and the story doesn’t cover that all. This not even based on a modern world. Chronology wasn’t relevant as majority of the claims weren't correct, applicable or verifiable. Factuality was on zero and the claims don’t cover any of the key events that occurs except that there was themes of life and death._
+
+**참고:** 모델은 저자의 소셜 미디어 계정에 대한 간략한 언급을 기반으로 정보를 환각합니다.
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline
+**Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create the book. Please note that the quotes I included below don’t necessarily prove any of the claims wrong (or right, for that matter)._ \\ \hline \end{tabular} _**NOTE:** The model declines to merge two summaries due to significant discrepancies in content.
+
+\begin{tabular}{l l} \hline \hline
+**Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._ \\ \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Comment** & **Summary** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Model** & **Comment** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested.
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Model** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._
+
+\begin{tabular}{l l} \hline \hline \multirow{2}{*}{_Update_} & **Model** & **Model** \\ \hline \hline \multirow{7}{*}{_None of the claims is completely factually correct, or focused on the look as they ought to be. The first two claims are the only ones where the protogorist Alex is mentioned, but both claims are still wrong. The other claims are incomprehensible, have absolutely nothing to do with the book, and are therefore inadmissible. In fact, the claims appear to be focused on a different topic entirely, or create a myself summary, I would need access to summaries that are all related to the same story, with each summary focusing on different parts or aspects of that story. If you are able to provide a series of summaries that are all connected to the same narrative, I would be happy to assist in combining them into a single, cohesive summary that includes key events, backgrounds, settings, characters, objectives, and motivations, while also introducing major elements and organizing the summary in a chronological manner. Please let me know if you have any other summaries related to the story mentioned in Summary I, as that would allow me to proceed with the merging process you have requested._ \\ \hline \hline \multirow{7}{*}{_None of the claims is completely fact
+
+\begin{table}
+\begin{tabular}{l c c c c c c} \hline \hline \multirow{2}{*}{_Summarized by_} & \multicolumn{2}{c}{**No-Context**} & \multicolumn{2}{c}{**BM25**} & \multicolumn{2}{c}{**Human Evidence**} \\ \cline{2-7}  & _Faithfulful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ & _Unfaithful_ \\ \hline \multicolumn{7}{l}{_F1 score against the human annotations_} & & & & & \\ GPT-3.5-Turo & 0.727 & 0.261 & 0.835 & 0.476 & 0.712 & 0.430 \\ Mitral & 0.643 & 0.183 & 0.837 & 0.244 & 0.784 & 0.406 \\ GPT-4 & 0.687 & 0.130 & 0.794 & 0.088 & 0.721 & 0.207 \\ GPT-4-Turo & 0.634 & 0.033 & 0.887 & 0.080 & 0.792 & 0.139 \\ Claude-3-Opus & 0.674 & 0.000 & 0.738 & 0.000 & 0.684 & 0.031 \\ \hline Overall & 0.681 & 0.124 & **0.826** & 0.215 & 0.755 & **0.259** \\ \hline \multicolumn{7}{l}{_Token length of the given evidence against prediction label_} & & & & \\ GPT-3.5-Turo & 0.0 & 1136.4 & 1131.0 & 292.4 & 126.5 \\ Mitral & 0.0 & 1139.5 & 1132.9 & 211.7 & 153.4 \\ GPT-4 & 0.0 & 1138.6 & 1132.5 & 241.7 & 160.8 \\ GPT-4-Turo & 0.0 & 1141.9 & 1138.3 & 257.8 & 152.9 \\ Claude-3-Opus & 0.0 & 1134.5 & 1128.6 & 214.4 & 151.5 \\ \hline Average & 0.0 & 1138.2 & 1132.6 & 243.6 & 149.0 \\ \hline \hline \end{tabular}
+\end{table}
+표 26: 상이한 증거 추출 방법에 기초한 GPT-4-Turo를 이용한 자동 평가의 비교. 또한 각 요약자에 대해 추출된 증거의 F1 점수와 토큰 길이를 제시한다. 전체 평균 값은 표에 걸친 모든 클레임을 사용하여 계산되었다.
+
+\begin{table}
+\begin{tabular}{l c} \hline \hline Model & Comments \\ \hline Claude-3-Opus & _“It also focuses extensively on the last couple chapters of the book. This is the only summary so far that has included claims about the very last chapter of the book that is from Dacre’s point of view.”_ \\ Claude-3-Opus & _“(...) and hits the main thematic elements of the text, though it disproportionately addresses the epilogue over other portions of the text (...)”_ \\ Claude-3-Opus & _“This summary included a lot of true elements, but also included many irrelevant details not integral to the plot. This is especially true for the end of the book.”_ \\ GPT-4-Turo & _“This summary focuses heavily on the end of the book and misses plot points that happen in the beginning of the book.”_ \\ GPT-4 & _“(...) and focuses disproportionately on the author’s conversation with another writer, Kate Robb, as opposed to the text itself.”_ [the interview is included at the end of the book] \\ Mixtral & _“The summary puts an emphasis on Part 4 of the book which is not in proportion to the rest of the book”_ [Part 4 is the last part] \\ \hline \hline \end{tabular}
+\end{table}
+표 25: 책의 끝을 향한 모델의 포커스에 대한 주석자의 주석
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\ \hline A Haunting on the & 0.821 & 0.329 & 0.230 & 0.650 \\ Hill & & & & \\ Agency for Scandal & 0.960 & 0.133 & 0.034 & 0.833 \\ Divine Rivals & 0.960 & 0.156 & 0.140 & 0.917 \\ Fairplate of New York & 1.000 & 0.123 & 0.174 & 1.000 \\ Flavless & 0.950 & 0.217 & 0.012 & 0.500 \\ Fourth Wing & 1.000 & 0.169 & 0.112 & 1.000 \\ Modern Divination & 1.000 & 0.062 & 0.092 & 1.000 \\ Only For The Week & 0.893 & 0.186 & 0.056 & 0.500 \\ Pet & 0.871 & 0.151 & 0.121 & 0.881 \\ Romantic Comedy & 1.000 & 0.170 & 0.020 & 1.000 \\ Same Time Next Year & 0.667 & 0.161 & 0.204 & 0.700 \\ She Is a Haunting & 0.917 & 0.220 & 0.065 & 0.667 \\ Six Scorched Roses & 0.750 & 0.179 & 0.228 & 0.701 \\ Sorrow and Bliss & 0.983 & 0.197 & 0.029 & 0.750 \\ The Attonement & 1.000 & 0.067 & 0.069 & 1.000 \\ Murders & & & & \\ The Guest & 0.688 & 0.182 & 0.253 & 0.810 \\ The Marriage Act & 1.000 & 0.101 & 0.041 & 1.000 \\ The Spy Coast & 0.864 & 0.151 & 0.103 & 0.790 \\ The Wager & 1.000 & 0.495 & 0.085 & 1.000 \\ The White Lady & 0.750 & 0.045 & 0.151 & 0.938 \\ This Impossible & 1.000 & 0.147 & 0.044 & 1.000 \\ Brightness & & & & \\ Viciously Yours & 0.950 & 0.200 & 0.113 & 0.833 \\ Weyward & 0.947 & 0.504 & 0.161 & 0.750 \\ Wilfire & 1.000 & 0.229 & 0.036 & 1.000 \\ You, Again & 1.000 & 0.214 & 0.041 & 1.000 \\ Yellowface & 0.933 & 0.163 & 0.119 & 0.938 \\ \hline \hline \end{tabular}
+\end{table}
+표 27: 각 책에 대한 GPT-4-터보 **문맥 없음** 을 사용하여 LM 평가로부터 정밀도(P\(\mathrm{R}\)) 및 리콜(\(\mathrm{Re}\))
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\ \hline A Haunting on the Hill & 0.967 & 0.517 & 0.337 & 0.950 \\ Agency for Scandal & 1.000 & 0.570 & 0.063 & 1.000 \\ Divine Rivals & 0.980 & 0.427 & 0.190 & 0.917 \\ Fairtale of New York & 1.000 & 0.230 & 0.195 & 1.000 \\ Flavless & 1.000 & 0.352 & 0.033 & 1.000 \\ Fourth Wing & 0.985 & 0.662 & 0.244 & 0.950 \\ Modern Divination & 1.000 & 0.409 & 0.138 & 1.000 \\ Only For The Week & 1.000 & 0.509 & 0.119 & 1.000 \\ Pet & 0.981 & 0.676 & 0.242 & 0.833 \\ Romantic Comedy & 1.000 & 0.204 & 0.024 & 1.000 \\ Same Time Next Year & 0.851 & 0.780 & 0.300 & 0.600 \\ She Is a Haunting & 0.985 & 0.641 & 0.186 & 0.750 \\ Six Scorched Roses & 0.907 & 0.521 & 0.334 & 0.759 \\ \hline Sorrow and Bliss & 1.000 & 0.340 & 0.038 & 1.000 \\ The Attonement & 1.000 & 0.333 & 0.093 & 1.000 \\ The Guest & 0.868 & 0.644 & 0.391 & 0.589 \\ The Marriage Act & 1.000 & 0.360 & 0.049 & 1.000 \\ The Spy Coast & 0.975 & 0.392 & 0.168 & 0.933 \\ The Wager & 1.000 & 0.810 & 0.220 & 1.000 \\ The White Lady & 1.000 & 0.311 & 0.201 & 1.000 \\ This Impossible & 1.000 & 0.378 & 0.049 & 1.000 \\ Brightness & & & & \\ Viciously Yours & 0.921 & 0.508 & 0.156 & 0.688 \\ Weyward & 1.000 & 0.598 & 0.157 & 1.000 \\ Wildlife & 1.000 & 0.387 & 0.042 & 1.000 \\ You, Again & 0.967 & 0.469 & 0.048 & 0.667 \\ Yellowface & 0.935 & 0.461 & 0.153 & 0.813 \\ \hline \hline \end{tabular}
+\end{table}
+표 28: 각 책에 대한 GPT-4-Turbo를 사용하여 **인간 증거** 및 LM 평가에 의해 추정된 평균 정밀도(\(\mathrm{Pr}\)) 및 리콜(\(\mathrm{Re}\))의 결과.
+
+\begin{table}
+\begin{tabular}{l c c c c} \hline \hline Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\ \hline A Haunting on the Hill & 0.902 & 0.781 & 0.520 & 0.550 \\ Agency for Scandal & 0.974 & 0.721 & 0.067 & 0.333 \\ Diving Rivals & 0.907 & 0.541 & 0.209 & 0.556 \\ Fairaytale of New York & 0.874 & 0.712 & 0.263 & 0.556 \\ Flawless & 1.000 & 0.663 & 0.056 & 1.000 \\ Fourth Wing & 0.953 & 0.759 & 0.244 & 0.600 \\ Modern Divination & 0.950 & 0.644 & 0.142 & 0.700 \\ Only For The Week & 0.967 & 0.789 & 0.167 & 0.417 \\ Pet & 0.907 & 0.604 & 0.175 & 0.649 \\ Romantic Comedy & 1.000 & 0.675 & 0.044 & 1.000 \\ Same Time Next Year & 0.836 & 0.859 & 0.333 & 0.425 \\ She Is a Haunting & 0.949 & 0.772 & 0.100 & 0.250 \\ Six Scorched Roses & 0.816 & 0.500 & 0.269 & 0.616 \\ Sorrow and Bliss & 1.000 & 0.588 & 0.077 & 1.000 \\ The Attenement Murders & 1.000 & 0.642 & 0.115 & 1.000 \\ The Guest & 0.845 & 0.737 & 0.395 & 0.598 \\ The Marriage Act & 0.987 & 0.833 & 0.119 & 0.833 \\ The Spy Coast & 0.953 & 0.527 & 0.216 & 0.738 \\ The Wager & 0.958 & 0.862 & 0.100 & 0.167 \\ The White Lady & 0.836 & 0.628 & 0.097 & 0.250 \\ This Impossible & 0.961 & 0.607 & 0.022 & 0.250 \\ Brightness & & & & \\ Viciously Yours & 0.929 & 0.725 & 0.172 & 0.521 \\ Weyward & 0.969 & 0.774 & 0.300 & 0.583 \\ Wildfire & 0.980 & 0.664 & 0.043 & 0.750 \\ You, Again & 0.960 & 0.609 & 0.015 & 0.333 \\ Yellowface & 0.941 & 0.695 & 0.204 & 0.562 \\ \hline \hline \end{tabular}
+\end{table}
+표 31: 7권의 하위 데이터 세트에서 각 모델에 대한 라벨당 클레임 수.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline Evaluation LM & Title & Pr-_Faithful_ & Re-_Faithful_ & Pr-_Unfaithful_ & Re-_Unfaithful_ \\ \hline \multirow{4}{*}{GPT-4-Turbo} & Only For The Week & 0.960 & 0.972 & 0.333 & 0.167 \\  & Pet & 0.921 & 0.923 & 0.333 & 0.262 \\  & She Is a Haunting & 0.957 & 0.949 & 0.417 & 0.333 \\  & Six Scorched Roses & 0.794 & 0.958 & 0.625 & 0.288 \\  & Sorrow and Bliss & 1.000 & 0.868 & 0.139 & 1.000 \\  & Viciously Yours & 0.919 & 0.919 & 0.367 & 0.354 \\  & Yellowface & 0.952 & 0.948 & 0.450 & 0.438 \\ \hline \multirow{4}{*}{Claude-3-Opus} & Only For The Week & 0.973 & 0.963 & 0.333 & 0.250 \\  & Pet & 0.927 & 0.949 & 0.500 & 0.524 \\  & She Is a Haunting & 0.968 & 0.970 & 0.542 & 0.583 \\  & Six Scorched Roses & 0.784 & 0.993 & 0.667 & 0.122 \\  & Sorrow and Bliss & 1.000 & 0.970 & 0.467 & 1.000 \\  & Viciously Yours & 0.932 & 0.930 & 0.320 & 0.438 \\  & Yellowface & 0.946 & 0.954 & 0.625 & 0.500 \\ \hline \hline \end{tabular}
+\end{table}
+표 29: 각 책에 대해 GPT-4-터보를 사용한 **BM25** 리트리버 및 LM 평가에 의해 추정된 평균 정밀도(Pr) 및 리콜(Re)의 결과.
+
+\begin{table}
+\begin{tabular}{c|l|c c|c c} \hline \hline \multirow{2}{*}{**Human**} & \multirow{2}{*}{**Claim Source**} & \multicolumn{2}{c|}{GPT-4-Turbo} & \multicolumn{2}{c}{Claude-3-Opus} \\ \cline{3-6}  & & _Unfaithful_ & _Faithful_ & _Unfaithful_ & _Faithful_ \\ \hline \multirow{4}{*}{**Human**} & Claude-3-Opus & 0 & 1 & 0 & 1 \\  & GPT-4-Turbo & 3 & 14 & 3 & 14 \\  & GPT-4 & 6 & 5 & 9 & 2 \\  & GPT-3.5-Turbo & 8 & 14 & 10 & 12 \\  & Mixtral & 11 & 7 & 8 & 10 \\ \hline \multirow{4}{*}{**Human**} & Claude-3-Opus & 10 & 130 & 8 & 132 \\  & GPT-4-Turbo & 0 & 107 & 3 & 104 \\  & GPT-4 & 20 & 132 & 8 & 144 \\  & GPT-3.5-Turbo & 10 & 101 & 6 & 105 \\  & Mixtral & 8 & 136 & 2 & 142 \\ \hline \hline \end{tabular}
+\end{table}
+표 32: Claude-3-Opus 및 GPT-4-Turbo에 의해 예측된 라벨의 수는 각 클레임을 생성한 모델에 의해 분할된 인간 주석이 달린 라벨과 대조된다.
