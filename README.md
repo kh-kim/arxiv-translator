@@ -13,6 +13,7 @@
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
 | 2404.01261v1 | FABLES Evaluating faithfulness and content selection in book-length summarization | [arXiv](https://arxiv.org/abs/2404.01261v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01261v1) |
+| 2404.01204 | The Fine Line Navigating Large Language Model Pretraining with Down-streaming Capability Analysis | [arXiv](https://arxiv.org/abs/2404.01204) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01204) |
 | 2403.19270v1 | sDPO Dont Use Your Data All at Once | [arXiv](https://arxiv.org/abs/2403.19270v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.19270v1) |
 | 2403.18167v1 | Mechanisms of non-factual hallucinations in language models | [arXiv](https://arxiv.org/abs/2403.18167v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.18167v1) |
 | 2403.18103v1 | Tutorial on Diffusion Models for Imaging and Vision | [arXiv](https://arxiv.org/abs/2403.18103v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.18103v1) |

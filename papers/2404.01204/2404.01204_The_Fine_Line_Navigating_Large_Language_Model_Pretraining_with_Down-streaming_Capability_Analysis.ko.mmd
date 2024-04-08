@@ -1,0 +1,373 @@
+# The Fine Line:
+
+다운스트림 능력 분석을 통한 대용량 언어 모델 사전 학습 탐색
+
+천양\({}^{2}\), 준주오Li\({}^{3}\),
+
+신야오니우\({}^{4}\), 신런두\({}^{1}\), 송양가오\({}^{5}\), 하오란장\({}^{6}\),
+
+Zhaoliang Chen\({}^{7}\), Xingwei Qu\({}^{1}\), Ruibin Yuan\({}^{1}\), Yizhi Li\({}^{1}\)
+
+({}^{1}\), Stephen W. 황\({}^{10}\), 숀웨\({}^{10}\),
+
+원후천\({}^{11}\) \({}^{12}\), 지후\({}^{1}\) \({}^{8}\), 게장\({}^{11}\) \({}^{12}\)
+
+동일한 기술 기여.해당 저자.
+
+\({}^{1}\)복합예술투영연구공동체, \({}^{2}\)북경대학,
+
+\({}^{3}\)천진대학교, \({}^{4}\)멜버른대학교, \({}^{5}\)푸단대학교,
+
+\({}^{6}\)University of Illinois at Urbana-Champaign, \({}^{7}\)Emery University,
+
+University of Manchester, \({}^{10}\)harmony.ai
+
+워털루대학교, \({}^{12}\)벡터연구소
+
+###### Abstract
+
+최종 모델 성능을 반영하는 초기 단계 메트릭을 공개하는 것은 대규모 사전 훈련의 핵심 원칙 중 하나이다. 기존의 스케일링 법칙은 사전 훈련 손실과 훈련 플롭 사이의 멱-법칙 상관 관계를 보여주며, 이는 대규모 언어 모델에 대한 현재 훈련 상태의 중요한 지표 역할을 한다. 그러나 이 원리는 학습 데이터에 대한 모델의 압축 특성에만 초점을 맞추고 있으며, 결과적으로 다운스트림 태스크에 대한 능력 향상과 일치하지 않는다. 일부 후속 연구에서는 스케일링 법칙을 보다 복잡한 메트릭(예: 하이퍼파라미터)으로 확장하려고 시도했지만 사전 훈련 동안 다양한 기능 간의 동적 차이에 대한 포괄적인 분석이 부족했다. 앞서 언급한 한계를 해결하기 위해, 본 논문은 다양한 사전 훈련 중간 체크포인트에서 모델 능력의 포괄적인 비교를 수행한다. 이 분석을 통해 특정 다운스트림 메트릭이 최대 670억 개의 매개변수에 이르기까지 다양한 크기의 모델에 걸쳐 유사한 훈련 역학을 나타냄을 확인한다. 핵심 결과 외에도 앰버와 오픈LLaMA를 재현해 중간 검문소를 공개했습니다 이 이니셔티브는 연구 커뮤니티에 귀중한 자원을 제공하고 오픈 소스 연구자에 의한 LLM 사전 훈련의 검증 및 탐색을 용이하게 한다. 또한 다양한 모델과 기능의 성능 비교 및 다양한 훈련 단계에 대한 주요 메트릭 등록금을 포함한 경험적 요약을 제공합니다. 이러한 연구 결과를 바탕으로 보다 사용자 친화적인 최적화 상태 평가 전략을 제공하여 안정적인 사전 훈련 프로세스를 수립할 수 있는 지침을 제공한다.
+
+## 1 Introduction
+
+대규모 언어 모델(LLM)은 광범위한 분야(예: 프로그래밍 및 창의적 글쓰기)에서 전문가의 지식이 필요한 복잡한 추론 작업에 능숙한 고도로 유능한 AI 비서로서 큰 가능성을 보여주었다. 그러나 대규모 언어 모델을 학습하려면 대규모 학습 데이터에 대한 상당한 사전 학습 계산 비용이 필요하다. 계산 비용을 줄이기 위해 사전 훈련 손실과 계산 노력 사이의 멱함수 관계를 설명하기 위해 스케일링 법칙(Kaplan et al., 2020)이 제안되었으며, 이는 최소 계산 비용으로 모델 최적화에 대한 귀중한 통찰력을 제공했다. 최근 출현 현상(Wei et al., 2022) 및 파손된 신경망 스케일링 법칙(Caballero et al., 2023)을 탐구하는 것과 같은 몇 가지 발견은 이러한 법칙이 특히 다운스트림 작업에 대한 모델 능력을 완전히 포착하지 못할 수 있음을 나타낸다. 따라서 우리의 평가 프레임워크를 확장하고 개선하는 것이 중요하다.
+
+본 연구에서는 먼저 오픈소스 대형 언어 모델(Baichuan-7B (Yang et al., 2023), DeepSeek-7B (DeepSeek-AI et al., 2024), Amber-7B (Liu et al., 2023), OpenLLaMA-7B (Geng and Liu, 2023; Touvron et al., 2023; Computer, 2023), Yi-34B (AI et al., 2024) 및 DeepSeek-67B)의 동역학을 조사하고, 사전 훈련된 토큰의 수에 기초하여 대응하는 중간 체크포인트를 사용하여 다양한 태스크에 걸친 그들의 성능 결과를 분석한다. 그런 다음, 스케일링 법칙의 이론적 프레임워크(Kaplan et al., 2020)에 기초하여, 다양한 다운스트림 태스크들에 걸쳐 상이한 모델들의 성능 패턴들을 분석하고, LLMs들의 트레이닝 역학에 대한 추가 연구를 용이하게 하기 위한 발견들을 제공하며, 여기서 발견들은 다음과 같이 보여진다:
+
+* **작업 동적 예측에 대한 결과:** LLM의 학습 프로세스 내에서 도메인 내 기존 다운스트림 작업의 역학이 보이지 않는 작업의 역학을 예측할 수 있음을 관찰합니다. 이는 알려진 태스크에 대한 모델의 성능이 동일한 도메인 내에서 유사하지만 보이지 않는 태스크에서 수행할 수 있는 방법에 대해 알려줄 수 있음을 시사한다. (제4.1.1절)
+* **도메인 간 촉진에 대한 결과:** 인간 인지 과정과 유사하게 다양한 도메인에 걸쳐 다양한 능력의 향상은 교육과정 학습 후 기본 수준에서 고급 수준으로 진행됩니다. 교차 영역 과제 간의 커리큘럼은 모델의 훈련 방향을 안내할 수 있으며 한 영역에서 얻은 통찰력은 잠재적으로 다른 영역의 학습 과정을 촉진할 수 있다. (제4.1.2절)
+* **훈련 전략, 모델 아키텍처 등의 효과에 대한 결과**. :** 여러 7b 규모 모델(Baichuan2-7b, DeepSeek-7b, OpenLLaMA-7b 및 Amber-7b)의 결과를 기반으로 훈련 LLM에서 훈련 전략, 데이터 세트 품질 및 모델 아키텍처의 영향을 종합적으로 분석한다. 예를 들어, 훈련 데이터세트, 학습률 조정, 배치 크기 및 정규화 기법이 초기 훈련 단계에서 학습 효율성에 중요한 역할을 한다는 것을 관찰한다(섹션 4.2.1).
+* **추론 작업에 대한 모델 규모의 영향에 대한 결과:** Deepseek-7b, 34b 및 67b의 결과를 기반으로 모델 크기와 복잡성이 이러한 추론 작업에 대한 능력에 상당한 영향을 미친다는 것을 관찰합니다. 그럼에도 불구하고 특정 전략을 사용하면 더 큰 대응물과 비교할 때 상식 추론에서 유사한 성능을 얻기 위해 더 작은 규모의 모델을 향상시킬 수 있다. (제4.2.2절)
+* **크기 조정 법칙에 대 한 결과:** (1). 우리는 더 큰 훈련 데이터 세트가 다양한 벤치마크에 대한 모델 성능 개선으로 이어진다는 것을 관찰하며, 이는 훈련 LLM에서 광범위한 훈련 데이터의 영향을 보여준다. 그러나 데이터 세트가 증가함에 따라 추가 데이터의 이점이 감소하여 성능 향상에 대한 접근 한계를 시사한다. (2). 스케일링 법칙(Hoffmann et al., 2022)의 정확도는 모델에 따라 많이 달라지며, 이는 모델 구조 및 계산 복잡도와 같은 요인이 스케일링 효율에 상당한 영향을 미친다는 것을 나타낸다. 특히, 일부 모델은 데이터 활용 및 학습 효율성에 잠재적인 이점을 시사하는 법과의 더 나은 정렬을 보여준다. (3). 스케일링 법칙은 훈련 데이터 크기의 영향에 대한 유용한 관점을 제공할 수 있지만, 실제 성능 스케일링은 미묘한 차이가 있으며, 이는 데이터 볼륨, 모델 아키텍처 및 계산 전략 간의 복잡한 상호 작용을 반영한다. 이것은 또한 이용 가능한 데이터로부터 학습 결과를 최대화하기 위한 스케일링 법칙 및 모델 최적화에 대한 지속적인 연구의 중요성을 강조한다(섹션 5).
+
+또한, 앞서 언급한 결과와 별도로 Amber-7B와 OpenLLaMA-7B의 중간 체크포인트를 공개적으로 공개할 계획이며, 이는 스케일링 법칙에 대한 이해도를 높일 뿐만 아니라 LLM에 대한 보다 효과적인 훈련 전략을 개발하는 데 도움이 된다는 점을 언급해야 한다. 결론적으로, 본 연구 결과와 오픈소스 체크포인트를 통해 개발자들이 LLM의 최적화 과정을 이해하고 기초 모델의 성장을 촉진할 수 있기를 기대한다.
+
+## 2 관련 작업
+
+### Scaling Law
+
+스케일링 법칙은 모델 크기, 데이터 세트 크기 및 계산 예산의 변화가 모델 성능에 미치는 영향을 설명하는 LLM에 대한 중요한 경험적 관계로 확인되었다. Kaplan et al.(2020)은 LLMs의 훈련을 위한 계산 자원의 분포에 초점을 맞추었다. 그러나 이 원칙은 모델 아키텍처 및 배치 크기와 같은 모델 성능에 대한 다양한 요인의 상대적 중요성을 강조하기 때문에 최종 검증 손실을 줄이는 데 있어 모델 크기 및 데이터 세트 범위의 가장 큰 영향에 이차적이다.
+
+Hoffmann et al.(2022) 및 Muennighoff et al.(2024)의 연구를 포함한 최근의 연구는 모델 능력을 향상시키기 위해 모델 크기와 훈련 데이터 모두를 스케일링하는 데 균형 잡힌 접근법의 중요성을 강조한다. 특히, 사전 훈련 데이터 세트의 확대는 중요한 진전으로 강조되어 왔다. 그러나 업 샘플링의 잠재적 함정과 같은 데이터 한계를 해결하는 데 문제가 발생한다. Hernandez et al.(2021)은 단순 데이터 증폭 전략의 한계를 지적하면서 100배만큼 훈련 데이터 세트의 0.1%만 증가시키면 모델 효능이 크게 감소한다는 것을 보여주었다. 한편, Muennighoff et al. (2024) 접근법은 여러 에포크에 걸쳐 전체 사전 훈련 데이터 세트를 반복하는 것을 포함하는 유망한 결과를 보여주었다.
+
+### 대규모 언어 모델의 출현 능력
+
+대형 언어 모델(LLM)에서 출현 능력의 개념은 모델 크기가 계속 확장됨에 따라 연구자들의 관심을 끈다. 모델의 검증 손실이 먼저 악화되었다가 모델 복잡도가 증가함에 따라 개선되는 "이중 하강" 현상은 Nakkiran et al.(2019)에 의해 처음 제안되었다. 또한 훈련 손실의 감소 없이 모델이 계속 향상되는 "grokking" 현상은 Power et al.(2022)과 Murty et al.(2023)에 의해 자세히 설명되어 LLM의 비선형 학습 궤적에 대한 통찰력을 제공한다.
+
+최근 연구는 다운스트림 작업에서 LLM의 새로운 능력을 광범위하게 탐구했다. Wei 등(2022)은 모델이 확장됨에 따라 창발 능력이 주로 관찰된다는 점을 강조하여 고급 능력을 달성하는 데 있어 모델 크기의 중요성을 강조했다. Schaeffer et al. (2023)은 창발 능력의 성능이 선택된 평가 지표에 크게 의존한다고 주장하여 모델 성능과 평가 방법론 사이의 미묘한 관계를 제안한다. 우리의 연구에서는 기여자(2023)가 제공한 공통 평가 프레임워크를 사용하여 다운스트림 작업에서 LLM의 출현 능력에 중점을 둔다. 우리의 목표는 실제 응용 프로그램의 맥락에서 새로운 능력의 역학을 결론짓고 LLM이 스케일링 및 표준 평가 메트릭을 통해 어떻게 수행할 수 있는지에 대한 더 깊은 이해에 기여하는 것이다.
+
+## 3 Methodology
+
+### Models
+
+이 연구에서 우리의 분석은 각각 고유한 아키텍처 디자인과 훈련 패러다임을 특징으로 하는 일련의 최첨단 대형 언어 모델의 중간 체크포인트로 확장되어 자연어 처리 및 기계 학습의 최신 발전을 보여준다. 이 모델 중 앰버-7B와 OpenLLMA-7B는 우리가 복제했다. 조사 중인 각 모델에 대한 소개는 부록 A.1에서 찾을 수 있다.
+
+훈련 라이프사이클의 다양한 단계에 걸쳐 이러한 모델을 조사함으로써 모델 아키텍처, 크기, 훈련 전략 및 학습 효율성과 과제별 성능에 미치는 영향 사이의 동적 상호 작용을 밝히는 것을 목표로 한다. 이 포괄적인 분석은 언어 모델링의 현재 상태를 평가할 뿐만 아니라 대규모 언어 모델 개발의 미래 궤적에 대한 모델 훈련 및 디자인 선택의 광범위한 의미를 탐구한다.
+
+### 데이터 세트 및 평가 메트릭
+
+언어 모델의 기능을 엄격하게 평가하기 위해 광범위한 인지 및 계산 문제에 걸쳐 있는 광범위한 데이터 세트 모음을 선별했다. 이러한 데이터 세트는 언어 이해, 추론 및 생성의 다양한 측면에서 모델의 숙련도를 평가하는 데 중요하다. 구체적으로, 우리의 평가는 코드, 상식 추론, 세계 지식, 읽기 이해, 수학 및 시험의 6가지 범주를 포함한다.
+
+이 6가지 범주를 포괄하면 다양한 작업 세트에 걸쳐 모델의 강점과 약점을 철저히 조사하여 견고성과 적응성을 보장할 수 있다. 이 종합 평가 전략은 우리의 모델이 복잡한 언어 구성 이해, 상식적 지식 적용, 사실 정보 검색, 필기 텍스트 이해 및 분석, 수학적 문제 해결, 시험과 같은 조건에서 수행하는 데 탁월한 영역을 식별할 수 있도록 한다.
+
+우리의 상세한 평가 설정과 각 데이터 세트에 적용된 메트릭은 표 1에 요약되어 있으며, 이는 광범위한 작업에 걸쳐 언어 모델의 견고성과 유연성을 보장하기 위해 취한 광범위한 조치를 보여준다.
+
+## 4 경험적 분석
+
+### Intra-model analysis
+
+논의의 이 부분에서 우리는 개별 모델의 심층 분석에 주목하여 성능 추세가 다양한 메트릭에 걸쳐 일관되게 유지되는지 여부를 식별하고 다양한 벤치마크에 걸쳐 나타나는 고유한 패턴을 관찰하는 데 중점을 둔다.
+
+\begin{table}
+\begin{tabular}{l l l} \hline \hline
+**Category** & **Dataset** & **Metrics** \\ \hline \multirow{2}{*}{Code} & HumanEval Chen et al. (2021) & \multirow{2}{*}{Pass@1} \\  & MBPP Austin et al. (2021) & \\ \hline \multirow{6}{*}{Commonsense Reasoning} & PIQA Bisk et al. (2020) & \multirow{6}{*}{Accuracy (ppl, 0-shot)} \\  & SIQA Sap et al. (2019) & \\ \cline{1-2}  & HeliaSwang Zellers et al. (2019) & \\ \cline{1-2}  & WinGrande Sakaguchi et al. (2021) & \\ \cline{1-2}  & ARC Easy Clark et al. (2018) & \\ \cline{1-2}  & ARC Challenge Clark et al. (2018) & \\ \cline{1-2}  & OpenBookQA Mihaylov et al. (2018) & \\ \cline{1-2}  & CommonsenseQA Talmor et al. (2019) & \\ \hline \multirow{2}{*}{World Knowledge} & NaturalQuestions Kwiatkowski et al. (2019) & \multirow{2}{*}{Accuracy (0-shot)} \\  & TriviaQA Joshi et al. (2017) & \\ \hline \multirow{2}{*}{Reading Comprehension} & BoolQ Clark et al. (2019) & \multirow{2}{*}{Accuracy (ppl, 0-shot)} \\  & SQuAD 2.0 Rajpurkar et al. (2018) & \\ \hline \multirow{2}{*}{Math} & GSM8K Cobbe et al. (2021) & \multirow{2}{*}{Accuracy (4-shot)} \\  & MATH Hendrycks et al. (2021) & \\ \cline{1-2}  & TheoremQA Chen et al. (2023) & \\ \hline \multirow{2}{*}{Examination} & MMLU Hendrycks et al. (2021) & \multirow{2}{*}{Accuracy (5-shot)} \\  & CMMLU Li et al. (2023) & \\ \cline{1-2}  & CEVAL Huang et al. (2023) & \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 데이터 세트 및 범주별 평가 메트릭입니다.
+
+#### 4.1.1 교차 작업 분석
+
+검사 도메인 분석 실험의 결과는 그림 1에 설명되어 있으며 부록 A.2에서 확장된 실험 결과를 액세스할 수 있다. 그림의 행의 수평 검사로 입증된 바와 같이 모델 전반에 걸친 분석에서는 검사 벤치마크, 즉 MMLLU, CMMLLU 및 CEVAL에 대한 성능 경향이 현저한 일관성을 나타냄을 보여준다. 검사 도메인 내의 다양한 평가 데이터 세트에 걸친 이러한 균일성은 작업에 내재된 유사성을 시사한다.
+
+시험형 문항의 다른 측면에 초점을 맞추고 영어와 중국어를 모두 포함함에도 불구하고 MMLU, CMMLU, CEVAL은 모델의 중복 능력을 평가하는 것으로 나타나 유사한 성능 추이로 이어진다. 또한, 모델의 학습 과정을 통해 도메인 내에서 알려진 태스크의 행동이 아직 마주치지 않은 태스크의 행동을 예측할 수 있음을 보여준다. 이는 친숙한 태스크에 대한 모델의 성능을 이해하는 것이 동일한 도메인 내에서 이전에 탐색되지 않은 유사한 태스크에 대한 잠재적인 성능에 대한 귀중한 통찰력을 제공할 수 있음을 시사한다.
+
+#### 4.1.2 교차 도메인 분석
+
+표준 벤치마크 분석 표준 벤치마크에는 PIQA, SIQA, HellaSwag, WinoGrande, ARC Easy and Challenge, OpenBookQA, CommonsenseQA, BoolQ 및 MMLU가 포함된다고 정의한다. 이러한 분류는 이러한 벤치마크가 다양한 정도로 실제 지식의 모델 이해, 읽기 이해 및 상식 추론을 평가한다는 관찰을 기반으로 한다. 이러한 데이터셋에 대한 설명과 관찰은 다음과 같다.
+
+먼저 PIQA, HellaSwag, BoolQ, WinoGrande, CommonsenseQA는 모두 모델의 상식 추론과 이해 능력을 평가하기 위한 데이터셋이다. PIQ 테스트 모델
+
+그림 1: MMLU, CMMLU 및 CEval 벤치마크에 걸친 바이촨-7B, DeepSeek-7B 및 DeepSeek-67B 모델의 비교 성능 분석.
+
+물리 법칙을 이해하기 위해 헬라스웨그는 이야기 결과를 얼마나 잘 예측하는지 평가하고, BoolQ는 텍스트 지문을 기반으로 예/아니오 질문을 통해 이해 및 추론 기술을 평가하고, 위노그란데는 언어 뉘앙스와 컨텍스트 기반 모호성 해결의 처리를 조사하고, 커먼센스QA는 일반적인 지식과 추론을 평가한다. 이러한 데이터 세트는 모델의 가장 기본적인 기능을 측정합니다. 그림 2에서 볼 수 있듯이 각 모델 내에서 이러한 데이터 세트에 대한 정확도는 훈련 초기 단계(300B 토큰 이전)에서 급격히 증가하고 점차 안정기에 도달한다. 이러한 경향은 앰버-7b 모델에 대한 100B 토큰 이전의 체크포인트에서 특히 분명하다.
+
+둘째, SIQA, ARC(Easy and Challenge), OpenBookQA 및 MMLU는 PIQA, HellaSwag, WinoGrande 및 CommonsenseQA와 같은 데이터 세트에 비해 더 진보된 인지 능력을 목표로 하며, 이러한 벤치마크에 대한 정확도 향상은 일반적으로 훈련 프로세스 후반에 발생한다. SIQA는 사회적 이해를 테스트하고, ARC는 복잡한 과학적 추론에 기초하며, OpenBookQA는 텍스트 이해와 사실적 통합을 요구하고, MMLU는 여러 학문에 걸친 지식 적용을 측정한다. 이러한 데이터 세트는 기본 상식에서 복잡한 추론 및 영역별 지식 적용으로 전환하면서 중간 훈련 단계에서 중요한 것으로 등장한다. 이러한 진행은 기본 이해에서 고차원 인지 기술로 이동하는 AI 훈련에서 계층화된 접근법을 강조한다.
+
+이러한 관찰은 모델 평가에서 벤치마크 선택의 중요성을 강조한다. 표준 벤치마크에서 관찰된 초기 고원은 일반적인 지식과 추론 능력의 신속한 획득을 시사하며, 그 후 추가 훈련이 이러한 특정 작업에 대한 수익을 감소시키는 단계가 뒤따른다. 반대로, 다른 벤치마크에서 중간 훈련 스파이크는 모델이 작업의 복잡성을 완전히 포착하고 이해하기 위해 보다 광범위한 훈련을 필요로 할 수 있는 영역을 나타낸다.
+
+### Cross-model analysis
+
+우리의 교차 모델 분석은 다양한 아키텍처와 규모에 걸친 모델 성능의 뉘앙스와 복잡성을 이해하는 것을 목표로 한다.
+
+#### 4.2.1 Analysis within the 7b scale
+
+도 3에 예시된 바와 같이, 7b 모델들을 사용하여 코드 생성 도메인에서 HumanEval 및 MABP의 성능을 분석할 때, 초기 성능이 다양한 모델들에 걸쳐 비교가능하다는 것이 명백해진다. 그러나 토큰의 수가 증가함에 따라 토큰은
+
+그림 2: 바이촨-7B, 딥시크-7B, 딥시크-67B, 앰버-7B, OpenLLaMA-7B 및 Yi-34B 모델의 표준 벤치마크에 대한 비교 성능 분석.
+
+성능 곡선이 분기되어 서로 다른 경향을 보입니다. 이러한 차이는 모델 아키텍처와 훈련 전략의 차이 모두에 기인한다. 특히 Amber-7b 모델의 경우 200b-300b 토큰 범위에서 훈련 데이터 세트 때문일 수 있는 능력이 눈에 띄게 감소한다.
+
+#### 4.2.2 규모별 분석
+
+모델의 크기와 복잡성은 추론 작업에서 모델의 학습 능력과 성능에 영향을 미치는 핵심 요소이지만 특정 기술의 적용으로 더 작은 규모의 모델이 더 큰 모델의 능력과 일치하거나 심지어 능가할 수 있다. 그림 4와 그림 5에서 볼 수 있듯이 크기가 다른 모델에 걸쳐 MATH, GSM8K, PIQA, 헬라 스웨그 및 위노그란데에 대한 성능을 조사함으로써 모든 모델이 비교적 동기화된 방식으로 수학, 물리적 상호 작용 이해 및 상식 추론을 포함하는 태스크에서 능력을 향상시킨다는 것을 관찰할 수 있다. 일반적으로 67b 모델의 성능은 34b 모델의 성능을 능가하며, 이는 수학 관련 데이터 세트에서 동일한 훈련 단계에서 7b 모델의 성능을 능가한다. 그러나 OpenLLaMA-7b 모델과 같은 예외는 Yi-34b의 성능에 접근하거나 심지어 이를 초과하는 경우 작업의 복잡성과 필요한 추론 능력을 기반으로 모델 규모를 선택해야 함을 보여준다. 작업
+
+도 4: 7b, 34b, 67b 모델에 걸친 MATH 성능.
+
+그림 5: 7b, 34b, 67b 모델에 걸친 상식적 이해 성능.
+
+도 3: 바이촨2-7b, 딥시크-7b, OpenLLaMA-7b, 및 앰버-7b에 걸친 코드 생성 성능.
+
+광범위한 추론과 깊은 이해를 필요로 하는 경우 더 큰 모델이 더 적합하지만 리소스가 제한적이거나 작업 복잡도가 낮은 상황에서는 더 작은 모델이 더 경제적인 선택이 될 수 있다.
+
+## 5 스케일링 법칙
+
+### 크기 조정 규칙 정의
+
+스케일링 법칙은 계산 예산 \(C\), 모델 크기 \(N\), 데이터 크기 \(D\)의 세 가지 임계 차원을 확장하여 모델 성능을 예측 개선한다. 이 법칙은 모델 크기 \(N\)를 모델 매개변수 수로 정량화하고 데이터 크기 \(D\)를 토큰 수로 측정하면 계산 예산 \(C\)을 공식 \(C=6ND\)으로 효과적으로 근사화할 수 있음을 나타낸다. 결과적으로, 스케일링 법칙의 야심찬 연구 초점은 계산 예산을 증폭하는 동안 모델 크기와 데이터 크기 사이의 최적 할당을 전략화하는 것과 가장 효과적인 모델 구성을 달성하는 궁극적인 목표를 포함한다.
+
+모델/데이터 크기 향상을 위한 최적 할당 전략에 대한 연구(Hoffmann et al., 2022; Kaplan et al., 2020)는 다양한 결론을 도출하여 스케일링 법칙의 보편적 적용 가능성에 대한 회의론을 불러일으켰다. 또한 모델 간의 구조적 차이, 훈련 데이터의 품질 차이 및 하이퍼파라미터 구성의 변화는 종종 스케일 법칙에서 관찰되는 불일치에 기여하는 주요 요인이다. Baichuan2는 Henighan et al.(2020)에 의해 제안된 척도 법칙을 사용하여 실험을 수행하였다. 한편, Deepseek의 두 모델은 친칠라의 IsoFLOP 프로파일 접근법을 채택했으며 이에 대한 일정 수준의 최적화를 구현했다.
+
+보다 보편적으로 적용할 수 있는 통찰력을 추론하기 위해 우리의 조사는 친칠라법의 기본 원칙에 기초한다. 이 법칙의 형식적 수학적 표현은 다음의 표현으로 요약된다:
+
+\[P=f(N,D,C)=a\cdot N^{a}\cdot D^{\beta}\cdot C^{\gamma}, \tag{1}\]
+
+여기서 \(P\)는 모델의 성능 메트릭을 나타냅니다. 종래에, 선학술적 문의의 야심에서, 이 메트릭은 \(L\)로 상징되는 모델의 손실 측면에서 자주 정량화된다. 그리고 \(a,\alpha,\beta,\gamma\)는 특정 구조와 작업에 의존하는 상수이다. 우리는 각 매개변수의 구체적인 의미를 부록 B에서 자세히 설명한다.
+
+### 크기 조정 법칙 평가
+
+그림 6: 식에 의해 피팅된 바와 같이, 다양한 트레이닝 체크포인트들에 걸친 상이한 언어 모델들의 비교 성능 경향들. (1). (a) 더 큰 훈련 데이터 크기에 따라 일관된 성능 증가를 보여주는 CEval Score Trends를 제시한다. (b) 우리는 점수와 훈련 크기 사이에 유사한 양의 상관관계가 있는 CMMLU 점수 경향을 묘사한다. (c) 우리는 MMLU 점수 추세를 설명하며, 모든 모델은 훈련 데이터의 규모와 상관되는 성능 향상을 보여준다. 각 그래프는 모델의 다른 버전에 대한 개별 데이터 점을 표시하고 크기 조정 법칙의 예측 성능 크기 조정을 나타내기 위해 곡선 적합을 중첩합니다.
+
+그림 6은 CEval, CMMLU 및 MMLU 벤치마크에 걸쳐 훈련 데이터의 크기와 성능 점수 사이의 명확한 관계를 나타낸다. 세 가지 하위 구성 모두 단조롭게 증가하는 추세를 나타내며, 훈련 체크포인트의 수가 증가함에 따라 점수가 향상된다. 이는 더 큰 훈련 데이터 세트가 모델이 더 효과적으로 학습하도록 하여 평가 작업에 대한 더 나은 성능으로 이어진다는 것을 시사한다. 검문소의 수가 증가함에 따라 점수 증가율은 감소하는 것으로 보인다. 처음에는 점수가 가파르게 향상되어 점차 평준화된다. 이는 더 큰 훈련 데이터 세트가 초기에 모델이 학습할 상당한 새로운 정보를 제공하지만 모델이 점근적 성능 상한에 가까워질수록 증분 이익이 감소한다는 것을 나타낼 수 있다.
+
+스케일링 법칙의 곡선 적합치는 세 그래프 모두에서 실제 데이터 포인트와 밀접하게 정렬된 것으로 판단된다. 이것은 Eq. (1) 이러한 경우에 훈련 데이터 크기와 모델 성능 사이의 관계를 효과적으로 모델링한다.
+
+제공된 그래프를 관찰하면, 스케일링 법칙이 두 DeepSeek 모델에 비해 바이촨2 모델의 성능 데이터에 더 정확하게 적합함을 알 수 있다. 이것은 바이촨2 데이터의 더 긴밀한 정렬에서 세 가지 하위 구성(CEval, CMMLU 및 MMLU 점수 경향) 모두에 걸친 추세선을 가리키며 Eq를 시사한다. (1)은 바이촨2 모델의 훈련 및 성능 특성에 대해 보다 예측적일 수 있다.
+
+DeepSeek 모델의 성능과 Eq의 예측의 편차입니다. (1) 실제로 새로운 모델 척도 표현의 채택에서 비롯될 수 있다. 전체 모델 파라미터 \(N\) 대신에 토큰당 non-embedding FLOPs \(M\)를 사용함으로써, 원래 설계되거나 파라미터에 대해 보정된 스케일링 법칙은 토큰당 계산 복잡도와 관련된 성능 뉘앙스를 정확하게 포착하지 못할 수 있다.
+
+적합도의 효과 또한 훈련의 초기 단계와 후기 단계에 따라 다를 수 있다. 예를 들어, 곡선이 초기에 잘 맞지만 훈련이 진행됨에 따라 발산하는 경우 Eq를 제안할 수 있다. (1) 훈련의 초기 단계에서 성능 개선을 보다 정확하게 예측한다.
+
+일부 모델(바이촨2-7B 및 DeepSeek-67B)은 후기 단계에서 더 나은 적합성을 보일 수 있는데, 이는 모델이 최고 성능으로 수렴함에 따라 더 안정적인 학습 프로세스 때문일 수 있다.
+
+Yi-34B 모델은 스케일링 법칙에 비해 우수한 적합성을 나타내는 것으로 판단된다. 스케일링 법칙과의 이러한 강화된 정렬은 Yi-34B가 데이터를 더 효과적으로 활용할 수 있게 하는 아키텍처 또는 알고리즘적 이점을 가질 수 있음을 시사한다. Lee-34B가 Deepseek-67B보다 매개 변수가 적음에도 불구하고 데이터 볼륨의 증가로 Yi-34B가 훈련 후 유사한 결과를 얻을 수 있음을 보여준다. 이 관찰은 충분한 데이터를 사용할 수 있을 때 모델 매개변수의 양이 성능 개선의 유일한 결정 요인이 아님을 시사한다. 학습 데이터 세트를 확장할 때 Yi-34B는 매개변수를 더 효율적으로 활용하는 것으로 보이며, 잠재적으로 추가 데이터로부터 우수한 학습을 허용하는 더 나은 일반화 용량 또는 최적화를 나타낸다. 이는 비교적 작은 매개변수 세트에서도 학습 결과를 향상시키는 데 사용할 수 있는 정보를 더 잘 활용하는 방법에 초점을 맞춘 알고리즘 설계에서 더 많은 데이터 중심 접근법의 개발을 장려할 수 있다.
+
+그래프를 분석하면 더 큰 데이터 세트로 성능이 증가하는 경향이 존재하지만 다양한 훈련 체크포인트에서 각 모델에 대한 실제 점수는 스케일링 법칙의 예상 궤적과 정확하게 일치하지 않는다는 것이 분명하다. 이러한 불일치는 이전 연구가 종종 모델 성능의 척도로 손실을 사용했다는 사실에서 비롯될 수 있다. 대조적으로, 우리의 실험은 특정 다운스트림 태스크 성능 메트릭을 사용한다. 채점 방법이 다양하고 데이터 세트 분포가 다르다는 점을 감안할 때 원래 스케일링 법칙과 어느 정도 차이가 있을 것이다.
+
+## 6 Conclusion
+
+대규모 언어 모델(LLM)에 대한 이 조사는 모델 훈련 복잡성과 스케일링 법칙에 대한 이해를 향상시킨다. 다양한 작업과 훈련 단계에 걸쳐 모델 역학을 분석하여 훈련 및 최적화 전략을 개선하기 위한 통찰력을 수집했다.
+
+우리의 연구는 보이지 않는 태스크에 대한 도메인 내의 태스크 다이내믹스의 예측력을 보여주며, 적응 가능한 훈련 프로토콜의 이점을 제안한다. AI 학습과 인간 인지 사이의 병렬성을 그리면 더 나은 훈련 결과를 위해 교차 도메인 통찰력을 적용할 수 있는 가능성을 볼 수 있다.
+
+주요 결과는 훈련 전략, 데이터 세트 품질 및 아키텍처가 LLM 효율성 및 효율성에 미치는 영향을 강조한다. 모델 크기가 학습 결과에 영향을 미치지만 혁신적인 방법은 더 작은 모델이 더 큰 모델과 경쟁할 수 있도록 한다.
+
+요약하면, 특히 스케일링 법칙을 통한 스케일링 법칙에 대한 우리의 분석은 훈련 데이터 크기와 모델 성능에 대한 통찰력을 제공한다. 우리는 더 큰 데이터 세트를 사용하여 성능이 향상되었지만 수익은 감소했습니다. 이는 데이터 유틸리티를 최대화하기 위한 아키텍처 및 계산 최적화와 함께 데이터 세트 확장의 중요성을 나타낸다. 모델 전반에 걸친 스케일링 법칙 효과의 변화는 스케일링 행동이 미묘한 차이가 있음을 시사하므로 맞춤형 모델 개발 접근법이 필요하다. 이러한 통찰력은 정제된 스케일링 법칙과 최적화 기술이 LLM 기능을 크게 향상시켜 AI의 상당한 진전을 나타내는 미래를 암시한다.
+
+## 7 Acknowledgment
+
+우리는 Yi-34B 모델의 중간 체크포인트 성능 분석 곡선을 공유한 01.ai에 깊은 감사를 표하며, 이는 연구에 크게 기여했다.
+
+## References
+
+* A. I. Al, J. Y. Y. Le, B. C. Li, C. Huang, G. Zhang, H. Li, J. Zhu, J. Chen, J. Chang, K. 유필류 유승 유성욱 양승 양태 유원 시원 황석호 허재욱 렌엑스 누필니 서영 류영 왕영 차이진 구진 Liu, Z. Dai (2021)Yi: Open foundation models by 01.ai. External Links: 2103.0377 Cited by: SS1.
+* J. Austin, A. Odena, M. 나민 Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. 테리 큐 Le, and C. Sutton (2021)Program synthesis with large language models. 외부 링크: 2103.03778 인용: SS1.
+* Y. 비스크 젤러, R. L. 브라, J. 가오, Y. 최(2020)피카: 자연어의 물리적 상식에 대한 추론. Proceedings of the AAAI Conference on Artificial Intelligence34 (05), pp. 7432-7439. External Links: Link, Document Cited by: SS1.
+* E. Caballero, K. Gupta, I. Rish, and D. Krueger (2023) broken neural scaling laws. 외부 링크: 2303.03032 인용: SS1.
+* M. 천진투렉 Wuan, H. Ponde de Oliveira Pinto, J. Kaplan, H. Edwards, Y. 버다 조지프, G. 브록맨, A. 레이, R 푸리 G. 크루거 Petrov, H. Khaaf, G. Sastry, P. Mishkin, B. Chan, S. 그레이 라이더 파블로프 A.파워 L. 카이저 Bavarian, C. Winter, P. Tillet, F. Petroski Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. Hebgen Guss, A. Nichol, A. Paino, N. 테작 J. Tang, I. Babuschkin, S. 발라지 장욱 손더스, C. 헤세, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. 나이트미 M.Brundage 무라티 Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, 그리고 W. Zaremba (2021) 코드로 훈련된 대형 언어 모델 평가. 외부 링크: 2103.03778 인용: SS1.
+* W. 천민 음만 서필루 완상욱 마진수 Wang, T. Xia (2023)MeoremQA: 정리 기반 질문 응답 데이터 세트. 2023년 자연 언어 처리의 경험적 방법에 관한 회의에서 외부 링크: SS1에 의해 인용된 링크.
+
+크리스토퍼 클라크, 켄톤 리, 밍웨이 창, 톰 크비아트코프스키, 마이클 콜린스, 크리스티나 토타노바. Boolq: 자연스런 예/아니오 질문의 놀라운 난이도 탐구, 2019.
+* Clark 등(2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문을 풀었다고 생각해? try arc, the ai2 reasoning challenge, 2018.
+* Cobbe 등(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 수학 단어 문제 해결을 위한 검증자 훈련, 2021.
+* Computer (2023) Together Computer. Redpajama: 대용량 언어 모델을 학습하기 위한 오픈 데이터 세트, 2023. URL [https://github.com/togethercomputer/RedPajama-Data](https://github.com/togethercomputer/RedPajama-Data)입니다.
+* OpenCompass Contributors (2023) OpenCompass Contributors. Opencompass: 기초 모델에 대한 범용 평가 플랫폼. [https://github.com/open-compass/opencompass] (https://github.com/open-compass/opencompass), 2023.
+* 딥시크-알 등(2024) 딥시크-알, ; 샤오비, 델리천, 관팅천, 산황천, 다마이다이, 청치덩, 홍후이딩, 카이동, 치쓰두, 쯔푸, 화즈오가오, 가이게가오, 류치게, 강관, 다야궈, 지안중궈, 광보하오, 후엔하오, 잉허, 원제후, 판판황, 에를랑엔리, 구오웨이, 지하시리, 야오리, 방현린, A.X. 리, 하오위후, 판판루, 어룽마, 샤오타오 니에, 톈페이, 이시피파오, 후이취, 통정런, 제후이런, 총롄, 장리사, 지홍사오, 준샤오송, 스청쑤, 징샹순, 야오펑순, 밍후탕, 빙수안왕, 페이이왕, 시유왕, 야오후왕, 용지왕, 통우, Y.K. 우, 신시에, 젠다시에, 즈웨이시에, 이일량시옹, 한웨이쉐, R.X.쉬, 옌홍쉐, 데젠양, 유샹유, 슈핑유, 싱카이유, B.장, 하오웨이장, 레콩장, 류웨장, 밍촨장, 밍촨장, 밍화장, 원타오장, 이챠오장, 첸강장, 야오장, 샹옌저우, 순펑저우, 치아호주, 위청주. 딥섹 lm: 장기주의를 가진 오픈 소스 언어 모델, 2024.
+* Geng and Liu(2023) Xinyang Geng and Hao Liu. Openllama: 2023년 5월 lama의 열린 복제본. URL [https://github.com/openlm-research/open_llama](https://github.com/openlm-research/open_llama)
+* Hendrycks 등(2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 수학 데이터 세트를 사용하여 수학 문제 해결 측정, 2021.
+* Henighan 등(2020) Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative modeling. _ arXiv preprint arXiv:2010.14701_, 2020.
+* Hernandez et al.(2021) Danny Hernandez, Jared Kaplan, Tom Henighan, and Sam McCandlish. 2021년 이전을 위한 법률 규모 조정
+* Hoffmann 등 (2022) Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _ arXiv preprint arXiv:2203.15556_, 2022.
+*황 등(2023) 유전황, 유주백, 지하오주, 준레이장, 징한장, 탕준수, 준텡류, 추안청Lv, 이카이장, 지이이레이, 야오푸, 마오송선, 준셴허. C-평가: 기초 모델에 대한 다단계 다학제 중국어 평가 제품군. 《신경 정보 처리 시스템의 진보》 2023.
+* Joshi et al.(2017) Mandar Joshi, Eunsol Choi, Daniel S. 웰드와 루크 제틀모이어 트리비아카: 읽기 이해, 2017을 위해 멀리 감독된 대규모 챌린지 데이터 세트.
+* Kaplan 등(2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 신경 언어 모델에 대한 스케일링 법칙, 2020.
+
+* Kwiatkowski et al. (2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina Toutanova, Llion Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. 다이, 야콥 우즈코리트, 콕 르, 슬라브 페트로프 자연 질문: 질의 응답 연구를 위한 벤치마크입니다. _ Transactions of the Association for Computational Linguistics_, 7:453-466, 08 2019. ISSN 2307-387X. doi: 10.1162/tacl_a_00276. URL [https://doi.org/10.1162/tacl_a_00276](https://doi.org/10.1162/tacl_a_00276).
+* Li et al.(2023) Haonan Li, Yixuan Zhang, Fajri Koto, Yifei Yang, Hai Zhao, Yeyun Gong, Nan Duan, and Timothy Baldwin. 2023년 중국어로 대량 멀티태스킹 언어 이해도 측정
+* Liu et al. (2023) Zhengzhong Liu, Aurick Qiao, Willie Neiswanger, Hongyi Wang, Bowen Tan, Tianhua Tao, Junbo Li, Yuqi Wang, Suqi Sun, Omkar Pangarkar, Richard Fan, Yi Gu, Victor Miller, Yonghao Zhuang, Guowei He, Haonan Li, Fajri Koto, Liping Tang, Nikhil Ranjan, Zhiqiang Shen, Xuang Ren, Roberto Iriondo, Cun Mu, Zhiting Hu, Mark Schulze, Preslav Nakov, Tim Baldwin, and Eric P. Xing. Llm360: 완전히 투명한 오픈 소스 llms, 2023을 향하여.
+* Mihaylov et al. (2018) Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. 갑옷이 전기를 통할 수 있나요? 2018년 오픈 북 질문 응답을 위한 새로운 데이터 세트.
+* Muennighoff 등(2024) Niklas Muennighoff, Alexander Rush, Boaz Barak, Teven Le Scao, Nouamane Tazi, Aleksandra Piktus, Sampo Pyysalo, Thomas Wolf, and Colin A Raffel. 데이터 제한 언어 모델의 크기 조정 _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.
+* Murty et al. (2023) Shikhar Murty, Pratyusha Sharma, Jacob Andreas, and Christopher D. Manning. 2023년 바닐라 변압기의 계층 구조 기록
+* Nakkiran et al. (2019) Preetum Nakkiran, Gal Kaplun, Yamini Bansal, Tristan Yang, Boaz Barak, and Ilya Sutskever. 더 큰 모델과 더 많은 데이터가 손상된 2019년 딥 더블 다운입니다.
+* Power et al.(2022) Alethea Power, Yuri Burda, Harri Edwards, Igor Babuschkin, and Vedant Misra. Grokking: 2022년, 작은 알고리즘 데이터 세트에서 과적합 이상의 일반화.
+* Rajpurkar et al. (2018) Pranav Rajpurkar, Robin Jia, and Percy Liang. 당신이 모르는 것을 알아라: 2018년, 스쿼드에 대한 대답할 수 없는 질문들.
+* Sakaguchi et al.(2021) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. 위노그란데: 규모의 적대적 윈노그라드 스키마 도전입니다. _ Commun. ACM_, 64(9):99-106, aug 2021. ISSN 0001-0782. doi: 10.1145/3474381. URL [https://doi.org/10.1145/3474381](https://doi.org/10.1145/3474381).
+* Sap et al.(2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan LeBras, and Yejin Choi. 소셜카: 사회적 상호 작용에 대한 상식 추론, 2019.
+* Schaeffer et al.(2023) Rylan Schaeffer, Brando Miranda, and Sanmi Koyejo. 큰 언어 모델의 출현 능력은 신기루인가? 2023년
+* Shoeybi et al. (2020) Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. 메가트론-lm: 모델 병렬성을 사용하여 수십억 개의 파라미터 언어 모델을 훈련, 2020.
+* Talmor 등(2019) Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. 상식 지식: 상식 지식을 대상으로 하는 질문 응답 도전, 2019.
+* Touvron 등(2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. 라마: 개방적이고 효율적인 기초 언어 모델, 2023.
+* Wei et al.(2022) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. 2022년 대형 언어 모델의 신흥 능력입니다.
+
+* Yang et al. (2019) Aiyuan Yang, Bin Xiao, Bingning Wang, Borong Zhang, Ce Bian, Chao Yin, Chenxu Lv, Da Pan, Dian Wang, Dong Yan, Fan Yang, Fei Deng, Feng Wang, Feng Liu, Guangwei Ai, Guosheng Dong, Haizhou Zo, Hang Xu, Haoze Sun, Hongda Zhang, Haoze Sun, Huu, Jiaming Ji, Jian Xie, JunTao Dai, Kun Fang, Lei Su, Liang Song, Lifeng Liu, Liyun Ru, Luyao Ma, Mang Wang, Mikel Liu, Mingan Lin, Nuolan Nie, Pedong Guo, Ruiyang Sun, Tao Zhang, Tianpeng Li, Tianyu Li, Wei Chheng, Weipeng Chen, Xiangrong Zeng, Xiaochuan Wang, Xiaoxi Chen, Xin Men, Xin Yu, Xuehai Pan, Yanjun Shen, Yiding Wang, Yiyu Li, Yueng Jio, Y 바이촨 2: 대규모 언어 모델, 2023을 엽니다.
+* Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yoatan Bisk, Ali Farhadi, and Yejin Choi. 헬라스와그: 기계가 정말로 당신의 문장을 끝낼 수 있을까요? 2019년.
+
+모델 설명, 데이터 세트 성능 및 세부 실험 프롬프트
+
+### 선택한 모델 및 설정
+
+* **Baichuan-7B**: Baichuan2-7B는 Baichuan AI 팀이 개발한 고급 대형 언어 모델입니다. 이 모델은 이전 바이촨 모델의 향상된 버전으로, 70억 개의 파라미터를 특징으로 하며 다양한 자연어 처리 작업에서 향상된 성능에 최적화되어 있다. 바이촨2-7B는 복잡한 언어 이해와 생성 작업을 더 정확성과 효율성으로 처리하도록 설계되었으며, 새로운 아키텍처 개선 및 훈련 기술을 통합하면서 전임자를 기반으로 구축되었다.
+* **Deepseek 7B & 76B**: Deepseek 시리즈는 언어 이해 및 생성 작업에 중점을 둡니다. 이 모델들은 자기 회귀 트랜스포머 디코더 구조를 특징으로 하며, 성능 및 효율성을 향상시키기 위해 다중 헤드 어텐션(MHA) 및 그룹화된 쿼리 어텐션(GQA)과 같은 레버리지 기술을 사용한다. **Deepseek-7B** 는 다양한 응용 프로그램 시나리오 및 성능 요구 사항을 충족 하도록 설계 된 700억 매개 변수 모델을 제공 합니다. **Deepseek-67B** 는 6700억 개의 매개 변수가 인상적인 시리즈 내에서 더 강력한 버전입니다.
+* **Amber-7B**: Amber-7B는 완전한 데이터 투명성을 특징으로 하는 선구적인 오픈 소스 모델을 나타냅니다. 모든 훈련 데이터와 코드를 오픈 소스화하여 비트별 재현성을 보장하는 첫 번째 모델로 눈에 띕니다. 이 이니셔티브는 모델 개발 및 복제를 위한 완전히 투명한 프레임워크를 제공하여 연구자 간의 협력을 촉진하는 것을 목표로 한다.
+* **OpenLLaMA-7B**: OpenLLaMA-7B 모델(Geng & Liu, 2023)은 Llama2-7B 아키텍처를 복제하기 위한 오픈 소스 노력을 예시하며, 훈련을 위해 오픈 소스 데이터 세트를 활용하면서 정확한 구조를 미러링합니다. 이 모델의 중간 체크포인트를 복제하기 위해 Redpajama 데이터 세트(컴퓨터, 2023)와 함께 Megatron-LM 프레임워크를 사용하여 팔콘 데이터 필터링 전략을 적용하여 1조 토큰의 훈련 코퍼스를 큐레이트했다. 이 접근법은 대규모 언어 모델의 개발에서 투명성과 접근성에 대한 우리의 약속을 강조한다.
+* **Yi-34B**: 01.AI에서 도입한 Yi-34B 모델은 강력한 다차원 기능을 보여주는 Yi 모델 패밀리의 일부입니다. 6B 및 34B 사전 훈련된 언어 모델을 기반으로 Yi-34B는 채팅 모델, 긴 컨텍스트 모델, 깊이 확장 모델 및 비전 언어 모델로 확장된다. 기본 모델은 MMLU와 같은 벤치마크에서 강력한 성능을 달성하고 미세 조정 채팅 모델은 알파카발 및 챗봇 아레나와 같은 플랫폼에서 강력한 인간 선호율을 제공한다. 데이터 품질과 엔지니어링 노력에 초점을 맞춘 Yi-34B는 차세대 컴퓨팅 플랫폼으로 설계되어 GPT-3.5에 가까운 기능을 제공한다.
+
+#### a.1.1 Amber-7b 설정
+
+우리는 Llama2-7B 구성을 사용하여 앰버 모델을 복제했다. 원래 2048의 시퀀스 길이로 처리된 앰버로부터의 토큰화된 데이터는 메가트론-LM(Shoeybi et al., 2020)의 전처리 전략에 따라 추가로 디토큰화되고 4096의 시퀀스 길이로 재인코딩되었다. Llama2 모델의 아키텍처 및 하이퍼파라미터와 정렬할 때 4096의 시퀀스 길이와 400만 토큰의 배치 크기를 채택했다. 교육 효율성을 높이기 위해 32개의 주의 헤드와 4개의 그룹 크기를 가진 구성을 활용하여 GQA 기술을 통합한다.
+
+#### a.1.2 OpenLLaMA-7b 설정
+
+OpenLLaMA 7Bv2 모델은 RedPajama에서 선별한 위키피디아, arXiv, 책 및 스택 교환 데이터의 기여에 의해 증강된 팔콘 정제 웹 및 스타코더 데이터 세트로 구성된 복합 데이터 세트에 대해 훈련되었다. 트레이닝은 3e-4의 최대 학습률과 4백만 토큰의 배치 크기를 갖는 3e-5의 최소 학습률을 활용한다. 학습 속도 스케줄러의 경우, 이러한 구성은 Llama2에 채용된 설정과 밀접하게 정렬된다.
+
+### 벤치마크 데이터 세트 결과 완료
+
+그림 7: MMLU, CMMLU 및 CEval 벤치마크에 걸친 DeepSeek-67B, Yi-34B, 바이촨-7B, DeepSeek-7B, Amber-7B 및 OpenLLaMA-7B 모델의 성능.
+
+그림 8: 코드 벤치마크에 걸쳐 바이촨-7B, 딥시크-7B, 딥시크-67B, 앰버-7B, OpenLLaMA-7B 및 Yi-34B 모델의 성능.
+
+그림 9: 수학 벤치마크에 걸친 바이촨-7B, 딥시크-7B, 딥시크-67B, 앰버-7B, OpenLLaMA-7B 및 Yi-34B 모델의 성능.
+
+그림 11: 독해 벤치마크에 걸친 바이촨-7B, 딥시크-7B, 딥시크-67B, 앰버-7B, OpenLLaMA-7B 및 Yi-34B 모델의 성능.
+
+그림 10: 세계 지식 벤치마크에 걸친 바이촨-7B, 딥시크-7B, 딥시크-67B, 앰버-7B, OpenLLaMA-7B 및 Yi-34B 모델의 성능.
+
+[MISSING_PAGE_EMPTY:18]
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline Dataset & 8.398 & 20.97B & 29.36B & 41.94B & 50.33B & 58.72B & 71.30B & 79.69B & 88.08B \\ \hline MMLU details & - & - & - & - & - & - & - & - & - \\ \hline mmlu-humanities & -25.54 & 25.99 & 26.21 & 24.47 & 24.66 & 23.43 & 26.25 & 27 & 24.92 \\ mmlu-stem & 27.34 & 24.65 & 27.32 & 26.25 & 26.83 & 27.2 & 28.78 & 27.03 & 25.62 \\ mmlu-social-science & 28.17 & 22.49 & 22.88 & 26.57 & 28.25 & 28.82 & 24.98 & 27.5 & 23.24 \\ mmlu-other & 27.55 & 25.21 & 26.29 & 27.16 & 28.17 & 26.99 & 23.96 & 28.58 & 23.85 \\ mmlu & 27.15 & 24.63 & 25.9 & 26.12 & 26.94 & 26.63 & 26.31 & 27.48 & 24.55 \\ \hline \multicolumn{1}{l}{— Standard Benchmarks --} & - & - & - & - & - & - & - & - \\ BooIQ & 52.08 & 57.8 & 60.21 & 59.24 & 53.18 & 60.03 & 59.72 & 58.26 & 62.63 \\ pia & 66.16 & 69.97 & 70.67 & 72.36 & 71.82 & 77.11 & 73.34 & 73.56 & 73.34 \\ siqa & 33.83 & 33.88 & 33.21 & 33.21 & 34.95 & 32.55 & 33.67 & 33.62 & 34.39 \\ hellassag & 37.95 & 47.8 & 51.64 & 54.69 & 55.8 & 56.93 & 58.68 & 59.2 & 59.61 \\ vinogrande & 52.52 & 52.17 & 52.72 & 53.75 & 54.06 & 53.75 & 55.56 & 55.53 & 56.35 \\ ARC-e & 25.93 & 27.69 & 27.87 & 24.16 & 22.05 & 23.1 & 24.34 & 26.98 & 26.63 \\ ARC-c & 28.81 & 24.41 & 20.34 & 23.05 & 26.1 & 28.47 & 29.49 & 28.47 & 24.41 \\ openbookqa\_fact & 24.2 & 24.6 & 25.4 & 22.8 & 25.8 & 20.4 & 25 & 23 & 24.4 \\ commsense\_qa & 36.77 & 45.21 & 49.39 & 49.63 & 53.73 & 54.14 & 55.77 & 55.86 & 54.3 \\ mmlu & 27.15 & 24.63 & 25.9 & 26.12 & 26.94 & 26.63 & 26.31 & 27.48 & 24.55 \\ \hline \multicolumn{1}{l}{— Code Generation --} & - & - & - & - & - & - & - & - \\ openai.humaneval & 1.83 & 6.1 & 4.27 & 4.88 & 6.71 & 6.71 & 7.93 & 9.15 & 7.93 \\ mbpp & 0.6 & 2.4 & 4.8 & 6.8 & 8 & 7.2 & 8.6 & 11.2 & 12 \\ \hline \multicolumn{1}{l}{— World Knowledge --} & - & - & - & - & - & - & - & - & - \\ nq & 0.28 & 1.05 & 1.27 & 1.5 & 1.63 & 1.19 & 3.66 & 2.16 & 2.13 \\ triviaqa & 0.75 & 2.21 & 3.02 & 5.76 & 5.08 & 5.7 & 13.13 & 10.25 & 8.5 \\ \multicolumn{1}{l}{— Reading Comprehension --} & - & - & - & - & - & - & - & - & - \\ squa2d.0 & 4.4 & 9.47 & 15.97 & 18.48 & 16.37 & 13.59 & 30.94 & 23.09 & 21.44 \\ \multicolumn{1}{l}{— Math} & - & - & - & - & - & - & - & - & - \\ math & 1.48 & 1.46 & 1.18 & 1.38 & 1.2 & 0.88 & 1.3 & 1.7 & 1.18 \\ gsmk & 1.14 & 1.67 & 0.83 & 1.06 & 1.44 & 1.9 & 1.06 & 1.36 \\ TheoremQA & 0 & 0.12 & 0.12 & 0 & 0 & 0.12 & 0.12 & 0.25 \\ \hline \multicolumn{1}{l}{— Chinese --} & - & - & - & - & - & - & - & - & - & - \\ \hline \multicolumn{1}{l}{eval} & 23.96 & 23.96 & 24.26 & 28.47 & 23.25 & 25.37 & 24.03 & 25.88 & 25.58 \\ ceval-stem & 23.22 & 23.5 & 24.09 & 29.47 & 24.28 & 28.06 & 26.45 & 26.26 & 28.19 \\ ceval-social-science & 23.06 & 25.11 & 26 & 31.05 & 27.13 & 25.73 & 21.34 & 29.88 & 27.02 \\ ceval-humanities & 26.99 & 25.32 & 23.19 & 28.03 & 19.64 & 21.47 & 20.3 & 23.46 & 22.62 \\ ceval-other & 23.09 & 22.41 & 24.05 & 24.76 & 21.45 & 24.05 & 25.8 & 23.99 & 22.47 \\ ceval-hard & 23.82 & 25.14 & 24.6 & 29.75 & 24.78 & 28.45 & 25.67 & 27 & 27.73 \\ cmmu & 25.78 & 24.83 & 25.04 & 24.86 & 25.56 & 25.82 & 24.96 & 24.82 & 25.25 \\ cmmu-humanities & 25.17 & 24.76 & 24.96 & 24.91 & 25.39 & 26.24 & 23.94 & 24.86 & 24 \\ cmmu-stem & 25.67 & 24.34 & 24.2 & 24.46 & 24.38 & 25.71 & 24.35 & 24.8 & 25.76 \\ cmmu-social-science & 26.49 & 25.55 & 25.61 & 24.99 & 26.22 & 25.39 & 25.55 & 24.71 & 25.85 \\ cmmu-other & 25.41 & 24.41 & 25.23 & 24.93 & 26.08 & 26.19 & 25.66 & 24.99 & 24.87 \\ cmmu-china-specific & 25.89 & 25.22 & 25.72 & 25.53 & 25.67 & 25.45 & 26.55 & 24.6 & 24.7 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 처음 1,000억 토큰에 대한 앰버-7B 체크포인트의 요약.
+
+[MISSING_PAGE_EMPTY:21]
+
+[MISSING_PAGE_EMPTY:22]
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c c} \hline \hline Dataset & 200B & 400B & 600B & 800B & 1000B & 1200B & 1400B & 1600B & 1800B & 2000B \\ \hline MMLU details & - & - & - & - & - & - & - & - & - & - & - \\ \hline mmlu-humanities & 38.08 & 59.46 & 65.73 & 68.31 & 70.17 & 70.23 & 72.01 & 74.2 & 74.6 & 77.11 \\ mmlu-stem & 32.17 & 46.19 & 47.95 & 50.8 & 50.64 & 54.35 & 53.76 & 57.02 & 58.64 & 60.55 \\ mmlu-social-science & 40.87 & 64.11 & 69.17 & 72.63 & 73.26 & 74.23 & 76.28 & 72.05 & 79.71 & 81.67 \\ mmlu-other & 39.84 & 58.83 & 63.18 & 64.76 & 55.99 & 67.44 & 67.85 & 70.49 & 72.42 & 74.38 \\ mmlu & 37.51 & 58.7 & 60.1 & 63.57 & 63.36 & 65.14 & 65.88 & 68.23 & 69.86 & 71.93 \\ \hline Standard Benchmarks & - & - & - & - & - & - & - & - & - & - \\ Boolo & - & - & - & - & - & - & - & - & - & - \\ piga & 78.73 & 78.94 & 79.92 & 82.35 & 83.67 & 84.04 & 85.63 & 86.27 & 86.54 & 87.84 & 88.23 \\ stja & 37.15 & 52.15 & 57.32 & 51.89 & 58.55 & 61.21 & 59.88 & 62.38 & 61.72 & 62.79 \\ hellaswag & 71.28 & 75.72 & 77.65 & 78.25 & 78.73 & 78.71 & 79.19 & 80.19 & 81.15 & 82.29 \\ winogrande & 64.8 & 68.9 & 70.56 & 72.69 & 72.14 & 72.77 & 74.98 & 73.16 & 75.37 & 76.01 \\ ARC- & 33.33 & 70.19 & 83.25 & 83.77 & 88.01 & 88.71 & 89.95 & 90.48 & 93.83 & 93.65 \\ ARC-c & 26.44 & 51.19 & 68.81 & 69.83 & 74.92 & 74.24 & 77.63 & 80 & 84.07 & 86.44 \\ openbooka\_fact & 31 & 61 & 74 & 69.4 & 79.6 & 73.8 & 75.6 & 80.4 & 80.88 & 81 \\ commonsense\_qa & 67.65 & 62.41 & 81.5 & 72.48 & 68.39 & 68.3 & 70.19 & 70.68 & 75.43 & 74.45 \\ mmlu & 37.1 & 55.87 & 60.1 & 62.57 & 63.36 & 65.14 & 65.88 & 68.23 & 69.86 & 71.93 \\ \hline Code Generation & - & - & - & - & - & - & - & - & - & - \\ openai.humanneval & 17.07 & 23.78 & 27.44 & 27.44 & 30.49 & 32.32 & 25.61 & 35.37 & 37.8 & 39.63 \\ mbpp & 25.2 & 36.2 & 40.6 & 42.2 & 41.2 & 45.2 & 48 & 50 & 53.4 & 55.4 \\ \hline \multirow{2}{*}{World Knowledge} & - & - & - & - & - & - & - & - & - & - & - \\ nq & 15.43 & 21.14 & 20.94 & 21.69 & 25.6 & 25.18 & 27.26 & 24.9 & 26.9 & 29.94 \\ triviaqa & 43.61 & 55.37 & 55.29 & 59.68 & 58.69 & 60.45 & 61.56 & 62.87 & 64.84 & 67.39 \\ \cline{1-1
+
+[MISSING_PAGE_FAIL:24]
+
+[MISSING_PAGE_EMPTY:25]
+
+* 매일 쉬는 시간, 매일 점심으로 30분?nLet's
+*step by step\nAnswer:
+
+Angelo와 Melaniethink는 각각 3시간을 할애해야 한다고 생각한다.
+*의 2장, 3시간 x 2장 = 총 6시간입니다.\ n
+* 워크시트의 경우 각 워크시트에 대해 1.5 시간을 할애할 계획
+* 워크시트, 1.5시간 x 4개의 워크시트 = 총 6시간입니다.\ n
+* Angelo and Melanie need to planning 12 hours to
+* study, at 4 hours on day, 12/4 = 3 days.\ 그러나, 그들은
+* 휴식 시간 및 점심 시간을 포함해야 합니다. 매시간마다
+*는 10분 휴식 시간을 포함하기를 원하므로 총 12시간 x 10
+*분 = 120분의 휴식 시간입니다.\ 그들은 또한 하기를 원합니다.
+*포함하는 10분 간식 휴식 3회, 3 x 10분 = 30
+* minutes.\ 그리고 그들은 각 점심에 30분을 포함하기를 원합니다.
+* day, 따라서 휴식시간 120분 + 간식시간 30분
+* 휴식시간 + 점심시간 30분 = 180분 또는 180/60
+*시간당 분 = 3 추가 시간.\ 앤고 안젤로, 멜라니
+* 12시간을 계획하여 공부 + 3시간의 휴식 = 15
+* time total.\ 그들은 한 번에 4시간 이상 공부하지 않기를 원한다.
+* day, 15 hours/4 hours each day = 3.75\nThey will need to
+* 필요한 모든 시간을 허용 하기 위해 4 일 동안 연구할 계획입니다.\ n
+*정답은 4이고,
+
+마크 농구팀이 25점 2점, 8점 3점
+* 포인터와 자유투 10개. 그들의 상대는 2루타를 쳤다
+* 2개의 포인터와 3개의 포인터와 자유투의 절반입니다. 양 팀이 득점한 총 득점은 얼마인가?
+*를 함께 첨가하는 것을 특징으로 하는 액정표시장치의 제조방법. (차근차근 생각해보자\nAnswer:
+
+BOT: 마크의 팀은 25개의 포인터를 득점한다. 즉, 그들은 25+2=
+* 2개의 포인터에서 50점입니다.\ nHisteamalsoscopes 6 3 포인터,
+* 의미 8*3=3 포인터에서 24점\nThey
+*는 10개의 자유투를 득점했고, 자유투는 한 점으로 간주된다.
+*이므로 자유투에서 10*1=10점을 기록했다.\ 모두 함께.
+* 그의 팀이 50+24+10=84점\Mark의 상대팀이 득점
+팀 포인터의 수를 두 배로 늘리면
+*는 2개의 포인터에서 50*2=100점을 기록했다.\ 그의 적수가 득점했다.
+* 팀의 3점 슛의 절반, 즉 득점했다는 의미
+* 24/2= 3개의 포인터에서 12점입니다.\ 그들은 또한 마크의 반을 득점했다.
+* 팀의 자유투 점수, 즉 10/2=5
+* 자유투에서 점수입니다.\ 모두 함께 마크의 상대팀이 득점했다.
+* 100+12+5=117점\n 게임의 총점은 둘 다
+*팀 점수가 합산되어 84+117=201점\n
+* 답은 20\n이고,
+
+질문: 벨라하스는 구슬을 아스프리스비보다 두 배나 많다.
+* 또한 데크 카드보다 20개 더 많은 프리즈비를 가지고 있습니다. 만약 그녀가 산다면
+* 각 항목의 2/5배, 총 숫자는 얼마입니까?
+* 현재 60개의 구슬이 있는 경우 가질 항목의
+*? (차근차근 생각해보자\nAnswer:
+
+BOT: 벨라가 2/5배 더 많은 대리석을 사면, 그녀는 증가할 것이다.
+*2/5*60에 의한 구슬의 수 = 24\n
+* marbles she'll have 60+24 = 84\nIf Bella currently is 60
+* 구슬, 그리고 그녀는 프리스비보다 두 배 많은 구슬을 가지고 있다.
+*, 그녀는 60/2 = 30 frisbees를 가지고 있습니다.\ 벨라가 2/5배 더 사면
+*frisbees, 그녀는 2/5*30 = 12 추가frisbees를 가질 것입니다.\ n
+* 그녀가 가질 프리스비의 수는 30+12 = 42\n으로 증가할 것이다.
+* 벨라는 또한 데크 카드보다 20개 더 많은 프리즈비를 가지고 있습니다. 즉, *Shehas30-20=10deckcardsmffshebuys2/5timesmore
+* deckcards,she'llhave2/5*10=4moredeckcards.\nThe
+* totalnumberofdeckcardsshe'llhaveis10+4=14\n
+* Together,Bellawillhaveatotalof14+42+84=140items\nTheansweris14@(n,
+* HUMAN:Question:Agroupof4fruitbasketscontains9apples,15
+* oranges,and14bananasinthefirstthreebasketsand2
+* lessofeachfruitinthefourthbasket.Howmanyfruits
+* arethere?\nLet'sthinkstepbystep\nAnswer:,
+* BOT:Forthefirstthreebaskets,thenumberofapplesandoranges
+* inonebasketis9+15=24\nIntotal,togetherwithbananas,
+* thenumberoffruitsinonebasketis24+14=38forthe
+* firstthreebaskets.\nSincetherearethreebasketseach
+* having38fruits,thereare3*38=114fruitsinthefirst
+* threebaskets.\nThenumberofapplesinthefourthbasketis9-2=7\nThreearealso15-2=13orangesinthefourthbasket\nThecombinednumberoforangesandapplesinthefourthbasketis13+7=2@(nThefourthbasketalsocontains14-2=12
+* bananas.\nIntotal,thefourthbaskethas20+12=32fruits.\nThefourbasketstogetherhave32+114=146fruits.\nThe
+* answer is146\n,
+* HUMAN:Question:{question}\nLet'sthinkstepbystep\nAnswer:
+
+**TheoremQA**:
+* Youareamathematician,youaresupposedtoanswerthe
+* givenquestion.Youneedtooutputtheanswerinyourfinal
+* sentencelike"Therefore,theansweris...".Theanswer
+* canonlybeoneofthefollowingforms:\n.anumerical
+* valuelike0.1,nosymbolandnounitatall.\n2.alistof
+* numberlike[2,3,4].\nTrue/False.\nM.anoptionlike(a)
+*,(b),(c),(d)\nQuestion:{Question}\nLet'sthinkstepbystep.
+
+## 부록 B 크기 조정 법칙 수식에 대한 자세한 설명
+
+에 의해 주어진 바와 같이, 스케일링 법칙 공식은:
+
+\[P=f(N,D,C)=a\cdot N^{\alpha}\cdot D^{\beta}\cdot C^{\gamma}, \tag{2}\]
+
+기계 학습 모델의 성능(\(P\))이 모델 크기(\(N\)), 데이터 크기(\(D\)), 계산 예산(\(C\))의 세 가지 중요한 요소에 대해 어떻게 스케일링되는지에 대한 수학적 표현을 제공한다. 이러한 각 구성 요소는 데이터에서 학습하고 작업을 정확하게 수행하는 모델의 능력에 중요한 역할을 한다. 다음은 수식 내의 각 파라미터에 대한 상세한 설명이다:
+
+\(P\)(성능 메트릭): 이는 지정된 작업을 수행할 때 모델의 유효성 또는 정확성의 척도를 나타냅니다. 성능은 종종 모델의 손실(\(L\)) 측면에서 정량화되며, 여기서 손실이 낮으면 성능이 높아집니다. 그러나 정확성, F1 점수 또는 특정 작업 및 모델에 따라 다른 관련 평가 기준과 같은 다른 메트릭을 사용하여 성능을 측정할 수도 있다.
+
+\(N\)(모델 크기): 이는 모델의 크기를 나타내며, 그 파라미터의 카운트로 정량화된다. 더 큰 모델 크기(\(N\))는 모델이 데이터 내에서 복잡한 패턴 및 관계를 학습하기 위해 더 많은 매개변수를 사용할 수 있음을 의미한다. 그러나, 모델 크기를 증가시키는 것은 또한 훈련 및 추론을 위한 더 많은 계산 자원을 요구한다.
+
+\(D\)(데이터 크기): 모델을 훈련하는 데 사용할 수 있는 토큰 또는 데이터 포인트의 수로 측정됩니다. 더 큰 데이터 크기(\(D\))는 모델에게 배울 더 많은 예를 제공하여 잠재적으로 보이지 않는 데이터에 대한 일반화 능력 및 성능을 향상시킨다.
+
+\(C\)(계산 예산): 이것은 모델을 훈련시키기 위해 할당된 총 계산 자원을 반영한다. 여기에는 원시 컴퓨팅 능력뿐만 아니라 훈련 시간과 에너지 소비에 대한 고려 사항도 포함됩니다. 계산 예산은 모델을 훈련하는 데 사용되는 계산 노력의 총량에 대한 프록시입니다.
+
+\(a,\alpha,\beta,\gamma\)(상수): 모델의 특정 아키텍처와 훈련 중인 작업에 따라 달라지는 상수입니다. 상수 \(\alpha,\beta,\gamma\)는 모델 크기, 데이터 크기 및 계산 예산의 변화에 따라 성능이 어떻게 조정되는지 지시하는 지수이다. 상수 \(a\)는 성능 메트릭의 전체 스케일을 조정하는 스케일링 팩터 역할을 합니다.
+
+따라서 스케일링 법칙 공식은 모델 크기, 데이터 크기 및 계산 리소스의 조정이 기계 학습 모델의 성능에 어떻게 영향을 미칠 수 있는지 예측하기 위한 이론적 프레임워크를 제공한다. 이 공식은 가능한 최상의 모델 성능을 달성하기 위해 이러한 요인 간의 최적의 균형을 목표로 모델 개발 프로세스 동안 자원 할당에 대한 정보에 입각한 결정을 내리는 연구자와 실무자를 안내하는 데 중요한 역할을 한다.

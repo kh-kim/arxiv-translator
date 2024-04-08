@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# The Fine Line:\n' +
+      '\n' +
+      'Navigating Large Language Model Pretraining with Downstreaming Capability Analysis\n' +
+      '\n' +
+      'Chen Yang\\({}^{2}\\), Junzhuo Li\\({}^{3}\\),\n' +
+      '\n' +
+      'Xinyao Niu\\({}^{4}\\), Xinrun Du\\({}^{1}\\), Songyang Gao\\({}^{5}\\), Haoran Zhang\\({}^{6}\\),\n' +
+      '\n' +
+      'Zhaoliang Chen\\({}^{7}\\), Xingwei Qu\\({}^{1}\\), Ruibin Yuan\\({}^{1}\\), Yizhi Li\\({}^{1}\\),\n' +
+      '\n' +
+      'Jiaheng Liu\\({}^{1}\\), Stephen W. Huang\\({}^{10}\\), Shawn Yue\\({}^{10}\\),\n' +
+      '\n' +
+      'Wenhu Chen\\({}^{11}\\) \\({}^{12}\\), Jie Fu\\({}^{1}\\) \\({}^{8}\\), Ge Zhang\\({}^{11}\\) \\({}^{12}\\)\n' +
+      '\n' +
+      'Equal Technical Contributions.Corresponding Authors.\n' +
+      '\n' +
+      '\\({}^{1}\\)Multimodal Art Projection Research Community, \\({}^{2}\\)Peking University,\n' +
+      '\n' +
+      '\\({}^{3}\\)Tianjin University, \\({}^{4}\\)University of Melbourne, \\({}^{5}\\)Fudan University,\n' +
+      '\n' +
+      '\\({}^{6}\\)University of Illinois at Urbana-Champaign, \\({}^{7}\\)Emery University,\n' +
+      '\n' +
+      '\\({}^{8}\\)HKUST, \\({}^{9}\\)University of Manchester, \\({}^{10}\\)harmony.ai\n' +
+      '\n' +
+      '\\({}^{11}\\)University of Waterloo, \\({}^{12}\\)Vector Institute\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Uncovering early-stage metrics that reflect final model performance is one core principle for large-scale pretraining. The existing scaling law demonstrates the power-law correlation between pretraining loss and training flops, which serves as an important indicator of the current training state for large language models. However, this principle only focuses on the model\'s compression properties on the training data, resulting in an inconsistency with the ability improvements on the downstream tasks. Some follow-up works attempted to extend the scaling-law to more complex metrics (such as hyperparameters), but still lacked a comprehensive analysis of the dynamic differences among various capabilities during pretraining. To address the aforementioned limitations, this paper undertakes a comprehensive comparison of model capabilities at various pretraining intermediate checkpoints. Through this analysis, we confirm that specific downstream metrics exhibit similar training dynamics across models of different sizes, up to 67 billion parameters. In addition to our core findings, we\'ve reproduced Amber and OpenLLaMA, releasing their intermediate checkpoints. This initiative offers valuable resources to the research community and facilitates the verification and exploration of LLM pretraining by open-source researchers. Besides, we provide empirical summaries, including performance comparisons of different models and capabilities, and tuition of key metrics for different training phases. Based on these findings, we provide a more user-friendly strategy for evaluating the optimization state, offering guidance for establishing a stable pretraining process.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Large Language Models (LLMs) have shown great promise as highly capable AI assistants that excel in complex reasoning tasks requiring expert knowledge across a wide range of fields (e.g., programming and creative writing). However, training large language models requires significant pretraining computation costs on large-scale training data. To reduce the computation costs, scaling law (Kaplan et al., 2020) is proposed to illustrate the power-law relationship between pretraining loss and computational effort, which has providedvaluable insights into model optimization with minimal computational cost. Recently, several findings, such as those exploring the phenomena of emergence (Wei et al., 2022) and the Broken Neural Scaling Laws (Caballero et al., 2023), indicate these laws might not fully capture model capabilities, particularly for downstream tasks. Therefore, it is important to expand and refine our evaluative frameworks.\n' +
+      '\n' +
+      'In this work, we first investigate the dynamics of several open-sourced large language models (i.e., Baichuan-7B (Yang et al., 2023), DeepSeek-7B (DeepSeek-AI et al., 2024), Amber-7B (Liu et al., 2023), OpenLLaMA-7B (Geng and Liu, 2023; Touvron et al., 2023; Computer, 2023), Yi-34B (AI et al., 2024) and DeepSeek-67B), and analyze their performance results across diverse tasks using the corresponding intermediate checkpoints based on the number of pre-trained tokens. Then, based on the theoretical framework of the Scaling Law (Kaplan et al., 2020), we analyze the performance patterns of different models across various downstream tasks, and provide findings to facilitate further research on the training dynamics of the LLMs, where the findings are shown as follows:\n' +
+      '\n' +
+      '* **Findings on task dynamic prediction:** Within the training process of LLMs, we observe that the dynamics of existing downstream tasks within a domain can predict the dynamics of unseen tasks. This suggests that a model\'s performance on known tasks can inform us about how it might perform on similar, yet unseen tasks within the same domain. (Section 4.1.1)\n' +
+      '* **Findings on cross-domain promotion:** Similar to the human cognitive process, the enhancement of different abilities across various domains progresses from basic to advanced levels following curriculum learning. The curriculum between cross-domain tasks can guide the training direction of models and the insights gained from one domain can potentially promote the learning process of other domains. (Section 4.1.2)\n' +
+      '* **Findings on the effect of training strategies, model architecture, etc. :** Based on the results of several 7b-scale models (Baichuan2-7b, DeepSeek-7b, OpenLLaMA-7b, and Amber-7b), we comprehensively analyze the effect of training strategies, dataset quality, and model architecture in training LLMs. For example, we observe that the training dataset, learning rate adjustments, batch size, and regularization techniques play a significant role in the learning efficiency in the early training stage (Section 4.2.1).\n' +
+      '* **Findings on the effect of model scale on reasoning tasks:** Based on the results of Deepseek-7b, 34b and 67b, we observe that the model size and complexity significantly influence its ability on these reasoning tasks. Nonetheless, employing particular strategies can enhance smaller-scale models to obtain similar performance on commonsense reasoning when compared with their larger counterparts. (Section 4.2.2)\n' +
+      '* **Findings on the scaling law:** (1). We observe that larger training datasets lead to improved model performance on various benchmarks, which demonstrates the effect of extensive training data in training LLMs. However, the benefit of additional data diminishes as datasets grow, suggesting an approaching limit to performance gains. (2). We observe that the accuracies of the scaling law (Hoffmann et al., 2022) vary a lot across different models, which indicates that factors such as model architecture and computational complexity significantly influence scaling efficiency. Notably, some models demonstrate better alignment with the law, suggesting potential advantages in data utilization and learning efficiency. (3). Although the scaling law can provide a useful perspective on the impact of training data size, the actual performance scaling is nuanced, which reflects the complex interplay between data volume, model architecture, and computational strategies. This also highlights the importance of continued research into scaling laws and model optimization to maximize learning outcomes from available data (Section 5).\n' +
+      '\n' +
+      'Moreover, apart from the aforementioned findings, it should be mentioned that we plan to publicly release the intermediate checkpoints of Amber-7B and OpenLLaMA-7B, which not only enhances the comprehension of scaling laws but also helps to develop more effective training strategies for LLMs. In conclusion, we hope our findings and open-sourced checkpoints can guide the developers to understand the optimization process of LLMs and facilitate the growth of foundation models.\n' +
+      '\n' +
+      '## 2 Related Work\n' +
+      '\n' +
+      '### Scaling Law\n' +
+      '\n' +
+      'Scaling laws have been identified as critical empirical relationships for LLMs that delineate the impact of changes in model size, dataset size, and computational budget on model performance. Kaplan et al. (2020) focused on the distribution of computational resources for the training of LLMs. However, this principle is particularly significant as it underscores the relative importance of different factors to model performance, such as model architecture and batch size are secondary to the overarching influence of model size and dataset scope in reducing final validation loss.\n' +
+      '\n' +
+      'Recent research, including studies by Hoffmann et al. (2022) and Muennighoff et al. (2024), highlights the importance of a balanced approach in scaling both model size and training data to enhance model capabilities. Specifically, enlarging pre-training datasets has been emphasized as a crucial step forward. However, challenges arise in addressing data limitations, such as the potential pitfalls of up-sampling. Hernandez et al. (2021) demonstrated that increasing only 0.1% of the training dataset by a factor of 100 significantly reduced model efficacy, pointing out the limitations of simple data amplification strategies. Meanwhile, Muennighoff et al. (2024) approach, which involved repeating the entire pre-training dataset across multiple epochs, showed promising results.\n' +
+      '\n' +
+      '### Emergent Abilities of Large Language Models\n' +
+      '\n' +
+      'The concept of emergent abilities in large language models (LLMs) draws researchers attention, as model sizes continue to scale. The phenomenon of "double descent," where a model\'s validation loss first worsens and then improves with increasing model complexity, was first proposed by Nakkiran et al. (2019). Furthermore, the "grokking" phenomenon, where models continue to improve even without a reduction in training loss, has been detailed by Power et al. (2022) and Murty et al. (2023), providing insight into the non-linear learning trajectories of LLMs.\n' +
+      '\n' +
+      'Recent research has extensively explored the emergent abilities of LLMs in downstream tasks. Wei et al. (2022) highlighted that emergent abilities are predominantly observed as models scale up, underscoring the significance of model size in achieving advanced capabilities. Schaeffer et al. (2023) contended that the performance of emergent abilities is highly dependent on the chosen evaluation metrics, suggesting a nuanced relationship between model performance and assessment methodologies. In our study, we concentrate on the emergent abilities of LLMs in downstream tasks, utilizing common evaluation frameworks as provided by Contributors (2023). Our aim is to conclude the dynamics of emergent abilities within the context of practical applications, contributing to a deeper understanding of how LLMs can performs through scaling and standard evaluation metrics.\n' +
+      '\n' +
+      '## 3 Methodology\n' +
+      '\n' +
+      '### Models\n' +
+      '\n' +
+      'In this study, our analysis extends to the intermediate checkpoints of a series of state-of-the-art large language models, each featuring unique architectural designs and training paradigms, showcasing the latest advancements in natural language processing and machine learning. Among these models, Amber-7B and OpenLLMA-7B were replicated by us. The introduction to each model under scrutiny can be found in Appendix A.1.\n' +
+      '\n' +
+      'By examining these models across various stages of their training lifecycle, we aim to shed light on the dynamic interplay between model architecture, size, training strategies, and their impact on learning efficiency and task-specific performance. This comprehensive analysis not only assesses the current state of the art in language modeling but also explores the broader implications of model training and design choices on the future trajectory of large language model development.\n' +
+      '\n' +
+      '### Datasets and evaluation metrics\n' +
+      '\n' +
+      'To rigorously assess the capabilities of our language models, we have curated a wide-ranging collection of datasets that span a broad array of cognitive and computational challenges. These datasets are crucial for evaluating the models\' proficiency in different aspects of language understanding, reasoning, and generation. Specifically, our evaluation encompasses six categories: Code, Commonsense Reasoning, World Knowledge, Reading Comprehension, Math, and Examination.\n' +
+      '\n' +
+      'Covering these six categories allows us to thoroughly examine the models\' strengths and weaknesses across a diverse set of tasks, ensuring their robustness and adaptability. This comprehensive evaluation strategy enables us to identify areas where our models excel in understanding complex language constructs, applying commonsense knowledge, retrieving factual information, comprehending and analyzing written texts, solving mathematical problems, and performing in exam-like conditions.\n' +
+      '\n' +
+      'Our detailed evaluation setup and the metrics applied to each dataset are summarized in Table 1, showcasing the extensive measures taken to guarantee the robustness and flexibility of our language models across a wide range of tasks.\n' +
+      '\n' +
+      '## 4 Empirical Analysis\n' +
+      '\n' +
+      '### Intra-model analysis\n' +
+      '\n' +
+      'In this part of our discussion, we pay attention to an in-depth analysis of individual models, focusing on identifying whether the trends in their performance remain consistent across various metrics and observing the unique patterns that emerge across different benchmarks.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l} \\hline \\hline\n' +
+      '**Category** & **Dataset** & **Metrics** \\\\ \\hline \\multirow{2}{*}{Code} & HumanEval Chen et al. (2021) & \\multirow{2}{*}{Pass@1} \\\\  & MBPP Austin et al. (2021) & \\\\ \\hline \\multirow{6}{*}{Commonsense Reasoning} & PIQA Bisk et al. (2020) & \\multirow{6}{*}{Accuracy (ppl, 0-shot)} \\\\  & SIQA Sap et al. (2019) & \\\\ \\cline{1-2}  & HeliaSwang Zellers et al. (2019) & \\\\ \\cline{1-2}  & WinGrande Sakaguchi et al. (2021) & \\\\ \\cline{1-2}  & ARC Easy Clark et al. (2018) & \\\\ \\cline{1-2}  & ARC Challenge Clark et al. (2018) & \\\\ \\cline{1-2}  & OpenBookQA Mihaylov et al. (2018) & \\\\ \\cline{1-2}  & CommonsenseQA Talmor et al. (2019) & \\\\ \\hline \\multirow{2}{*}{World Knowledge} & NaturalQuestions Kwiatkowski et al. (2019) & \\multirow{2}{*}{Accuracy (0-shot)} \\\\  & TriviaQA Joshi et al. (2017) & \\\\ \\hline \\multirow{2}{*}{Reading Comprehension} & BoolQ Clark et al. (2019) & \\multirow{2}{*}{Accuracy (ppl, 0-shot)} \\\\  & SQuAD 2.0 Rajpurkar et al. (2018) & \\\\ \\hline \\multirow{2}{*}{Math} & GSM8K Cobbe et al. (2021) & \\multirow{2}{*}{Accuracy (4-shot)} \\\\  & MATH Hendrycks et al. (2021) & \\\\ \\cline{1-2}  & TheoremQA Chen et al. (2023) & \\\\ \\hline \\multirow{2}{*}{Examination} & MMLU Hendrycks et al. (2021) & \\multirow{2}{*}{Accuracy (5-shot)} \\\\  & CMMLU Li et al. (2023) & \\\\ \\cline{1-2}  & CEVAL Huang et al. (2023) & \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Datasets and their evaluation metrics by category.\n' +
+      '\n' +
+      '#### 4.1.1 Cross-task analysis\n' +
+      '\n' +
+      'Analysis of examination domainThe findings from our experiments are illustrated in Figure 1, with extended experimental results accessible in Appendix A.2. Analysis across the models, as demonstrated by the horizontal examination of the rows in the figure, reveals that the performance trends for the Examination benchmarks, namely MMLLU, CMMLLU, and CEVAL, exhibit remarkable consistency. This uniformity across various evaluation datasets within the Examination domain suggests inherent similarities in the tasks.\n' +
+      '\n' +
+      'Despite focusing on different aspects of examination-style questions and encompassing both English and Chinese languages, MMLU, CMMLU, and CEVAL appear to assess overlapping capabilities of the models, leading to similar performance trends. Furthermore, the training process of models demonstrates that the behavior of known tasks within a domain can predict the behavior of yet-to-be-encountered tasks. This suggests that understanding a model\'s performance on familiar tasks can offer valuable insights into its potential performance on analogous tasks that have not been previously explored within the same domain.\n' +
+      '\n' +
+      '#### 4.1.2 Cross-domain analysis\n' +
+      '\n' +
+      'Analysis of standard benchmarksWe define that standard benchmarks include PIQA, SIQA, HellaSwag, WinoGrande, ARC Easy and Challenge, OpenBookQA, CommonsenseQA, BoolQ, and MMLU. This categorization is predicated on the observation that these benchmarks, to varying degrees, evaluate the models\' understanding of real-world knowledge, reading comprehension, and commonsense reasoning. The descriptions and observations on these datasets are as follows.\n' +
+      '\n' +
+      'First, PIQA, HellaSwag, BoolQ, WinoGrande, and CommonsenseQA are all datasets for evaluating models\' common sense reasoning and understanding capabilities. PIQA tests models\n' +
+      '\n' +
+      'Figure 1: Comparative performance analysis of Baichuan-7B, DeepSeek-7B, and DeepSeek-67B models across MMLU, CMMLU, and CEval benchmarks.\n' +
+      '\n' +
+      'on understanding physical laws, HellaSwag evaluates how well they predict story outcomes, BoolQ evaluates their comprehension and inference skills through yes/no questions based on text passages, WinoGrande examines their handling of language nuances and context-based ambiguity resolution, and CommonsenseQA assesses their general knowledge and reasoning. These datasets measure the most fundamental capabilities of the models. As shown in Figure 2, within each model, the accuracy on these datasets rapidly increases in the early stages of training (before 300B tokens) and gradually reaches a plateau. This trend is particularly evident in the checkpoints before 100B tokens for the Amber-7b model.\n' +
+      '\n' +
+      'Second, SIQA, ARC (both Easy and Challenge), OpenBookQA and MMLU target more advanced cognitive abilities compared to datasets like PIQA, HellaSwag, WinoGrande and CommonsenseQA, with accuracy improvements on these benchmarks typically occurring later in the training process. SIQA tests social comprehension, ARC spans basic to complex scientific reasoning, OpenBookQA requires factual integration with textual understanding and MMLU measures knowledge application across multiple disciplines. These datasets emerge as crucial in the mid-training phases, shifting from basic commonsense to intricate reasoning and domain-specific knowledge application. This progression underscores a layered approach in AI training, moving from foundational understanding to higher-order cognitive skills.\n' +
+      '\n' +
+      'These observations underscore the importance of benchmark selection in model evaluation. The early plateau observed in Standard Benchmarks suggests a rapid acquisition of general knowledge and reasoning capabilities, followed by a phase where additional training yields diminishing returns on these particular tasks. Conversely, the mid-training spike in other benchmarks indicates areas where models may require more extensive training to fully capture and understand the complexities of the tasks.\n' +
+      '\n' +
+      '### Cross-model analysis\n' +
+      '\n' +
+      'Our cross-model analysis aims to understand the nuances and intricacies of model performance across different architectures and scales.\n' +
+      '\n' +
+      '#### 4.2.1 Analysis within the 7b scale\n' +
+      '\n' +
+      'As illustrated in Figure 3, when analyzing the performance of HumanEval and MABP in the code generation domain using 7b models, it becomes apparent that the initial performance is comparable across the various models. However, as the number of tokens increases, their\n' +
+      '\n' +
+      'Figure 2: Comparative performance analysis of Baichuan-7B, DeepSeek-7B, DeepSeek-67B, Amber-7B, OpenLLaMA-7B, and Yi-34B models across standard benchmarks.\n' +
+      '\n' +
+      'performance curves diverge, showing different trends. This divergence is attributed to both the model architecture and differences in training strategies. Specifically for the Amber-7b model, there is a noticeable decline in capability in the 200b-300b token range, likely due to the training dataset.\n' +
+      '\n' +
+      '#### 4.2.2 Analysis across scales\n' +
+      '\n' +
+      'The size and complexity of a model are key factors affecting its learning capabilities and performance in reasoning tasks, yet the application of specific techniques may allow smaller-scale models to match or even surpass the capabilities of larger models. As shown in Figure 4 and Figure 5, by examining the performance on MATH, GSM8K, PIQA, HellaSwag, and WinoGrande across models of different sizes, it is observable that all models improve their abilities in tasks involving math, physical interaction understanding and commonsense reasoning in a relatively synchronized manner. Generally, the performance of 67b models surpasses that of 34b, which in turn exceeds that of 7b models at the same training phase in math-related datasets. However, exceptions like the OpenLLaMA-7b model approaching or even exceeding the capabilities of Yi-34b demonstrate that the model scale should be chosen based on the complexity of the task and the required reasoning capabilities. For tasks\n' +
+      '\n' +
+      'Figure 4: MATH performance across 7b, 34b, 67b models.\n' +
+      '\n' +
+      'Figure 5: Commonsense understanding performance across 7b, 34b, 67b models.\n' +
+      '\n' +
+      'Figure 3: Code generation performance across Baichuan2-7b, DeepSeek-7b, OpenLLaMA-7b, and Amber-7b.\n' +
+      '\n' +
+      'requiring extensive reasoning and deep understanding, larger models are more suitable; whereas for situations with limited resources or lower task complexity, smaller models may be a more economical choice.\n' +
+      '\n' +
+      '## 5 Scaling Law\n' +
+      '\n' +
+      '### Scaling law definition\n' +
+      '\n' +
+      'The Scaling Law posits a predictive enhancement in model performance through the augmentation of three critical dimensions: computational budget \\(C\\), model size \\(N\\), and data size \\(D\\). This law articulates that when the model size \\(N\\) is quantified by the count of model parameters, and the data size \\(D\\) is measured in terms of the number of tokens, the computational budget \\(C\\) can be approximated effectively by the formula \\(C=6ND\\). Consequently, an essential research focus within the ambit of the Scaling Law involves strategizing an optimal allocation between model size and data size during the amplification of the computational budget, with the ultimate goal of achieving the most efficacious model configuration.\n' +
+      '\n' +
+      'Research into the optimal allocation strategies for model/data size enhancement (Hoffmann et al., 2022; Kaplan et al., 2020) has led to varied conclusions, prompting skepticism about the universal applicability of the Scaling Law. Furthermore, structural differences among models, disparities in the quality of training data, and variations in hyperparameter configurations are often primary factors that contribute to the discrepancies observed in the Scale Law. Baichuan2 has conducted experiments employing the Scale Law as proposed by Henighan et al. (2020). Meanwhile, the two models of Deepseek have adopted the IsoFLOP profile approach from chinchilla, and have implemented certain degrees of optimization to it.\n' +
+      '\n' +
+      'In order to extrapolate more universally applicable insights, our investigation is predicated on the foundational principles of the chinchilla law. The formal mathematical representation of this law is encapsulated in the following expression:\n' +
+      '\n' +
+      '\\[P=f(N,D,C)=a\\cdot N^{a}\\cdot D^{\\beta}\\cdot C^{\\gamma}, \\tag{1}\\]\n' +
+      '\n' +
+      'where \\(P\\) denotes the performance metric of the model. Conventionally, in the ambit of prior scholarly inquiries, this metric is frequently quantified in terms of the model\'s loss, symbolized by \\(L\\). And \\(a,\\alpha,\\beta,\\gamma\\) are constants that depend on the specific architecture and task. We explain the specific meaning of each parameter in detail in Appendix B.\n' +
+      '\n' +
+      '### Scaling law evaluation\n' +
+      '\n' +
+      'Figure 6: Comparative performance trends of different language models over various training checkpoints, as fitted by the Eq.(1). (a) We present the CEval Score Trends, showing a consistent increase in performance with larger training data sizes. (b) We depict the CMMLU Score Trends, with a similar positive correlation between score and training size. (c) We illustrate the MMLU Score Trends, with all models demonstrating performance enhancements correlating with the scale of training data. Each graph plots individual data points for different versions of the models and overlays a curve fit to represent the scaling law’s predictive performance scaling.\n' +
+      '\n' +
+      'Figure 6 indicates a clear relationship between the size of the training data and the performance scores across the CEval, CMMLU, and MMLU benchmarks. All three subfigures exhibit a monotonically increasing trend, where the scores improve as the number of training checkpoints increases. This suggests that larger training datasets enable the models to learn more effectively, leading to better performance on evaluation tasks. The rate of score increase appears to be diminishing as the number of checkpoints grows. Initially, there is a steep improvement in scores, which gradually levels off. This could indicate that while larger training datasets initially provide substantial new information for the models to learn from, the incremental benefit decreases as the model approaches an asymptotic performance ceiling.\n' +
+      '\n' +
+      'The scaling law\'s curve fits seem to be closely aligned with the actual data points in all three graphs. This indicates that Eq.(1) effectively models the relationship between training data size and model performance in these cases.\n' +
+      '\n' +
+      'Observing the provided graphs, it can be noted that the scaling law fits the performance data of the Baichuan2 model more accurately compared to the two DeepSeek models. This is evident from the closer alignment of the Baichuan2 data points to its trend line across all three subfigures (CEval, CMMLU, and MMLU score trends), suggesting that Eq.(1) may be more predictive for the training and performance characteristics of the Baichuan2 model.\n' +
+      '\n' +
+      'The deviation of the DeepSeek models\' performance from the predictions of Eq.(1) could indeed stem from the adoption of a new model scale representation. By utilizing non-embedding FLOPs per token \\(M\\) instead of the overall model parameters \\(N\\), the scaling law that was originally designed or calibrated for the parameter might not accurately capture the performance nuances associated with computational complexity per token.\n' +
+      '\n' +
+      'The effectiveness of the fit may also differ between the early and late stages of training. For example, if the curve fits well initially but diverges as training progresses, it might suggest that Eq.(1) more accurately predicts performance improvements at earlier stages of training.\n' +
+      '\n' +
+      'Some models (like Baichuan2-7B and DeepSeek-67B) might show a better fit at later stages, possibly due to a more stable learning process as the model converges towards its peak performance.\n' +
+      '\n' +
+      'The Yi-34B model seems to exhibit a superior fit to the Scaling Law. This enhanced alignment with the Scaling Law suggests that Yi-34B may have architectural or algorithmic advantages that enable it to leverage data more effectively. Despite Yi-34B having fewer parameters than Deepseek-67B, it demonstrates that with an increase in data volume, Yi-34B can achieve comparable results post-training. This observation suggests that the quantity of model parameters is not the sole determinant of performance enhancement when sufficient data is available. In expanding the training datasets, Yi-34B appears to utilize its parameters more efficiently, potentially indicating a better generalization capacity or optimization that allows for superior learning from additional data. This could encourage the development of more data-centric approaches in the design of algorithms, focusing on how to better utilize the information available to enhance learning outcomes, even with a comparatively smaller set of parameters.\n' +
+      '\n' +
+      'Upon analyzing the graphs, it is evident that while the trend of increasing performance with larger datasets is present, the actual scores for each model at various training checkpoints do not precisely align with the expected trajectory of the scaling law. This discrepancy may stem from the fact that prior research often used loss as a measure of model performance. In contrast, our experiments employ specific downstream task performance metrics. Given that scoring methods vary and dataset distributions differ, there will be a certain degree of divergence from the original scaling law.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      'This investigation into large language models (LLMs) enhances our understanding of model training complexities and scaling laws. Analyzing model dynamics across various tasks and training stages, we have gleaned insights to improve training and optimization strategies.\n' +
+      '\n' +
+      'Our study reveals the predictive power of task dynamics within a domain for unseen tasks, suggesting the benefit of adaptable training protocols. Drawing parallels between AI learning and human cognition, we see potential in applying cross-domain insights for better training outcomes.\n' +
+      '\n' +
+      'Key findings highlight the influence of training strategies, dataset quality, and architecture on LLM efficiency and effectiveness. While model size impacts learning outcomes, innovative methods enable smaller models to rival larger ones.\n' +
+      '\n' +
+      'In summary, our analysis of scaling laws, particularly through the scaling law, offers insights into training data size and model performance. We note improved performance with larger datasets, yet with diminishing returns. This indicates the importance of dataset expansion, alongside architectural and computational optimization, for maximizing data utility. Variations in scaling law efficacy across models suggest scaling behaviors are nuanced, necessitating tailored model development approaches. These insights hint at a future where refined scaling laws and optimization techniques significantly boost LLM capabilities, marking significant progress in AI.\n' +
+      '\n' +
+      '## 7 Acknowledgment\n' +
+      '\n' +
+      'We extend our deepest gratitude to 01.ai for sharing the Yi-34B model\'s intermediate checkpoint performance analysis curves, which greatly contributed to our research.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* A. I. Al, J. Y. Y. Le, B. C. Li, C. Huang, G. Zhang, G. Zhang, H. Li, J. Zhu, J. Chen, J. Chang, K. Yu, P. Liu, Q. Liu, S. Yue, S. Yang, S. Yang, T. Yu, W. Xie, W. Huang, X. Hu, X. Ren, X. Niu, P. Nie, Y. Xu, Y. Liu, Y. Wang, Y. Cai, Z. Gu, Z. Liu, and Z. Dai (2021)Yi: open foundation models by 01.ai. External Links: 2103.0377 Cited by: SS1.\n' +
+      '* J. Austin, A. Odena, M. Nye, M. Bosma, H. Michalewski, D. Dohan, E. Jiang, C. Cai, M. Terry, Q. Le, and C. Sutton (2021)Program synthesis with large language models. External Links: 2103.03778 Cited by: SS1.\n' +
+      '* Y. Bisk, R. Zellers, R. L. bras, J. Gao, and Y. Choi (2020)Piqa: reasoning about physical commonsense in natural language. Proceedings of the AAAI Conference on Artificial Intelligence34 (05), pp. 7432-7439. External Links: Link, Document Cited by: SS1.\n' +
+      '* E. Caballero, K. Gupta, I. Rish, and D. Krueger (2023)Broken neural scaling laws. External Links: 2303.03032 Cited by: SS1.\n' +
+      '* M. Chen, J. Tworek, H. Jun, Q. Yuan, H. Ponde de Oliveira Pinto, J. Kaplan, H. Edwards, Y. Burda, N. Joseph, G. Brockman, A. Ray, R. Puri, G. Krueger, M. Petrov, H. Khaaf, G. Sastry, P. Mishkin, B. Chan, S. Gray, N. Ryder, M. Pavlov, A. Power, L. Kaiser, M. Bavarian, C. Winter, P. Tillet, F. Petroski Such, D. Cummings, M. Plappert, F. Chantzis, E. Barnes, A. Herbert-Voss, W. Hebgen Guss, A. Nichol, A. Paino, N. Tezak, J. Tang, I. Babuschkin, S. Balaji, S. Jain, W. Saunders, C. Hesse, A. N. Carr, J. Leike, J. Achiam, V. Misra, E. Morikawa, A. Radford, M. Knight, M. Brundage, M. Murati, K. Mayer, P. Welinder, B. McGrew, D. Amodei, S. McCandlish, I. Sutskever, and W. Zaremba (2021)Evaluating large language models trained on code. External Links: 2103.03778 Cited by: SS1.\n' +
+      '* W. Chen, M. Yin, M. Xu, P. Lu, Y. Wan, X. Ma, J. Xu, X. Wang, and T. Xia (2023)MeoremQA: a theorem-driven question answering dataset. In The 2023 Conference on Empirical Methods in Natural Language Processing, External Links: Link Cited by: SS1.\n' +
+      '\n' +
+      'Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions, 2019.\n' +
+      '* Clark et al. (2018) Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. Think you have solved question answering? try arc, the ai2 reasoning challenge, 2018.\n' +
+      '* Cobbe et al. (2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. Training verifiers to solve math word problems, 2021.\n' +
+      '* Computer (2023) Together Computer. Redpajama: an open dataset for training large language models, 2023. URL [https://github.com/togethercomputer/RedPajama-Data](https://github.com/togethercomputer/RedPajama-Data).\n' +
+      '* OpenCompass Contributors (2023) OpenCompass Contributors. Opencompass: A universal evaluation platform for foundation models. [https://github.com/open-compass/opencompass](https://github.com/open-compass/opencompass), 2023.\n' +
+      '* DeepSeek-Al et al. (2024) DeepSeek-Al, ; Xiao Bi, Deli Chen, Guanting Chen, Shanhuang Chen, Damai Dai, Chengqi Deng, Honghui Ding, Kai Dong, Qiushi Du, Zhe Fu, Huazuo Gao, Kaige Gao, Wenjun Gao, Ruqi Ge, Kang Guan, Daya Guo, Jianzhong Guo, Guangbo Hao, Zhewen Hao, Ying He, Wenjie Hu, Panpan Huang, Erlangen Li, Guowei Li, Jiashi Li, Yao Li, Y. K. Li, Wenteng Liang, Fangyun Lin, A. X. Liu, Bo Liu, Wen Liu, Xiaodong Liu, Xin Liu, Yiyuan Liu, Haoyu Lu, Shanghao Lu, Fuli Luo, Shirong Ma, Xiaotao Nie, Tian Pei, Yishi Piao, Junjie Qiu, Hui Qu, Tongzheng Ren, Zehui Ren, Chong Ruan, Zhangli Sha, Zhihong Shao, Junxiao Song, Xuecheng Su, Jingxiang Sun, Yaofeng Sun, Minghui Tang, Bingxuan Wang, Peiyi Wang, Shiyu Wang, Yaohui Wang, Yongji Wang, Tong Wu, Y. Wu, Xin Xie, Zhenda Xie, Ziwei Xie, Yiliang Xiong, Hanwei Xu, R. X. Xu, Yanhong Xu, Dejian Yang, Yuxiang You, Shuiping Yu, Xingkai Yu, B. Zhang, Haowei Zhang, Lecong Zhang, Liyue Zhang, Mingchuan Zhang, Minghua Zhang, Wentao Zhang, Yichao Zhang, Chenggang Zhao, Yao Zhao, Shangyan Zhou, Shunfeng Zhou, Qiaho Zhu, and Yuheng Zou. Deepseek llm: Scaling open-source language models with longtermism, 2024.\n' +
+      '* Geng and Liu (2023) Xinyang Geng and Hao Liu. Openllama: An open reproduction of lama, May 2023. URL [https://github.com/openlm-research/open_llama](https://github.com/openlm-research/open_llama).\n' +
+      '* Hendrycks et al. (2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math dataset, 2021.\n' +
+      '* Henighan et al. (2020) Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative modeling. _arXiv preprint arXiv:2010.14701_, 2020.\n' +
+      '* Hernandez et al. (2021) Danny Hernandez, Jared Kaplan, Tom Henighan, and Sam McCandlish. Scaling laws for transfer, 2021.\n' +
+      '* Hoffmann et al. (2022) Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _arXiv preprint arXiv:2203.15556_, 2022.\n' +
+      '* Huang et al. (2023) Yuzhen Huang, Yuzhuo Bai, Zhihao Zhu, Junlei Zhang, Jinghan Zhang, Tangjun Su, Junteng Liu, Chuancheng Lv, Yikai Zhang, Jiayi Lei, Yao Fu, Maosong Sun, and Junxian He. C-eval: A multi-level multi-discipline chinese evaluation suite for foundation models. In _Advances in Neural Information Processing Systems_, 2023.\n' +
+      '* Joshi et al. (2017) Mandar Joshi, Eunsol Choi, Daniel S. Weld, and Luke Zettlemoyer. Triviaqa: A large scale distantly supervised challenge dataset for reading comprehension, 2017.\n' +
+      '* Kaplan et al. (2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B. Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models, 2020.\n' +
+      '\n' +
+      '* Kwiatkowski et al. (2019) Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Alberti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina Toutanova, Llion Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. Dai, Jakob Uszkoreit, Quoc Le, and Slav Petrov. Natural Questions: A Benchmark for Question Answering Research. _Transactions of the Association for Computational Linguistics_, 7:453-466, 08 2019. ISSN 2307-387X. doi: 10.1162/tacl_a_00276. URL [https://doi.org/10.1162/tacl_a_00276](https://doi.org/10.1162/tacl_a_00276).\n' +
+      '* Li et al. (2023) Haonan Li, Yixuan Zhang, Fajri Koto, Yifei Yang, Hai Zhao, Yeyun Gong, Nan Duan, and Timothy Baldwin. Cmmlu: Measuring massive multitask language understanding in chinese, 2023.\n' +
+      '* Liu et al. (2023) Zhengzhong Liu, Aurick Qiao, Willie Neiswanger, Hongyi Wang, Bowen Tan, Tianhua Tao, Junbo Li, Yuqi Wang, Suqi Sun, Omkar Pangarkar, Richard Fan, Yi Gu, Victor Miller, Yonghao Zhuang, Guowei He, Haonan Li, Fajri Koto, Liping Tang, Nikhil Ranjan, Zhiqiang Shen, Xuguang Ren, Roberto Iriondo, Cun Mu, Zhiting Hu, Mark Schulze, Preslav Nakov, Tim Baldwin, and Eric P. Xing. Llm360: Towards fully transparent open-source llms, 2023.\n' +
+      '* Mihaylov et al. (2018) Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. Can a suit of armor conduct electricity? a new dataset for open book question answering, 2018.\n' +
+      '* Muennighoff et al. (2024) Niklas Muennighoff, Alexander Rush, Boaz Barak, Teven Le Scao, Nouamane Tazi, Aleksandra Piktus, Sampo Pyysalo, Thomas Wolf, and Colin A Raffel. Scaling data-constrained language models. _Advances in Neural Information Processing Systems_, 36, 2024.\n' +
+      '* Murty et al. (2023) Shikhar Murty, Pratyusha Sharma, Jacob Andreas, and Christopher D. Manning. Grokking of hierarchical structure in vanilla transformers, 2023.\n' +
+      '* Nakkiran et al. (2019) Preetum Nakkiran, Gal Kaplun, Yamini Bansal, Tristan Yang, Boaz Barak, and Ilya Sutskever. Deep double descent: Where bigger models and more data hurt, 2019.\n' +
+      '* Power et al. (2022) Alethea Power, Yuri Burda, Harri Edwards, Igor Babuschkin, and Vedant Misra. Grokking: Generalization beyond overfitting on small algorithmic datasets, 2022.\n' +
+      '* Rajpurkar et al. (2018) Pranav Rajpurkar, Robin Jia, and Percy Liang. Know what you don\'t know: Unanswerable questions for squad, 2018.\n' +
+      '* Sakaguchi et al. (2021) Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. Winogrande: an adversarial winograd schema challenge at scale. _Commun. ACM_, 64(9):99-106, aug 2021. ISSN 0001-0782. doi: 10.1145/3474381. URL [https://doi.org/10.1145/3474381](https://doi.org/10.1145/3474381).\n' +
+      '* Sap et al. (2019) Maarten Sap, Hannah Rashkin, Derek Chen, Ronan LeBras, and Yejin Choi. Socialqa: Commonsense reasoning about social interactions, 2019.\n' +
+      '* Schaeffer et al. (2023) Rylan Schaeffer, Brando Miranda, and Sanmi Koyejo. Are emergent abilities of large language models a mirage?, 2023.\n' +
+      '* Shoeybi et al. (2020) Mohammad Shoeybi, Mostofa Patwary, Raul Puri, Patrick LeGresley, Jared Casper, and Bryan Catanzaro. Megatron-lm: Training multi-billion parameter language models using model parallelism, 2020.\n' +
+      '* Talmor et al. (2019) Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. Commonsenseqa: A question answering challenge targeting commonsense knowledge, 2019.\n' +
+      '* Touvron et al. (2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models, 2023.\n' +
+      '* Wei et al. (2022) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, Ed H. Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy Liang, Jeff Dean, and William Fedus. Emergent abilities of large language models, 2022.\n' +
+      '\n' +
+      '* Yang et al. (2019) Aiyuan Yang, Bin Xiao, Bingning Wang, Borong Zhang, Ce Bian, Chao Yin, Chenxu Lv, Da Pan, Dian Wang, Dong Yan, Fan Yang, Fei Deng, Feng Wang, Feng Liu, Guangwei Ai, Guosheng Dong, Haizhou Zhao, Hang Xu, Haoze Sun, Hongda Zhang, Hui Liu, Jiaming Ji, Jian Xie, JunTao Dai, Kun Fang, Lei Su, Liang Song, Lifeng Liu, Liyun Ru, Luyao Ma, Mang Wang, Mikel Liu, MingAn Lin, Nuolan Nie, Pedong Guo, Ruiyang Sun, Tao Zhang, Tianpeng Li, Tianyu Li, Wei Cheng, Weipeng Chen, Xiangrong Zeng, Xiaochuan Wang, Xiaoxi Chen, Xin Men, Xin Yu, Xuehai Pan, Yanjun Shen, Yiding Wang, Yiyu Li, Youxin Jiang, Yuchen Gao, Yupeng Zhang, Zenan Zhou, and Zhiying Wu. Baichuan 2: Open large-scale language models, 2023.\n' +
+      '* Zellers et al. (2019) Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a machine really finish your sentence?, 2019.\n' +
+      '\n' +
+      'Model Description, Dataset Performances, and Detailed Experiment Prompts\n' +
+      '\n' +
+      '### Selected models and settings\n' +
+      '\n' +
+      '* **Baichuan-7B**: The Baichuan2-7B is an advanced large language model developed by the Baichuan AI team. This model is an enhanced version of the previous Baichuan models, featuring 7 billion parameters and optimized for improved performance in various natural language processing tasks. Baichuan2-7B is designed to handle complex language understanding and generation tasks with greater accuracy and efficiency, building upon the foundation of its predecessor while incorporating new architectural improvements and training techniques.\n' +
+      '* **Deepseek 7B & 76B**: The Deepseek series are focused on language understanding and generation tasks. These models feature a self-regressive Transformer decoder architecture and leverage technologies such as multi-head attention (MHA) and grouped query attention (GQA) to enhance performance and efficiency. **Deepseek-7B** offers a 70 billion parameter model, designed to cater to a variety of application scenarios and performance requirements. **Deepseek-67B** is a more potent version within the series, with an impressive 670 billion parameters.\n' +
+      '* **Amber-7B**: Amber-7B represents a pioneering open-source model characterized by complete data transparency. It stands out as the first model to open-source all its training data and code, ensuring bitwise reproducibility. This initiative aims to foster collaboration among researchers by providing a fully transparent framework for model development and replication.\n' +
+      '* **OpenLLaMA-7B** : The OpenLLaMA-7B model (Geng & Liu, 2023) exemplifies an open-source effort to replicate the Llama2-7B architecture, mirroring its exact structure while utilizing open-source datasets for training. To replicate the intermediate checkpoints of this model, we employed the Megatron-LM framework in conjunction with the Redpajama dataset (Computer, 2023), applying Falcon data filtering strategies to curate a training corpus of 1 trillion tokens. This approach underscores our commitment to transparency and accessibility in the development of large-scale language models.\n' +
+      '* **Yi-34B**: The Yi-34B model, introduced by 01.AI, is a part of the Yi model family that demonstrates strong multi-dimensional capabilities. Based on 6B and 34B pretrained language models, Yi-34B extends to chat models, long context models, depth-upscaled models, and vision-language models. The base models achieve strong performance on benchmarks like MMLU, and the finetuned chat models deliver strong human preference rates on platforms like AlpacaEval and Chatbot Arena. With a focus on data quality and engineering efforts, Yi-34B is designed to be a next-generation computational platform, offering capabilities close to GPT-3.5.\n' +
+      '\n' +
+      '#### a.1.1 Amber-7b settings\n' +
+      '\n' +
+      'We replicated the Amber model utilizing the Llama2-7B configuration. The tokenized data from Amber, originally processed with a sequence length of 2048, was further detokenized and re-encoded to a sequence length of 4096 as per the preprocessing strategy of Megatron-LM (Shoeybi et al., 2020). In aligning with the Llama2 model\'s architecture and hyperparameters, we adopted a sequence length of 4096 and a batch size of 4 million tokens. In order to increase the training efficiency, we incorporate GQA technologies, utilizing a configuration with 32 attention heads and a group size of 4.\n' +
+      '\n' +
+      '#### a.1.2 OpenLLaMA-7b settings\n' +
+      '\n' +
+      'The OpenLLaMA 7Bv2 model, trained on a composite dataset comprising Falcon refined-web and starcoder datasets, augmented by contributions from Wikipedia, arXiv, books, and Stack Exchange data curated by RedPajama. The training utilizes a max learning rate of 3e-4 and min learning rate of 3e-5 with a batch size of 4 million tokens. For the learning rate scheduler, this configuration closely aligns with the setup employed in Llama2.\n' +
+      '\n' +
+      '### Complete results on benchmark datasets\n' +
+      '\n' +
+      'Figure 7: Performance of DeepSeek-67B, Yi-34B, Baichuan-7B, DeepSeek-7B, Amber-7B, and OpenLLaMA-7B models across MMLU, CMMLU, and CEval benchmarks.\n' +
+      '\n' +
+      'Figure 8: Performance of Baichuan-7B, DeepSeek-7B, DeepSeek-67B, Amber-7B, OpenLLaMA-7B, and Yi-34B models across code benchmarks.\n' +
+      '\n' +
+      'Figure 9: Performance of Baichuan-7B, DeepSeek-7B, DeepSeek-67B, Amber-7B, OpenLLaMA-7B, and Yi-34B models across math benchmarks.\n' +
+      '\n' +
+      'Figure 11: Performance of Baichuan-7B, DeepSeek-7B, DeepSeek-67B, Amber-7B, OpenLLaMA-7B, and Yi-34B models across reading comprehension benchmarks.\n' +
+      '\n' +
+      'Figure 10: Performance of Baichuan-7B, DeepSeek-7B, DeepSeek-67B, Amber-7B, OpenLLaMA-7B, and Yi-34B models across world knowledge benchmarks.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:18]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c} \\hline \\hline Dataset & 8.398 & 20.97B & 29.36B & 41.94B & 50.33B & 58.72B & 71.30B & 79.69B & 88.08B \\\\ \\hline MMLU details & - & - & - & - & - & - & - & - & - \\\\ \\hline mmlu-humanities & -25.54 & 25.99 & 26.21 & 24.47 & 24.66 & 23.43 & 26.25 & 27 & 24.92 \\\\ mmlu-stem & 27.34 & 24.65 & 27.32 & 26.25 & 26.83 & 27.2 & 28.78 & 27.03 & 25.62 \\\\ mmlu-social-science & 28.17 & 22.49 & 22.88 & 26.57 & 28.25 & 28.82 & 24.98 & 27.5 & 23.24 \\\\ mmlu-other & 27.55 & 25.21 & 26.29 & 27.16 & 28.17 & 26.99 & 23.96 & 28.58 & 23.85 \\\\ mmlu & 27.15 & 24.63 & 25.9 & 26.12 & 26.94 & 26.63 & 26.31 & 27.48 & 24.55 \\\\ \\hline \\multicolumn{1}{l}{— Standard Benchmarks --} & - & - & - & - & - & - & - & - \\\\ BooIQ & 52.08 & 57.8 & 60.21 & 59.24 & 53.18 & 60.03 & 59.72 & 58.26 & 62.63 \\\\ pia & 66.16 & 69.97 & 70.67 & 72.36 & 71.82 & 77.11 & 73.34 & 73.56 & 73.34 \\\\ siqa & 33.83 & 33.88 & 33.21 & 33.21 & 34.95 & 32.55 & 33.67 & 33.62 & 34.39 \\\\ hellassag & 37.95 & 47.8 & 51.64 & 54.69 & 55.8 & 56.93 & 58.68 & 59.2 & 59.61 \\\\ vinogrande & 52.52 & 52.17 & 52.72 & 53.75 & 54.06 & 53.75 & 55.56 & 55.53 & 56.35 \\\\ ARC-e & 25.93 & 27.69 & 27.87 & 24.16 & 22.05 & 23.1 & 24.34 & 26.98 & 26.63 \\\\ ARC-c & 28.81 & 24.41 & 20.34 & 23.05 & 26.1 & 28.47 & 29.49 & 28.47 & 24.41 \\\\ openbookqa\\_fact & 24.2 & 24.6 & 25.4 & 22.8 & 25.8 & 20.4 & 25 & 23 & 24.4 \\\\ commsense\\_qa & 36.77 & 45.21 & 49.39 & 49.63 & 53.73 & 54.14 & 55.77 & 55.86 & 54.3 \\\\ mmlu & 27.15 & 24.63 & 25.9 & 26.12 & 26.94 & 26.63 & 26.31 & 27.48 & 24.55 \\\\ \\hline \\multicolumn{1}{l}{— Code Generation --} & - & - & - & - & - & - & - & - \\\\ openai.humaneval & 1.83 & 6.1 & 4.27 & 4.88 & 6.71 & 6.71 & 7.93 & 9.15 & 7.93 \\\\ mbpp & 0.6 & 2.4 & 4.8 & 6.8 & 8 & 7.2 & 8.6 & 11.2 & 12 \\\\ \\hline \\multicolumn{1}{l}{— World Knowledge --} & - & - & - & - & - & - & - & - & - \\\\ nq & 0.28 & 1.05 & 1.27 & 1.5 & 1.63 & 1.19 & 3.66 & 2.16 & 2.13 \\\\ triviaqa & 0.75 & 2.21 & 3.02 & 5.76 & 5.08 & 5.7 & 13.13 & 10.25 & 8.5 \\\\ \\multicolumn{1}{l}{— Reading Comprehension --} & - & - & - & - & - & - & - & - & - \\\\ squa2d.0 & 4.4 & 9.47 & 15.97 & 18.48 & 16.37 & 13.59 & 30.94 & 23.09 & 21.44 \\\\ \\multicolumn{1}{l}{— Math} & - & - & - & - & - & - & - & - & - \\\\ math & 1.48 & 1.46 & 1.18 & 1.38 & 1.2 & 0.88 & 1.3 & 1.7 & 1.18 \\\\ gsmk & 1.14 & 1.67 & 0.83 & 1.06 & 1.44 & 1.9 & 1.06 & 1.36 \\\\ TheoremQA & 0 & 0.12 & 0.12 & 0 & 0 & 0.12 & 0.12 & 0.25 \\\\ \\hline \\multicolumn{1}{l}{— Chinese --} & - & - & - & - & - & - & - & - & - & - \\\\ \\hline \\multicolumn{1}{l}{eval} & 23.96 & 23.96 & 24.26 & 28.47 & 23.25 & 25.37 & 24.03 & 25.88 & 25.58 \\\\ ceval-stem & 23.22 & 23.5 & 24.09 & 29.47 & 24.28 & 28.06 & 26.45 & 26.26 & 28.19 \\\\ ceval-social-science & 23.06 & 25.11 & 26 & 31.05 & 27.13 & 25.73 & 21.34 & 29.88 & 27.02 \\\\ ceval-humanities & 26.99 & 25.32 & 23.19 & 28.03 & 19.64 & 21.47 & 20.3 & 23.46 & 22.62 \\\\ ceval-other & 23.09 & 22.41 & 24.05 & 24.76 & 21.45 & 24.05 & 25.8 & 23.99 & 22.47 \\\\ ceval-hard & 23.82 & 25.14 & 24.6 & 29.75 & 24.78 & 28.45 & 25.67 & 27 & 27.73 \\\\ cmmu & 25.78 & 24.83 & 25.04 & 24.86 & 25.56 & 25.82 & 24.96 & 24.82 & 25.25 \\\\ cmmu-humanities & 25.17 & 24.76 & 24.96 & 24.91 & 25.39 & 26.24 & 23.94 & 24.86 & 24 \\\\ cmmu-stem & 25.67 & 24.34 & 24.2 & 24.46 & 24.38 & 25.71 & 24.35 & 24.8 & 25.76 \\\\ cmmu-social-science & 26.49 & 25.55 & 25.61 & 24.99 & 26.22 & 25.39 & 25.55 & 24.71 & 25.85 \\\\ cmmu-other & 25.41 & 24.41 & 25.23 & 24.93 & 26.08 & 26.19 & 25.66 & 24.99 & 24.87 \\\\ cmmu-china-specific & 25.89 & 25.22 & 25.72 & 25.53 & 25.67 & 25.45 & 26.55 & 24.6 & 24.7 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: Summary of Amber-7B checkpoints for the first 100 billion tokens.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:21]\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:22]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c c} \\hline \\hline Dataset & 200B & 400B & 600B & 800B & 1000B & 1200B & 1400B & 1600B & 1800B & 2000B \\\\ \\hline MMLU details & - & - & - & - & - & - & - & - & - & - & - \\\\ \\hline mmlu-humanities & 38.08 & 59.46 & 65.73 & 68.31 & 70.17 & 70.23 & 72.01 & 74.2 & 74.6 & 77.11 \\\\ mmlu-stem & 32.17 & 46.19 & 47.95 & 50.8 & 50.64 & 54.35 & 53.76 & 57.02 & 58.64 & 60.55 \\\\ mmlu-social-science & 40.87 & 64.11 & 69.17 & 72.63 & 73.26 & 74.23 & 76.28 & 72.05 & 79.71 & 81.67 \\\\ mmlu-other & 39.84 & 58.83 & 63.18 & 64.76 & 55.99 & 67.44 & 67.85 & 70.49 & 72.42 & 74.38 \\\\ mmlu & 37.51 & 58.7 & 60.1 & 63.57 & 63.36 & 65.14 & 65.88 & 68.23 & 69.86 & 71.93 \\\\ \\hline Standard Benchmarks & - & - & - & - & - & - & - & - & - & - \\\\ Boolo & - & - & - & - & - & - & - & - & - & - \\\\ piga & 78.73 & 78.94 & 79.92 & 82.35 & 83.67 & 84.04 & 85.63 & 86.27 & 86.54 & 87.84 & 88.23 \\\\ stja & 37.15 & 52.15 & 57.32 & 51.89 & 58.55 & 61.21 & 59.88 & 62.38 & 61.72 & 62.79 \\\\ hellaswag & 71.28 & 75.72 & 77.65 & 78.25 & 78.73 & 78.71 & 79.19 & 80.19 & 81.15 & 82.29 \\\\ winogrande & 64.8 & 68.9 & 70.56 & 72.69 & 72.14 & 72.77 & 74.98 & 73.16 & 75.37 & 76.01 \\\\ ARC- & 33.33 & 70.19 & 83.25 & 83.77 & 88.01 & 88.71 & 89.95 & 90.48 & 93.83 & 93.65 \\\\ ARC-c & 26.44 & 51.19 & 68.81 & 69.83 & 74.92 & 74.24 & 77.63 & 80 & 84.07 & 86.44 \\\\ openbooka\\_fact & 31 & 61 & 74 & 69.4 & 79.6 & 73.8 & 75.6 & 80.4 & 80.88 & 81 \\\\ commonsense\\_qa & 67.65 & 62.41 & 81.5 & 72.48 & 68.39 & 68.3 & 70.19 & 70.68 & 75.43 & 74.45 \\\\ mmlu & 37.1 & 55.87 & 60.1 & 62.57 & 63.36 & 65.14 & 65.88 & 68.23 & 69.86 & 71.93 \\\\ \\hline Code Generation & - & - & - & - & - & - & - & - & - & - \\\\ openai.humanneval & 17.07 & 23.78 & 27.44 & 27.44 & 30.49 & 32.32 & 25.61 & 35.37 & 37.8 & 39.63 \\\\ mbpp & 25.2 & 36.2 & 40.6 & 42.2 & 41.2 & 45.2 & 48 & 50 & 53.4 & 55.4 \\\\ \\hline \\multirow{2}{*}{World Knowledge} & - & - & - & - & - & - & - & - & - & - & - \\\\ nq & 15.43 & 21.14 & 20.94 & 21.69 & 25.6 & 25.18 & 27.26 & 24.9 & 26.9 & 29.94 \\\\ triviaqa & 43.61 & 55.37 & 55.29 & 59.68 & 58.69 & 60.45 & 61.56 & 62.87 & 64.84 & 67.39 \\\\ \\cline{1-1\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:24]\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:25]\n' +
+      '\n' +
+      '* breaks each day, and 30 minutes for lunch each day?nLet\'s\n' +
+      '* think step by step\\nAnswer:,\n' +
+      '\n' +
+      'BOT: Angelo and Melaniethink they should dedicate 3 hours to each\n' +
+      '* of the 2 chapters, 3 hours x 2 chapters = 6 hours total.\\n\n' +
+      '* For the worksheets they plan to dedicate 1.5 hours for each\n' +
+      '* worksheet, 1.5 hours x 4 worksheets = 6 hours total.\\n\n' +
+      '* Angelo and Melanie need to start with planning 12 hours to\n' +
+      '* study, at 4 hours a day, 12 / 4 = 3 days.\\nHowever, they\n' +
+      '* need to include time for breaks and lunch. Every hour they\n' +
+      '* want to include a 10-minute break, so 12 total hours x 10\n' +
+      '* minutes = 120 extra minutes for breaks.\\nThey also want to\n' +
+      '* include 3 10-minute snack breaks, 3 x 10 minutes = 30\n' +
+      '* minutes.\\nAnd they want to include 30 minutes for lunch each\n' +
+      '* day, so 120 minutes for breaks + 30 minutes for snack\n' +
+      '* breaks + 30 minutes for lunch = 180 minutes, or 180 / 60\n' +
+      '* minutes per hour = 3 extra hours.\\nGo Angelo and Melanie\n' +
+      '* want to plan 12 hours to study + 3 hours of breaks = 15\n' +
+      '* hours total.\\nThey want to study no more than 4 hours each\n' +
+      '* day, 15 hours / 4 hours each day = 3.75\\nThey will need to\n' +
+      '* plan to study 4 days to allow for all the time they need.\\n\n' +
+      '* The answer is 4,\n' +
+      '\n' +
+      'HUMAN :Question: Mark\'s basketball team scores 25 2 pointers, 8 3\n' +
+      '* pointers and 10 free throws. Their opponents scored double\n' +
+      '* the 2 pointers but half the 3 pointers and free throws. What\'s the total number of points scored by both teams\n' +
+      '* added together?(Let\'s think step by step\\nAnswer:,\n' +
+      '\n' +
+      'BOT: Mark\'s team scores 25 2 pointers, meaning they scored 25+2=\n' +
+      '* 50 points in 2 pointers.\\nHisteamalsoscopes 6 3 pointers,\n' +
+      '* meaning they scored 8*3= 24 points in 3 pointers\\nThey\n' +
+      '* scored 10 free throws, and free throws count as one point\n' +
+      '* so they scored 10*1=10 points in free throws.\\nAll together\n' +
+      '* his team scored 50+24+10=84 points\\Mark\'s opponents scored\n' +
+      '* double his team\'s number of 2 pointers, meaning they\n' +
+      '* scored 50*2=100 points in 2 pointers.\\nHis opponents scored\n' +
+      '* half his team\'s number of 3 pointers, meaning they scored\n' +
+      '* 24/2= 12 points in 3 pointers.\\nThey also scored half Mark\'s\n' +
+      '* team\'s points in free throws, meaning they scored 10/2=5\n' +
+      '* points in free throws.\\nAll together Mark\'s opponents scored\n' +
+      '* 100+12+5=117 points\\nThe total score for the game is both\n' +
+      '* team\'s scores added together, so it is 84+117=201 points\\n\n' +
+      '* The answer is 20\\n,\n' +
+      '\n' +
+      'HUMAN: Question: Bellahas twotimes as many marbles asfrisbees.\n' +
+      '* She also has 20 morefrisbees than deck cards. If she buys\n' +
+      '* 2/5 times more of each item, what would be the total number\n' +
+      '* of the items she will have if she currently has 60 marbles\n' +
+      '*?(Let\'s think step by step\\nAnswer:,\n' +
+      '\n' +
+      'BOT: When Bellah buys 2/5 times moremarbles, she\'ll have increased\n' +
+      '* the number of marbles by 2/5*60 = 24\\nThe total number of\n' +
+      '* marbles she \'ll have is 60+24 = 84\\nIf Bella currently has 60\n' +
+      '* marbles, and she has two times as many marbles as frisbees\n' +
+      '*, she has 60/2 = 30 frisbees.\\nIf Bella buys 2/5 times more\n' +
+      '* frisbees, she\'ll have 2/5*30 = 12 morefrisbees.\\nThe total\n' +
+      '* number of frisbees she\'ll have will increase to 30+12 = 42\\n\n' +
+      '* Bella also has 20 morefrisbees than deck cards, meaning * shehas30-20=10deckcardsmffshebuys2/5timesmore\n' +
+      '* deckcards,she\'llhave2/5*10=4moredeckcards.\\nThe\n' +
+      '* totalnumberofdeckcardsshe\'llhaveis10+4=14\\n\n' +
+      '* Together,Bellawillhaveatotalof14+42+84=140items\\nTheansweris14@(n,\n' +
+      '* HUMAN:Question:Agroupof4fruitbasketscontains9apples,15\n' +
+      '* oranges,and14bananasinthefirstthreebasketsand2\n' +
+      '* lessofeachfruitinthefourthbasket.Howmanyfruits\n' +
+      '* arethere?\\nLet\'sthinkstepbystep\\nAnswer:,\n' +
+      '* BOT:Forthefirstthreebaskets,thenumberofapplesandoranges\n' +
+      '* inonebasketis9+15=24\\nIntotal,togetherwithbananas,\n' +
+      '* thenumberoffruitsinonebasketis24+14=38forthe\n' +
+      '* firstthreebaskets.\\nSincetherearethreebasketseach\n' +
+      '* having38fruits,thereare3*38=114fruitsinthefirst\n' +
+      '* threebaskets.\\nThenumberofapplesinthefourthbasketis9-2=7\\nThreearealso15-2=13orangesinthefourthbasket\\nThecombinednumberoforangesandapplesinthefourthbasketis13+7=2@(nThefourthbasketalsocontains14-2=12\n' +
+      '* bananas.\\nIntotal,thefourthbaskethas20+12=32fruits.\\nThefourbasketstogetherhave32+114=146fruits.\\nThe\n' +
+      '* answer is146\\n,\n' +
+      '* HUMAN:Question:{question}\\nLet\'sthinkstepbystep\\nAnswer:\n' +
+      '\n' +
+      '**TheoremQA**:\n' +
+      '* Youareamathematician,youaresupposedtoanswerthe\n' +
+      '* givenquestion.Youneedtooutputtheanswerinyourfinal\n' +
+      '* sentencelike"Therefore,theansweris...".Theanswer\n' +
+      '* canonlybeoneofthefollowingforms:\\n.anumerical\n' +
+      '* valuelike0.1,nosymbolandnounitatall.\\n2.alistof\n' +
+      '* numberlike[2,3,4].\\nTrue/False.\\nM.anoptionlike(a)\n' +
+      '*,(b),(c),(d)\\nQuestion:{Question}\\nLet\'sthinkstepbystep.\n' +
+      '\n' +
+      '## Appendix B Detailed Explanation of the Scaling Law Formula\n' +
+      '\n' +
+      'The scaling law formula, as given by:\n' +
+      '\n' +
+      '\\[P=f(N,D,C)=a\\cdot N^{\\alpha}\\cdot D^{\\beta}\\cdot C^{\\gamma}, \\tag{2}\\]\n' +
+      '\n' +
+      'provides a mathematical representation of how the performance (\\(P\\)) of machine learning models scales with respect to three critical factors: model size (\\(N\\)), data size (\\(D\\)), and computational budget (\\(C\\)). Each of these components plays a crucial role in the model\'s ability to learn from data and perform tasks accurately. Here is a detailed explanation of each parameter within the formula:\n' +
+      '\n' +
+      '\\(P\\) (Performance Metric): This denotes the measure of effectiveness or accuracy of the model in performing its designated task. Performance is often quantified in terms of the model\'s loss (\\(L\\)), where a lower loss signifies a higher performance. However, performance could also be measured using other metrics such as accuracy, F1 score, or any other relevant evaluation criteria depending on the specific task and model.\n' +
+      '\n' +
+      '\\(N\\) (Model Size): This represents the size of the model, quantified by the count of its parameters. A larger model size (\\(N\\)) means more parameters are available for the model to learn complex patterns and relationships within the data. However, increasing the model size also demands more computational resources for training and inference.\n' +
+      '\n' +
+      '\\(D\\) (Data Size): This is measured in terms of the number of tokens or data points available for training the model. A larger data size (\\(D\\)) provides the model with more examples to learn from, potentially improving its generalization capabilities and performance on unseen data.\n' +
+      '\n' +
+      '\\(C\\) (Computational Budget): This reflects the total computational resources allocated for training the model. It encompasses not just the raw compute power but also includes considerations of training time and energy consumption. The computational budget is effectively a proxy for the total amount of compute effort expended in training the model.\n' +
+      '\n' +
+      '\\(a,\\alpha,\\beta,\\gamma\\) (Constants): These are constants that depend on the specific architecture of the model and the task it is being trained for. The constants \\(\\alpha,\\beta,\\gamma\\) are exponents that dictate how performance scales with changes in model size, data size, and computational budget, respectively. The constant \\(a\\) serves as a scaling factor that adjusts the overall scale of the performance metric.\n' +
+      '\n' +
+      'The scaling law formula thus provides a theoretical framework to predict how adjustments in model size, data size, and computational resources are likely to impact the performance of machine learning models. This formula is instrumental in guiding researchers and practitioners towards making informed decisions about resource allocation during the model development process, aiming for an optimal balance between these factors to achieve the best possible model performance.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
