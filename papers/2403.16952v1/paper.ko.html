@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# 데이터 혼합 법칙: 언어 모델링 성능 예측을 통한 데이터 혼합 최적화\n' +
+      '\n' +
+      '자성예\\({}^{1,*}\\) 페이주류\\({}^{1,*}\\) 톈샹선\\({}^{1}\\) 윤화주\\({}^{2}\\) 준잔\\({}^{1}\\) Xipeng Qiu\\({}^{1,{\\dagger}}\\)\n' +
+      '\n' +
+      '{jsye23,pjliu23}@m.fudan.edu.cn zhouyunhua@pjlab.org.cn xpqiu@fudan.edu.cn\n' +
+      '\n' +
+      '푸단대학 \\({}^{2}\\)상하이 AI 연구소 \\({}^{1}\\)\n' +
+      '\n' +
+      '동등한 기여. 교신저자.\n' +
+      '\n' +
+      '푸단대학 \\({}^{2}\\)상하이 AI 연구소 \\({}^{1}\\)\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '대형 언어 모델의 사전 훈련 데이터는 여러 도메인(예: 웹 텍스트, 학술 논문, 코드)을 구성하며, 그 혼합 비율은 결과 모델의 역량에 결정적인 영향을 미친다. 기존의 노력은 비율을 조정하기 위해 휴리스틱 또는 정성적 전략에 의존하지만, 우리는 함수 형태로 혼합 비율에 관한 모델 성능의 정량적 예측 가능성을 발견하며, 이를 _데이터 혼합 법칙_이라고 한다. 샘플 혼합물에 이러한 기능을 피팅하면 실제 실행 전에 보이지 않는 혼합물에 대한 모델 성능이 공개되므로 이상적인 데이터 혼합물의 선택을 안내한다. 또한, 소규모 훈련만으로 다양한 혼합 환경에서 대규모 데이터에 대해 훈련된 대규모 모델의 성능을 예측할 수 있도록 훈련 단계, 모델 크기 및 데이터 혼합 법칙의 중첩 사용을 제안한다. 또한, 실험 결과는 RedPaiama에서 100B 토큰에 대해 훈련된 1B 모델의 훈련 혼합물을 효과적으로 최적화하여 기본 혼합물에서 48% 더 많은 단계에 대해 훈련된 것과 유사한 성능을 달성함을 입증한다. 지속적인 훈련을 위해 데이터 혼합 법칙의 적용 확장은 치명적인 망각을 방지하고 동적 데이터 스케줄의 잠재력을 전망하는 임계 혼합 비율을 정확하게 예측한다.1\n' +
+      '\n' +
+      '각주 1: 코드 및 데이터는 [https://github.com/yegcjs/mixinglaws](https://github.com/yegcjs/mixinglaws)에서 사용할 수 있습니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '대형 언어 모델(LLM)에 대한 사전 훈련 데이터는 일반적으로 영어에서 소수 언어(Doddapaneni et al., 2021; Li et al., 2023), 캐주얼 다이얼로그에서 공식 학술 글(Taylor et al., 2022), 텍스트에서 이미지 및 연설과 같은 양식(Zhan et al., 2024) 등 다양한 다중 도메인의 혼합물이다. 이들 데이터는 서로 상호작용하여, 복잡한 상호교환가능, 관련없는, 또는 모순된 관계들을 보여준다(Guo et al., 2024). 이는 광범위한 실무 경험(Gao 등, 2020; Gururangan 등, 2020; Zhou 등, 2023; Xie 등, 2024)에 의해 강조된 바와 같이, 모델 능력의 균형을 맞추도록 트레이닝 데이터의 혼합 비율을 조정하는 것을 필요로 하고, 따라서 결과 모델의 능력을 향상시킨다.\n' +
+      '\n' +
+      '그럼에도 불구하고 이상적인 훈련 데이터 혼합물을 파악하는 것은 여전히 어렵다. 대부분의 기존 관행은 구체적인 기준을 자세히 공개하지 않고 고품질 또는 과소 대표되는 데이터의 비율을 업샘플링하기 위해 휴리스틱을 통해 혼합물을 조정하며(Gao 등, 2020; Touvron 등, 2023; Bai 등, 2023; Bi 등, 2024), 이러한 데이터 전략이 훈련 실행을 완료하기 전에 효과적인지 여부를 선행하기 어렵다. 주어진 평가 데이터 세트에 대한 모델 손실을 보여주는 스케일링 법칙의 발전에 힘입어 광범위한 변수에 대해 정량적으로 예측할 수 있다(Kaplan et al., 2020; Hoffmann et al., 2022). 우리는 이것이 혼합물 비율에도 적용되는지 궁금하며, 따라서 _최소 손실에 도달하는 원하는 변수를 포함하여 혼합물에 대해 실제로 훈련하기 전에 모든 혼합물에서 결과 모델 성능을 추정할 수 있습니다._ 본 논문에서는 이 명제에 대해 긍정적으로 답변한다. 우리는 \\(M\\) 도메인의 혼합이 주어지면 비율의 선형 조합에 대한 지수 함수, 즉,\n' +
+      '\n' +
+      '\\[L_{i}(r_{1\\dots M})=c_{i}+k_{i}\\exp\\left(\\sum_{j=1}^{M}t_{ij}r_{j}\\right), \\tag{1}\\]\n' +
+      '\n' +
+      '학습 데이터의 크기와 양이 고정된 학습 도메인 \\(i\\)에서 검증 손실 \\(L_{i}\\)을 정확하게 예측할 수 있다. 여기서 \\(r_{1\\dots M}\\)은 \\(M\\) 도메인의 비율이고 \\(c_{i},k_{i},t_{ij}\\)는 적합할 매개변수이다. 평가된 모든 도메인에서 이러한 함수를 피팅하고 검증 데이터에서 비율에 따라 가중합을 계산하면 최종 검증 손실이 예측된다. 또한, 검증 비율을 학습 가능한 매개변수로 처리하면 검증 세트를 알려져 있는 도메인으로 명시적으로 분해하지 않고 종단 간에서 추정된 손실을 피팅할 수 있다.\n' +
+      '\n' +
+      '예측 가능성에도 불구하고 혼합물 비율과 검증 손실 간의 함수 또는 단순화를 위해 _데이터 혼합 법칙_을 맞추려면 서로 다른 혼합물을 사용하는 수많은 실행 샘플이 필요하다. 타겟 모델과 동일한 모델 크기 및 트레이닝 데이터의 양으로 이러한 실험을 실행하는 것은 불합리하게 비싸다. 다행히도, 스케일링 법칙에 대한 유익한 연구는 전력 법칙을 작은 모델 및 작은 데이터에 피팅하는 것이 큰 모델 및 데이터의 손실을 크기 차수에 걸쳐 효과적으로 예측한다는 인상적인 결과를 보여준다(Kaplan 등, 2020; Henighan 등, 2020; Hoffmann 등, 2022; Alabdulmohsin 등, 2022; OpenAI, 2023; Muennighoff 등, 2024; Bi 등, 2024). 이를 기반으로 학습 단계, 모델 크기 및 데이터 혼합 법칙의 스케일링 법칙을 중첩 활용하는 파이프라인을 제안하여 그림 1과 같이 저렴한 규모에서의 실험만으로 목표 모델 크기와 데이터 양에 대한 혼합 비율의 영향을 연구할 수 있다.\n' +
+      '\n' +
+      '실험 결과는 데이터 혼합 법칙과 예측 파이프라인의 신뢰성을 검증한다. 전체 유효성 검사 손실을 예측하여 100B 토큰으로 훈련된 1B 모델에 대해 RedPajama의 훈련 혼합물을 최적화하고 48% 더 많은 단계에 대해 기본 혼합물에서 훈련된 모델과 유사한 성능을 달성한다. 도메인별 유효성 검사 세트에 대한 예측은 또한 모델 기능의 균형에 대한 그럴듯한 참조를 제공한다. 지속적인 사전 훈련에 데이터 혼합법을 더 적용하면 치명적인 망각을 피할 수 있는 비율을 정확하게 찾을 수 있다(French, 1999; Kirkpatrick et al., 2017; Luo et al., 2023).\n' +
+      '\n' +
+      '전반적으로 우리의 기여와 결과는 다음과 같다.\n' +
+      '\n' +
+      '* 데이터 혼합에 대한 모델 성능의 정량적 예측 가능성을 발견하고 이를 함수 관계, 즉 데이터 혼합 법칙으로 요약합니다.\n' +
+      '* 서로 다른 혼합 비율에 대한 대규모 훈련의 모델 성능을 예측하는 파이프라인을 제안하지만 훈련 단계, 모델 크기 및 데이터 혼합 법칙의 스케일링 법칙을 중첩 사용하여 훈련 데이터가 거의 없는 소규모 모델에 대한 실험만 제안한다.\n' +
+      '* 데이터 혼합 법칙 및 예측 파이프라인의 신뢰성을 검증하기 위해 실험하여 모델 성능 최적화, 모델 기능 균형, 데이터 스케줄 설계 지침의 전망을 보여줍니다.\n' +
+      '\n' +
+      '그림 1: 데이터 혼합을 최적화하기 위한 파이프라인에 대한 그림입니다. **왼쪽:** 파이프라인은 세 단계를 거칩니다. 세 단계는 소규모 훈련 결과에서 시작하여 훈련 단계, 모델 크기 및 데이터 혼합 법칙의 스케일링 법칙을 사용하여 각각 큰 단계, 큰 모델 및 보이지 않는 혼합물에 대한 모델 성능을 예측한다. **오른쪽:** 대상 모델 크기, 학습 단계 및 혼합물에서 모델 성능을 예측하기 위한 3단계 파이프라인의 시각화입니다.\n' +
+      '\n' +
+      '## 2 Background\n' +
+      '\n' +
+      '우리는 대규모 언어 모델의 사전 훈련 과정을 간략하게 검토하고 신경 스케일링 법칙의 주요 결과를 요약한 다음, 우리가 연구하는 문제를 공식화한다. 더 많은 관련 업무는 제6권을 참고하시기 바랍니다.\n' +
+      '\n' +
+      '대용량 언어 모델을 사전 훈련하는 것은 다음-토큰 예측을 통해 자기회귀 언어 모델 \\(p_{\\theta}\\)을 사전 훈련하는 작업을 고려한다(Radford et al., 2018). 학습 데이터셋 \\(\\mathcal{D}_{\\textbf{train}}=\\{\\mathcal{D}_{i}\\}_{i=1}^{M}\\)은 혼합 비율 \\(\\mathbf{r}\\in\\Delta^{M-1}\\)로 \\(M\\) 영역을 구성한다. 각 학습 단계에서 태스크는 먼저 혼합 비율에 따라 도메인 인덱스의 배치를 샘플링한 다음 샘플링된 도메인에서 \\(L\\) 토큰의 샘플 시퀀스를 샘플링한다. 샘플링된 데이터를 사용하여, 샘플링된 데이터의 음의 로그-우도, 즉, 최적화하는 것을 학습한다.\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\theta}=\\mathbb{E}_{i\\sim\\mathbf{r},\\mathbf{x}_{0\\ldots L}\\sim\\mathcal{ D}_{i}}\\left[-\\sum_{j=1}^{L}\\log P_{\\theta}(x_{j}|x_{0\\ldots j-1})\\right]. \\tag{2}\\\n' +
+      '\n' +
+      '학습된 모델을 평가하기 위해 검증 데이터 \\(\\mathcal{D}_{\\textbf{val}}\\)의 손실을 계산한다.\n' +
+      '\n' +
+      'Scaling laws.For a wide range of factors \\(x\\), scaling laws (Kaplan et al., 2020; Henighan et al., 2020; Hoffmann et al., 2022) show their effect on the loss \\(L\\) following power laws\n' +
+      '\n' +
+      '\\[L=c+kx^{\\alpha}, \\tag{3}\\]\n' +
+      '\n' +
+      '여기서, \\(c\\), \\(k\\) 및 \\(\\alpha\\)는 적합할 파라미터이고, \\(x\\)는 모델 크기, 훈련 데이터 수, 훈련 단계 2 및 계산량일 수 있다. 이전의 경험(Alabdulmohsin et al., 2022; OpenAI, 2023; Bi et al., 2024; Su et al., 2024)은 스케일링 법칙의 인상적인 예측 가능성을 강조한다. 구체적으로 Eqn. 작은 모델, 훈련 데이터 또는 계산의 모음에 장착된 3은 크기 순서에 따라 더 큰 경우의 테스트 손실을 정확하게 예측하기 위해 외삽할 수 있다. 이를 통해 실무자들은 고가의 실행을 실제로 끝내지 않고도 사전 훈련된 대형 언어 모델의 성능을 추정할 수 있다. 최근의 개발은 언어 모델의 성능과 전이 학습(Hernandez et al., 2021), 희소 아키텍처(Frantar et al., 2023), 및 반복 데이터(Muennighoff et al., 2024)를 포함하는 더 넓은 범위의 요인들 사이의 다양한 기능적 관계들을 더 보여주며, 언어 모델 성능의 예측 가능성을 통합한다.\n' +
+      '\n' +
+      '각주 2: 트레이닝 단계 법칙(Kaplan et al., 2020)은 하나의 단일 트레이닝 런에서 중간 트레이닝 단계와 그에 대응하는 _손실_ 사이의 함수를 지칭한다. 명확성을 위해 초기 출구 손실(Kaplan et al., 2020) 또는 각 데이터 버짓에 대한 최적의 하이퍼파라미터로 얻은 손실을 예측하는 데이터 스케일링 법칙(Hoffmann et al., 2022)과의 차이를 강조한다.\n' +
+      '\n' +
+      '문제 형식화.우리는 대규모 언어 모델에 대한 사전 훈련 데이터의 혼합 비율을 최적화하는 것을 연구한다. 기존 스케일링 법칙의 인상적인 예측 가능성에 동기되어 혼합물 비율이 주어진 손실을 예측하는 정량적 프레임워크를 설정하여 혼합물 최적화를 해결하려고 한다. 형식적으로 \\(M\\) 도메인을 포함하는 훈련 데이터 세트의 경우 함수를 매개 변수화합니다.\n' +
+      '\n' +
+      '\\[L=f_{\\theta}(\\mathbf{r}), \\tag{4}\\]\n' +
+      '\n' +
+      '고정 모델 크기와 훈련 단계 수 아래에서 \\(\\mathbf{r}=r_{1\\ldots M}\\)는 \\(M\\) 도메인의 비율입니다. 이 기능을 활용하면 원하는 성능을 달성하는 혼합물을 추구합니다. 일반성의 손실 없이 최소 검증 손실에 도달하는 혼합물, 즉, 혼합물을 검색한다.\n' +
+      '\n' +
+      '\\[\\mathbf{r}^{*}=\\arg\\min\\mathbf{r}_{\\theta}(\\mathbf{r}). \\tag{5}\\]\n' +
+      '\n' +
+      '## 3 데이터 혼합물의 비율은 정량적으로 예측 가능한 방식으로 모델 손실에 영향을 미칩니다.\n' +
+      '\n' +
+      '이 절에서는 데이터 혼합 법칙이라고 하는 함수 관계로 요약되는 데이터 혼합물에 대한 모델 손실의 예측 가능성에 대한 연구 결과를 제시한다.\n' +
+      '\n' +
+      '데이터 혼합 법칙을 발견하기 위해 우리는 그들의 특성에 의해 제기되는 두 가지 문제에 직면한다.\n' +
+      '\n' +
+      '1. _다변수_ \\(K\\) 도메인에 대한 데이터 혼합 법칙의 경우 혼합 비율에서 \\(K-1\\) 자유도와 이에 대응하여 목표 함수에서 \\(K-1\\) 변수를 고려해야 한다. 변수의 증가는 잠재적인 함수의 범위를 상당히 확대시켜 함수 형태의 식별을 복잡하게 만든다.\n' +
+      '2. _비 단조성_ 손실과 모든 도메인의 비율 사이의 단조 관계는 편측 혼합물이 도메인 비율의 균형을 맞추려는 노력 없이 최소 손실을 달성할 수 있음을 나타내며, 이는 관행과 모순된다. 따라서 기존의 스케일링 법칙과는 달리, 본 연구에서 연구된 데이터 믹싱 법칙은 비단조 함수를 수용해야 한다. 이 비단조적 성질은 우리의 분석에 또 다른 복잡성을 추가한다.\n' +
+      '\n' +
+      '이러한 문제를 탐색하기 위해 손실과 혼합물 비율 사이의 관계가 일변량 단조 함수에 맞는 시나리오를 연구하여 처음에 문제를 단순화한 다음 단순화를 점진적으로 철회한다. 특히, 우리는 다중 변수를 피하기 위해 두 도메인에서만 훈련하고 비 단조성을 피하기 위해 훈련 도메인 중 하나에서 오는 검증 데이터만 고려하는 경우에 대한 연구를 시작한다(Sec. 3.1). 그 후, 우리는 프레임워크를 여러 도메인(Sec. 3.2)에 대한 훈련을 포함하도록 확장하고 다양한 도메인(Sec. 3.3)을 구성하는 일반 검증 데이터에 대한 손실의 예측 가능성을 탐구한다.\n' +
+      '\n' +
+      '### 두 도메인 혼합물에서 도메인 손실에 대한 파일럿 연구\n' +
+      '\n' +
+      '우리는 두 영역의 혼합물에서만 배우고 두 영역에서 각각 모델을 평가하는 가장 간단한 경우로 탐색을 시작한다.\n' +
+      '\n' +
+      'SetupsWe trained 70M and 160M language models on the mixture of Github and Pile-CC subset from Pile dataset (Gao et al., 2020) with five different mixture proportions, which is {0.25, 0.375, 0.5, 0.625, 0.75} for Github. 총 30B 토큰인 30k 단계에 대해 1M 토큰의 배치 크기를 가진 모든 모델을 훈련하고 GitHub 및 Pile-CC의 유효성 검사 세트의 다른 단계에서 검사점을 평가합니다.\n' +
+      '\n' +
+      '결과는 그림 1에 나와 있다. 도 2는 도메인 비율이 주어진 도메인 손실의 정량적 예측 가능성을 보여준다. 우리는 동일한 크기를 가지고 동일한 수의 단계로 훈련된 체크포인트의 경우 공유 상수3을 뺀 후 로그 규모에서 도메인 손실이 도메인 비율에 대한 선형 관계를 나타낸다는 것을 고무적으로 발견했다. 이것은 실험에서 두 도메인에 모두 적용된다. 결과는 다른 요인이 고정된 경우,\n' +
+      '\n' +
+      '그림 2: Github와 Pile-CC의 두 도메인에 대한 도메인 손실의 정량적 예측 가능성. 이 두 도메인의 혼합물에 대해 훈련하고 그에 대한 결과 모델을 별도로 검증한다. 우리는 깃허브와 파일-CC의 5가지 다른 혼합물에서 70M 및 160M 모델을 훈련하고 동일한 크기의 모델 간에 공유되고 동일한 수의 단계에 대해 훈련된 상수로 원래 손실을 빼서 환원 가능한 손실을 얻는다. 로그 규모의 환원성 손실은 도메인 비율에 대한 선형 상관 관계를 보여준다.\n' +
+      '\n' +
+      '도메인 비율에 관한 사전 학습된 언어 모델의 도메인 손실이 지수 법칙에 정확하게 적합함\n' +
+      '\n' +
+      '\\[L_{i}(r_{i})=c_{i}+k_{i}\\exp{(t_{ii}r_{i})}, \\tag{6}\\]\n' +
+      '\n' +
+      '여기서, \\(L_{i}\\) 및 \\(r_{i}\\)는 각각 도메인 \\(i\\)의 검증 손실 및 훈련 혼합 비율이고, \\(c_{i}\\), \\(k_{i}\\) 및 \\(t_{ii}\\)는 학습 가능한 매개변수 4이다.\n' +
+      '\n' +
+      '각주 4: 간단한 사례에도 불구하고, 두 도메인에 대한 우리의 발견은 사전 훈련을 계속하기 위한 실용적인 응용을 가지고 있다(Gururangan et al., 2020). 여기서 우리는 원래 사전 훈련 데이터와 다가오는 도메인 데이터의 혼합물에서 사전 훈련 모델을 훈련시킴으로써 주어진 도메인에 대한 사전 훈련 모델을 향상시키는 것을 목표로 한다. 섹을 참조하십시오. 자세한 내용은 5입니다.\n' +
+      '\n' +
+      '### 다중 도메인 혼합에서 훈련된 도메인 손실로 확장\n' +
+      '\n' +
+      '대부분 두 개 이상의 영역을 포함하는 실제 사전 훈련 데이터를 수용하기 위해 조사를 여러 영역으로 확장한다. 단순성과 시각 자료의 용이성을 위해 세 영역의 경우부터 시작한다.\n' +
+      '\n' +
+      'Setups는 총 30B 토큰에 대해 Pile에서 GitHub, Pile-CC 및 Books3 하위 집합의 혼합물을 훈련하고 세 도메인에 대해 각각 모델을 평가한다. 특정 혼합물의 경우 \\(\\{0,0.125,0.25,\\ldots,0.875,1\\}\\)3에서 그리드 검색을 수행하고 3개의 비율이 최대 1로 합하고 도메인5에서 모든 토큰을 사용하지 않는 유효한 혼합물을 유지하여 총 32개의 혼합물을 생성한다.\n' +
+      '\n' +
+      '각주 5: 파일의 GitHub 및 Books3 하위 집합에는 중복 제거 후 최대 30B 토큰이 포함되어 있지 않습니다.\n' +
+      '\n' +
+      '우리는 이러한 실험 혼합물에 대한 손실을 활용하여 추측과 검증을 통해 손실과 혼합물 비율 사이의 함수 형태를 식별한다. 특히, 우리는 가능한 형태에 대한 추측을 다음 두 가지 원칙에 기초한다.\n' +
+      '\n' +
+      '* _호환성_ 양식은 Eqn으로 줄일 수 있습니다. 도메인 수 \\(M=2\\)인 경우 6입니다.\n' +
+      '* _대칭_ 변수의 교환은 함수 형태를 바꾸지 않아야 한다.\n' +
+      '\n' +
+      '두 번째 원리는 어떤 도메인 특정 편향도 도입하지 않기 위한 직관에서 비롯된다. 두 원리는 함께 Eqn의 지수 항을 복제하는 후보 함수로 이어진다. 6은 각 훈련 영역에 대해 교환 법칙을 준수하는 연산을 통해 결합한다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c c} \\hline \\hline  & & \\multicolumn{2}{c}{**GitHub**} & \\multicolumn{2}{c}{**Books3**} & \\multicolumn{2}{c}{**Pile-CC**} \\\\ \\cline{2-7}\n' +
+      '**Method** & **\\# Coeff.** & Train & Validation & Train & Validation & Train & Validation \\\\ \\hline Random & - & 0.8895 & 0.8758 & 0.1291 & 0.1331 & 0.0768 & 0.1045 \\\\ M1 & 2M+1 & **0.0292** & **0.0312** & 0.0082 & 0.0121 & 0.0045 & **0.0050** \\\\ M2 & M+2 & 0.1558 & 0.3327 & 0.0114 & 0.0119 & 0.0072 & 0.0083 \\\\ M3 & M+2 & 0.3389 & 0.2177 & 0.0914 & 0.0465 & 0.0746 & 0.0947 \\\\ M4 & M+2 & 0.0298 & 0.0365 & **0.0062** & **0.0074** & **0.0036** & 0.0078 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 타겟 도메인 손실들을 예측하기 위한 상이한 후보 함수들의 평균 절대 에러들(MAE)이다. 또한 참조를 위해 훈련 샘플의 최대 손실과 최소 손실 사이에서 무작위로 예측하는 무작위 추측을 포함한다. 특히, 우리는 최대 및 최소 손실의 중앙값을 예측하는 이 무작위 추측에 대한 기대의 MAE를 보고한다. 학습 데이터에는 \\(M=3\\) 도메인이 포함되어 있으며, 각 함수를 동일한 24개의 혼합물에 적합시키고 8개의 다른 혼합물에 대해 검증한다. 분할은 무작위입니다. 각 대상 도메인에 대한 가장 낮은 오류는 **굵게** 표시되고 두 번째로 낮은 오류는 밑줄이 그어져 있습니다.\n' +
+      '\n' +
+      '두 가지 원리에 따라, 우리는 다음과 같은 후보 함수들을 실험한다:\n' +
+      '\n' +
+      '\\[\\text{M1:}\\quad L_{i}(\\mathbf{r})= c_{i}+k_{i}\\sum_{j=1}^{M}\\exp\\left(t_{ij}r_{j}\\right) \\right],\\quad\\text{M2:}\\quad L_{i}(\\mathbf{r})= c_{i}+k_{i}\\sum_{j=1}^{M}\\exp\\left(t_{ij}r_{j}\\right),\\[\\text{M3:}\\quad L_{i}(\\mathbf{r})= c_{i}+k_{i}\\exp\\left(\\prod_{j=1}^{M}t_{ij}r_{j}\\right),\\quad \\text{M4:}\\quad L_{i}(\\mathbf{r})= c_{i}+k_{i}\\exp\\left(\\sum_{j=1}^{M}t_{ij}r_{j}\\right).\\]\n' +
+      '\n' +
+      '탭 1의 세 가지 대상 도메인에 대한 피팅 오류를 요약한다.\n' +
+      '\n' +
+      'Tab에서 결과를 발견합니다. 1은 M1과 M4가 모두 신뢰할 수 있는 예측을 제공하는 반면 M4는 계수가 더 적음을 시사한다. 따라서 M4를 채택한다\n' +
+      '\n' +
+      '\\[L_{i}(r_{1\\dots M})=c_{i}+k_{i}\\exp\\left(\\sum_{j=1}^{M}t_{ij}r_{j}\\right) \\tag{7}\\]\n' +
+      '\n' +
+      '데이터 혼합 법칙의 함수 형태로서, \\(L_{i}\\)는 \\(i\\)번째 검증 영역의 검증 손실이고, \\(r_{j}\\)는 \\(j\\)번째 훈련 영역의 비율이며, \\(c_{i},k_{i},t_{ij}\\)는 학습 가능한 매개변수이다. 피팅 결과는 그림 1에 나와 있다. 도 3 및 도 3을 참조하여 설명하면 다음과 같다. 도 4는 예측 정확도를 입증한다. 결과는 Eqn을 나타낸다. 7은 주어진 표본에 잘 맞으며 보이지 않는 표본을 정확하게 추정한다.\n' +
+      '\n' +
+      '더 많은 직관을 제공하기 위해 우리는 식 7에서 계수의 의미에 대해 논의한다. 일반적으로 \\(k_{i}>0\\)이므로 지수 항은 항상 양수이고 예측 손실은 상수 \\(c\\)보다 엄격하게 크다. 여기서, \\(c_{i}\\)는 데이터 혼합물을 조정함으로써 환원될 수 없는 손실을 나타낸다. \\ (t_{ij}\\)는 훈련 영역 \\(i\\)과 검증 영역 \\(j\\)에 따라 상호 작용을 보여준다. 음수 \\(t_{ij}\\)는 도메인 \\(j\\)의 학습 데이터가 도메인 \\(i\\)의 유효성 검사 손실을 줄이는 데 도움이 되며 그 반대의 경우도 마찬가지임을 나타냅니다. 또한 계수 \\(k_{i}\\)를 \\(\\exp(\\log k_{i})\\)로 다시 쓰면 모든 학습 영역의 집계 효과를 조정하는 지수에 대한 편향 항이 된다.\n' +
+      '\n' +
+      '그림 4: 3-도메인 실험에서 도메인 손실 및 전체 손실에 대한 예측 결과. 도메인 손실은 Eqn에 적합한다. 7과 Eqn. 8의 명시적 도메인 집계를 통해 총 손실을 구한다.\n' +
+      '\n' +
+      '그림 3: Github, Books3 및 Pile-CC의 세 가지 도메인 혼합물에 대한 도메인 손실의 정량적 예측 가능성. 우리는 이 세 영역의 혼합물에 대해 훈련하고 그에 대한 결과 모델도 검증한다. 표면은 (A) 깃허브, (B) 북스3, (C) 파일-CC 및 (D) 세 도메인과 혼합된 전체 유효성 검사 세트의 예측된 손실을 보여준다. \\ (\\times\\): validation samples. \\ (\\star\\): 전체 유효성 검사 세트의 예측된 최소 손실입니다.\n' +
+      '\n' +
+      '### 유효성 검사 혼합물의 손실 예측\n' +
+      '\n' +
+      '우리는 검증 데이터가 훈련 도메인 중 하나라는 Sec. 3.1 및 Sec. 3.2의 제약을 추가로 완화한다. 우리는 먼저 검증 세트를 훈련 도메인의 알려져 있는 구성으로 간주한 다음 임의 검증 세트의 보다 일반적인 경우에 대해 이 요구 사항을 해제한다. 이는 다음과 같이 자세히 설명하는 데이터 혼합 법칙에 맞는 두 가지 전략에 해당한다.\n' +
+      '\n' +
+      '명시적 도메인 집계. 비율을 \\(s_{1\\dots K}\\)로 하는 \\(K\\) 도메인으로 구성된 유효성 검사 집합을 고려할 때 유효성 검사 손실은 도메인 손실의 가중 합으로 작성될 수 있습니다. Eqn의 발견 덕분에. 도 7을 참조하면, 우리는 훈련 혼합물이 주어진 본 명세서에서 도메인 손실을 예측하기 위해 방정식을 적용할 수 있다. 따라서, 훈련 혼합물 비율에 대한 전체 검증 손실의 함수 관계는 속으로 확장된다.\n' +
+      '\n' +
+      '\\[L(r_{1\\dots M})=\\sum_{i=1}^{K}s_{i}L_{i}(r_{1\\dots M})=\\sum_{i=1}^{K}s_{i}\\left[ c_{i}+k_{i}\\exp\\left(\\sum_{j=1}^{M}t_{ij}r_{j}\\right)\\right]. \\tag{8}\\]\n' +
+      '\n' +
+      'Eqn. 도 8에 도시된 바와 같이, 각각의 검증 도메인 \\(L_{i}\\)에 대한 손실을 피팅하고 이를 합산하여 전체 손실의 예측을 얻을 수 있다.\n' +
+      '\n' +
+      '암시적 도메인 집계. 나머지 한계는 검증 데이터 \\(s_{1\\dots K}\\)의 구성 요소를 미리 획득해야 한다는 것이다. 이는 유효성 검사 세트가 훈련 세트와 별도로 수집되는 경우 불편할 수 있다. 예를 들어, 검증 데이터는 다양한 도메인의 알려지지 않은 구성을 포함하는 실제 사용자 쿼리로부터 나올 수 있다. 검증 구성 요소에 대한 제약 조건을 제거하기 위해, 우리는 검증 데이터를 Eqn으로 손실을 예측할 수 있는 \\(K\\) 암시적 도메인으로 분해할 수 있다고 가정한다. 7, 그리고 검증 데이터 \\(s_{1\\dots K}\\)의 비율을 학습 가능한 매개변수로 취급한다. 이것은 우리의 데이터 혼합 법칙 6의 최종 형태로 이어진다. 이러한 관점에서, 우리는 데이터 혼합 법칙을 전체 손실과 끝까지 맞추게 된다.\n' +
+      '\n' +
+      '각주 6: 데이터 혼합 법칙의 최종 형태가 다층 인식과 유사하다는 점에 주목한다(계산 그래프 그림 10 참조). 우리는 부록 C에 추가 논의와 구현 세부 사항을 포함한다.\n' +
+      '\n' +
+      '도. 도 5는 Pile7의 5개의 거친 입도의 도메인에서 언어 모델을 훈련하고 이 5개의 도메인과 혼합된 검증 세트를 평가하는 실험을 보여준다. 암시적 도메인 집합에 의해 얻은 오류와 다른 수의 암시적 도메인 집합에 의해 얻은 오류를 비교한다. 암시적 도메인 집합을 적용하고 암시적 도메인 수를 실제 도메인 집합보다 작지 않게 설정(실험의 경우 5개)하면 명시적 도메인 집합보다 낮은 오류가 발생함을 알 수 있다. 또한, 암시적 도메인의 수를 훨씬 더 크게 설정함에 따라 오류는 여전히 낮다. 이는 데이터 혼합 법칙에 대한 암묵적 도메인 집합 전략의 예측 정확도를 검증하며, 암묵적 도메인 수 \\(K\\)는 신중한 튜닝8 없이 많은 수가 될 수 있다.\n' +
+      '\n' +
+      '그림 5: 명시적 및 암시적 도메인 집계가 장착된 5개 도메인 데이터 혼합 법칙의 예측 오류 _ 명시적 도메인 집계_: Eqn에 적합합니다. 5개 도메인에 대해 각각 7개를 사용하고 전체 유효성 검사 세트에서 가중치에 따라 합산합니다. _ 암시적 도메인 집계_: Eqn을 사용하여 전체 검증에 대한 손실을 적합시킵니다. 도 8에서, 서로 다른 수의 암시적 도메인 \\(K\\)을 가정하고, 서로 다른 암시적 도메인의 비율을 학습 가능한 파라미터로 취급한다.\n' +
+      '\n' +
+      '## 4 중첩 스케일링 법칙은 소규모 실험만을 사용하여 다양한 혼합물에서 훈련된 손실을 예측합니다.\n' +
+      '\n' +
+      '### 손실 예측을 위한 파이프라인\n' +
+      '\n' +
+      '데이터 혼합 법칙을 사용하면 보이지 않는 혼합물에 대해 훈련된 모델의 성능을 예측할 수 있지만, 법칙에 적합해야 하는 요구 사항은 대상 모델과 동일한 모델 크기 및 토큰 수를 가진 다양한 혼합물에 걸쳐 여러 모델을 훈련시키는 것을 포함한다. 또한, 각 타겟 모델 크기 및 훈련 데이터 세트9에 대해 이 프로세스를 반복해야 한다. 이는 값비싼 비용을 초래하여 데이터 혼합 법칙의 실용적인 가치를 저해한다.\n' +
+      '\n' +
+      '각주 9: 적은 토큰으로 트레이닝된 작은 모델 상의 최적화된 트레이닝 혼합물을 큰 모델 및 많은 양의 트레이닝 데이터의 트레이닝으로 전달하는 아이디어이다. 그럼에도 불구하고 부록 A에서는 모델 성능과 관련된 데이터 혼합물의 부분 순서가 모델 크기와 훈련된 토큰의 수가 변함에 따라 변한다는 것을 보여준다. 따라서 실험 규모에서 최적의 혼합물은 목표 규모에서 최적이 아닐 수 있다.\n' +
+      '\n' +
+      '따라서 우리는 대규모 훈련 없이 다양한 혼합물 비율의 손실을 얻을 수 있는지 궁금하다. 다행히도, 이 아이디어는 훈련 단계 및 모델 크기의 스케일링 법칙의 인상적인 외삽을 검증하는 기존 경험으로부터 지지를 얻는다. 특히 OpenAI(2023)는 계산량이 적은 \\(1,000\\times-10,000\\times\\)로 목표 모델의 손실을 예측한다. 결과적으로, 서로 다른 혼합물에 대한 훈련 단계가 적은 소규모 모델을 훈련할 수 있으며, 이에 대한 스케일링 법칙을 피팅하여 목표 모델 크기와 목표 훈련 단계 수의 손실을 추정할 수 있다. 그런 다음 예측된 손실을 사용하여 데이터 혼합 법칙을 적합시키고 최적의 혼합물을 검색할 수 있다. 제안된 파이프라인은 그림 1에 나와 있다. 도 1은 Alg. 1에 상세히 묘사되어 있다.\n' +
+      '\n' +
+      '우리는 스케일링 법칙의 중첩 사용이 우리가 아는 한 기존 문헌에서 여전히 널리 채택된 전략이 아니라는 점에 주목한다. 대부분의 연구는 변수를 후자에 통합하여 새로 발견된 스케일링 법칙을 기존 법칙과 연결하려고 한다(Hashimoto, 2021; Frantar et al., 2023; Aghajanyan et al., 2023). 서로 다른 스케일링 법칙을 통합하는 것이 매력적이지만 여러 변수 간의 상호 작용에 추가된 복잡성으로 인해 함수 형태를 식별하는 것이 매우 어렵고 검증하기가 어렵다. 모델 크기 및 훈련 데이터 수(모델 크기 및 훈련 데이터 수)(Kaplan 등, 2020; Hoffmann 등, 2022)는 오차 분해 이론(Harville, 1985; Domingos, 2000)을 가정하지만 그 결과는 여전히 대규모 실무에서 널리 검증되지 않는다. 이러한 관점에서, 우리는 스케일링 법칙의 중첩된 사용이 스케일링 법칙을 사용하는 새로운 기술적 루틴을 제공하며, 이는 기존 법칙을 복잡하게 만드는 거대한 도전을 우회하여 스케일링 법칙의 발견 및 적용에 더 쉽게 접근할 수 있게 한다고 생각한다.\n' +
+      '\n' +
+      '### Experiment\n' +
+      '\n' +
+      '우리는 100B 토큰에 대해 훈련된 1B 모델의 검증 손실을 최소화하기 위한 실험을 통해 파이프라인의 효과를 검증한다.\n' +
+      '\n' +
+      '설정.우리는 RedPajama의 혼합물에서 모델을 훈련하고 검증 데이터가 훈련 데이터와 별도로 수집되는 시나리오를 모방하도록 파일의 검증 세트를 검증한다. 훈련 단계 및 모델 크기의 스케일링 법칙에 적합하도록, 우리는 30B 토큰에 대해 일련의 70M, 160M, 305M 및 410M 모델을 훈련시킨다. 모든 모델에 대해 배치 크기를 1M 토큰으로 설정하여 1B 모델의 경우 100k 단계, 소형 모델의 경우 30k 단계로 변환한다. 우리는 100k 번째 단계에서 최대 학습률의 0.1로 감쇠하는 2k 단계의 웜업과 함께 코사인 학습률 감쇠를 적용한다.\n' +
+      '\n' +
+      '제한된 수의 실험 실행으로 낮은 예측 오류에 도달하기 위해 혼합물 비율 항이 데이터 혼합 법칙 내에서 지수 함수로 표현된다는 사실을 활용하여 실험을 위한 혼합물을 선택한다. 특히, 모든 도메인 토큰을 사용하지 않는 최대 사용 가능한 것에서 시작하여 각 훈련 도메인에 대한 비율을 이중으로 감소시켜 후보 혼합물을 열거한다. 이러한 방식으로, 각각의 (암시적) 검증 도메인의 손실은 균등하게 분포된다. 그런 다음 모든 후보에서 40개의 혼합물을 샘플링하고 가장 작은 70M 모델을 훈련한다. 데이터 혼합 법칙에 맞게 20개의 혼합물 그룹을 다시 샘플링하고 40개 샘플 모두에서 최소 예측 오류에 도달하는 그룹을 파이프라인을 실행할 최종 혼합물 세트로 선택한다. 자세한 내용은 부록 B.2를 참조하십시오.\n' +
+      '\n' +
+      '결과. 도 6은 Touvron et al.(2023a)에서 사용된 RedPajama의 디폴트 혼합물과 Alg로부터 얻은 최적화된 혼합물을 도시한다. 1은 유효성 검사 데이터에 대한 성능입니다. 손실 예측은 도 7에 있다. 우리는 다음을 발견한다:\n' +
+      '\n' +
+      '* _파이프라인은 성능을 효과적으로 최적화합니다._ 최적화된 혼합물에 대해 트레이닝된 모델은 73% 단계만으로 디폴트 혼합물에 대해 트레이닝된 것과 유사한 성능을 달성할 수 있다. 기본 혼합물을 사용하여 훈련하면 결국 48% 더 많은 단계를 필요로 하는 성능을 달성합니다. 이는 혼합물 최적화에서 파이프라인의 효율성을 나타냅니다.\n' +
+      '* _예측은 모델 기능의 균형에 대한 참조를 제공합니다._ 예측 결과는 다음과 같다. 도 7은 상대에 대한 그럴듯한 참조를 보여주는 도면\n' +
+      '\n' +
+      '그림 6: 기본 혼합물 및 100B 토큰에 대한 RedPajama의 최적화된 혼합물에 대해 트레이닝된 1B 모델에 대한 파일 검증 세트에 대한 검증 복잡성. 최적화된 혼합물은 원래 훈련 단계 수의 0.73만을 사용하여 기본 혼합물의 성능을 달성하고 결국 1.48배 더 많은 토큰으로 훈련된 기본 혼합물에 필적하는 성능을 달성한다(훈련 단계의 스케일링 법칙에 의해 추정, 점선으로 표시됨). 특정 혼합물 비율은 올바른 표에 있습니다.\n' +
+      '\n' +
+      '그림 7: 전체 유효성 검사 손실 및 도메인 손실에 대한 손실 예측 파이프라인의 결과. 적합 데이터는 30B 토큰에 대해 훈련된 70M에서 410M 모델인 반면, 외삽 포인트는 1B 모델 및 100B 토큰에 대한 기본 및 최적화된 혼합물에서 가져온 것이다.\n' +
+      '\n' +
+      '전체 검증 데이터와 다른 검증 도메인 모두에 대한 손실 규모. 전체 손실이 전체 성능을 최적화하는 데 도움이 되지만, 다른 도메인의 손실은 다양한 측면에서 모델 기능을 보여줍니다. 우리는 이것이 모델 능력의 미묘한 균형을 위한 추가 혼합 큐레이팅을 용이하게 한다고 가정한다.\n' +
+      '\n' +
+      '## 5 데이터 혼합 법칙에 의해 구동되는 연속 사전 훈련 전망에 대한 애플리케이션 데이터 스케줄\n' +
+      '\n' +
+      '또한 데이터 혼합 법칙을 지속적인 사전 훈련에 적용하는 데 관심이 있으며, 이는 관련 패러다임과 동일한 패러다임을 공유하지만 무작위 초기화가 아닌 사전 훈련된 매개변수로 모델을 시작한다. 일반적으로, 연속 프리트레이닝은 기존의 프리트레이닝 모델을 향상시키기 위한 일반적인 기술이다. 분포 이동으로 인한 성능 저하를 피하면서 최신 지식을 모델에 주입한다(Gururangan et al., 2020; Xiong et al., 2023). 또한, 연구자들은 다른 아키텍처의 모델을 구축하기 위해 기존 모델 매개변수를 재사용하기 위해 지속적인 사전 훈련을 적용한다(Komatsuzaki et al., 2022).\n' +
+      '\n' +
+      '연속적인 사전 훈련의 전형적인 시나리오에 대해 실험하며, 여기서 모델을 향상시키기 위해 원래 사전 훈련 데이터와 목표 도메인의 다가오는 데이터의 혼합에 대해 훈련한다. 예를 들어, 우리는 파일과 파이썬 코드가 혼합된 피티아-70M 모델을 지속적으로 사전 훈련하는데, 여기서 전자는 기본 모델의 원래 사전 훈련 데이터이다. 데이터 혼합 법칙이 연속 사전 훈련에 적용되는지 확인하기 위해 4개의 혼합물에서 10B 토큰에 대한 모델을 훈련하고 Eqn에 맞는다. 파일 및 파이썬 코드의 손실에 대해 6. 그림 1의 결과. 8은 Eqn을 확인한다. 6은 지속적인 사전 훈련의 손실에 해당한다.\n' +
+      '\n' +
+      '지속적인 사전 훈련 동안 대상 데이터의 너무 큰 비율은 원본 데이터의 성능을 손상시킬 수 있다. 대표적인 혼합물 최적화 목표는 범용 능력(말뚝의 느슨함)을 변경하지 않고 유지하는 것이다. 이를 위해 적합 데이터 혼합 법칙을 사용하여 지속적인 사전 훈련 전과 동일한 손실로 이어지는 _임계 비율_을 예측한다. 도. 도 8은 목표 도메인에서 개선을 얻으면서 지속적인 사전 훈련 전에 모델과 유사한 성능을 보이는 비율을 찾는 예측의 성공을 보여준다.\n' +
+      '\n' +
+      '**비고** 데이터 스케줄의 설계(Albalak 등, 2023; Chen 등, 2024b)와의 연결에 대해 지속적인 사전 훈련이 중요하다고 제안합니다. 통상, 연속 프리트레이닝은 프리트레이닝된 모델에 적용되는 반면, 연속 프리트레이닝된 모델들, 즉 다단계 프리트레이닝(Chen et al., 2024b)을 더 연속 프리트레이닝하는 것은 당연하다. 각각의 단계에서, 혼합 비율 또는 심지어 트레이닝 데이터의 도메인 컴포넌트들은 상이할 수 있다.\n' +
+      '\n' +
+      '그림 8: 손실 예측과 Pile과 python 코드를 혼합한 연속 프리트레이닝 피티아-70M의 트레이닝 곡선. (A) 말뚝에 대한 손실 예측; (B) 비단뱀에 대한 손실 예측; (C) 말뚝에 대한 손실을 갖는 훈련 곡선; (D) 비단뱀에 대한 손실을 갖는 훈련 곡선. 우리는 식 6을 사용하여 최종 손실을 예측한다. 법칙은 원래 도메인(즉, 파일)에서 모델 성능을 유지하는 임계 혼합 비율을 정확하게 찾는다.\n' +
+      '\n' +
+      '이는 훈련 단계의 수가 무한한 한계에 가까워짐에 따라 동적 데이터 스케줄이 된다. 따라서 지속적인 훈련에 대한 데이터 혼합 법칙의 성공적인 적용은 보다 포괄적인 데이터 큐레이팅 패러다임인 동적 데이터 스케줄을 설계하는 데 사용할 수 있는 유망한 전망을 나타낸다.\n' +
+      '\n' +
+      '## 6 관련 작업\n' +
+      '\n' +
+      '수조 개의 토큰들에 대한 LLMs.Training massive transformer 아키텍처에 대한 큐레이팅 프리트레이닝 데이터, 일명 프리트레이닝은 인상적인 인간-유사 일반화 능력들을 나타내는 현대 대형 언어 모델들을 구축하기 위한 주요 단계이다(Brown et al., 2020; OpenAI, 2023; Jiang et al., 2023; Touvron et al., 2023b). 모델 트레이닝을 위한 대부분의 계산 자원을 차지하며, 연구자들은 이것이 LLMs에서 거의 모든 지식을 제공한다고 믿는다(Zhou et al., 2024). 이러한 중요한 영향은 계산 비용을 줄이고 지식을 향상시키기 위한 데이터 큐레이팅 전략의 개발에 동기를 부여한다(Longpre et al., 2023). 노력은 두 단계로 분류할 수 있다. 첫 번째 단계는 고품질 훈련 데이터 세트를 얻는 데 중점을 둡니다. 전형적인 절차는 상이한 도메인들, 중복제거 및 가장 복잡한 필터링을 구성하기 위해 데이터 소스들을 선택하는 것을 포함한다(Wenzek et al., 2019; Penedo et al., 2023). 기존의 많은 노력들은 다양한 필터들을 수반하여, 문자에 대한 피상적인 특징들(Rae et al., 2021; Xie et al., 2024; Raffel et al., 2020)로부터 고품질 참조 코퍼스와의 유사성(Wenzek et al., 2019) 및 독성(Longpre et al., 2023; Friedl, 2023)을 포함하는 의미론까지 문서들을 스코어링하였다. 데이터 세트를 보류한 상태에서 두 번째 단계는 데이터 세트를 가장 잘 사용하는 것을 목표로 합니다. 이것은 데이터 혼합물을 튜닝하는 것(Du 등, 2022; Touvron 등, 2023; Xie 등, 2024) 및 데이터 스케줄을 고안하는 것(Mindermann 등, 2022; Albalak 등, 2023; Chen 등, 2024; Fan 등, 2024)을 포함한다. 우리의 작업은 이러한 튜닝 데이터 혼합물 중 하나이며 사전 교육을 계속하는 확장은 일정 설계를 안내할 가능성을 나타낸다. 직관이나 질적 대상에 의존하는 기존의 시도와는 달리, 본 연구는 양적 해결 방안을 모색한다.\n' +
+      '\n' +
+      '스케일링 법칙들은 관심의 속성들(예를 들어, 테스트 손실 또는 다른 성능 메트릭들)과 최적화 프로세스 또는 아키텍처(예를 들어, 모델 크기들 및 트레이닝 샘플들의 수들)에 관한 제어가능한 인자들의 스케일들 사이의 기능적 관계들을 포함한다(Villalobos, 2023). 기계 학습의 발달과 함께, 스케일링 행동을 특성화하는 것은 학습 이론의 맥락에서 큰 연구 관심을 불러일으켰으며, 멱법칙 형태의 트레이닝 샘플 수를 고려할 때 일반화 오류를 경계로 삼았다(Vapnik and Chervonenkis, 1971; Valiant, 1984; Haussler, 1988; Amari et al., 1992). 그럼에도 불구하고 지나치게 엄격한 가정은 실제 적용을 방해한다. 최근, 스케일링에 대한 통계적 추정은 심층 신경망에서 빠른 발전을 얻었고 스케일링 법칙의 도입을 낳았다. Hestness et al. (2017)은 추세를 개척하고 다양한 요인에 걸쳐 멱법칙 일반화 오차 스케일링을 보여주지만 멱법칙 지수는 이전의 이론적 분석과 다르다. Kaplan et al.(2020); Hoffmann et al.(2022); Henighan et al.(2020)은 Transformer 구조(Vaswani et al., 2017)에 대해 보다 포괄적인 조사를 수행하여 모델 크기, 훈련 데이터 양 및 크기 순서에 따른 계산에 관한 테스트 손실에 대한 멱함수 관계를 더욱 강조한다. 이러한 결과는 정량적 스케일링을 통해 성능 이득을 예측하고 더 큰 모델과 더 많은 훈련 데이터 간의 트레이드오프를 안내하여 나중에 대규모 언어 모델의 개발을 지향한다(Brown et al., 2020; Hoffmann et al., 2022; OpenAI, 2023). 최근 진보적인 조사는 기존의 스케일링 법칙에 대한 수정(Caballero et al., 2022; Alabdulmohsin et al., 2022)을 제안하고, 경험식 Bahri et al. (2021); Hutter (2021); Michaud et al. (2024)에 대한 이론적 설명을 찾고, 보다 광범위한 시나리오에서 기능적 관계를 탐구한다(Hernandez et al., 2021; Frantar et al., 2023; Liu et al., 2023). 우리의 연구와 가장 관련이 있는 연구는 여러 데이터 소스에서 성능 예측을 탐구하지만 소규모 지도 학습 작업에 국한된 하시모토(2021)이다.\n' +
+      '\n' +
+      '## 7 Discussions\n' +
+      '\n' +
+      '이 연구에서는 학습 데이터의 혼합 비율에 대한 모델 손실의 정량적 예측 가능성을 발견하며, 이는 데이터 혼합 법칙으로 귀결된다. 우리의 발견은 두 도메인에서 여러 도메인으로 훈련 데이터, 단일 도메인에서 알려지지 않은 구성으로 검증 데이터를 검색한다. 데이터 혼합 법칙을 사용하면 실무자가 실제 훈련 전에 보이지 않는 혼합물 비율에 대한 모델 성능을 정량적으로 추정할 수 있어 이상적인 혼합물 비율의 조정을 용이하게 한다. 또한 훈련 단계, 모델 크기 및 데이터 혼합물의 스케일링 법칙을 사용하여 소규모의 실험만으로 예측을 하는 중첩 사용을 제안하여 기존 실험의 재사용을 가능하게 하고 계산 비용을 줄인다. 실험 결과는 이 방법이 데이터 혼합을 효과적으로 최적화하여 사전 훈련에서 더 나은 성능을 가져오고 지속적인 사전 훈련에서 사전 훈련 모델의 원래 능력을 유지한다는 것을 시사한다.\n' +
+      '\n' +
+      '물론 데이터 혼합이 모델 학습에 미치는 영향은 완전히 이해되지 않는다. 우리의 연구는 몇 가지 한계를 남기면서 정량적 프레임워크에 대한 예비 시도를 한다.\n' +
+      '\n' +
+      '도메인의 명확화에 관하여.도메인의 개념은 잘 정의되어 있지 않다. 본 논문에서는 관련 연구(Xie et al., 2024; Chen et al., 2024; Albalak et al., 2023; Fan et al., 2024)와 유사하게 오픈 소스 학습 데이터에 미리 정의된 도메인을 직접 채택한다. 그럼에도 불구하고, 우리는 클러스터링(Gururangan et al., 2023; Shao et al., 2024)과 같이 더 조작적으로 정의된 훈련 도메인이 데이터 혼합 법칙의 예측 정확도와 결과 모델의 성능에 더 도움이 될 수 있다고 가정한다. 검증 도메인의 경우, 우리의 암묵적 도메인 집계 방법은 검증 데이터를 훈련 도메인과 명시적으로 정렬할 필요성을 제거한다. 검증 데이터가 일반적으로 훈련 도메인의 단순한 컴파일보다 신뢰할 수 있는 데이터 세트를 포함한다는 점을 감안할 때 이 요구 사항은 종종 발생한다. 그러나 우리는 암시적 도메인 집합이 명시적 접근법에 비해 덜 해석 가능하고 후속적으로 정교화되는 것처럼 정확성에 대한 우려를 제기할 수 있음을 인정한다.\n' +
+      '\n' +
+      '오류 분석.크기 조정 법칙을 활용하려면 함수에 맞는 샘플을 제공하는 실험이 필요하다. 결과적으로 예측 오차를 가장 크게 줄이기 위해 실험할 피팅 샘플의 수와 이러한 샘플을 배포하는 방법을 결정하기 위해 세심한 실험 설계(Mead, 1990)가 필요하다. 본 연구에서는 저렴한 예산에 따라 수를 결정하고 데이터 샘플의 손실을 균등하게 분배하는 간단한 규칙을 활용하지만 이론적으로 더 정당화된 규칙을 고려하는 것이 필요하다. 또한, 스케일링 법칙의 중첩 사용은 각 단계에서 오류를 유발할 수 있다. 따라서 오류 누적을 완화하기 위한 추가 분석도 필요하다. 를 포함할 수 있다. 도 7에서, 우리는 우리의 예측이 실제 손실보다 작다는 것을 알 수 있는데, 이는 우리가 맞추는 단계 법칙과 모델 크기 법칙으로부터의 과소 평가 때문이다. 추가적인 실제 경험은 스케일링 법칙들의 기술적 세부사항들을 변형시킨다(Su 등, 2024)는 에러들을 제거하는데 도움이 될 수 있다.\n' +
+      '\n' +
+      '여러 인자들의 합동 법칙에 대하여, 우리는 훈련 단계, 모델 크기 및 혼합 비율의 합동 법칙을 찾는 데 어려움을 피하기 위해 스케일링 법칙의 중첩 사용을 제안한다. 파이프라인으로 손실을 예측할 수 있지만 공동 법률은 다양한 요인의 명확한 시너지 효과를 공개합니다. 예를 들어, 이전 연구에서는 모델 크기의 스케일링 법칙에서 멱함수 지수와 훈련 데이터가 훈련 및 검증 데이터에 둔감하다는 것을 나타낸다(Hestness et al., 2017; Kaplan et al., 2020; Hashimoto, 2021; Hoffmann et al., 2022; Frantar et al., 2023). 데이터 혼합물로 그들의 공동 법칙을 알아내면 이 추측을 더 확인할 수 있다. 또한 공동법은 별도의 법률의 계수 공유도 시행하여 필요한 피팅 샘플의 수를 줄인다.\n' +
+      '\n' +
+      '동적 데이터 큐레이팅에 관한 연구로서, 본 연구에서는 프리 트레이닝을 위한 고정된 혼합물 비율 그룹을 결정하기 위한 파이프라인을 제시한다. 보다 정교한 데이터 큐레이팅은 동적 비율(Albalak 등, 2023) 및 심지어 데이터 도메인을 변경하는 커리큘럼(Chen 등, 2024)을 포함할 수 있다. 지속적인 사전교육(Sec. 5)에서 데이터 혼합법의 적용 우리의 연구 결과를 이러한 설정으로 확장할 가능성을 암시한다. 여기에 역동적인 데이터 혼합 법칙을 추구하기 위해 추가 분석을 통합하는 것이 유망하다고 생각한다.\n' +
+      '\n' +
+      '이론적 이해에 따르면, 대부분의 스케일링 법칙과 유사한 데이터 혼합 법칙은 경험적 발견이다. 우리는 법칙을 형성하는 훈련 역학에 대한 이론적 이해가 더 확실한 정당성을 제공한다고 믿는다. 잠재적 관점은 구배 추정을 통해 튜닝 혼합 비율의 타겟을 이해하는 것이다(Guo et al., 2024; Guet al., 2024). 구체적으로, 혼합물 비율은 훈련 동안 상이한 도메인으로부터의 구배들의 선형 조합에 대한 가중치로 그 효과가 귀결되는 상이한 도메인으로부터의 중량 데이터를 비율화한다. 이러한 관점은 혼합 비율 튜닝의 타겟을 이상적인 구배 방향을 찾는 것으로 전환시키고(Gu 등, 2024), 데이터 샘플들 사이의 관계는 그들의 구배 방향들로 공식화된다(Guo 등, 2024).\n' +
+      '\n' +
+      '요약하면, 우리는 사전 훈련 데이터 큐레이션을 위한 정량적 예측 방법에 대한 조사를 시작한다. 데이터 엔지니어링에 대한 관심이 높아짐에 따라 본 연구의 탐색이 이 연구 영역에서 추가 양적 연구와 이론적 분석을 용이하게 하기를 바란다.\n' +
+      '\n' +
+      '## Acknowledgments\n' +
+      '\n' +
+      '이 연구의 계산은 푸단 대학의 CFFF 플랫폼을 사용하여 수행되었다. 우리는 그들의 통찰력 있는 토론에 대해 보톈 장과 시두오 장에게 감사한다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Aghajanyan et al. (2023) Armen Aghajanyan, Lili Yu, Alexis Conneau, Wei-Ning Hsu, Karen Hambardzumyan, Susan Zhang, Stephen Roller, Naman Goyal, Omer Levy, and Luke Zettlemoyer. 생성 혼합 모달 언어 모델의 크기 조정 법칙입니다. _ arXiv preprint arXiv:2301.03728_, 2023.\n' +
+      '* Alabdulmohsin et al. (2022) Ibrahim M Alabdulmohsin, Behnam Neyshabur, and Xiaohua Zhai. 언어 및 시각에서 신경 스케일링 법칙을 다시 방문합니다. _ Advances in Neural Information Processing Systems_, 35:22300-22312, 2022.\n' +
+      '* Albalak et al.(2023) Alon Albalak, Liangming Pan, Colin Raffel, and William Yang Wang. 언어 모델 사전 교육을 위한 효율적인 온라인 데이터 혼합입니다. _ arXiv preprint arXiv:2312.02406_, 2023.\n' +
+      '* 아마리 등(1992) 슌이치 아마리, 후지타 나오타케, 시노모토 시게루. 4가지 유형의 학습 곡선 _ Neural Computation_, 4(4):605-618, 1992.\n' +
+      '* Bahri et al.(2021) Yasaman Bahri, Ethan Dyer, Jared Kaplan, Jaehoon Lee, and Utkarsh Sharma. 신경 스케일링 법칙에 대해 설명합니다. _ arXiv preprint arXiv:2102.06701_, 2021.\n' +
+      '* Bai 등(2023) Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang, Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei Huang, et al. Qven technical report. _ arXiv preprint arXiv:2309.16609_, 2023.\n' +
+      '* Bi 등 (2024) Xiao Bi, Deli Chen, Guanting Chen, Shanhuang Chen, Damai Dai, Chengqi Deng, Honghui Ding, Kai Dong, Qiushi Du, Zhe Fu, et al. Deepseek llvm: Scaling open-source language models with longtermism. _ arXiv preprint arXiv:2401.02954_, 2024.\n' +
+      '* Biderman 등(2023) Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O\'Brien, Eric Hallahan, Mohammad Afah Khan, Shivanshu Purohit, USVSN Sai Prashanth, Edward Raff, et al. Pythia: A suite for analyzing large language models across training and scaling. In _International Conference on Machine Learning_, pp. 2397-2430. PMLR, 2023.\n' +
+      '* Bishop (2006) Christopher Bishop. 패턴 인식 및 기계 학습. _ 스프링거 구글 스칼라_, 2:5-43, 2006.\n' +
+      '* Brown 등(2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models is few-shot learners. _ Advances in neural information processing systems_, 33:1877-1901, 2020.\n' +
+      '* Caballero et al.(2022) Ethan Caballero, Kshitij Gupta, Irina Rish, and David Krueger. 신경 스케일링 법칙이 깨졌어요 arXiv preprint arXiv:2210.14891_, 2022.\n' +
+      '* Chen et al.(2024a) Daoyuan Chen, Yilun Huang, Zhijian Ma, Hesen Chen, Xuchen Pan, Ce Ge, Dawei Gao, Yuexiang Xie, Zhaoyang Liu, Jinyang Gao, Yaliang Li, Bolin Ding, and Jingren Zhou. 데이터-쥬서: 대형 언어 모델을 위한 원스톱 데이터 처리 시스템. 2024a의 _데이터 관리에 관한 국제 회의_에서.\n' +
+      '\n' +
+      '* Chen et al.(2024b) Mayee Chen, Nicholas Roberts, Kush Bhatia, Jue Wang, Ce Zhang, Frederic Sala, and Christopher Re. 기술 - 언어 모델을 이해하고 훈련하기 위한 데이터 기반 기술 프레임워크입니다. _ 신경 정보 처리 시스템_, 36, 2024b에서의 진보.\n' +
+      '* Doddapaneni et al. (2021) Sumanth Doddapaneni, Gowtham Ramesh, Mitesh M Khapra, Anoop Kunchukuttan, and Pratyush Kumar. 사전 훈련된 다국어 언어 모델에 대한 프라이머입니다. _ arXiv preprint arXiv:2107.00676_, 2021.\n' +
+      '* 도밍고(2000) 페드로 도밍고. 통합된 편향-분산 분해 In _Proceedings of 17th international conference on machine learning_, pp. 231-238. Morgan Kaufmann Stanford, 2000.\n' +
+      '* Drucker (1997) Harris Drucker. 부스팅 기술을 사용하여 회귀자를 개선합니다. In _Icml_, volume 97, pp. e115. Citeseer, 1997.\n' +
+      '* Du 등 (2022) Nan Du, Yanping Huang, Andrew M Dai, Simon Tong, Dmitry Lepikhin, Yuanzhong Xu, Maxim Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, et al. Glam: Efficient scaling of language models with mixture-of-experts. In _International Conference on Machine Learning_, pp. 5547-5569. PMLR, 2022.\n' +
+      '* Fan 등(2024) Simin Fan, Matteo Pagliardini, and Martin Jaggi. Doge: Domain reweighting with generalization estimation, 2024.\n' +
+      '* Frantar et al. (2023) Elias Frantar, Carlos Riquelme, Neil Houlsby, Dan Alistarh, and Utku Evci. 희박하게 연결된 기초 모델의 법칙을 조정합니다. _ arXiv preprint arXiv:2309.08520_, 2023.\n' +
+      '*프랑스어(1999) Robert M French. 연결리스트 네트워크에서 치명적인 망각입니다. _ Trends in cognitive sciences_, 3(4):128-135, 1999.\n' +
+      '* Friedl (2023) Paul Friedl. 법률 및 알고리즘 규범 시스템의 설계 및 개발에서의 비유사성: 관점 api의 경우 _ Law, Innovation and Technology_, 15(1):25-59, 2023.\n' +
+      '* Gao 등(2020) Leo Gao, Stella Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, et al. The pile: An 800gb dataset of various text for language modeling _ arXiv preprint arXiv:2101.00027_, 2020.\n' +
+      '* Gu et al.(2024) Yuxian Gu, Li Dong, Yaru Hao, Qingxiu Dong, Minlie Huang, and Furu Wei. 언어 모델의 최적 학습을 위해 _ arXiv preprint arXiv:2402.17759_, 2024.\n' +
+      '* Guo et al.(2024) Shangmin Guo, Yi Ren, Stefano V Albrecht, and Kenny Smith. 학습 역학에서 샘플 관계는 일반화에 중요합니다. _ arXiv preprint arXiv:2401.08808_, 2024.\n' +
+      '* Gururangan 등(2020) Suchin Gururangan, Ana Marasovic, Swabha Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, and Noah A Smith. 사전 교육을 중지하지 마십시오. 언어 모델을 도메인 및 작업에 적용합니다. _ arXiv preprint arXiv:2004.10964_, 2020.\n' +
+      '* Gururangan et al. (2023) Suchin Gururangan, Margaret Li, Mike Lewis, Weijia Shi, Tim Althoff, Noah A Smith, and Luke Zettlemoyer. 감독되지 않은 도메인 검색을 통해 전문가 언어 모델을 확장합니다. _ arXiv preprint arXiv:2303.14177_, 2023.\n' +
+      '* Harville (1985) David A Harville. 예측 오류를 분해합니다. _ Journal of the American Statistical Association_, 80(389):132-138, 1985.\n' +
+      '* 하시모토(2021) 하시모토 타츠노리 여러 데이터 원본을 사용하여 성능 스케일링을 모델링합니다. In _International Conference on Machine Learning_, pp. 4107-4116. PMLR, 2021.\n' +
+      '* Haussler(1988) David Haussler. 귀납적 편향의 정량화: Ai 학습 알고리즘과 용맹자의 학습 프레임워크. _ Artificial intelligence_, 36(2):177-221, 1988.\n' +
+      '* Henighan 등(2020) Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative modeling. _ arXiv preprint arXiv:2010.14701_, 2020.\n' +
+      '* Hernandez et al.(2021) Danny Hernandez, Jared Kaplan, Tom Henighan, and Sam McCandlish. 전송에 대한 크기 조정 법칙입니다. _ arXiv preprint arXiv:2102.01293_, 2021.\n' +
+      '* Haussler et al. (2020)* Hestness et al. [2017] Joel Hestness, Sharan Narang, Newsha Ardalani, Gregory Diamos, Heewoo Jun, Hassan Kianinejad, Md Mostofa Ali Patwary, Yang Yang, and Yanqi Zhou. Deep learning scaling is predictable, empirically. _arXiv preprint arXiv:1712.00409_, 2017.\n' +
+      '* Hoffmann et al. [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _arXiv preprint arXiv:2203.15556_, 2022.\n' +
+      '* Hornik et al. [1989] Kurt Hornik, Maxwell Stinchcombe, and Halbert White. Multilayer feedforward networks are universal approximators. _Neural networks_, 2(5):359-366, 1989.\n' +
+      '* Hutter [2021] Marcus Hutter. 학습 곡선 이론입니다. _ arXiv preprint arXiv:2102.04074_, 2021.\n' +
+      '* Jiang et al. [2023] Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7b. _arXiv preprint arXiv:2310.06825_, 2023.\n' +
+      '* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_, 2020.\n' +
+      '* Kirkpatrick et al. [2017] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neural networks. _Proceedings of the national academy of sciences_, 114(13):3521-3526, 2017.\n' +
+      '* Komatsuzaki et al. [2022] Aran Komatsuzaki, Joan Puigcerver, James Lee-Thorp, Carlos Riquelme Ruiz, Basil Mustafa, Joshua Ainslie, Yi Tay, Mostafa Dehghani, and Neil Houlsby. Sparse upcycling: Training mixture-of-experts from dense checkpoints. _arXiv preprint arXiv:2212.05055_, 2022.\n' +
+      '* Li et al. [2023] Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Koectkov, Cheng-hao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, et al. Starcoder: may the source be with you! _arXiv preprint arXiv:2305.06161_, 2023.\n' +
+      '* Liu et al. [2023] Xiaoran Liu, Hang Yan, Chenxin An, Xipeng Qiu, and Dahua Lin. Scaling laws of rope-based extrapolation. In _The Twelfth International Conference on Learning Representations_, 2023.\n' +
+      '* Longpre et al. [2023] Shayne Longpre, Gregory Yauney, Emily Reif, Katherine Lee, Adam Roberts, Barret Zoph, Denny Zhou, Jason Wei, Kevin Robinson, David Mimno, et al. A pretrainer\'s guide to training data: Measuring the effects of data age, domain coverage, quality, & toxicity. _arXiv preprint arXiv:2305.13169_, 2023.\n' +
+      '* Luo et al. [2023] Yun Luo, Zhen Yang, Fandong Meng, Yafu Li, Jie Zhou, and Yue Zhang. An empirical study of catastrophic forgetting in large language models during continual fine-tuning. _arXiv preprint arXiv:2308.08747_, 2023.\n' +
+      '* Mead [1990] Roger Mead. _ 실험 설계: 실용적인 응용을 위한 통계적 원리_. 케임브리지 대학 언론 1990년\n' +
+      '* Michaud et al. [2024] Eric Michaud, Ziming Liu, Uzay Girit, and Max Tegmark. The quantization model of neural scaling. _Advances in Neural Information Processing Systems_, 36, 2024.\n' +
+      '* Mindermann et al. [2022] Soren Mindermann, Jan M Brauner, Muhammed T Razzak, Mrinank Sharma, Andreas Kirsch, Winnie Xu, Benedikt Holten, Aidan N Gomez, Adrien Morisot, Sebastian Farquhar, et al. Prioritized training on points that are learnable, worth learning, and not yet learnt. In _International Conference on Machine Learning_, pp. 15630-15649. PMLR, 2022.\n' +
+      '* Muennighoff et al. [2024] Niklas Muennighoff, Alexander Rush, Boaz Barak, Teven Le Scao, Nouamane Tazi, Aleksandra Piktus, Sampo Pyysalo, Thomas Wolf, and Colin A Raffel. Scaling data-constrained language models. _Advances in Neural Information Processing Systems_, 36, 2024.\n' +
+      '* OpenAI [2023] OpenAI. Gpt-4 기술 보고서입니다. _ arXiv preprint arXiv:2303.08774_, 2023.\n' +
+      '* O\'Hagan et al. [2022]\n' +
+      '* Penedo et al. (2023) Guilherme Penedo, Quentin Malartic, Daniel Hesslow, Ruxandra Cojocaru, Alessandro Cappelli, Hamza Alobeidli, Baptiste Pannier, Ebtesam Almazrouei, and Julien Launay. 매 llm에 대한 정제된 웹 데이터 세트: 웹 데이터 및 웹 데이터만으로 선별된 말뭉치를 능가합니다. _ arXiv preprint arXiv:2306.01116_, 2023.\n' +
+      '* Radford 등(2018) Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya Sutskever. 비지도 학습으로 언어 이해력을 향상시킵니다. 2018년.\n' +
+      '* Rae 등(2021) Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susannah Young, et al. Scaling language models: Methods, analysis & insights from training gopher. _ arXiv preprint arXiv:2112.11446_, 2021.\n' +
+      '* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 통합 텍스트 대 텍스트 변환기를 사용하여 전이 학습의 한계를 탐색합니다. _ The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.\n' +
+      '* Shao et al.(2024) Yunfan Shao, Linyang Li, Zhaoye Fei, Hang Yan, Dahua Lin, and Xipeng Qiu. 클러스터링을 사용하여 언어 모델 학습을 위한 균형 잡힌 데이터 샘플링입니다. _ arXiv preprint arXiv:2402.14526_, 2024.\n' +
+      '* Su et al. (2024) Hui Su, Zhi Tian, Xiaoyu Shen, and Xunliang Cai. 스케일링 법칙의 미스터리를 풀다: Part i. _arXiv preprint arXiv:2403.06563_, 2024.\n' +
+      '* Taylor et al.(2022) Ross Taylor, Marcin Kardas, Guillem Cucurull, Thomas Scialom, Anthony Hartshorn, Elvis Saravia, Andrew Poulton, Viktor Kerkez, and Robert Stojnic. 갤럭티카: 과학을 위한 대형 언어 모델입니다. _ arXiv preprint arXiv:2211.09085_, 2022.\n' +
+      '* Touvron 등(2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _ arXiv preprint arXiv:2302.13971_, 2023a.\n' +
+      '* Touvron 등(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_, 2023b.\n' +
+      '* Valiant (1984) Leslie G Valiant. 학습할 수 있는 이론입니다. _ Communications of the ACM_, 27(11):1134-1142, 1984.\n' +
+      '* Vapnik and Chervonenkis (1971) VN Vapnik and A Ya Chervonenkis. 사건의 상대 빈도와 확률의 균일한 수렴에 대해 _ 이론 of Probability and its Applications_, 16(2):264, 1971.\n' +
+      '* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 주목만 하시면 됩니다. `Advances in Neural Information Processing Systems_, volume 30. Curran Associates, Inc., 2017. URL [https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee2435474ee917bd053cc1ca845aa-Paper.pdf](https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee2435474ee917bd053cc1ca845aa-Paper.pdf)\n' +
+      '* 빌라로보스(2023) 파블로 빌라로보스. 크기 조정 법률 문헌 검토, 2023. URL [https://epochai.org/blog/scaling-laws-literature-review](https://epochai.org/blog/scaling-laws-literature-review) 접속됨: 2024-02-27\n' +
+      '* Wenzek 등(2019) Guillaume Wenzek, Marie-Anne Lachaux, Alexis Conneau, Vishrav Chaudhary, Francisco Guzman, Armand Joulin, and Edouard Grave. Ccnet: 웹 크롤 데이터에서 고품질 단일 언어 데이터 세트를 추출합니다. _ arXiv preprint arXiv:1911.00359_, 2019.\n' +
+      '*Xie et al.(2024) Sang Michael Xie, Hieu Pham, Xuanyi Dong, Nan Du, Hanxiao Liu, Yifeng Lu, Percy S Liang, Quoc V Le, Tengyu Ma, and Adams Wei Yu. 도레미: 데이터 혼합을 최적화하면 언어 모델 사전 훈련이 빨라집니다. _ 신경 정보 처리 시스템_, 36, 2024a에서의 진보.\n' +
+      '\n' +
+      '*Xie et al.(2024) Sang Michael Xie, Shibani Santurkar, Tengyu Ma, and Percy S Liang. 중요도 재샘플링을 통한 언어 모델의 데이터 선택 _ 신경 정보 처리 시스템_, 36, 2024b에서의 진보.\n' +
+      '* Xiong 등(2023) Wenhan Xiong, Jingyu Liu, Igor Molybog, Hejia Zhang, Prajwal Bhargava, Rui Hou, Louis Martin, Rashi Rungta, Karthik Abinav Sankararaman, Barlas Oguz, et al. Effective long-context scaling of foundation models. _ arXiv preprint arXiv:2309.16039_, 2023.\n' +
+      '* Zhan et al. (2024) Jun Zhan, Junqi Dai, Jiasheng Ye, Yunhua Zhou, Dong Zhang, Zhigeng Liu, Xin Zhang, Ruibin Yuan, Ge Zhang, Linyang Li, Hang Yan, Jie Fu, Tao Gui, Tianxang Sun, Yugang Jiang, and Xipeng Qiu. Anygpt: Unified multimodal llm with discrete sequence modeling, 2024.\n' +
+      '* Zhou 등 (2024) Chunting Zhou, Pengfei Liu, Puxin Xu, Srinivasan Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, et al. Lima: Less is more for alignment _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Zhou et al. (2023) Kun Zhou, Yutao Zhu, Zhipeng Chen, Wentong Chen, Wayne Xin Zhao, Xu Chen, Yankai Lin, Ji-Rong Wen, and Jiawei Han. 평가 벤치마크 사기꾼으로 만들지 마세요. _ arXiv preprint arXiv:2311.01964_, 2023.\n' +
+      '\n' +
+      '데이터 혼합물의 상대적 품질은 모델 크기 및 훈련 단계와 관련이 있다.\n' +
+      '\n' +
+      '작은 모델과 소수의 단계에서 최적의 데이터 혼합물을 찾은 다음 찾은 혼합물 비율을 대규모 훈련으로 옮길 수 있는지 궁금해할 수 있다. 이 질문에 답하기 위해 그림 9에서 다른 크기와 다른 단계의 수로 훈련된 모델의 상대적 성능을 비교한다.\n' +
+      '\n' +
+      '결과는 규모와 훈련 단계에 걸쳐 비교적 일관된 추세에도 불구하고 상대적 성과가 변동한다는 것을 보여준다. 이것은 혼합물이 작은 규모에서 더 우수하지만 항상 큰 규모에서 더 잘 수행되는 것은 아님을 나타낸다. 그림 20개의 혼합물 중 부분 차수의 가장 긴 공통 서열이다. 도 9의 (A) 및 도. 도 9의 (B)는 각각 10 및 11의 길이에만 도달한다.\n' +
+      '\n' +
+      '## 부록 B 구현 세부 정보\n' +
+      '\n' +
+      '### Model Training\n' +
+      '\n' +
+      '본 연구에서는 피티아 슈트(Biderman et al., 2023)를 모델 아키텍처로 사용하며, 특정 구성은 탭 2에 있다. 최대 시퀀스 길이는 처음부터 사전 훈련의 경우 4096이고 연속 사전 훈련의 경우 2048이며, 후자는 원래 사전 훈련 모델의 설정과 일치한다. 모든 실험에서 우리는 1M 토큰의 배치 크기와 최대 학습률 1e-4로 모델을 훈련한다. 우리는 코사인 감쇠 스케줄을 사용하여 2000단계의 학습률을 예열하고 마지막 훈련 단계에서 최대 0.1로 감쇠한다. 지속적인 사전 훈련을 위해 피티아 70M 모델의 20k 단계 체크포인트로 모델을 초기화하고 학습률 워밍업을 적용하지 않는다.\n' +
+      '\n' +
+      '데이터 세트의 경우 주로 파일 및 RedPajama를 사용하여 실험합니다. 파일의 경우 원시 데이터에서 중복을 발견하므로 중복 제거는 학습 전에 수행됩니다. 파일에는 5개의 조립질 도메인이 포함되어 있으며, 이는 22개의 세립질 영역으로 추가로 분해된다. 보안 3.1에서의 우리의 실험은 Github 및 Pile-CC 도메인에 있는 반면, 보안 3.2에서의 실험은 Github, Pile-CC 및 Books에 있다. 이 모든 것들은 세밀한 영역들이다. 섹 3.3에서 5개의 영역을 사용한 실험을 위해 학술, 인터넷, 산문, 대화 및 misc와 같은 5개의 거친 영역(misc)을 채택한다. 여기서 misc는 Github와 기호 콘텐츠인 DeepMind Mathematics Dataset을 포함한다. 토큰이 충분한 5개의 세립도메인을 찾기 어렵기 때문에 우리는 세립도메인을 사용한다. RedPajama의 경우 Chen 등이 제작하고 공유한 버전을 다운로드한다(2024a).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l l l l} \\hline \\hline  & **70M** & **160M** & **305M** & **410M** & **1B** \\\\ \\hline Vocabulary Size & 50304 & 50304 & 50304 & 50304 & 50304 \\\\ Non-embedding Params & 18,915,328 & 85,056,000 & 201,541,632 & 302,311,424 & 805,736,448 \\\\ Layers & 6 & 12 & 16 & 24 & 16 \\\\ Model Dimension & 512 & 768 & 1024 & 1024 & 2048 \\\\ Heads & 8 & 12 & 16 & 16 & 8 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 본 논문의 실험을 위한 모델 아키텍처.\n' +
+      '\n' +
+      '그림 9: RedPajama에서 훈련되고 파일에서 검증되는 20개의 샘플 혼합물의 상대적 성능의 순위. **(A)** 30k 단계에 대해 모두 훈련된 다양한 크기의 모델의 순위입니다. **(B)** 다른 단계에 대해 훈련된 70M 모델의 순위입니다.\n' +
+      '\n' +
+      '```\n' +
+      '0: \\(\\mathbf{r}_{max,1}=[r_{max,1},\\ldots,r_{max,M}]\\)의 최대 비율 \\(\\mathbf{r}_{max,1}=[r_{max,1},\\ldots,r_{max,M}]\\), 여기서 \\(r_{max,i}=\\frac{D_{i}}{D_{input}}\\)와 \\(D_{target}\\)는 각각 \\(i\\)번째 도메인에서 사용 가능한 토큰의 수와 훈련 토큰의 목표 수로서 내림차순으로 정렬된다 (즉, \\(r_{max,1}\\geq r_{max,2}\\geq\\cdots\\geq r_{max,M}\\)), 최소 비율 그리드 크기 \\(\\delta\\), 실험을 실행할 혼합물 수 \\(N\\).\n' +
+      '0: \\(\\{\\mathbf{r}_{n}\\}_{n=1}^{N}\\).\n' +
+      '1: 후보 혼합물 \\(\\mathcal{C}\\leftarrow\\textsc{GetALLCandidates}(1,[])\\)\n' +
+      '2: \\(\\mathcal{C}\\)에서 \\(\\mathcal{C}_{0}\\)로, 나머지는 \\(\\mathcal{C}_{1}\\)로 분할된 혼합물\n' +
+      '3: 샘플 \\(\\{\\mathbf{r}_{n}\\}_{n=1}^{|N/4|}\\) from \\(\\mathcal{C}_{0}\\) 및 \\(\\{\\mathbf{r}_{n}\\}_{n=\\lceil N/4\\rceil}^{N}\\) from \\(\\mathcal{C}_{1}\\)\n' +
+      '4:\n' +
+      '5:procedureGetAllCandidates(domain index \\(i\\), proportion of first \\(i-1\\) domains \\(r_{1,..i-1}\\))\n' +
+      '6: 후보 혼합물 \\(\\mathcal{C}=\\varnothing\\)\n' +
+      '7:if\\(i=M\\)then\n' +
+      '8:if\\(0\\leq 1-\\sum_{j=1}^{i-1}r_{j}\\leq r_{max,i}\\)then\n' +
+      '9:\\(r_{1..i}\\leftarrow[r_{1..i-1},1-\\sum_{j=1}^{i-1}r_{j}]\\)\n' +
+      '10:\\(\\mathcal{C}\\leftarrow\\mathcal{C}\\bigcup\\{r_{1..i}\\}\\)\n' +
+      '11:endif\n' +
+      '12:else\n' +
+      '13:\\(\\Gamma\\leftarrow\\delta*\\lfloor\\frac{r_{max,i}}{\\delta}\\rfloor\\)\n' +
+      '14:for\\(s=0\\)To \\(\\lceil\\log_{2}\\frac{\\Gamma}{\\delta}\\rceil\\)do\n' +
+      '15:\\(r_{i}\\leftarrow\\max(0,\\frac{\\Gamma}{2^{s}})\\)\n' +
+      '16:\\(\\mathcal{C}\\leftarrow\\mathcal{C}\\bigcup\\textsc{GetALLCandidates}(i+1,[r_{1..i}])\\)\n' +
+      '17:endfor\n' +
+      '18:endif\n' +
+      '19:return\\(\\mathcal{C}\\)\n' +
+      '20:endprocedure\n' +
+      '```\n' +
+      '\n' +
+      '**알고리즘 2** 혼합물 법칙 적합을 위한 혼합물 비율 샘플링.\n' +
+      '\n' +
+      '### 혼합 법칙 적합\n' +
+      '\n' +
+      '혼합물 법칙을 맞추려면 먼저 몇 가지 혼합물에 대한 실험을 하고 손실을 얻어야 한다. 피팅을 위해 선택된 샘플 혼합물은 예측 정확도에 크게 영향을 미칠 수 있다. 모든 표본 혼합물이 작은 영역을 중심으로 비율을 갖는 극단적인 경우를 생각해 보면, 전체 비율 공간을 확실하게 예측하는 법칙을 맞추는 것은 거의 불가능하다.\n' +
+      '\n' +
+      '본 논문에서는 이러한 손실과 관련하여 혼합비율을 직관적으로 균등하게 배분하고자 한다. 특히, 손실들이 이들 혼합물들 사이에 고르게 분포되도록 각 도메인의 비율을 이중으로 감소시킴으로써 후보 혼합물들을 열거한다. 그런 다음, 사용 가능한 계산 예산에 따라 실험을 실행하기 위해 후보에서 특정 수의 혼합물을 샘플링한다. 샘플링 과정에서 모든 학습 도메인에서 \\(0\\) 도메인 비율을 갖는 후보 혼합이 후보의 대부분을 차지한다. 이러한 후보가 모든 샘플을 구성하는 것을 피하기 위해 특별히 다운 샘플링합니다. 구체적인 알고리즘은 Alg. 2에 있다. 또한, 우리는 예측을 안정화하고 정확도를 향상시키기 위해 혼합물 법칙을 맞추기 위해 AdaBoost Regressor(Drucker, 1997)를 사용한다. 우리는 향후 연구가 이론적 지원을 통해 후보 혼합물 선택의 보다 신중한 설계에 뛰어들도록 권장한다.\n' +
+      '\n' +
+      '## 부록 C 암시적 도메인 집계와 MLP 간의 연결\n' +
+      '\n' +
+      '우리는 먼저 최종 혼합물 법칙(식 8)을 반복한다. 여기서 편의상:\n' +
+      '\n' +
+      '\\[L(r_{1...M})=\\sum_{i=1}^{K}s_{i}L_{i}(r_{1...M})=\\sum_{i=1}^{K}s_{i}\\left[c_{i} +k_{i}\\exp\\left(\\sum_{j=1}^{M}t_{ij}r_{j}\\right)\\right],\\]\n' +
+      '\n' +
+      '여기서 \\(r_{1...M}\\)은 \\(M\\) 훈련 도메인에 대한 혼합물 비율이고, \\(L_{i}\\)은 \\(s_{i}\\)를 전체 검증 세트에서 가중치로 하는 \\(K\\) 암시적 도메인에 대한 검증 손실이며, \\(c_{i},t_{ij}\\)는 적합할 다른 매개변수이다.\n' +
+      '\n' +
+      '혼합물 법칙은 그림 1의 계산 그래프로 요약된다. 도 10을 참조하면, 두 개의 층을 포함한다. 첫 번째 계층은 도메인 손실을 예측하는 반면 두 번째 계층은 도메인 손실을 합산하여 전체 검증 손실을 얻는다. 이와 같이 혼합법칙은 지수활성함수를 갖는 다층지각(MLP)이 된다. 실제로, 우리는 지수 활성화와 함께 다층 인식을 피팅하고 출력 레이어 가중치에 소프트맥스를 적용하여 음함수 도메인 집계를 갖는 혼합 법칙을 피팅한다. 또한 MLP의 높은 분산을 고려하여 예측을 안정화하고 정확도를 개선하기 위해 혼합물 법칙을 맞추기 위해 AdaBoost Regressor(드러커, 1997)를 추가로 사용한다.\n' +
+      '\n' +
+      '이러한 관점에서 영감을 받아 혼합물 법칙의 성공적인 적합을 두 가지 측면으로 돌린다. 먼저, 충분히 큰 은닉 차원을 갖는 MLP는 보편적인 근사기(Hornik et al., 1989)이므로 손실과 혼합물 비율 사이의 관계를 맞출 수 있다. 둘째, 혼합물 비율은 0과 1 사이에서 경계된다. 이러한 이유로, 보이지 않는 혼합물을 예측하는 것은 보간 문제이며, 이는 보통 외삽보다 쉽다.\n' +
+      '\n' +
+      '그림 10: 암묵적 도메인 집계를 갖는 혼합물 법칙의 계산 그래프. 학습 도메인 3개와 암묵적 검증 도메인 4개를 예로 들어 설명한다. 매개변수는 식 8의 표기법에 해당한다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

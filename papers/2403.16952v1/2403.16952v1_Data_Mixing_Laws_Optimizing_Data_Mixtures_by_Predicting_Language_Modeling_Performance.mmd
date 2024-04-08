@@ -1,0 +1,366 @@
+# Data Mixing Laws: Optimizing Data Mixtures by Predicting Language Modeling Performance
+
+Jiasheng Ye\({}^{1,*}\) Peiju Liu\({}^{1,*}\) Tianxiang Sun\({}^{1}\) Yunhua Zhou\({}^{2}\) Jun Zhan\({}^{1}\) Xipeng Qiu\({}^{1,{\dagger}}\)
+
+{jsye23,pjliu23}@m.fudan.edu.cn zhouyunhua@pjlab.org.cn xpqiu@fudan.edu.cn
+
+\({}^{1}\)Fudan University \({}^{2}\)Shanghai AI Laboratory
+
+Equal contribution.Corresponding author.
+
+\({}^{1}\)Fudan University \({}^{2}\)Shanghai AI Laboratory
+
+###### Abstract
+
+Pretraining data of large language models composes multiple domains (e.g., web texts, academic papers, codes), whose mixture proportions crucially impact the competence of outcome models. While existing endeavors rely on heuristics or qualitative strategies to tune the proportions, we discover the quantitative predictability of model performance regarding the mixture proportions in function forms, which we refer to as the _data mixing laws_. Fitting such functions on sample mixtures unveils model performance on unseen mixtures before actual runs, thus guiding the selection of an ideal data mixture. Furthermore, we propose nested use of the scaling laws of training steps, model sizes, and our data mixing law to enable predicting the performance of large models trained on massive data under various mixtures with only small-scale training. Moreover, experimental results verify that our method effectively optimizes the training mixture of a 1B model trained for 100B tokens in RedPaiama, reaching a performance comparable to the one trained for 48% more steps on the default mixture. Extending the application of data mixing laws to continual training accurately predicts the critical mixture proportion that avoids catastrophic forgetting and outlooks the potential for dynamic data schedules.1
+
+Footnote 1: Codes and data are available at: [https://github.com/yegcjs/mixinglaws](https://github.com/yegcjs/mixinglaws).
+
+## 1 Introduction
+
+Pretraining data for large language models (LLMs) are typically a mixture of multiple domains, varying from English to minority languages (Doddapaneni et al., 2021; Li et al., 2023), from casual dialogs to formal academic writings (Taylor et al., 2022), and from texts to modalities like images and speeches (Zhan et al., 2024), among others. These data interplay with each other, showing complex interchangeable, unrelated, or contradictory relationships (Guo et al., 2024). This necessitates adjusting the mixture proportions of training data to balance the model capabilities while harnessing synergies across domains, thus enhancing the competence of the outcome models, as highlighted by extensive practical experience (Gao et al., 2020; Gururangan et al., 2020; Zhou et al., 2023; Xie et al., 2024).
+
+Nonetheless, it remains elusive to figure out an ideal training data mixture. Most existing practices tune the mixture through heuristics to upsample a proportion of high-quality or underrepresented data without disclosing the concrete criteria in detail (Gao et al., 2020; Touvron et al., 2023; Bai et al., 2023; Bi et al., 2024) and it is hard to predate whether these data strategies are effective before finishing the training run. Encouraged by advances in scaling laws that show model losses on a given set of evaluation data are quantitatively predictable for a wide range of variables (Kaplan et al., 2020; Hoffmann et al., 2022), we wonder whether this also holds for mixture proportions, so that _we can estimate the outcome model performance given any mixture before actually training on them, including the desired one that reaches minimum loss._In this paper, we answer this proposition affirmatively. We find that, given a mixture of \(M\) domains, an exponential function over the linear combination of the proportions, i.e.,
+
+\[L_{i}(r_{1\dots M})=c_{i}+k_{i}\exp\left(\sum_{j=1}^{M}t_{ij}r_{j}\right), \tag{1}\]
+
+can predict the validation loss \(L_{i}\) on any of the training domains \(i\) accurately under a fixed model size and amount of training data, where \(r_{1\dots M}\) are the proportions of the \(M\) domains and \(c_{i},k_{i},t_{ij}\) are parameters to fit. Fitting such functions on all the evaluated domains and calculating the weighted sum according to their proportions in the validation data leads to the prediction of final validation loss. Further, treating the validation proportions as learnable parameters allows fitting the estimated losses on a validation set end-to-end without explicitly decomposing it into known domains.
+
+Despite the predictability, fitting the function between mixture proportions and validation loss, or the _data mixing laws_ for simplicity, requires samples of numerous runs with different mixtures. Running these experiments with the same model size and the amount of training data as the target model is unreasonably expensive. Fortunately, fruitful research on scaling laws demonstrates impressive results that fitting power laws with small models and small data effectively predicts the losses on larger models and data over orders of magnitudes (Kaplan et al., 2020; Henighan et al., 2020; Hoffmann et al., 2022; Alabdulmohsin et al., 2022; OpenAI, 2023; Muennighoff et al., 2024; Bi et al., 2024). On this basis, we propose a pipeline to nested utilize the scaling laws of training steps, model sizes, and our data mixing law, so that we can study the impact of mixture proportions for the target model sizes and data amount with only experiments at the affordable scales, illustrated in Fig. 1.
+
+Experimental results verify the reliability of our data mixing law and prediction pipeline. By predicting the overall validation loss, we optimize the training mixture of RedPajama for a 1B model trained on 100B tokens and achieve performance comparable to a model trained on default mixture for 48% more steps. The prediction on domain-specific validation sets also offers plausible references to the balance of model capabilities. Further applying our data mixing law to continual pretraining can accurately find the proportion that avoids catastrophic forgetting (French, 1999; Kirkpatrick et al., 2017; Luo et al., 2023), revealing the prospect of applying data mixing laws to guide a multi-stage pertaining, and thus a dynamic data schedule.
+
+Overall, our contributions and findings are as follows:
+
+* We discover the quantitative predictability of model performance regarding data mixture, and summarize this into a functional relationship, namely the data mixing laws.
+* We propose a pipeline to predict model performance of large-scale training on different mixture proportions but only experiments on small models with few training data through nested use of scaling laws of training steps, model sizes, and data mixing laws.
+* We experiment to verify the reliability of our data mixing laws and prediction pipeline, showing its effectiveness in optimizing model performance, balancing model capabilities, and the prospects of guiding the design of the data schedule.
+
+Figure 1: Illustration on our pipeline to optimize data mixture. **Left:** Our pipeline takes three steps. Starting from small-scale training results, the three steps use the scaling laws of training steps, model sizes, and data mixing laws to predict model performance on large steps, large models, and unseen mixtures, respectively. **Right:** Visualization of the three-step pipeline to predict model performance on the target model size, training step, and mixtures.
+
+## 2 Background
+
+We briefly review the pretraining process of large language models and summarize key findings from neural scaling laws, then we formalize the problem we study. For more related work, please refer to Sec. 6.
+
+Pretraining large language models.We consider the task of pretraining an autoregressive language model \(p_{\theta}\) via next-token predictions (Radford et al., 2018). The training dataset \(\mathcal{D}_{\textbf{train}}=\{\mathcal{D}_{i}\}_{i=1}^{M}\) composes \(M\) domains with mixture proportions \(\mathbf{r}\in\Delta^{M-1}\). In each training step, the task first samples a batch of domain indices according to the mixture proportions and then sample sequences of \(L\) tokens from the sampled domains. Using the sampled data, it learns to optimize the negative log-likelihood of sampled data, i.e.,
+
+\[\mathcal{L}_{\theta}=\mathbb{E}_{i\sim\mathbf{r},\mathbf{x}_{0\ldots L}\sim\mathcal{ D}_{i}}\left[-\sum_{j=1}^{L}\log P_{\theta}(x_{j}|x_{0\ldots j-1})\right]. \tag{2}\]
+
+To evaluate the learned model, we compute the loss on validation data \(\mathcal{D}_{\textbf{val}}\).
+
+Scaling laws.For a wide range of factors \(x\), scaling laws (Kaplan et al., 2020; Henighan et al., 2020; Hoffmann et al., 2022) show that their effect on the loss \(L\) of a pretrained model follows power laws
+
+\[L=c+kx^{\alpha}, \tag{3}\]
+
+where \(c\), \(k\), and \(\alpha\) are parameters to fit and \(x\) can be model sizes, numbers of training data, training steps2, and the amount of computation. Previous experience (Alabdulmohsin et al., 2022; OpenAI, 2023; Bi et al., 2024; Su et al., 2024) highlights the impressive predictability of scaling laws. Specifically, Eqn. 3 fitted on a collection of small models, training data, or computation can extrapolate to precisely predict the test loss of larger cases over orders of magnitudes. This enables practitioners to estimate the performance of a pretrained large language model without actually finishing the expensive runs. Recent development further shows various functional relationships between the performance of language models and a broader range of factors, including transfer learning (Hernandez et al., 2021), sparse architectures (Frantar et al., 2023), and repeated data (Muennighoff et al., 2024), consolidating the predictability of language model performance.
+
+Footnote 2: The training step law (Kaplan et al., 2020) refers to the function between the intermediate training step and its corresponding _loss in one single training run_. For clarity, we highlight its difference from the data scaling law that predicts the early exit loss (Kaplan et al., 2020) or the loss obtained with optimal hyperparameters for each data budget (Hoffmann et al., 2022).
+
+Problem formalization.We study optimizing the mixture proportions of pretraining data for large language models. Motivated by the impressive predictability of existing scaling laws, we try to tackle mixture optimization by establishing a quantitative framework that predicts the loss given any mixture proportion. Formally, for a training dataset comprising \(M\) domains, we parameterize the function
+
+\[L=f_{\theta}(\mathbf{r}), \tag{4}\]
+
+under the fixed model sizes and number of training steps, where \(\mathbf{r}=r_{1\ldots M}\) is the proportion of the \(M\) domains. Harnessing this function, we seek a mixture that achieves the desired performance. Without loss of generality, we search for the mixture that reaches minimum validation loss, i.e.,
+
+\[\mathbf{r}^{*}=\arg\min\mathbf{r}_{\theta}(\mathbf{r}). \tag{5}\]
+
+## 3 The proportions of data mixtures influence model losses in a quantitatively predictable way
+
+In this section, we present our findings on the predictability of model losses regarding data mixtures, which boils down to functional relationships we refer to as the data mixing laws.
+
+To discover the data mixing laws, we encounter two challenges posed by their characteristics.
+
+1. _Multi-variables._ For a data mixing law for \(K\) domains, we should consider \(K-1\) degrees of freedom in the mixture proportions and, correspondingly, \(K-1\) variables in the target function. The increase of variables considerably enlarges the scope of potential functions thereby complicating the identification of the function form.
+2. _Nonmonotonicity._ A monotonic relationship between losses and the proportion of any domain indicates that a lopsided mixture can achieve minimum loss without endeavors to balance domain proportions, which contradicts the practice. Therefore, differing from existing scaling laws that loss monotonically decreases with the scale of concerning factors, the data mixing law we study should accommodate non-monotonic functions. This nonmonotonic nature adds another layer of complexity to our analysis.
+
+To navigate these challenges, we initially simplify the problem by studying a scenario where the relationship between loss and mixture proportions fits into a univariate monotonic function then retracts the simplifications progressively. In specific, we begin our study on the case where we only train on two domains thus avoiding multi-variables, and only consider the validation data coming from one of the training domains to circumvent the non-monotonicity (Sec. 3.1). Subsequently, we broaden our framework to encompass training on multiple domains (Sec. 3.2) and explore the predictability of losses on general validation data that also comprises various domains (Sec. 3.3).
+
+### Pilot Study on Domain Losses under Two-domain Mixtures
+
+We begin our exploration with the simplest case where we only learn on mixtures of two domains and evaluate our model on the two domains respectively.
+
+SetupsWe train 70M and 160M language models on the mixture of Github and Pile-CC subset from the Pile dataset (Gao et al., 2020) with five different mixture proportions, which are {0.25, 0.375, 0.5, 0.625, 0.75} for Github. We train all models with a batch size of 1M tokens for 30k steps, which is 30B tokens in total, and evaluate checkpoints at different steps on the validation set of GitHub and Pile-CC.
+
+FindingsResults in Fig. 2 reveal the quantitative predictability of domain losses given the domain proportions. We encouragingly find that, for checkpoints with the same size and trained with the same number of steps, after subtracting a shared constant3, their domain losses in the log scale demonstrate a linear relationship to the domain proportion. This holds for both domains in our experiments. The result indicates that with other factors fixed, the
+
+Figure 2: Quantitative predictability of domain losses on two domains, which are Github and Pile-CC. We train on the mixtures of these two domains and validate the outcome models on them separately. We train 70M and 160M models on five different mixtures of Github and Pile-CC and obtain the reducible losses by subtracting the original losses with a constant shared across models of the same sizes and trained for the same number of steps. The reducible losses in log scale show linear correlations to the domain proportions.
+
+domain losses of a pretrained language model regarding the domain proportion precisely fit into an exponential law
+
+\[L_{i}(r_{i})=c_{i}+k_{i}\exp{(t_{ii}r_{i})}, \tag{6}\]
+
+where \(L_{i}\) and \(r_{i}\) are validation loss and training mixture proportion of domain \(i\), respectively, while \(c_{i}\), \(k_{i}\), and \(t_{ii}\) are learnable parameters 4.
+
+Footnote 4: Despite a simple case, our findings on two domains have practical applications to continue pretraining (Gururangan et al., 2020), where we aim to enhance a pretrained model on a given domain by training it on a mixture of the original pretraining data and upcoming domain data. Please see Sec. 5 for details.
+
+### Extension to Domain Losses Trained on Multi-domain Mixtures
+
+To accommodate real-world pretraining data that mostly contains more than two domains, we extend our investigation into multiple domains. For simplicity and the ease of visual aids, we start with the case of three domains.
+
+SetupsWe train on the mixtures of GitHub, Pile-CC, and Books3 subset from the Pile for a total of 30B tokens and evaluate the model on the three domains, respectively. For specific mixtures, we grid search from \(\{0,0.125,0.25,\ldots,0.875,1\}\)3 and retain valid ones in which three proportions sum up to 1 and do not use up all tokens in any of the domains5, which results in 32 mixtures in total.
+
+Footnote 5: The GitHub and Books3 subset in the Pile do not contain as many as 30B tokens after deduplication.
+
+We utilize the losses on these experimented mixtures to identify the function forms between losses and mixture proportions through conjecture and then verification. In specific, we base our conjecture of possible forms on the following two principles.
+
+* _Compatibility._ The form can reduce to Eqn. 6 if the number of domains \(M=2\).
+* _Symmetry._ Any exchanging of variables should not change the functional form.
+
+The second principle stems from the intuition to avoid introducing any domain-specific bias. Together, the two principles lead to candidate functions that replicate the exponential term in Eqn. 6 for each training domain and combine them through operations that adhere to commutative law.
+
+\begin{table}
+\begin{tabular}{c c c c c c c c} \hline \hline  & & \multicolumn{2}{c}{**GitHub**} & \multicolumn{2}{c}{**Books3**} & \multicolumn{2}{c}{**Pile-CC**} \\ \cline{2-7}
+**Method** & **\# Coeff.** & Train & Validation & Train & Validation & Train & Validation \\ \hline Random & - & 0.8895 & 0.8758 & 0.1291 & 0.1331 & 0.0768 & 0.1045 \\ M1 & 2M+1 & **0.0292** & **0.0312** & 0.0082 & 0.0121 & 0.0045 & **0.0050** \\ M2 & M+2 & 0.1558 & 0.3327 & 0.0114 & 0.0119 & 0.0072 & 0.0083 \\ M3 & M+2 & 0.3389 & 0.2177 & 0.0914 & 0.0465 & 0.0746 & 0.0947 \\ M4 & M+2 & 0.0298 & 0.0365 & **0.0062** & **0.0074** & **0.0036** & 0.0078 \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: Mean absolute errors (MAE) of different candidate functions for predicting the target domain losses. We also include random guesses that randomly predict between the maximum and minimum loss of the training samples for reference. In specific, we report the MAE of the expectation of this random guess which predicts the median of the maximum and minimum loss. The training data contain \(M=3\) domains and we fit each function with the same 24 mixtures and validate on 8 other mixtures. The split is random. The lowest error for each target domain are in **bold** while the second lowest are underlined.
+
+According to the two principles, we experiment with the following candidate functions:
+
+\[\text{M1:}\quad L_{i}(\mathbf{r})= c_{i}+\sum_{j=1}^{M}\left[k_{ij}\exp\left(t_{ij}r_{j}\right) \right],\quad\text{M2:}\quad L_{i}(\mathbf{r})= c_{i}+k_{i}\sum_{j=1}^{M}\exp\left(t_{ij}r_{j}\right),\] \[\text{M3:}\quad L_{i}(\mathbf{r})= c_{i}+k_{i}\exp\left(\prod_{j=1}^{M}t_{ij}r_{j}\right),\quad \text{M4:}\quad L_{i}(\mathbf{r})= c_{i}+k_{i}\exp\left(\sum_{j=1}^{M}t_{ij}r_{j}\right).\]
+
+We summarize their fitting errors on three target domains in Tab. 1.
+
+FindingsThe results in Tab. 1 suggests both M1 and M4 gives reliable predictions while M4 has fewer coefficients. Therefore we adopt M4
+
+\[L_{i}(r_{1\dots M})=c_{i}+k_{i}\exp\left(\sum_{j=1}^{M}t_{ij}r_{j}\right) \tag{7}\]
+
+as the function forms of our data mixing law, where \(L_{i}\) is the validation loss on \(i\)-th validation domain, \(r_{j}\) is the proportion of the \(j\)-th training domain, and \(c_{i},k_{i},t_{ij}\) are learnable parameters. The fitting results are in Fig. 3 and Fig. 4 demonstrates the prediction accuracy. The results indicate that Eqn. 7 fits the given samples well and estimates the unseen ones accurately.
+
+To provide more intuition, we discuss the meanings of the coefficients in Eqn. 7. In general, \(k_{i}>0\), thus the exponential term is always positive and the prediction loss is strictly greater than the constant \(c\). Hereby, \(c_{i}\) represents losses that are not reducible by adjusting the data mixture. \(t_{ij}\), depending on both training domain \(i\) and validation domain \(j\), shows the interaction between them. A negative \(t_{ij}\) indicates that training data of domain \(j\) helps reduce validation loss on domain \(i\) and vice versa. Besides, rewriting the coefficient \(k_{i}\) into \(\exp(\log k_{i})\) makes it a bias term on the exponent which adjusts the aggregate effect of all training domains.
+
+Figure 4: Prediction results on the domain losses and overall losses in the three-domain experiment. The domain losses are fitted with Eqn. 7 and we obtain the total losses through explicit domain aggregation of Eqn. 8.
+
+Figure 3: Quantitative predictability of domain losses on three domain mixtures, Github, Books3, and Pile-CC. We train on the mixture of these three domains and validate the outcome models on them as well. The surfaces show the predicted losses on (A) Github; (B) Books3; (C) Pile-CC; and (D) the overall validation set mixed with the three domains. \(\times\): validation samples. \(\star\): the predicted minimum loss on the overall validation set.
+
+### Predicting Losses of Any Validation Mixture
+
+We further loosen constraints in Sec. 3.1 and Sec. 3.2 that the validation data are from one of the training domains. We first consider the validation set to be a known composition of the training domains and then free this requirement for more general cases of arbitrary validation sets. These correspond to the two strategies we fit the data mixing laws, which we elaborate on as follows.
+
+Explicit domain aggregation.Considering a validation set made up of \(K\) domains with the proportions as \(s_{1\dots K}\), the validation loss can be written into the weighted sum of domain losses. Thanks to the discovery of Eqn. 7, we can apply the equation to predict domain losses herein given a training mixture. Therefore, the functional relationship of the overall validation loss to the training mixture proportions expands into
+
+\[L(r_{1\dots M})=\sum_{i=1}^{K}s_{i}L_{i}(r_{1\dots M})=\sum_{i=1}^{K}s_{i}\left[ c_{i}+k_{i}\exp\left(\sum_{j=1}^{M}t_{ij}r_{j}\right)\right]. \tag{8}\]
+
+Using Eqn. 8, we can fit the loss on each validation domain \(L_{i}\) and sum them up to obtain the prediction of overall loss.
+
+Implicit domain aggregation.A remaining limitation is that we still need to acquire the components of validation data \(s_{1\dots K}\) in advance. This can be inconvenient if the validation set is collected separately from the training ones. For instance, the validation data may come from real-world user queries that cover unknown compositions of various domains. To remove the constraint on validation components, we assume that we can decompose the validation data into \(K\) implicit domains whose losses are predictable with Eqn. 7, and we treat their proportions in the validation data \(s_{1\dots K}\) as learnable parameters. This leads to the final form of our data mixing laws6. With this perspective, we fit a data mixing law with the overall losses end to end.
+
+Footnote 6: We note that the final forms of our data mixing law resemble a multilayer perception (see the computation graph Fig. 10). We include further discussion and implementation details in Appendix C.
+
+Fig. 5 shows our experiments where we train language models on the 5 coarse-grained domains of Pile7 and evaluate a validation set mixed with these 5 domains. We compare the errors obtained by implicit domain aggregation with different numbers of implicit domains to those obtained by explicit domain aggregation. We find that applying implicit domain aggregation and setting the number of implicit domains no smaller than the actual one (5 in the experimented case) results in lower errors than explicit domain aggregation. Moreover, the error remains low as we set the number of implicit domains much larger. This verifies the prediction accuracy of our implicit domain aggregation strategy for data mixing law and the number of implicit domains \(K\) can be a large number without careful tuning8.
+
+Figure 5: Prediction errors of the five-domain data mixing laws fitted with explicit and implicit domain aggregation. _Explicit domain aggregation_: we fit Eqn. 7 for five domains respectively and sum them up according to their weight in the overall validation sets. _Implicit domain aggregation_: we fit the losses on overall validation with Eqn. 8, assuming different numbers of implicit domains \(K\) and treating the proportion of different implicit domains as learnable parameters.
+
+## 4 Nested scaling laws predict losses trained on various mixtures using only small-scale experiments
+
+### A Pipeline for Loss Predictions
+
+While data mixing laws enable us to predict the performance of models trained on unseen mixtures, the requirement to fit the laws involves training multiple models across diverse mixtures with model sizes and token counts identical to the target ones. Furthermore, we must repeat this process for each target model size and training dataset9. This results in expensive costs thus hindering the practical value of our data mixing laws.
+
+Footnote 9: An idea is to transfer the optimized training mixture on small models trained with few tokens to the training of large models and large volumes of training data. Nevertheless, in Appendix A, we show that the partial order of data mixture concerning model performance varies as the model size and number of trained tokens change. Therefore, the optimal mixture at experimented scales can be suboptimal at the target scale.
+
+We thus wonder whether we can obtain the losses of different mixture proportions without training at large scales. Fortunately, this idea gains endorsement from existing experiences that verify the impressive extrapolation of scaling laws of training steps and model sizes. In particular, OpenAI (2023) predicts the loss of the target model with merely \(1,000\times-10,000\times\) less compute. As a consequence, we can train small models with few training steps on different mixtures, and fitting scaling laws on them to estimate the losses of the target model size and the target number of training steps. We can then use the predicted losses to fit a data mixing law and search for the optimal mixture. The proposed pipeline is illustrated in Fig. 1 with details depicted in Alg. 1.
+
+We note that the nested use of scaling laws is still not a widely adopted strategy in existing literature to the best of our knowledge. Most studies try connecting newly found scaling laws to existing ones by incorporating variables into the latter (Hashimoto, 2021; Frantar et al., 2023; Aghajanyan et al., 2023). Although unifying of different scaling laws is attractive, the added complexity to the interaction among multiple variables makes identifying the function form extremely challenging and hard to verify. Pioneering efforts that derive scaling laws with multiple concerning factors (model sizes and the numbers of training data) (Kaplan et al., 2020; Hoffmann et al., 2022) make assumptions upon the theory of error decomposition (Harville, 1985; Domingos, 2000) but their outcomes are still not widely verified in large-scale practice. From this perspective, we consider that our nested use of scaling laws offers a new technical routine of using scaling laws, which circumvents the huge challenge of complicating existing laws, making the discovery and application of scaling laws more accessible.
+
+### Experiment
+
+We verify the effect of our pipeline with an experiment to minimize the validation loss of a 1B model trained on 100B tokens.
+
+Setups.We train our models on the mixture of RedPajama and validate the validation set of the Pile to mimic the scenario where validation data are collected separately from the training data. To fit the scaling laws of training steps and model sizes, we train a series of 70M, 160M, 305M, and 410M models for 30B tokens. For all the models, we set the batch size as 1M tokens thus translating into 100k steps for the 1B models and 30k steps for small models. We apply a cosine learning rate decay with a warmup of 2k steps which decays to 0.1 of the maximum learning rate at the 100k-th steps.
+
+To reach low prediction errors with a limited number of experiment runs, we select the mixtures for experimentation by leveraging the fact that mixture proportion terms are represented as exponential functions within our data mixing law. Specifically, we enumerate candidate mixtures by double-diminishing the proportion for each training domain, starting from the maximum available one that does not use up all the domain tokens. In this way, the losses of each (implicit) validation domain are distributed evenly. We then sample 40 mixtures from all the candidates and train the smallest 70M models. We resample groups of 20 mixtures from them to fit the data mixing law and select the group that reaches minimum prediction errors on all 40 samples as our final set of mixtures to run our pipeline. For more details, please refer to Appendix B.2.
+
+Results.Fig. 6 shows the default mixture of RedPajama used in Touvron et al. (2023a) and the optimized mixture obtained from Alg. 1 with their performance on the validation data. The loss predictions are in Fig. 7. We find that:
+
+* _The pipeline optimizes performance effectively._ The model trained on the optimized mixture can achieve a performance comparable to the one trained on the default mixture with only 73% steps. It eventually attains a performance that requires 48% more steps if trained using the default mixture. This indicates the effectiveness of our pipeline in mixture optimization.
+* _Predictions provide references for the balance of model capabilities._ Prediction results in Fig. 7 demonstrate plausible reference on the relative
+
+Figure 6: The validation perplexity on the Pile validation set for 1B models trained on the default mixture and the optimized mixture of RedPajama for 100B tokens. Our optimized mixture achieves the performance of the default mixture only using 0.73 of the original number of training steps and eventually achieves a performance comparable to a default mixture trained with 1.48 times more tokens (estimated by the scaling law of training steps, shown as the dashed line). The specific mixture proportions are in the right table.
+
+Figure 7: Results of our loss prediction pipelines for the overall validation loss and domain losses. Fitting data are from 70M to 410M models trained for 30B tokens, while the extrapolated points are from the default and optimized mixture for 1B models and 100B tokens.
+
+scale of losses on both the overall validation data and different validation domains. While the overall loss helps optimize the overall performance, losses on different domains show model capabilities in various aspects. We suppose that this facilitates further mixture curating for the nuanced balance of model capabilities.
+
+## 5 Application to Continual Pretraining Outlooks Data Schedule Driven by Data Mixing Laws
+
+We are also interested in applying our data mixing laws to continual pretraining, which shares the same paradigm as pertaining but begins the model with pretrained parameters instead of random initialization. Generally, continual pretraining is a common technique to enhance existing pretrained models. It injects up-to-date knowledge into the model, avoiding performance degradation due to distribution shifts (Gururangan et al., 2020; Xiong et al., 2023). In addition, researchers also apply continual pretraining to reuse existing model parameters to build models of a different architecture (Komatsuzaki et al., 2022).
+
+We experiment on a typical scenario of continual pretraining, where we train the model on the mixture of original pretraining data and upcoming data of a target domain to enhance. For instance, we continually pretrain Pythia-70M models with a mixture of the Pile and Python codes, where the former is the original pretraining data of the base model. To verify whether our data mixing laws apply to continual pretraining, we train the models for 10B tokens on 4 mixtures and fit the Eqn. 6 on losses of the Pile and python codes. Results in Fig. 8 confirm that Eqn. 6 fits into the losses of continual pretraining.
+
+During continual pretraining, a too-large proportion of the target data can hurt the performance of the original data. A representative mixture optimization target is to maintain the general-purpose ability (looses on the Pile) unchanged. To this end, using the fitted data mixing laws, we predict the _critical proportion_ leading to the same loss as before continual pretraining. Fig. 8 demonstrates the success of our prediction where the proportion we find results in similar performance compared to the model before continual pretraining while gaining improvement in the target domain.
+
+**Remarks.** We suggest continual pretraining is significant for its connection to the design of data schedules (Albalak et al., 2023; Chen et al., 2024b). Usually, continual pretraining applies to a pretrained model, while it is natural to further continually pretrain the continual pretrained models, i.e., multi-stage pretraining (Chen et al., 2024b). In each stage, the mixture proportions or even the domain components of training data can be different.
+
+Figure 8: Loss predictions and the training curve of continual pretraining Pythia-70M on a mixture of the Pile and python code. (A) Loss prediction on the Pile; (B) Loss prediction on python; (C) training curves with losses on the Pile; (D) training curves with losses on python. We predict final losses with Eqn. 6. The law accurately finds the critical mixture proportion that maintains model performance on the original domain (i.e., the Pile).
+
+This becomes a dynamic data schedule as the number of training stages approaches the infinite limit. Therefore, the successful application of our data mixing laws on continual training signifies a promising prospect for using it to design dynamic data schedules, a more comprehensive data curating paradigm.
+
+## 6 Related Work
+
+Curating pretraining data for LLMs.Training massive transformer architecture on trillions of tokens, a.k.a. pretraining, is the primary step to building modern large language models that exhibit impressive human-like generalisation abilities (Brown et al., 2020; OpenAI, 2023; Jiang et al., 2023; Touvron et al., 2023b)). It takes up most of the computation resources for model training and researchers believe it endows almost all the knowledge in LLMs (Zhou et al., 2024). Such critical impact motivates the development of data curating strategies to reduce computation costs and enhance knowledge (Longpre et al., 2023). The efforts can be categorized into two steps. The first step focuses on obtaining a high-quality training dataset. A typical procedure includes selecting data sources to constitute different domains, deduplication, and the most intricate filtering (Wenzek et al., 2019; Penedo et al., 2023). A mass of endeavors in existing practice has involved multifarious filters, scoring the documents with from superficial features on characters (Rae et al., 2021; Xie et al., 2024; Raffel et al., 2020) to semantics including similarity to the high-quality reference corpus (Wenzek et al., 2019) and toxicity (Longpre et al., 2023; Friedl, 2023). With a dataset on hold, the second step aims to make the best use of it. This includes tuning the data mixture (Du et al., 2022; Touvron et al., 2023; Xie et al., 2024) and devising data schedules (Mindermann et al., 2022; Albalak et al., 2023; Chen et al., 2024; Fan et al., 2024). Our work is among those tune data mixtures and our extension to continue pretraining signifies our prospect of guiding the schedule design. Different from existing attempts that rely on intuition or qualitative targets, our study seeks a quantitative solution.
+
+Scaling lawsare functional relationships between the properties of interests (e.g., test loss or other performance metrics) and the scales of controllable factors regarding the optimization process or architecture (e.g., model sizes and numbers of training samples) (Villalobos, 2023). Along with the development of machine learning, characterizing scaling behaviors has garnered great research interest under the context of learning theories, bounding the generalization error given the number of training samples in the form of power laws (Vapnik and Chervonenkis, 1971; Valiant, 1984; Haussler, 1988; Amari et al., 1992). Nevertheless, overly strict assumptions hinder their practical applications. In recent years, statistical estimation on scaling gained fast progress for deep neural networks and spawns the introduction of scaling laws. Hestness et al. (2017) pioneers the trend and demonstrates power-law generalization error scaling across a breadth of factors but the power-law exponents differ from previous theoretical analysis. Kaplan et al. (2020); Hoffmann et al. (2022); Henighan et al. (2020) conduct more comprehensive investigations on Transformer architecture (Vaswani et al., 2017), further highlighting the power-law relationship on test loss regarding model sizes, the amount of training data and computation across orders of magnitudes. These findings foretell the performance gain with scaling quantitatively and guide the trade-off between larger models and more training data, directing to the later development of large language models (Brown et al., 2020; Hoffmann et al., 2022; OpenAI, 2023). Lately, progressive investigations propose amendments to existing scaling laws (Caballero et al., 2022; Alabdulmohsin et al., 2022), seeking theoretical explanations on the empirical formulas Bahri et al. (2021); Hutter (2021); Michaud et al. (2024), and exploring the functional relationships in broader scenarios (Hernandez et al., 2021; Frantar et al., 2023; Liu et al., 2023). The most relevant study to ours is Hashimoto (2021) which explores performance prediction under multiple data sources but is limited to small-scaled supervised learning tasks.
+
+## 7 Discussions
+
+In this work, we discover the quantitative predictability of model losses regarding the mixture proportions of training data, which boils down to the data mixing laws. Our findingscover training data from two domains to multiple domains, and validation data from a single domain to unknown compositions. Using data mixing laws allows practitioners to quantitatively estimate the model performance on unseen mixture proportions before the actual training, facilitating the tuning of ideal mixture proportions. We further propose the nested use of scaling laws of training steps, model sizes, and data mixture to make predictions with only experiments at small scales, which enables the reuse of existing experiments and reduces the computation costs. Experimental results suggest that our method effectively optimizes the data mixture, which leads to better performance in pretraining and maintaining the original abilities of pretrained models in continual pretraining.
+
+Admittedly, how data mixtures affect model training is far from fully understood. Our study makes preliminary attempts at a quantitative framework while leaving several limitations.
+
+On the clarification of domains.The concept of domains is not well-defined. In this paper, similar to related studies (Xie et al., 2024; Chen et al., 2024; Albalak et al., 2023; Fan et al., 2024), we directly adopt the predefined domains in the open-source training data. Nevertheless, we suppose that more operationally defined training domains, e.g., clustering (Gururangan et al., 2023; Shao et al., 2024), could further benefit the prediction accuracy of data mixing laws and the performance of outcome models. For the validation domains, our implicit domain aggregation method obviates the necessity of explicitly aligning validation data with training domains. This requirement is often encountered, given that validation data typically comprises trustworthy datasets rather than mere compilations from training domains. However, we acknowledge that implicit domain aggregation may be less interpretable compared to the explicit approach and may raise concerns regarding its accuracy, as elaborated subsequently.
+
+On the error analyses.Leveraging scaling laws requires experiments to provide samples to fit the functions. Consequently, it requires careful design of experiments (Mead, 1990) to decide the number of fitting samples to experiment with and how to distribute these samples to reduce prediction errors to the greatest extent. In this study, we decide the number according to our affordable budget and leverage the simple rule that evenly distributes the losses of the data samples but considering more theoretically justified rules should be necessary. Additionally, our nested use of scaling laws can introduce errors in each step. Therefore, further analyses to mitigate the error accumulation are also demanding. In Fig. 7, we notice our predictions are smaller than the actual loss, which we attribute to the underestimation from the step laws and model size laws we fit. Further practical experience demystifies the technical details of scaling laws (Su et al., 2024) can help eliminate the errors.
+
+On joint laws of multiple factors.We propose the nested use of scaling laws for circumventing the difficulties in finding a joint law of training steps, model sizes, and mixture proportions. Although we can predict the losses with our pipeline, a joint law unveils clear synergies of different factors. For instance, previous studies indicate the power-law exponent in the scaling laws of model sizes and training data are insensitive to training and validation data (Hestness et al., 2017; Kaplan et al., 2020; Hashimoto, 2021; Hoffmann et al., 2022; Frantar et al., 2023). Figuring out their joint laws with data mixture can further confirm this surmise. Moreover, a joint law also implements coefficient-sharing of separate laws, reducing the number of required fitting samples.
+
+On dynamic data curating.Our study presents a pipeline to decide on a group of fixed mixture proportions for pretraining. More sophisticated data curating can include dynamic proportions (Albalak et al., 2023) and even a curriculum that changes data domains (Chen et al., 2024). The application of our data mixing laws in continual pretraining (Sec. 5) implies the prospect of extending our findings to these settings. On top of this, we believe that it is promising to incorporate further analysis to pursue a dynamic data mixing law.
+
+On theoretical understandings.Our data mixing laws, similar to most scaling laws, are empirical findings. We believe a theoretical understanding of the training dynamics that form the laws provides a more solid justification. A potential perspective is understanding the target of tuning mixture proportion through gradient estimation (Guo et al., 2024; Guet al., 2024). Specifically, the mixture proportions weight data from different domains, whose effect boils down to the weight for the linear combination of gradients from different domains during training. This perspective turns the target of tuning mixture proportions into finding an ideal gradient direction (Gu et al., 2024) and the relationship between data samples is formalized with their gradient directions (Guo et al., 2024).
+
+To sum up, we initiate an investigation into quantitative prediction methods for pretraining data curation. With its increasing focus on data engineering, we hope our exploration facilitates further quantitative studies and theoretical analyses in this research area.
+
+## Acknowledgments
+
+The computations in this research were performed using the CFFF platform of Fudan University. We thank Botian Jiang and Shiduo Zhang for their insightful discussions.
+
+## References
+
+* Aghajanyan et al. (2023) Armen Aghajanyan, Lili Yu, Alexis Conneau, Wei-Ning Hsu, Karen Hambardzumyan, Susan Zhang, Stephen Roller, Naman Goyal, Omer Levy, and Luke Zettlemoyer. Scaling laws for generative mixed-modal language models. _arXiv preprint arXiv:2301.03728_, 2023.
+* Alabdulmohsin et al. (2022) Ibrahim M Alabdulmohsin, Behnam Neyshabur, and Xiaohua Zhai. Revisiting neural scaling laws in language and vision. _Advances in Neural Information Processing Systems_, 35:22300-22312, 2022.
+* Albalak et al. (2023) Alon Albalak, Liangming Pan, Colin Raffel, and William Yang Wang. Efficient online data mixing for language model pre-training. _arXiv preprint arXiv:2312.02406_, 2023.
+* Amari et al. (1992) Shun-ichi Amari, Naotake Fujita, and Shigeru Shinomoto. Four types of learning curves. _Neural Computation_, 4(4):605-618, 1992.
+* Bahri et al. (2021) Yasaman Bahri, Ethan Dyer, Jared Kaplan, Jaehoon Lee, and Utkarsh Sharma. Explaining neural scaling laws. _arXiv preprint arXiv:2102.06701_, 2021.
+* Bai et al. (2023) Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang, Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei Huang, et al. Qven technical report. _arXiv preprint arXiv:2309.16609_, 2023.
+* Bi et al. (2024) Xiao Bi, Deli Chen, Guanting Chen, Shanhuang Chen, Damai Dai, Chengqi Deng, Honghui Ding, Kai Dong, Qiushi Du, Zhe Fu, et al. Deepseek llvm: Scaling open-source language models with longtermism. _arXiv preprint arXiv:2401.02954_, 2024.
+* Biderman et al. (2023) Stella Biderman, Hailey Schoelkopf, Quentin Gregory Anthony, Herbie Bradley, Kyle O'Brien, Eric Hallahan, Mohammad Afah Khan, Shivanshu Purohit, USVSN Sai Prashanth, Edward Raff, et al. Pythia: A suite for analyzing large language models across training and scaling. In _International Conference on Machine Learning_, pp. 2397-2430. PMLR, 2023.
+* Bishop (2006) Christopher Bishop. Pattern recognition and machine learning. _Springer google schola_, 2:5-43, 2006.
+* Brown et al. (2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.
+* Caballero et al. (2022) Ethan Caballero, Kshitij Gupta, Irina Rish, and David Krueger. Broken neural scaling laws. _arXiv preprint arXiv:2210.14891_, 2022.
+* Chen et al. (2024a) Daoyuan Chen, Yilun Huang, Zhijian Ma, Hesen Chen, Xuchen Pan, Ce Ge, Dawei Gao, Yuexiang Xie, Zhaoyang Liu, Jinyang Gao, Yaliang Li, Bolin Ding, and Jingren Zhou. Data-juicer: A one-stop data processing system for large language models. In _International Conference on Management of Data_, 2024a.
+
+* Chen et al. (2024b) Mayee Chen, Nicholas Roberts, Kush Bhatia, Jue Wang, Ce Zhang, Frederic Sala, and Christopher Re. Skill-itl a data-driven skills framework for understanding and training language models. _Advances in Neural Information Processing Systems_, 36, 2024b.
+* Doddapaneni et al. (2021) Sumanth Doddapaneni, Gowtham Ramesh, Mitesh M Khapra, Anoop Kunchukuttan, and Pratyush Kumar. A primer on pretrained multilingual language models. _arXiv preprint arXiv:2107.00676_, 2021.
+* Domingos (2000) Pedro Domingos. A unified bias-variance decomposition. In _Proceedings of 17th international conference on machine learning_, pp. 231-238. Morgan Kaufmann Stanford, 2000.
+* Drucker (1997) Harris Drucker. Improving regressors using boosting techniques. In _Icml_, volume 97, pp. e115. Citeseer, 1997.
+* Du et al. (2022) Nan Du, Yanping Huang, Andrew M Dai, Simon Tong, Dmitry Lepikhin, Yuanzhong Xu, Maxim Krikun, Yanqi Zhou, Adams Wei Yu, Orhan Firat, et al. Glam: Efficient scaling of language models with mixture-of-experts. In _International Conference on Machine Learning_, pp. 5547-5569. PMLR, 2022.
+* Fan et al. (2024) Simin Fan, Matteo Pagliardini, and Martin Jaggi. Doge: Domain reweighting with generalization estimation, 2024.
+* Frantar et al. (2023) Elias Frantar, Carlos Riquelme, Neil Houlsby, Dan Alistarh, and Utku Evci. Scaling laws for sparsely-connected foundation models. _arXiv preprint arXiv:2309.08520_, 2023.
+* French (1999) Robert M French. Catastrophic forgetting in connectionist networks. _Trends in cognitive sciences_, 3(4):128-135, 1999.
+* Friedl (2023) Paul Friedl. Dis/similarities in the design and development of legal and algorithmic normative systems: the case of perspective api. _Law, Innovation and Technology_, 15(1):25-59, 2023.
+* Gao et al. (2020) Leo Gao, Stella Biderman, Sid Black, Laurence Golding, Travis Hoppe, Charles Foster, Jason Phang, Horace He, Anish Thite, Noa Nabeshima, et al. The pile: An 800gb dataset of diverse text for language modeling. _arXiv preprint arXiv:2101.00027_, 2020.
+* Gu et al. (2024) Yuxian Gu, Li Dong, Yaru Hao, Qingxiu Dong, Minlie Huang, and Furu Wei. Towards optimal learning of language models. _arXiv preprint arXiv:2402.17759_, 2024.
+* Guo et al. (2024) Shangmin Guo, Yi Ren, Stefano V Albrecht, and Kenny Smith. Sample relationship from learning dynamics matters for generalisation. _arXiv preprint arXiv:2401.08808_, 2024.
+* Gururangan et al. (2020) Suchin Gururangan, Ana Marasovic, Swabha Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, and Noah A Smith. Don't stop pretraining: Adapt language models to domains and tasks. _arXiv preprint arXiv:2004.10964_, 2020.
+* Gururangan et al. (2023) Suchin Gururangan, Margaret Li, Mike Lewis, Weijia Shi, Tim Althoff, Noah A Smith, and Luke Zettlemoyer. Scaling expert language models with unsupervised domain discovery. _arXiv preprint arXiv:2303.14177_, 2023.
+* Harville (1985) David A Harville. Decomposition of prediction error. _Journal of the American Statistical Association_, 80(389):132-138, 1985.
+* Hashimoto (2021) Tatsunori Hashimoto. Model performance scaling with multiple data sources. In _International Conference on Machine Learning_, pp. 4107-4116. PMLR, 2021.
+* Haussler (1988) David Haussler. Quantifying inductive bias: Ai learning algorithms and valiant's learning framework. _Artificial intelligence_, 36(2):177-221, 1988.
+* Henighan et al. (2020) Tom Henighan, Jared Kaplan, Mor Katz, Mark Chen, Christopher Hesse, Jacob Jackson, Heewoo Jun, Tom B Brown, Prafulla Dhariwal, Scott Gray, et al. Scaling laws for autoregressive generative modeling. _arXiv preprint arXiv:2010.14701_, 2020.
+* Hernandez et al. (2021) Danny Hernandez, Jared Kaplan, Tom Henighan, and Sam McCandlish. Scaling laws for transfer. _arXiv preprint arXiv:2102.01293_, 2021.
+* Haussler et al. (2020)* Hestness et al. [2017] Joel Hestness, Sharan Narang, Newsha Ardalani, Gregory Diamos, Heewoo Jun, Hassan Kianinejad, Md Mostofa Ali Patwary, Yang Yang, and Yanqi Zhou. Deep learning scaling is predictable, empirically. _arXiv preprint arXiv:1712.00409_, 2017.
+* Hoffmann et al. [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _arXiv preprint arXiv:2203.15556_, 2022.
+* Hornik et al. [1989] Kurt Hornik, Maxwell Stinchcombe, and Halbert White. Multilayer feedforward networks are universal approximators. _Neural networks_, 2(5):359-366, 1989.
+* Hutter [2021] Marcus Hutter. Learning curve theory. _arXiv preprint arXiv:2102.04074_, 2021.
+* Jiang et al. [2023] Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7b. _arXiv preprint arXiv:2310.06825_, 2023.
+* Kaplan et al. [2020] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. Scaling laws for neural language models. _arXiv preprint arXiv:2001.08361_, 2020.
+* Kirkpatrick et al. [2017] James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Joel Veness, Guillaume Desjardins, Andrei A Rusu, Kieran Milan, John Quan, Tiago Ramalho, Agnieszka Grabska-Barwinska, et al. Overcoming catastrophic forgetting in neural networks. _Proceedings of the national academy of sciences_, 114(13):3521-3526, 2017.
+* Komatsuzaki et al. [2022] Aran Komatsuzaki, Joan Puigcerver, James Lee-Thorp, Carlos Riquelme Ruiz, Basil Mustafa, Joshua Ainslie, Yi Tay, Mostafa Dehghani, and Neil Houlsby. Sparse upcycling: Training mixture-of-experts from dense checkpoints. _arXiv preprint arXiv:2212.05055_, 2022.
+* Li et al. [2023] Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Koectkov, Cheng-hao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, et al. Starcoder: may the source be with you! _arXiv preprint arXiv:2305.06161_, 2023.
+* Liu et al. [2023] Xiaoran Liu, Hang Yan, Chenxin An, Xipeng Qiu, and Dahua Lin. Scaling laws of rope-based extrapolation. In _The Twelfth International Conference on Learning Representations_, 2023.
+* Longpre et al. [2023] Shayne Longpre, Gregory Yauney, Emily Reif, Katherine Lee, Adam Roberts, Barret Zoph, Denny Zhou, Jason Wei, Kevin Robinson, David Mimno, et al. A pretrainer's guide to training data: Measuring the effects of data age, domain coverage, quality, & toxicity. _arXiv preprint arXiv:2305.13169_, 2023.
+* Luo et al. [2023] Yun Luo, Zhen Yang, Fandong Meng, Yafu Li, Jie Zhou, and Yue Zhang. An empirical study of catastrophic forgetting in large language models during continual fine-tuning. _arXiv preprint arXiv:2308.08747_, 2023.
+* Mead [1990] Roger Mead. _The design of experiments: statistical principles for practical applications_. Cambridge university press, 1990.
+* Michaud et al. [2024] Eric Michaud, Ziming Liu, Uzay Girit, and Max Tegmark. The quantization model of neural scaling. _Advances in Neural Information Processing Systems_, 36, 2024.
+* Mindermann et al. [2022] Soren Mindermann, Jan M Brauner, Muhammed T Razzak, Mrinank Sharma, Andreas Kirsch, Winnie Xu, Benedikt Holten, Aidan N Gomez, Adrien Morisot, Sebastian Farquhar, et al. Prioritized training on points that are learnable, worth learning, and not yet learnt. In _International Conference on Machine Learning_, pp. 15630-15649. PMLR, 2022.
+* Muennighoff et al. [2024] Niklas Muennighoff, Alexander Rush, Boaz Barak, Teven Le Scao, Nouamane Tazi, Aleksandra Piktus, Sampo Pyysalo, Thomas Wolf, and Colin A Raffel. Scaling data-constrained language models. _Advances in Neural Information Processing Systems_, 36, 2024.
+* OpenAI [2023] OpenAI. Gpt-4 technical report. _arXiv preprint arXiv:2303.08774_, 2023.
+* O'Hagan et al. [2022]
+* Penedo et al. (2023) Guilherme Penedo, Quentin Malartic, Daniel Hesslow, Ruxandra Cojocaru, Alessandro Cappelli, Hamza Alobeidli, Baptiste Pannier, Ebtesam Almazrouei, and Julien Launay. The refinedweb dataset for falcon llm: outperforming curated corpora with web data, and web data only. _arXiv preprint arXiv:2306.01116_, 2023.
+* Radford et al. (2018) Alec Radford, Karthik Narasimhan, Tim Salimans, and Ilya Sutskever. Improving language understanding with unsupervised learning. 2018.
+* Rae et al. (2021) Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susannah Young, et al. Scaling language models: Methods, analysis & insights from training gopher. _arXiv preprint arXiv:2112.11446_, 2021.
+* Raffel et al. (2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.
+* Shao et al. (2024) Yunfan Shao, Linyang Li, Zhaoye Fei, Hang Yan, Dahua Lin, and Xipeng Qiu. Balanced data sampling for language model training with clustering. _arXiv preprint arXiv:2402.14526_, 2024.
+* Su et al. (2024) Hui Su, Zhi Tian, Xiaoyu Shen, and Xunliang Cai. Unraveling the mystery of scaling laws: Part i. _arXiv preprint arXiv:2403.06563_, 2024.
+* Taylor et al. (2022) Ross Taylor, Marcin Kardas, Guillem Cucurull, Thomas Scialom, Anthony Hartshorn, Elvis Saravia, Andrew Poulton, Viktor Kerkez, and Robert Stojnic. Galactica: A large language model for science. _arXiv preprint arXiv:2211.09085_, 2022.
+* Touvron et al. (2023) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023a.
+* Touvron et al. (2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023b.
+* Valiant (1984) Leslie G Valiant. A theory of the learnable. _Communications of the ACM_, 27(11):1134-1142, 1984.
+* Vapnik and Chervonenkis (1971) VN Vapnik and A Ya Chervonenkis. On the uniform convergence of relative frequencies of events to their probabilities. _Theory of Probability and its Applications_, 16(2):264, 1971.
+* Vaswani et al. (2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, L ukasz Kaiser, and Illia Polosukhin. Attention is all you need. In _Advances in Neural Information Processing Systems_, volume 30. Curran Associates, Inc., 2017. URL [https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee2435474ee917bd053cc1ca845aa-Paper.pdf](https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee2435474ee917bd053cc1ca845aa-Paper.pdf).
+* Villalobos (2023) Pablo Villalobos. Scaling laws literature review, 2023. URL [https://epochai.org/blog/scaling-laws-literature-review](https://epochai.org/blog/scaling-laws-literature-review). Accessed: 2024-02-27.
+* Wenzek et al. (2019) Guillaume Wenzek, Marie-Anne Lachaux, Alexis Conneau, Vishrav Chaudhary, Francisco Guzman, Armand Joulin, and Edouard Grave. Ccnet: Extracting high quality monolingual datasets from web crawl data. _arXiv preprint arXiv:1911.00359_, 2019.
+* Xie et al. (2024) Sang Michael Xie, Hieu Pham, Xuanyi Dong, Nan Du, Hanxiao Liu, Yifeng Lu, Percy S Liang, Quoc V Le, Tengyu Ma, and Adams Wei Yu. Doremi: Optimizing data mixtures speeds up language model pretraining. _Advances in Neural Information Processing Systems_, 36, 2024a.
+
+* Xie et al. (2024) Sang Michael Xie, Shibani Santurkar, Tengyu Ma, and Percy S Liang. Data selection for language models via importance resampling. _Advances in Neural Information Processing Systems_, 36, 2024b.
+* Xiong et al. (2023) Wenhan Xiong, Jingyu Liu, Igor Molybog, Hejia Zhang, Prajwal Bhargava, Rui Hou, Louis Martin, Rashi Rungta, Karthik Abinav Sankararaman, Barlas Oguz, et al. Effective long-context scaling of foundation models. _arXiv preprint arXiv:2309.16039_, 2023.
+* Zhan et al. (2024) Jun Zhan, Junqi Dai, Jiasheng Ye, Yunhua Zhou, Dong Zhang, Zhigeng Liu, Xin Zhang, Ruibin Yuan, Ge Zhang, Linyang Li, Hang Yan, Jie Fu, Tao Gui, Tianxiang Sun, Yugang Jiang, and Xipeng Qiu. Anygpt: Unified multimodal llm with discrete sequence modeling, 2024.
+* Zhou et al. (2024) Chunting Zhou, Pengfei Liu, Puxin Xu, Srinivasan Iyer, Jiao Sun, Yuning Mao, Xuezhe Ma, Avia Efrat, Ping Yu, Lili Yu, et al. Lima: Less is more for alignment. _Advances in Neural Information Processing Systems_, 36, 2024.
+* Zhou et al. (2023) Kun Zhou, Yutao Zhu, Zhipeng Chen, Wentong Chen, Wayne Xin Zhao, Xu Chen, Yankai Lin, Ji-Rong Wen, and Jiawei Han. Don't make your llm an evaluation benchmark cheater. _arXiv preprint arXiv:2311.01964_, 2023.
+
+The relative qualities of data mixtures relate to model sizes and training steps.
+
+One may wonder whether we can find the optimal data mixtures on small models and few numbers of steps, and then transfer the found mixture proportions to large-scale training. To answer this question, we compare the relative performance of models in different sizes and trained with different numbers of steps in Fig. 9.
+
+Results show that the relative performance fluctuates despite a relatively consistent trend across sizes and training steps. This indicates that a mixture is better at small scales probably but does not always perform better at large scales. The longest common sequence of the partial orders among the 20 mixtures in Fig. 9(A) and Fig. 9(B) only reaches lengths of 10 and 11, respectively.
+
+## Appendix B Implementation Details
+
+### Model Training
+
+Throughout this study, we employ the Pythia Suit (Biderman et al., 2023) as our model architectures, the specific configurations are in Tab. 2. The maximum sequence length is 4096 for pretraining from scratch and 2048 for continual pretraining, where the latter aligns with the setting of the original pretrained models. In all our experiments, we train the model with a batch size of 1M tokens and a maximum learning rate of 1e-4. We warm up the learning rates for 2000 steps and decay it to 0.1 of the maximum at the last training step with a cosine decay schedule. For continual pretraining, we initialize the models with the 20k-step checkpoint of the Pythia 70M model and do not apply a learning rate warmup.
+
+For datasets, we mainly experiment with the Pile and RedPajama. For the Pile, we find duplicates in the raw data, so deduplication is performed before training with it. The Pile contains 5 coarse-grained domains, which are further decomposed into 22 fine-grained domains. Our experiment in Sec. 3.1 is on Github and Pile-CC domains while the experiment in Sec. 3.2 is on Github, Pile-CC, and the Books. All these are fine-grained domains. For our experiments with 5 domains in Sec. 3.3 we adopt the five coarse-grained domains, i.e., academic, internet, prose, dialogues, and misc, where misc include Github and the DeepMind Mathematics Dataset which are symbolic content. We use the coarse-grained domains because it is hard to find five fine-grained domains with sufficient tokens. For the RedPajama, we download the version produced and shared by Chen et al. (2024a).
+
+\begin{table}
+\begin{tabular}{l l l l l l} \hline \hline  & **70M** & **160M** & **305M** & **410M** & **1B** \\ \hline Vocabulary Size & 50304 & 50304 & 50304 & 50304 & 50304 \\ Non-embedding Params & 18,915,328 & 85,056,000 & 201,541,632 & 302,311,424 & 805,736,448 \\ Layers & 6 & 12 & 16 & 24 & 16 \\ Model Dimension & 512 & 768 & 1024 & 1024 & 2048 \\ Heads & 8 & 12 & 16 & 16 & 8 \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: Model architectures for experiments in this paper.
+
+Figure 9: The rankings of the relative performance of 20 sample mixtures trained on RedPajama and validate on the Pile. **(A)** The rankings of models of different sizes all trained for 30k steps. **(B)** The rankings for 70M models trained for different steps.
+
+```
+0: Maximum proportions of \(M\) domains \(\mathbf{r}_{max,1}=[r_{max,1},\ldots,r_{max,M}]\), where \(r_{max,i}=\frac{D_{i}}{D_{input}}\) with \(D_{i}\) and \(D_{target}\) being numbers of available tokens in \(i\)-th domain and target number of training tokens, respectively, sorted in descending orders (i.e., \(r_{max,1}\geq r_{max,2}\geq\cdots\geq r_{max,M}\)), minimum proportion grid size \(\delta\), number of mixture to run experiment \(N\).
+0: A set of \(N\) mixtures to experiment \(\{\mathbf{r}_{n}\}_{n=1}^{N}\).
+1: Candidate mixtures \(\mathcal{C}\leftarrow\textsc{GetALLCandidates}(1,[])\)
+2: Split mixtures with \(0\) proportion in \(\mathcal{C}\) into \(\mathcal{C}_{0}\) and the others into \(\mathcal{C}_{1}\)
+3: Samples \(\{\mathbf{r}_{n}\}_{n=1}^{|N/4|}\) from \(\mathcal{C}_{0}\) and \(\{\mathbf{r}_{n}\}_{n=\lceil N/4\rceil}^{N}\) from \(\mathcal{C}_{1}\)
+4:
+5:procedureGetAllCandidates(domain index \(i\), proportions of first \(i-1\) domains \(r_{1,..i-1}\))
+6: Candidate mixtures \(\mathcal{C}=\varnothing\)
+7:if\(i=M\)then
+8:if\(0\leq 1-\sum_{j=1}^{i-1}r_{j}\leq r_{max,i}\)then
+9:\(r_{1..i}\leftarrow[r_{1..i-1},1-\sum_{j=1}^{i-1}r_{j}]\)
+10:\(\mathcal{C}\leftarrow\mathcal{C}\bigcup\{r_{1..i}\}\)
+11:endif
+12:else
+13:\(\Gamma\leftarrow\delta*\lfloor\frac{r_{max,i}}{\delta}\rfloor\)
+14:for\(s=0\)To \(\lceil\log_{2}\frac{\Gamma}{\delta}\rceil\)do
+15:\(r_{i}\leftarrow\max(0,\frac{\Gamma}{2^{s}})\)
+16:\(\mathcal{C}\leftarrow\mathcal{C}\bigcup\textsc{GetALLCandidates}(i+1,[r_{1..i}])\)
+17:endfor
+18:endif
+19:return\(\mathcal{C}\)
+20:endprocedure
+```
+
+**Algorithm 2** Sampling mixture proportions for fitting mixture laws.
+
+### Fitting Mixture Laws
+
+Fitting the mixture law requires us to first experiment on a few mixtures and obtain their losses. The sample mixture chosen for fitting could largely affect the prediction accuracy. Consider an extreme case where all sample mixtures have proportions around a small region, it is hardly possible to fit a law that reliably predicts the whole proportion space.
+
+In this paper, we intuitively try evenly allocating the mixture proportions regarding their losses. Specifically, we enumerate candidate mixtures by double-diminishing the proportion of each domain so that the losses are distributed evenly among these mixtures. Then, according to the available computation budget, we sample a certain number of mixtures from the candidates to run experiments. During sampling, we find candidate mixtures with a \(0\) domain proportion in any of the training domains take up a majority of the candidates. To avoid these candidates making up all our samples, we specifically down-sample them. The concrete algorithms are in Alg. 2. Additionally, we employ AdaBoost Regressor (Drucker, 1997) for fitting the mixture laws to stabilize the predictions and improve their accuracy. We encourage future studies to dive into a more careful design of candidate mixture selection with theoretical support.
+
+## Appendix C Connections between Implicit Domain Aggregation and MLP
+
+We first repeat our final mixture law (Eqn. 8) here for convenience:
+
+\[L(r_{1...M})=\sum_{i=1}^{K}s_{i}L_{i}(r_{1...M})=\sum_{i=1}^{K}s_{i}\left[c_{i} +k_{i}\exp\left(\sum_{j=1}^{M}t_{ij}r_{j}\right)\right],\]
+
+where \(r_{1...M}\) are mixture proportions on \(M\) training domains, \(L_{i}\) are validation loss on \(K\) implicit domains with \(s_{i}\) as their weight in the overall validation set, and \(c_{i},t_{ij}\) are other parameters to fit.
+
+The mixture law boils down to a computation graph in Fig. 10, which contains two layers. The first layers predict the domain losses, while the second sums up the domain losses to obtain the overall validation loss. In this way, the mixture law becomes a multilayer perception (MLP) with an exponential activation function. In practice, we fit the mixture laws with implicit domain aggregation by fitting a multilayer perception with exponential activation and applying softmax to the output layer weights. Additionally, considering the high variance of MLP, we further employ AdaBoost Regressor (Drucker, 1997) for fitting the mixture laws to stabilize the predictions and improve their accuracy.
+
+Inspired by this perspective, we attribute the successful fitting of mixture law to two aspects. First, the MLP with a sufficiently large hidden dimension is a universal approximator (Hornik et al., 1989) thus being able to fit the relationships between losses and mixture proportions. Second, the mixture proportions are bounded between 0 and 1. For this reason, predicting an unseen mixture is an interpolation problem, which is usually easier than extrapolation.
+
+Figure 10: The computation graph of mixture law with implicit domain aggregation. We take an case of 3 training domains and 4 implicit validation domains as example. The parameters correspond to the notations in Eqn. 8.
