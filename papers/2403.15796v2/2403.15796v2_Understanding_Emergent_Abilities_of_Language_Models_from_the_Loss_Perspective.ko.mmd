@@ -1,0 +1,297 @@
+# 손실 관점에서 언어 모델의 출현 능력 이해
+
+ 정샤오두\({}^{1,2}\), 아오한정\({}^{1,2}\), 유샤오동\({}^{2}\), 제탕\({}^{2}\)
+
+칭화대
+
+{zx-du20,zah22}@mails.tsinghua.edu.cn
+
+###### Abstract
+
+최근 연구들은 언어 모델의 창발 능력[47]이 대형 모델의 전유물이라는 믿음에 의문을 제기했다. 이러한 회의론은 두 가지 관찰에서 비롯된다: 1) 더 작은 모델도 출현 능력에 대해 높은 성능을 나타낼 수 있고 2) 이러한 능력을 측정하는 데 사용되는 불연속 메트릭에 대한 의심이 있다. 본 논문에서는 모델 크기나 훈련 계산 대신 훈련 전 손실에 대한 렌즈에서의 창발 능력을 연구할 것을 제안한다. 동일한 사전 훈련 손실이지만 모델 및 데이터 크기가 다른 모델이 다양한 다운스트림 태스크에서 동일한 성능을 생성한다는 것을 보여준다. 우리는 또한 모델이 사전 훈련 손실이 특정 임계값 아래로 떨어질 때 메트릭의 연속성에 관계없이 특정 작업에 대한 새로운 능력을 나타낸다는 것을 발견한다. 이 임계값에 도달하기 전에 그 성능은 무작위 추측 수준에 머물러 있다. 이것은 우리에게 새로운 능력을 훈련 전 손실이 더 적은 모델에서 나타나는 능력으로 재정의하도록 영감을 주어 훈련 전 손실이 더 많은 모델의 성능 추세를 외삽하는 것만으로는 이러한 능력을 예측할 수 없음을 강조한다.
+
+## 1 Introduction
+
+모델 및 데이터 크기 모두에 대한 언어 모드(LMs)의 스케일링은 광범위한 태스크[33; 3; 16; 5; 53; 44; 28]에서 성능을 향상시키는 데 효과적인 것으로 나타났으며, 이는 LM 애플리케이션, 예를 들어 ChatGPT의 광범위한 채택으로 이어졌다. 이러한 스케일링의 성공은 스케일링 법칙[15; 21; 7; 16]에 의해 안내되며, 이는 모델 및 데이터 크기가 주어졌을 때 사전 트레이닝 손실의 예측 가능성을 연구한다.
+
+스케일링 법칙은 사전 훈련 손실에 초점을 맞추는 반면, 다운스트림 태스크의 성능에 대한 스케일링 효과는 지금까지 덜 연구되었다. 신생 능력[47]은 더 큰 LMs에는 존재하지만 더 작은 LMs에는 존재하지 않는 능력으로 정의된다. 이러한 능력의 존재는 최근 두 가지 이유로 도전을 받고 있다. 먼저, 충분한 수의 토큰들에 대해 트레이닝된 소형 LMs들은 주장된 출현 능력들을 갖는 태스크들에 대한 대형 모델들을 능가할 수 있다[44; 45; 19]. 예를 들어, 적은 컴퓨트 [44]를 갖는 LLaMA-13B는 MMLU [14]에서 GPT-3(175B)을 능가할 수 있다. 둘째, [37]은 더 큰 모델의 근본적인 변화가 아니라 특정 데이터 세트를 평가하기 위해 선택된 비선형 또는 불연속 메트릭으로 인해 출현 능력이 나타난다고 주장한다.
+
+[16]은 모델 크기들 및 데이터 크기들의 상이한 조합들이 동일한 트레이닝 컴퓨트에서도 상이한 사전 트레이닝 손실들을 초래할 수 있다는 것을 보여준다. 결과적으로, 사전 트레이닝 손실은 모델 또는 데이터 크기보다 LMs의 학습 상태를 자연스럽게 더 잘 나타낼 수 있다. 그러나 LM 손실과 다운스트림 태스크에서의 성능 사이의 관계는 아직 잘 이해되지 않았다. 기존 문헌은 전이 학습 패러다임에 초점을 맞추거나[25; 43] 단일 모델, 과제 또는 프롬프트 방법[40; 49]으로 연구를 제한했다.
+
+본 연구에서는 모델 크기나 훈련 계산 대신 훈련 전 손실의 관점에서 창발 능력을 연구할 것을 제안한다. LMs의 사전 훈련 손실과 성능 사이의 관계를 조사하기 위해 고정 데이터 코퍼스, 토큰화 및 모델 아키텍처를 사용하여 다양한 모델 및 데이터 크기의 30개 이상의 LMs를 처음부터 사전 훈련했다. 다운스트림 성능은 다양한 작업, 언어, 프롬프트 유형 및 답변 양식을 포함하는 다양한 데이터 세트 \(12\)에서 평가됩니다. 우리는 LM의 사전 훈련 손실이 모델 크기나 데이터 크기에 관계없이 다운스트림 태스크에서 성능을 예측한다는 것을 보여준다. 개방형 LLaMA 모델[44]의 성능 및 손실 관계를 추출 및 관찰함으로써 이러한 결론의 일반성을 추가로 검증한다.
+
+그 과정에서 우리는 특정 다운스트림 태스크에 대한 성능이 사전 훈련 손실이 특정 임계값, 즉 출현 능력 아래로 떨어질 때 무작위 추측 수준을 넘어 향상된다는 것을 발견했다. 흥미롭게도 이러한 작업에 대한 손실 임계값은 동일합니다. 손실이 이 임계값 이상일 때, 다른 작업에 대한 성능이 처음부터 계속 개선되더라도 성능은 무작위 추측 수준에 머무른다. 불연속 메트릭의 영향을 배제하기 위해 연속 메트릭을 사용하여 창발 성능 증가를 평가하고 창발 능력이 불연속 메트릭과 연속 메트릭 모두에 걸쳐 지속됨을 보여준다.
+
+이러한 관찰을 바탕으로 훈련 전 손실의 관점에서 LM의 출현 능력을 정의한다. 능력은 훈련 전 손실이 높은 언어 모델에는 존재하지 않지만 훈련 전 손실이 낮은 언어 모델에는 존재하는 경우 출현한다. 손실 스케일링 법칙들에 따르면[15; 21], 사전 트레이닝 손실은 모델 크기, 데이터 크기, 및 트레이닝 컴퓨트의 함수이다. 따라서 새로운 창발 능력은 모델 크기 또는 훈련 컴퓨팅 측면에서 이전에 관찰된 창발 능력을 설명할 수도 있다.
+
+새로운 정의의 장점은 LMs가 새로운 능력을 획득할 때 훈련 궤적의 티핑 포인트를 더 잘 포착하는 능력에 있다. 다시 한 번 [47], 창발 능력의 존재는 훈련 전 손실이 더 큰 LM의 성능을 단순히 외삽하여 LM의 모든 능력을 예측할 수 없음을 시사한다. 사전 트레이닝 손실을 낮추기 위해 모델 및 데이터 크기를 추가로 스케일링하는 것은 이전 LMs에 존재하지 않았던 새로운 능력들을 가능하게 할 수 있다.
+
+## 2 사전 훈련 손실 예측 작업 성능?
+
+12개의 다운스트림 태스크에 대한 언어 모델(LMs)의 성능과 사전 훈련 손실 사이의 관계를 연구한다. 다양한 모델 크기(300M, 540M, 1B, 1.5B, 3B, 6B, 32B)의 LMs를 고정 데이터 코퍼스, 토큰화 및 아키텍처를 사용하여 다양한 수의 토큰에 사전 훈련한다. 또한 열린 LLaMA [44] 모델(7B, 13B, 33B 및 65B)을 활용하여 관찰을 검증한다.
+
+\begin{table}
+\begin{tabular}{l l l l l} \hline \hline
+**Dataset** & **Task** & **Prompting Type** & **Answer Form** & **Metric** \\ \hline \hline \multicolumn{5}{c}{_English datasets_} \\ \hline TriviaQA [20] & Closed-book QA & Few-shot & Open-formed & EM \\ HellaSwag [52] & Commonsense NLI & Zero-shot & Multi-choice & Accuracy \\ RACE [23] & Reading Comprehension & Few-shot & Multi-choice & Accuracy \\ WinoGrande [35] & Coreference Resolution & Zero-shot & Multi-choice & Accuracy \\ MMLU [14] & Examination & Few-shot & Multi-choice & Accuracy \\ GSM8K [8] & Math Word Problem & Few-shot CoT & Open-formed & EM \\ \hline \hline \multicolumn{5}{c}{_Chinese datasets_} \\ \hline NLPCC-KBQA[10] & Closed-book QA & Few-shot & Open-formed & EM \\ ClozeT [51] & Commonsense NLI & Zero-shot & Multi-choice & Accuracy \\ CLUEWSC [50] & Coreference Resolution & Zero-shot & Multi-choice & Accuracy \\ C3 [42] & Reading Comprehension & Few-shot & Multi-choice & Accuracy \\ C-Eval [18] & Examination & Few-shot & Multi-choice & Accuracy \\ GSM8K-Chinese & Math Word Problem & Few-shot CoT & Open-formed & EM \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 실험에서 평가된 영어 및 중국어 데이터 세트, 그리고 그들의 태스크 유형, 프롬프트 유형, 답변 양식 및 메트릭. 프롬핑 유형을 위해 우리는 생각의 사슬 프롬프트 [48]을 적은 샷 CoT로, 원래의 상황 내 학습 프롬프트 [3]을 적은 샷으로 지칭한다.
+
+LM 손실이 다운스트림 작업에 대한 성능을 결정하는 것은 간단하지 않다. 단순화를 위해 단일 토큰 대상이 있는 EM(Exact Match) 메트릭을 고려한다. 진실 \(y\)이 주어진 프롬프트 \(x\)의 예측 \(\hat{y}\)에 대한 점수 \(\mathrm{EM}(\hat{y},y)\)는 \(\hat{y}=y\)이면 1이고 그렇지 않으면 0이다. \(\mathrm{EM}(\hat{y},y)\)의 기대치는 다음과 같다.
+
+\[\mathbb{E}[\mathrm{EM}(\hat{y},y)]=P_{\mathrm{LM}}(y|x)=\exp(-\ell(y|x)) \tag{1}\]
+
+여기서 \(\ell(y|x)\)는 문맥 \(x\)와 목표 \(y\)가 주어진 LM의 교차 엔트로피 손실이다.
+
+\(\ell(y|x)\)은 사전 훈련 손실 \(L\)과 동일한 형태를 가지지만 동일하지는 않습니다. 먼저 사전 훈련 손실은 사전 훈련된 모든 문서에 있는 모든 토큰의 평균입니다. 우리의 경험적 관찰에 따르면, 서로 다른 문서의 손실은 균일하지 않다. 둘째, 학습 전 말뭉치에 \(x\)와 유사한 문서들이 존재하지 않는 경우, \(\ell(y|x)\)는 일반화 손실이며, 이는 모델 크기와 같은 학습 손실 이상의 다른 요인과 관련이 있는 경우가 많다. 예를 들어, 컴퓨터 비전에서, 고도로 과대파라미터화된 모델들은 종종 두 모델들이 트레이닝 데이터에 수렴할 때 테스트 성능에서 과소파라미터화된 모델들보다 개선된다[9; 4].
+
+### Pre-training Setting
+
+모든 모델은 영어와 중국어 코퍼스의 혼합으로 사전 훈련됩니다. 영어와 중국어 말뭉치는 모두 웹 페이지, 위키피디아, 책, 종이로 구성되어 있습니다. 사전 훈련 말뭉치에서 영어와 중국어의 비율은 4:1이다. 우리는 SentencePiece 패키지 [22]를 사용하여 바이트 쌍 인코딩(BPE) 알고리즘[38]으로 데이터를 토큰화한다.
+
+모델 구조는 두 가지 차이점이 있는 LLaMA [44]와 유사하며, 그룹화된 쿼리 어텐션 [1]을 사용하여 다중 쿼리 어텐션을 대체하고 쿼리와 키 벡터의 절반 차원에 회전 위치 임베딩을 적용한다.
+
+### Evaluation Tasks
+
+포괄적인 데모를 제시하기 위해 영어와 중국어 모두에서 다양한 작업과 프롬프트 유형에 걸쳐 12개의 데이터 세트에 대해 사전 훈련된 모델을 평가한다. 상기 6개의 태스크 타입은,
+
+**닫힌 책 QA:** 사전 훈련된 지식만을 기반으로 실제 세계에 대한 질문에 답합니다. 우리는 영어로 TriviaQA[23]을 사용한다. 중국어의 경우 TriviaQA 형식을 따르는 NLPCC-KBQA [10] 데이터 세트를 기반으로 닫힌 문서 QA 데이터 세트를 구축한다.
+
+**NLI (상식 자연 언어 추론):** 이벤트 설명이 제공 된 가장 가능성 있는 후속 조치를 선택 합니다. 영어의 경우 HellaSwag 데이터셋 [52]를 사용하고 중국어의 경우 ClozeT 데이터셋 [51]을 사용한다.
+
+**읽기 이해:** 주어진 문서 또는 문단을 읽고 이에 대한 질문에 답합니다. 우리는 영어에 RACE[23]을 사용하고 중국어에 C3[42]를 사용한다. 둘 다 객관식 문제를 기반으로 합니다.
+
+**참조 해결 방법:** 대명사가 있는 문장의 경우 어떤 대명사가 어떤 엔터티를 참조하는지 결정합니다. 영어는 위노그란데 데이터셋[35]을 사용하고 중국어는 CLUEWSC 데이터셋[50]을 사용한다.
+
+**시험:** 시험의 객관식 문제. 영어의 경우 수학, 미국 역사, 컴퓨터 과학, 법학 등을 포함하는 MMLU[14]를 사용한다. 중국어의 경우 인문학에서 이공계까지 선다형으로 구성된 C-Eval [18]을 사용한다.
+
+**수학 단어 문제**: 수학적 개념을 사용하여 실생활, 상황 및 관련 문제를 해결합니다. 영어의 경우 GSM8K [8] 데이터 세트를 사용합니다. 중국어의 경우 GSM8K의 질문과 답변을 중국어, 즉 GSM8K-중국어로 번역한다.
+
+프롬프트 유형은 소수 샷[3], 제로 샷 및 소수 샷 연쇄 사상(CoT)[48]을 포함한다. 데이터 세트는 표 1에 요약되어 있다.
+
+### 사전 훈련 손실 대. 성능
+
+첫 번째 실험에서는 1.5B, 6B 및 32B 매개변수로 3개의 모델을 훈련하고 각각 3T, 3T 및 2.5T 토큰에서 훈련될 때까지 그들의 행동을 관찰한다. 트레이닝 하이퍼파라미터는 표 3(부록)과 같다.
+
+중간 훈련 체크포인트의 성능을 평가한다. 체크포인트는 사전 훈련 동안 모든 43B 토큰 주위에 저장됩니다. 우리는 그림 1에서 작업 수행(\(y\)-축) 및 훈련 손실(\(x\)-축)의 포인트를 플롯한다. 곡선으로부터, 우리는 훈련 손실이 12개의 다운스트림 작업에 대한 성능의 좋은 예측 변수임을 알 수 있다.
+
+* 일반적으로 모델 크기에 관계없이 훈련 손실이 감소함에 따라 작업 성능이 향상됩니다. MLU, C-Eval, GSM8K 및 GSM8K-Chinese에서 세 가지 크기의 모든 모델은 사전 훈련 손실이 약 2.2로 감소할 때까지 무작위 수준에서 수행되며, 그 후 손실이 증가함에 따라 성능이 점진적으로 상승한다. 이에 대한 자세한 분석은 3절에서 확인할 수 있다.
+* 중요 하 게 다른 모델 크기의 성능 대 손실 데이터 점은 동일한 추세 곡선에 해당 합니다. 즉, 색상 차이(모델 크기)를 무시함으로써, 상이한 모델의 데이터 포인트는 구별할 수 없게 된다. 예를 들어, 훈련 손실이 2.00 정도 떨어질 때 트리비아QA의 녹색과 주황색 포인트는 구별할 수 없다. 이는 다운스트림 작업에 대한 모델 성능이 모델 크기에 관계없이 _사전 훈련 손실_ 과 크게 상관 관계가 있음을 나타냅니다. _
+* 흥미롭게도 전체 훈련 손실이 영어 및 중국어 토큰의 혼합물에서 계산되지만 영어 및 중국어 작업 모두에 대한 성능의 좋은 예측 변수임을 발견했습니다. 이는 영어와 중국어 토큰의 학습 역학이 다국어 사전 훈련 시 매우 유사할 가능성이 있음을 의미한다.
+
+그림 1: **1.5B, 6B 및 32B 모델의 성능 대 손실 곡선입니다. 각 데이터 포인트는 세 모델 중 하나의 중간 체크포인트의 손실(\(x\)-축) 및 성능(\(y\)-축)이다. 우리는 무작위로 추측한 결과를 검은색 점선으로 표시합니다.**
+
+### 훈련 토큰 수 대. 성능
+
+법칙 크기 조정[15; 21; 16]에 대한 경험적 실험에 따라, 우리는 훈련 토큰의 수가 다른 상대적으로 더 작은 모델 28개를 추가로 사전 훈련시킨다. 모델 크기는 300M에서 540M, 1B, 1.5B, 3B, 6B까지이며 사전 훈련 토큰의 수는 33B에서 500B까지이다. 학습률 스케줄은 해당 토큰 카운트에서 최소값에 도달하도록 설정되며, 이는 최적 성능에 매우 중요하다[21;16]. 모든 모델에 대해 사용된 토큰의 수와 하이퍼파라미터는 표 4(부록)와 같다.
+
+각 라인에서, 각 데이터 포인트는 특정 토큰 카운트(및 학습률 스케쥴)로 처음부터 완전히 사전 트레이닝된 대응하는 모델의 성능 및 사전 트레이닝 손실을 나타낸다. 그림 1의 관측치와 유사하게 서로 다른 모형 크기와 훈련 토큰의 데이터 포인트는 대체로 동일한 추세 곡선에 속한다는 것을 알 수 있다. 즉, 토큰 수 및 모델 크기에 관계없이 동일한 사전 훈련 손실을 갖는 LM은 12개의 다운스트림 태스크에서 동일한 성능을 나타낸다.
+
+또 다른 유사한 관찰은 MMLU, C-Eval, GSM8K 및 GSM8K-Chinese의 성능 곡선이 상승 추세를 산출하지 않는다는 것이며, 이는 이들 4개의 태스크에 대한 이들 모델의 성능이 랜덤(500B 토큰 미만)에 가깝다는 것을 의미한다. 단순화를 위해 그림 2의 각 훈련에서 최신 체크포인트의 성능만 표시합니다. 동일한 경향을 관찰하지만 분산이 더 큰 각 모델의 중간 체크포인트가 있는 완전한 성능 곡선은 그림 5(부록)에 나와 있습니다.
+
+### LLaMA의 손실 대. 성능
+
+관찰의 일반성을 검증하기 위해 공개적으로 사용 가능한 필수 정보, 즉 LLaMA [44]를 사용하여 다른 모델 시리즈를 분석한다. 모델과 비교하여 LLaMA는 사전 설정을 사용합니다.
+
+그림 2: **다른 수의 훈련 토큰으로 미리 훈련된 더 작은 모델의 성능 대 손실 곡선**. 각각의 데이터 포인트는 하나의 모델의 최종 체크포인트의 손실(\(x\)-축) 및 성능(\(y\)-축), 즉, 각각의 포인트는 스크래치로부터 트레이닝된 하나의 모델에 대응한다. 우리는 무작위 추측의 결과를 검은색 점선으로 표시한다.
+
+중국어 문서를 배제하고, 상이한 사전 트레이닝 프레임워크[29]를 활용하고, 약간 상이한 모델 아키텍처를 채택하는 트레이닝 코퍼스. LLaMA의 중간 체크포인트를 사용할 수 없기 때문에, 우리는 원래 논문의 그림에서 6개의 질문 응답 및 상식 추론 과제에 대한 사전 훈련 손실 및 해당 성능을 추출하고 그림 3의 포인트를 플로팅한다.
+
+놀랍게도, 다른 크기(7B, 13B, 33B, 65B)를 가진 LLaMA 모델의 대부분의 데이터 포인트는 동일한 상승 추세로 떨어진다. 이 관찰은 모델의 사전 훈련 손실이 모델 크기 및 토큰 수에 관계없이 다운스트림 태스크에서 성능을 예측할 수 있다는 결론을 추가로 확인한다. LLaMA-65B의 초기 단계에는 예외가 하나뿐이다. 훈련 손실이 1.8보다 높을 때, LLaMA-65B는 동일한 훈련 손실을 갖는 더 작은 모델들보다 더 나쁜 성능을 수행함을 알 수 있다. 중간 체크포인트에 액세스하지 않으면 안타깝게도 결과를 더 이상 분석할 수 없습니다. 특이치는 초기 10% 훈련 토큰만 구성합니다.
+
+이전의 실험과 분석에서 관찰된 바와 같이, 사전 훈련 손실은 모델 크기, 훈련 토큰, 언어 및 사전 훈련 프레임워크와 무관하게 다운스트림 태스크에 대한 LM의 성능을 나타내는 좋은 지표라는 결론을 내릴 수 있다.
+
+## 3 다른 작업 및 메트릭 분석
+
+### 다른 태스크의 성능 경향
+
+그림 1과 2에서 우리는 데이터 세트를 두 그룹으로 분리할 수 있다: 먼저 TriviaQA, HellaSwag, RACE, WinoGrande, NLPCC-KBQA, ClozeT, CLUEWSC 및 C3에서 초기부터 사전 훈련 손실이 감소하면서 성능이 부드럽게 향상된다. 둘째, MMLU, C-Eval, GSM8K 및 GSM8K-Chinese에서는 손실이 특정 임계값보다 높을 때 성능이 평평하게 유지된다. 사전 훈련 손실이 이 임계값보다 낮으면 성능이 향상되기 시작한다.
+
+두 번째 그룹의 예로 MMLU를 들 수 있는데, 사전 훈련 손실이 2.2보다 높을 때, 정확도는 25% 정도로 유지된다. MLU의 각 질문에는 네 가지 옵션이 있으므로 모델 예측이 무작위 추측보다 낫지는 않다는 것을 의미한다. 그러나 사전 훈련 손실이 2.2 이하로 떨어지면 첫 번째 작업 그룹에서 관찰된 경향과 유사하게 손실이 감소함에 따라 정확도가 증가한다. C-Eval, GSM8K, GSM8K-Chinese의 공연 동향도 비슷한 패턴을 따르고 있다. 4개의 데이터 세트 간의 언어, 작업, 프롬프트 유형 및 답변 형식의 차이에도 불구하고 성능 개선을 위한 임계값은 놀랍게도 모두 2.2 정도이다.
+
+그림 3: **LLaMA의 성능 대 손실 곡선입니다. 성능 및 트레이닝 손실의 값들은 원래의 LLaMA 논문[44] 내의 도면들로부터 추출된다. LLaMA2 용지 [45]는 관련 정보와 함께 이러한 수치를 다루지 않습니다.**
+
+첫 번째 그룹의 RACE는 MMLU와 유사한 프롬프트 형식을 가지고 있는데, 둘 다 상황별 시연과 함께 객관식 시험 문제로 구성되지만 성능 곡선은 상당히 다르다. 우리는 차이를 만드는 것이 과제 난이도라고 가정한다. 첫 번째 데이터 세트의 작업은 두 번째 그룹의 작업보다 쉽습니다. 예를 들어, RACE는 모델이 주어진 기사에 대한 질문에 대한 정답을 선택하도록 요구하고, HellaSwag는 모델이 상식에 기초하여 상황의 가능한 후속 조치를 선택할 수 있도록 한다. 대조적으로, MMLU와 C-Eval은 고등학교, 대학 또는 전문 시험을 위해 설계된 질문으로 구성되어 광범위한 지식을 필요로 한다. GSM8K와 GSM8K-중국어는 연쇄적 사고 프롬프트 없이 사전 훈련된 언어 모델로는 풀 수 없는 것으로 간주되는 수학 단어 문제이다.
+
+이 현상은 확률 수준에서 완전 일반화로의 성능 향상을 설명하는 grokking과 관련될 수 있다[31]. [31] 이러한 개선이 과적합 시점을 훨씬 지나서 일어날 수 있음을 알게 된다. 사전 훈련에서 모델은 일반적으로 전체적으로 과적합 대신 과소적합이다. 사전 훈련 말뭉치는 서로 다른 문서의 혼합물이기 때문에 모델이 데이터에 숫자 추가와 같은 일부 패턴에 이미 적합하지만 전체 말뭉치는 여전히 적합하지 않을 수 있다.
+
+확실히, 데이터 세트의 두 번째 그룹에 대한 관찰은 또한 출현 능력[47] 즉, 큰 모델에서만 존재하는 능력과 관련될 수 있다. 스케일링 법칙에 따르면, 트레이닝 토큰들의 수가 고정된 상태에서, 사전 트레이닝 손실은 모델 사이즈들에 관한 멱 법칙을 따른다. 즉, 모델 크기와 사전 훈련 손실 사이에는 단조로운 관계가 있다. 제2 그룹의 태스크들에 대해, 사전 트레이닝 손실에서의 티핑 포인트에 대응하는 모델 크기들의 임계치가 존재한다. 모델 크기가 이 임계치를 초과할 때, 모델은 랜덤 확률 레벨 이상의 성능을 나타낼 수 있다.
+
+### 다른 메트릭의 영향
+
+[37]은 LMs의 창발 능력에 대한 대안적 설명을 제안하며, 즉, 창발 능력은 연구자들의 비선형 또는 불연속 메트릭의 선택으로 인해 나타난다. 다중 선택 질문(예: MMLU)에 대한 정확도는 질문에 대한 점수가 1 또는 0이므로 불연속적이다. 이 주장을 검증하기 위해, 우리는 원래 벤치마크에서 사용된 정확도(불연속)가 아닌 연속 메트릭을 사용하여 MMLU 및 C-Eval에 대한 중간 체크포인트를 조사한다. 첫 번째 메트릭은 정답의 예측 확률(CorrectChoiceProb)이다. 두 번째는 사용된 Brier Score[2]이다.
+
+그림 4: **MMLU 및 C-Eval에서 서로 다른 메트릭의 성능 대 손실 곡선입니다.* * 정확도: 불연속; CorrectChoiceProb 및 BrierScore: 연속입니다. 우리는 무작위 추측의 결과를 검은색 점선으로 표시한다.
+
+[37]:
+
+\[\mathrm{BrierScore}=\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{C}(y_{ij}-\hat{y}_{ij})^{2} \tag{2}\]
+
+여기서 \(\hat{y}_{ij}\)는 클래스 \(j\)에 대한 샘플 \(i\)의 예측 확률이고 \(y_{ij}\)는 지상 확률이다.
+
+그림 4에서 MMLU 및 C-Eval에 대해 서로 다른 메트릭으로 측정한 결과를 플롯합니다. 정확도, 올바른 선택 확률 및 Brier Score의 세 가지 메트릭 모두 사전 훈련 손실이 특정 임계값 아래로 떨어질 때 응급 성능 개선(처음 두 개의 경우 값이 증가하고 세 번째의 경우 감소)을 보여줍니다. 브리어 스코어는 사전 훈련 손실이 임계값 이상일 때 또한 감소한다. 그러나, Brier Score는 정답의 예측 확률뿐만 아니라 오답의 예측 확률과도 관련이 있기 때문에, Brier Score의 감소가 항상 과제의 개선을 나타내는 것은 아니다. 우리는 MMLU와 C-Eval의 네 가지 옵션에서 정답의 분포가 균일하다는 것을 발견했다. 상황 없는 예측기에 대한 최상의 브리어 스코어는 모든 옵션에 항상 균일한 확률을 부여함으로써 달성된다. 이 경우, Brier Score는 0.75와 같다. 따라서, Brier Score의 관점에서의 성능은 손실이 임계값에 도달하기 전에 랜덤 추측보다 낫지는 않다. 이 관찰은 이전 결론을 추가로 확인시켜준다. 우리는 부록 C에서 [37]과 [49]의 상반된 관찰에 대해 논의한다.
+
+우리는 언어 모델의 출현 능력은 사전 훈련 손실이 특정 티핑 포인트에 도달할 때 발생하며 연속 메트릭은 관찰된 티핑 포인트를 제거할 수 없다고 결론지었다.
+
+## 4 손실 관점에서 비상 능력 정의
+
+이전 섹션에서는 1) 사전 훈련 손실이 다운스트림 태스크에서 언어 모드의 성능을 예측한다는 것을 보여주었고, 2) 일부 태스크는 모델 크기, 토큰 수 및 메트릭의 연속성에 관계없이 사전 훈련 손실이 특정 임계값 아래로 떨어질 때 무작위 추측 수준보다 새로운 성능 향상을 보여준다. 이러한 관찰에 기초하여, 우리는 사전 훈련 손실 관점에서 새로운 능력에 대한 정의를 제공한다:
+
+**정의**.: _훈련 전 손실이 높은 모델에는 없지만 훈련 전 손실이 낮은 모델에는 있는 경우 기능이 나타납니다._
+
+훈련 전 손실 \(L\)의 함수로서 창발 능력에 대한 정규화된 성능은 다음과 같다.
+
+\[\begin{cases}f(L)&\text{if }L<\eta\\ 0&\text{otherwise}\end{cases} \tag{3}\]
+
+여기서, \(f(L)\)는 \(L\)의 단조 감소 함수이고, \(\eta\)는 임계값이며, 랜덤 추측의 정규화된 성능은 0이다.
+
+[15]에서 그들은 훈련 토큰의 수 \(D\)가 고정될 때 모델 크기 \(N\)로 손실에 대한 스케일링 관계를 제공한다:
+
+\[L(N)=L_{\infty}+\left(\frac{N_{0}}{N}\right)^{\alpha_{N}} \tag{4}\]
+
+여기서, \(L_{\infty}\)는 기약 손실이고, \(\alpha_{N}\)는 계수이다. 그 방정식은 언어 모델의 손실이 멱법칙과 상수를 따름을 보여준다. 식 (3)과 식 (4)를 결합하면 모델 크기 \(N\)의 함수로 정규화된 성능을 얻을 수 있다.
+
+\[\begin{cases}f\left(L_{\infty}+\left(\frac{N_{0}}{N}\right)^{\alpha_{N}} \right)&\text{if }N\geq N_{0}\cdot\left(\eta-L_{\infty}\right)^{-\frac{1}{ \alpha_{N}}}}\\ 0&\text{otherwise}\end{cases} \tag{5}\]
+
+이 방정식으로부터 모델 크기가 \(N_{0}\cdot\left(\eta-L_{\infty}\right)^{-1/\alpha_{N}\)보다 작을 때 [47]에서 관찰된 출현 능력을 설명할 수 있으며 정규화된 성능은 0이다. 모델 크기가 \(N_{0}\cdot\left(\eta-L_{\infty}\right)^{-1/\alpha_{N}}\)를 초과하는 경우 모델 크기의 증가는 훈련 전 손실의 감소와 정규화된 성능의 향상으로 이어진다.
+
+Related Work
+
+**사전 훈련 손실과 작업 수행의 관계** 전이 학습 설정에서 [25; 43]은 동일한 사전 훈련 손실을 가진 모델이 모델 크기, 모델 아키텍처 및 훈련 알고리즘의 귀납적 편향으로 인해 미세 조정 후 다운스트림 성능이 다를 수 있음을 발견했습니다. 대형 언어 모델의 프롬프트된 성능에 대해, [49]는 복잡성이 인컨텍스트 학습 성능의 강력한 예측 변수라고 주장하지만, 증거는 OPT 모델[54] 및 BIG-Bench[41]의 서브세트로 제한된다. 대신 [40]은 사전 학습 코퍼스가 변할 때 낮은 복잡도가 항상 높은 상황 내 학습 성능을 의미하지는 않는다는 것을 발견한다.
+
+**신생 능력.** [47]은 큰 언어 모델에서만 나타나는 능력인 창생 능력에 대한 아이디어를 제안합니다. 이는 사전 훈련 손실을 예측하는 것보다 언어 모델의 용량을 예측하는 것이 더 어렵다는 [13]의 주장과 유사하다. 창발적 능력의 존재가 도전을 받았다. [16] 충분한 데이터로 트레이닝된 더 작은 언어 모델들이 후속 모델들에 의해 지원되는, 언더트레이닝된 더 큰 언어 모델들을 능가할 수 있음을 보여준다[44; 19; 45]. 한편, [37]은 창발 능력이 평가에 사용된 불연속 메트릭에 기인한다고 주장하며, [49]에서도 발견된다. 마찬가지로 [17]은 무한 해상도 평가 메트릭으로 창발 능력의 성능을 예측하는 것을 제안한다. 본 논문에서는 지속적인 측정치에도 불구하고 사전 훈련 손실의 지속성으로부터 새로운 능력의 존재를 증명한다.
+
+## 6 Conclusion
+
+본 논문은 사전 훈련 손실의 관점에서 언어 모델의 창발 능력에 대한 새로운 정의를 제안한다. 실험 결과는 사전 훈련 손실이 모델 크기나 훈련 계산보다 언어 모델의 스케일링 효과를 나타내는 더 나은 메트릭임을 보여준다. 지속적인 척도로 평가하더라도 사전 훈련 손실이 특정 임계값 아래로 떨어질 때 창발 능력의 성능은 창발 증가를 나타낸다.
+
+새로운 정의는 새로운 능력이 나타나는 훈련 궤적 내에서 중요한 부분의 정확한 특성화를 제공한다. 그것은 새로운 능력의 개발을 촉진하는 이러한 접합부에서 언어 모델의 변화를 조사하기 위한 향후 연구를 장려한다.
+
+## 7 Limitation
+
+언어 모델의 다운스트림 태스크에 대한 사전 훈련 손실과 성능의 관계를 모델 크기, 훈련 토큰, 태스크, 언어, 프롬프트 유형 및 답변 양식에 걸쳐 연구합니다. 우리가 고려하지 않은 요소는 모델 아키텍처와 훈련 알고리즘이다. 우리는 약간 다른 아키텍처를 가진 언어 모델인 LLaMA의 성능 손실 곡선과 모델 패밀리에 대한 관계가 성립하는 미세한 곡선을 분석한다. 그러나 라우팅된 트랜스포머[11] 및 비 트랜스포머 아키텍처[12;30]와 같은 근본적으로 다른 모델 아키텍처가 우리의 고려를 넘어 있다. 우리의 모델과 LLaMA 모두 AdamW 최적화기를 사용하는 반면[27], 언어 모델 사전 트레이닝을 위한 다른 최적화기들이 있다[39;24].
+
+사전 훈련 손실 렌즈에서 출현 능력을 연구하는 단점은 사전 훈련 손실이 토큰화기와 사전 훈련 말뭉치의 분포에 영향을 받는다는 것이다. 다른 코퍼스에서 훈련된 언어 모델의 사전 훈련 손실의 값은 직접적으로 비교할 수 없다. 하나의 가능한 해결책은 상이한 어휘 크기를 고려하기 위해 정규화된 복잡도[34]를 갖는 공개 검증 세트 상에서 상이한 언어 모델들을 평가하는 것이다.
+
+이 논문은 언어 모델의 모델 크기와 데이터 크기를 현재의 규모를 넘어 확장하려는 추진으로 간주되어서는 안 된다. 새로운 티핑 포인트가 더 큰 규모로 나타나는 것은 보장되지 않는다. 또한, 사전 훈련만이 창발적 능력의 수행을 향상시키는 유일한 방법은 아니다. 예를 들어, 명령어 튜닝[46; 36; 6; 26]은 MMLU 데이터세트를 포함하는 보이지 않는 태스크들에 대한 언어 모델들의 제로-샷 성능을 개선할 수 있다. 향후 연구에서는 창발적 능력의 습득을 분석하고 척도 요구 사항을 낮출 수 있다.
+
+## References
+
+* [1] J. Ainslie, J. Lee-Thorp, M. de Jong, Y. Zemlyanskiy, F. Lebron, and S. Sanghai. GQA: training generalized multi-query transformer models from multi-head checkpoints. In H. Bouamor, J. Pino, and K. Bali, editors, _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pages 4895-4901. Association for Computational Linguistics, 2023.
+*3, 1950.
+* [3] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger, T. Henighan, R. Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen, E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford, I. Sutskever, and D. Amodei. Language models are few-shot learners. In H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, editors, _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020.
+* [4] Y. Cao and Q. Gu. Generalization error bounds of gradient descent for learning over-parameterized deep relu networks. In _The Thirty-Fourth AAAI Conference on Artificial Intelligence, AAAI 2020, The Thirty-Second Innovative Applications of Artificial Intelligence Conference, IAAI 2020, The Tenth AAAI Symposium on Educational Advances in Artificial Intelligence, EAAI 2020, New York, NY, USA, February 7-12, 2020_, pages 3349-3356. AAAI Press, 2020.
+* [5] A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, P. Schuh, K. Shi, S. Tsyvashchenko, J. Maynez, A. Rao, P. Barnes, Y. Tay, N. Shazeer, V. Prabhakaran, E. Reif, N. Du, B. Hutchinson, R. Pope, J. Bradbury, J. Austin, M. Isard, G. Gur-Ari, P. Yin, T. Duke, A. Levskaya, S. Ghemawat, S. Dev, H. Michalewski, X. Garcia, V. Misra, K. Robinson, L. Fedus, D. Zhou, D. Ippolito, D. Luan, H. Lim, B. Zoph, A. Spiridonov, R. Sepassi, D. Dohan, S. Agrawal, M. Omernick, A. M. Dai, T. S. Pillai, M. Pellat, A. Lewkowycz, E. Moreira, R. Child, O. Polozov, K. Lee, Z. Zhou, X. Wang, B. Saeta, M. Diaz, O. Firat, M. Catasta, J. Wei, K. Meier-Hellstern, D. Eck, J. Dean, S. Petrov, and N. Fiedel. Palm: Scaling language modeling with pathways. _J. Mach. Learn. Res._, 24:240:1-240:113, 2023.
+* [6] H. W. Chung, L. Hou, S. Longpre, B. Zoph, Y. Tay, W. Fedus, E. Li, X. Wang, M. Dehghani, S. Brahma, A. Webson, S. S. Gu, Z. Dai, M. Suzgun, X. Chen, A. Chowdhery, S. Narang, G. Mishra, A. Yu, V. Y. Zhao, Y. Huang, A. M. Dai, H. Yu, S. Petrov, E. H. Chi, J. Dean, J. Devlin, A. Roberts, D. Zhou, Q. V. Le, and J. Wei. Scaling instruction-finetuned language models. _CoRR_, abs/2210.11416, 2022.
+* [7] A. Clark, D. de Las Casas, A. Guy, A. Mensch, M. Paganini, J. Hoffmann, B. Damoc, B. A. Hechtman, T. Cai, S. Borgeaud, G. van den Driessche, E. Rutherford, T. Hennigan, M. J. Johnson, A. Cassirer, C. Jones, E. Buchatskaya, D. Budden, L. Sifre, S. Osindero, O. Vinyals, M. Ranzato, J. W. Rae, E. Elsen, K. Kavukcuoglu, and K. Simonyan. Unified scaling laws for routed language models. In K. Chaudhuri, S. Jegelka, L. Song, C. Szepesvari, G. Niu, and S. Sabato, editors, _International Conference on Machine Learning, ICML 2022, 17-23 July 2022, Baltimore, Maryland, USA_, volume 162 of _Proceedings of Machine Learning Research_, pages 4057-4086. PMLR, 2022.
+* [8] K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schulman. Training verifiers to solve math word problems. _CoRR_, abs/2110.14168, 2021.
+* [9] Y. Dar, V. Muthukumar, and R. G. Baraniuk. A farewell to the bias-variance tradeoff? an overview of the theory of overparameterized machine learning. _CoRR_, abs/2109.02355, 2021.
+* [10] N. Duan. Overview of the nlpcc-iccpol 2016 shared task: Open domain chinese question answering. In _Natural Language Understanding and Intelligent Applications_, pages 942-948. Springer International Publishing, 2016.
+
+* [11] W. Fedus, B. Zoph, and N. Shazeer. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. _J. Mach. Learn. Res._, 23:120:1-120:39, 2022.
+* [12] D. Y. Fu, T. Dao, K. K. Saab, A. W. Thomas, A. Rudra, and C. Re. Hungry hungry hippos: Towards language modeling with state space models. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023.
+* 24, 2022_, pages 1747-1764. ACM, 2022.
+* [14] D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt. Measuring massive multitask language understanding. In _9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021_. OpenReview.net, 2021.
+* [15] T. Henighan, J. Kaplan, M. Katz, M. Chen, C. Hesse, J. Jackson, H. Jun, T. B. Brown, P. Dhariwal, S. Gray, C. Hallacy, B. Mann, A. Radford, A. Ramesh, N. Ryder, D. M. Ziegler, J. Schulman, D. Amodei, and S. McCandlish. Scaling laws for autoregressive generative modeling. _CoRR_, abs/2010.14701, 2020.
+* [16] J. Hoffmann, S. Borgeaud, A. Mensch, E. Buchatskaya, T. Cai, E. Rutherford, D. de Las Casas, L. A. Hendricks, J. Welbl, A. Clark, T. Hennigan, E. Noland, K. Millican, G. van den Driessche, B. Damoc, A. Guy, S. Osindero, K. Simonyan, E. Elsen, J. W. Rae, O. Vinyals, and L. Sifre. Training compute-optimal large language models. _CoRR_, abs/2203.15556, 2022.
+* [17] S. Hu, X. Liu, X. Han, X. Zhang, C. He, W. Zhao, Y. Lin, N. Ding, Z. Ou, G. Zeng, et al. Predicting emergent abilities with infinite resolution evaluation. _arXiv e-prints_, pages arXiv-2310, 2023.
+* [18] Y. Huang, Y. Bai, Z. Zhu, J. Zhang, J. Zhang, T. Su, J. Liu, C. Lv, Y. Zhang, J. Lei, Y. Fu, M. Sun, and J. He. C-eval: A multi-level multi-discipline chinese evaluation suite for foundation models. _CoRR_, abs/2305.08322, 2023.
+* [19] A. Q. Jiang, A. Sablayrolles, A. Mensch, C. Bamford, D. S. Chaplot, D. de Las Casas, F. Bressand, G. Lengyel, G. Lample, L. Saulnier, L. R. Lavaud, M. Lachaux, P. Stock, T. L. Scao, T. Lavril, T. Wang, T. Lacroix, and W. E. Sayed. Mistral 7b. _CoRR_, abs/2310.06825, 2023.
+* August 4, Volume 1: Long Papers_, pages 1601-1611. Association for Computational Linguistics, 2017.
+* [21] J. Kaplan, S. McCandlish, T. Henighan, T. B. Brown, B. Chess, R. Child, S. Gray, A. Radford, J. Wu, and D. Amodei. Scaling laws for neural language models. _CoRR_, abs/2001.08361, 2020.
+* November 4, 2018_, pages 66-71. Association for Computational Linguistics, 2018.
+* [23] G. Lai, Q. Xie, H. Liu, Y. Yang, and E. H. Hovy. RACE: large-scale reading comprehension dataset from examinations. In M. Palmer, R. Hwa, and S. Riedel, editors, _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing, EMNLP 2017, Copenhagen, Denmark, September 9-11, 2017_, pages 785-794. Association for Computational Linguistics, 2017.
+
+* [24] H. Liu, Z. Li, D. Hall, P. Liang, and T. Ma. Sophia: A scalable stochastic second-order optimizer for language model pre-training. _CoRR_, abs/2305.14342, 2023.
+* [25] H. Liu, S. M. Xie, Z. Li, and T. Ma. Same pre-training loss, better downstream: Implicit bias matters for language models. In A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 22188-22214. PMLR, 2023.
+* [26] S. Longpre, L. Hou, T. Vu, A. Webson, H. W. Chung, Y. Tay, D. Zhou, Q. V. Le, B. Zoph, J. Wei, and A. Roberts. The final collection: Designing data and methods for effective instruction tuning. In A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 22631-22648. PMLR, 2023.
+* [27] I. Loshchilov and F. Hutter. Decoupled weight decay regularization. In _7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019_. OpenReview.net, 2019.
+* [28] OpenAI. GPT-4 technical report. _CoRR_, abs/2303.08774, 2023.
+* [29] M. Ott, S. Edunov, A. Baevski, A. Fan, S. Gross, N. Ng, D. Grangier, and M. Auli. fairseq: A fast, extensible toolkit for sequence modeling. In W. Ammar, A. Louis, and N. Mostafazadeh, editors, _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL-HLT 2019, Minneapolis, MN, USA, June 2-7, 2019, Demonstrations_, pages 48-53. Association for Computational Linguistics, 2019.
+* [30] M. Poli, S. Massaroli, E. Nguyen, D. Y. Fu, T. Dao, S. Baccus, Y. Bengio, S. Ermon, and C. Re. Hyena hierarchy: Towards larger convolutional language models. In A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 28043-28078. PMLR, 2023.
+* [31] A. Power, Y. Burda, H. Edwards, I. Babuschkin, and V. Misra. Grokking: Generalization beyond overfitting on small algorithmic datasets. _CoRR_, abs/2201.02177, 2022.
+* [32] J. W. Rae, S. Borgeaud, T. Cai, K. Millican, J. Hoffmann, H. F. Song, J. Aslanides, S. Henderson, R. Ring, S. Young, E. Rutherford, T. Hennigan, J. Menick, A. Cassirer, R. Powell, G. van den Driessche, L. A. Hendricks, M. Rauh, P. Huang, A. Glaese, J. Welbl, S. Dathathri, S. Huang, J. Uesato, J. Mellor, I. Higgins, A. Creswell, N. McAleese, A. Wu, E. Elsen, S. M. Jayakumar, E. Buchatskaya, D. Budden, E. Sutherland, K. Simonyan, M. Paganini, L. Sifre, L. Martens, X. L. Li, A. Kuncoro, A. Nematzadeh, E. Gribovskaya, D. Donato, A. Lazaridou, A. Mensch, J. Lespiau, M. Tsimpoukelli, N. Grigorev, D. Fritz, T. Sottiaux, M. Pajarskas, T. Pohlen, Z. Gong, D. Toyama, C. de Masson d'Autume, Y. Li, T. Terzi, V. Mikulik, I. Babuschkin, A. Clark, D. de Las Casas, A. Guy, C. Jones, J. Bradbury, M. J. Johnson, B. A. Hechtman, L. Weidinger, I. Gabriel, W. Isaac, E. Lockhart, S. Osindero, L. Rimell, C. Dyer, O. Vinyals, K. Ayoub, J. Stanway, L. Bennett, D. Hassabis, K. Kavukcuoglu, and G. Irving. Scaling language models: Methods, analysis & insights from training gopher. _CoRR_, abs/2112.11446, 2021.
+* [33] C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _J. Mach. Learn. Res._, 21:140:1-140:67, 2020.
+* [34] J. Roh, S. Oh, and S. Lee. Unigram-normalized perplexity as a language model performance measure with different vocabulary sizes. _CoRR_, abs/2011.13220, 2020.
+* [35] K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi. Winogrande: An adversarial winograd schema challenge at scale. In _The Thirty-Fourth AAAI Conference on Artificial Intelligence, AAAI 2020, The Thirty-Second Innovative Applications of Artificial Intelligence Conference, IAAI 2020, The Tenth AAAI Symposium on Educational Advances in Artificial Intelligence, EAAI 2020, New York, NY, USA, February 7-12, 2020_, pages 8732-8740. AAAI Press, 2020.
+
+* [36] V. Sanh, A. Webson, C. Raffel, S. H. Bach, L. Sutawika, Z. Alyafeai, A. Chaffin, A. Stiegler, A. Raja, M. Dey, M. S. Bari, C. Xu, U. Thakker, S. S. Sharma, E. Szczechla, T. Kim, G. Chhabalani, N. V. Nayak, D. Datta, J. Chang, M. T. Jiang, H. Wang, M. Manica, S. Shen, Z. X. Yong, H. Pandey, R. Bawden, T. Wang, T. Neeraj, J. Rozen, A. Sharma, A. Santilli, T. Fevry, J. A. Fries, R. Teehan, T. L. Scao, S. Biderman, L. Gao, T. Wolf, and A. M. Rush. Multitask prompted training enables zero-shot task generalization. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [37] R. Schaeffer, B. Miranda, and S. Koyejo. Are emergent abilities of large language models a mirage? _CoRR_, abs/2304.15004, 2023.
+* [38] R. Sennrich, B. Haddow, and A. Birch. Neural machine translation of rare words with subword units. In _Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics, ACL 2016, August 7-12, 2016, Berlin, Germany, Volume 1: Long Papers_. The Association for Computer Linguistics, 2016.
+* [39] N. Shazeer and M. Stern. Adafactor: Adaptive learning rates with sublinear memory cost. In J. G. Dy and A. Krause, editors, _Proceedings of the 35th International Conference on Machine Learning, ICML 2018, Stockholmsmassan, Stockholm, Sweden, July 10-15, 2018_, volume 80 of _Proceedings of Machine Learning Research_, pages 4603-4611. PMLR, 2018.
+* [40] S. Shin, S. Lee, H. Ahn, S. Kim, H. Kim, B. Kim, K. Cho, G. Lee, W. Park, J. Ha, and N. Sung. On the effect of pretraining corpora on in-context learning by a large-scale language model. In M. Carpuat, M. de Marmeffe, and I. V. M. Ruiz, editors, _Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL 2022, Seattle, WA, United States, July 10-15, 2022_, pages 5168-5186. Association for Computational Linguistics, 2022.
+* [41] A. Srivastava, A. Rastogi, A. Rao, A. A. M. Shoeb, A. Abid, A. Fisch, A. R. Brown, A. Santoro, A. Gupta, A. Garriga-Alonso, A. Kluska, A. Lewkowycz, A. Agarwal, A. Power, A. Ray, A. Warstadt, A. W. Kocurek, A. Safaya, A. Tazarv, A. Xiang, A. Parrish, A. Nie, A. Hussain, A. Askell, A. Dsouza, A. Rahane, A. S. Iyer, A. Andreassen, A. Santilli, A. Stuhlmuller, A. M. Dai, A. La, A. K. Lampinen, A. Zou, A. Jiang, A. Chen, A. Vuong, A. Gupta, A. Gottardi, A. Norelli, A. Venkatesh, A. Gholamidavoodi, A. Tabassum, A. Menezes, A. Kirubarajan, A. Mullokandov, A. Sabharwal, A. Herrick, A. Efrat, A. Erdem, A. Karakas, and et al. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _CoRR_, abs/2206.04615, 2022.
+* [42] K. Sun, D. Yu, D. Yu, and C. Cardie. Investigating prior knowledge for challenging chinese machine reading comprehension. _Trans. Assoc. Comput. Linguistics_, 8:141-155, 2020.
+* [43] Y. Tay, M. Dehghani, S. Abnar, H. W. Chung, W. Fedus, J. Rao, S. Narang, V. Q. Tran, D. Yogatama, and D. Metzler. Scaling laws vs model architectures: How does inductive bias influence scaling? In H. Bouamor, J. Pino, and K. Bali, editors, _Findings of the Association for Computational Linguistics: EMNLP 2023, Singapore, December 6-10, 2023_, pages 12342-12364. Association for Computational Linguistics, 2023.
+* [44] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M. Lachaux, T. Lacroix, B. Roziere, N. Goyal, E. Hambro, F. Azhar, A. Rodriguez, A. Joulin, E. Grave, and G. Lample. Llama: Open and efficient foundation language models. _CoRR_, abs/2302.13971, 2023.
+* [45] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, D. Bikel, L. Blecher, C. Canton-Ferrer, M. Chen, G. Cucurull, D. Esiobu, J. Fernandes, J. Fu, W. Fu, B. Fuller, C. Gao, V. Goswami, N. Goyal, A. Hartshorn, S. Hosseini, R. Hou, H. Inan, M. Kardas, V. Kerkez, M. Khabsa, I. Kloumann, A. Korenev, P. S. Koura, M. Lachaux, T. Lavril, J. Lee, D. Liskovich, Y. Lu, Y. Mao, X. Martinet, T. Mihaylov, P. Mishra, I. Molybog, Y. Nie, A. Poulton, J. Reizenstein, R. Rungta, K. Saladi, A. Schelten, R. Silva, E. M. Smith, R. Subramanian, X. E. Tan, B. Tang, R. Taylor, A. Williams, J. X. Kuan, P. Xu, Z. Yan, I. Zarov, Y. Zhang, A. Fan, M. Kambadur, S. Narang, A. Rodriguez, R. Stojnic, S. Edunov, and T. Scialom. Llama 2: Open foundation and fine-tuned chat models. _CoRR_, abs/2307.09288, 2023.
+
+* [46] J. Wei, M. Bosma, V. Y. Zhao, K. Guu, A. W. Yu, B. Lester, N. Du, A. M. Dai, and Q. V. Le. Finetuned language models are zero-shot learners. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [47] J. Wei, Y. Tay, R. Bommasani, C. Raffel, B. Zoph, S. Borgeaud, D. Yogatama, M. Bosma, D. Zhou, D. Metzler, E. H. Chi, T. Hashimoto, O. Vinyals, P. Liang, J. Dean, and W. Fedus. Emergent abilities of large language models. _Trans. Mach. Learn. Res._, 2022, 2022.
+* 12월 9일, 2022_, 2022.
+* [49] M. Xia, M. Artetxe, C. Zhou, X. V. Lin, R. Pasunuru, D. Chen, L. Zettlemoyer, and V. Stoyanov. Training trajectories of language models across scales. In A. Rogers, J. L. Boyd-Graber, and N. Okazaki, editors, _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023_, pages 13711-13738. Association for Computational Linguistics, 2023.
+* [50] L. Xu, H. Hu, X. Zhang, L. Li, C. Cao, Y. Li, Y. Xu, K. Sun, D. Yu, C. Yu, Y. Tian, Q. Dong, W. Liu, B. Shi, Y. Cui, J. Li, J. Zeng, R. Wang, W. Xie, Y. Li, Y. Patterson, Z. Tian, Y. Zhang, H. Zhou, S. Liu, Z. Zhao, Q. Zhao, C. Yue, X. Zhang, Z. Yang, K. Richardson, and Z. Lan. CLUE: A chinese language understanding evaluation benchmark. In D. Scott, N. Bel, and C. Zong, editors, _Proceedings of the 28th International Conference on Computational Linguistics, COLING 2020, Barcelona, Spain (Online), December 8-13, 2020_, pages 4762-4772. International Committee on Computational Linguistics, 2020.
+* [51] Y. Yao, Q. Dong, J. Guan, B. Cao, Z. Zhang, C. Xiao, X. Wang, F. Qi, J. Bao, J. Nie, Z. Zeng, Y. Gu, K. Zhou, X. Huang, W. Li, S. Ren, J. Lu, C. Xu, H. Wang, G. Zeng, Z. Zhou, J. Zhang, J. Li, M. Huang, R. Yan, X. He, X. Wan, X. Zhao, X. Sun, Y. Liu, Z. Liu, X. Han, E. Yang, Z. Sui, and M. Sun. CUGE: A chinese language understanding and generation evaluation benchmark. _CoRR_, abs/2112.13610, 2021.
+* [52] R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, and Y. Choi. Hellaswag: Can a machine really finish your sentence? In A. Korhonen, D. R. Traum, and L. Marquez, editors, _Proceedings of the 57th Conference of the Association for Computational Linguistics, ACL 2019, Florence, Italy, July 28- August 2, 2019, Volume 1: Long Papers_, pages 4791-4800. Association for Computational Linguistics, 2019.
+* [53] A. Zeng, X. Liu, Z. Du, Z. Wang, H. Lai, M. Ding, Z. Yang, Y. Xu, W. Zheng, X. Xia, W. L. Tam, Z. Ma, Y. Xue, J. Zhai, W. Chen, Z. Liu, P. Zhang, Y. Dong, and J. Tang. GLM-130B: an open bilingual pre-trained model. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023.
+* [54] S. Zhang, S. Roller, N. Goyal, M. Artetxe, M. Chen, S. Chen, C. Dewan, M. T. Diab, X. Li, X. V. Lin, T. Mihaylov, M. Ott, S. Shleifer, K. Shuster, D. Simig, P. S. Koura, A. Sridhar, T. Wang, and L. Zettlemoyer. OPT: open pre-trained transformer language models. _CoRR_, abs/2205.01068, 2022.
+
+## 부록 A Pre-training Hyperparameters
+
+1.5B, 6B 및 32B 모델의 트레이닝을 위한 하이퍼파라미터는 표 3에 나와 있다. 더 작은 모델의 트레이닝을 위한 하이퍼파라미터는 표 4에 나와 있다. 시퀀스 길이는 2048이고 최적화기는 \(\beta_{1}=0.9\) 및 \(\beta_{2}=0.95\)인 AdamW[27]이다.
+
+## 부록 B 평가 데이터 세트 통계
+
+평가된 분할과 예제 수는 표 5에 요약되어 있다. 영어 데이터 세트의 경우 고퍼[32]와 친칠라[16]의 평가 분할 선택을 따른다. 중국 데이터 세트의 경우 지면 레이블을 항상 사용할 수 있는 경우 유효성 검사 분할을 사용합니다. CLUEWSC의 경우 유효성 검사 세트의 크기가 너무 작으므로(100), 열차와 유효성 검사 분할을 결합합니다. GSM8K-중국어는 GSM8K에서 기계 번역 및 인간 교정을 통해 번역된다.
+
+## 부록 C 언어 모델의 출현 능력 a Mirage?
+
+[37] 주장 [47]에서 제안된 창발 능력은 주로 비선형 및 불연속 메트릭에 의해 야기되는 신기루이다. [49] 또한 그 아이디어를 지지한다.
+
+[49]는 BIG-Bench에 대한 메트릭으로서 올바른 옵션들의 복잡성을 사용하고, 메트릭이 BIG-Bench의 거의 모든 태스크들에서 매끄럽게 개선된다는 것을 발견한다. 우리는 올바른 옵션의 복잡성이 객관식 질문의 성능을 평가하기 위한 올바른 척도가 아니라고 주장한다. 객관식 문항의 올바른 척도는 올바른 옵션과 잘못된 옵션을 구별하는 능력을 반영해야 한다. 올바른 옵션과 잘못된 옵션의 복잡성이 동시에 감소할 수 있습니다. 실제로 [49]는 이미 사전 훈련 중에 오답 옵션의 당혹도가 감소하고 훈련 종료 시에만 오답 옵션과 오답 옵션의 당혹도가 분기되기 시작하는 것을 관찰한다. 이는 창발적 능력의 존재를 뒷받침한다.
+
+[37]은 BIG-Bench에 대한 메트릭으로서 Brier Score [2]를 사용한다. 우리는 Brier Score가 부정확한 옵션에 대한 확률의 할당과 관련이 있기 때문에, Brier Score의 증가가 항상 객관식 과제에서의 성능 향상을 나타내는 것은 아니라고 주장한다. 예를 들어, MMLU 데이터 세트의 질문들은 네 개의 옵션들(A, B, C, 및 D)을 가지며, 네 개의 옵션들의 정답으로서의 빈도는 동일하다. 질문과 무관하게 동일한 확률을 부여하는 두 가지 모형을 생각해 보자. 한 모델은 네 가지 옵션에 대해 \((1,0,0,0)\)을 예측하고 다른 모델은 \((0.25,0.25,0.25,0.25)\)를 예측한다. 전자의 경우 브라이어 스코어는 1.5이고 후자의 경우 브라이어 스코어는 0.75이다. 그러나 두 모델 모두 질문과 올바른 옵션 사이의 관계를 전혀 학습하지 않는다. 하나는 후자의 모델이 데이터 세트에서 올바른 옵션의 분포에 더 적합하다고 주장할 수 있지만 개선은 1.5와 0.75의 차이만큼 크지 않다. 우리는 0.75의 브리어 점수를 데이터의 성능으로 고려해야 한다.
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline Source & Ratio \\ \hline CommonCrawl & 80.2\% \\ Code & 10.0\% \\ Books & 3.8\% \\ Wikipedia & 3.8\% \\ Papers & 1.6\% \\ StackExchange & 0.6\% \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 영어 말뭉치에서 서로 다른 출처의 비율.
+
+\begin{table}
+\begin{tabular}{r r r r r r r r} \hline \hline Parameters & Tokens & d\_model & d\_hidden & n\_heads & n\_layers & Batch Size & Max LR \\ \hline
+1.5B & 3T & 2048 & 6912 & 16 & 24 & 1344 & 5e-4 \\
+6B & 3T & 4096 & 13696 & 32 & 28 & 4224 & 4e-4 \\
+32B & 2.5T & 6656 & 22272 & 52 & 58 & 8832 & 3e-4 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 1.5B, 6B, 32B 모델의 사전 훈련의 하이퍼파라미터.
+
+무작위 추측 기준선과 0.75 이상의 브리어 점수 감소는 작업의 실제 개선으로 간주되어서는 안 된다.
+
+[37]의 [그림 6]에서 BIG-Bench에서 4개의 과제를 Brier Score 메트릭으로 평가하고 창발 능력이 장애물이라는 것을 발견한다. 우리는 그들이 각 질문에 있는 옵션의 수로 Brier Score를 정규화하고 그렇지 않으면 swahili_english_proverbs 태스크에서 0.25의 Brier Score가 가장 작은 모델에 대해 너무 낮다고 가정한다. 4개의 과제는 각 문항에 2, 2, 4, 5개의 옵션이 있다. 의 값들
+
+\begin{table}
+\begin{tabular}{r r r r r r r} \hline \hline Parameters & Tokens & d\_model & d\_hidden & n\_heads & n\_layers & Batch Size & Max LR \\ \hline
+
+[MISSING_PAGE_POST]
+
+ \hline \hline \end{tabular}
+\end{table}
+표 4: 더 작은 모델의 사전 훈련의 하이퍼파라미터. 각 라인은 특정 토큰 수 및 그에 대응하는 학습률 스케줄로 처음부터 완전히 사전 트레이닝된 하나의 모델을 나타낸다.
+
+\begin{table}
+\begin{tabular}{l|r r} \hline \hline Dataset & Evaluated Split & Num. Examples \\ \hline TriviaQA & validation & 11,313 \\ HellaSwag & validation & 10,042 \\ RACE & test & 4,934 \\ WinoGrande & validation & 1,267 \\ MMLU & test & 14,042 \\ GSM8K & test & 1,319 \\ NLPCC-KBQA & validation & 10,613 \\ ClozeT & validation & 938 \\ CLUEWSC & train \& validation & 508 \\ C3 & validation & 3,816 \\ C-Eval & validation & 1,346 \\ GSM8K-Chinese & test & 1,212 \\ \hline \hline \end{tabular}
+\end{table}
+표 5: 평가 데이터 세트의 통계.
+
+네 가지 작업에서 무작위 추측 기준선의 Brier Score는 0.25, 0.25, 0.1875, 0.16이다. 가장 큰 모델만이 무작위 추측 기준선을 능가한다. 이는 또한 창발적 능력의 존재를 뒷받침한다.
+
+## 부록 D 완료 성능 대 작은 모델의 손실 곡선
+
+모든 중간 체크포인트에 대한 성능 대 손실 곡선은 그림 5에 나와 있다. 추세는 그림 2와 동일하지만 분산이 더 크다.
+
+## 성능 지표로서 부록 E 손실 대 계산
+
+우리는 그림 6의 성능 계산 곡선을 보여준다. 그림 1과 비교하여, 우리는 다른 모델의 점이 대부분의 작업에서 동일한 곡선에 떨어지지 않는다는 것을 관찰한다. 이는 사전 훈련 손실이 컴퓨팅보다 작업 수행의 더 나은 지표임을 증명한다.
+
+그림 5: 더 작은 모델의 완전한 성능 대 손실 곡선입니다.
+
+그림 6: 1.5B, 6B 및 32B 모델의 성능 대 계산 곡선.

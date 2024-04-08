@@ -1,0 +1,297 @@
+# Understanding Emergent Abilities of Language Models from the Loss Perspective
+
+ Zhengxiao Du\({}^{1,2}\), Aohan Zeng\({}^{1,2}\), Yuxiao Dong\({}^{2}\), Jie Tang\({}^{2}\)
+
+\({}^{1}\)Zhipu AI \({}^{2}\)Tsinghua University
+
+{zx-du20,zah22}@mails.tsinghua.edu.cn
+
+###### Abstract
+
+Recent studies have put into question the belief that emergent abilities [47] in language models are exclusive to large models. This skepticism arises from two observations: 1) smaller models can also exhibit high performance on emergent abilities and 2) there is doubt on the discontinuous metrics used to measure these abilities. In this paper, we propose to study emergent abilities in the lens of pre-training loss, instead of model size or training compute. We demonstrate that the models with the same pre-training loss, but different model and data sizes, generate the same performance on various downstream tasks. We also discover that a model exhibits emergent abilities on certain tasks--regardless of the continuity of metrics--when its pre-training loss falls below a specific threshold. Before reaching this threshold, its performance remains at the level of random guessing. This inspires us to redefine emergent abilities as those that manifest in models with lower pre-training losses, highlighting that these abilities cannot be predicted by merely extrapolating the performance trends of models with higher pre-training losses.
+
+## 1 Introduction
+
+Scaling of language modes (LMs) on both model and data sizes has been shown to be effective for improving the performance on a wide range of tasks [33; 3; 16; 5; 53; 44; 28], leading to the widespread adoption of LM applications, e.g., ChatGPT. The success of such scaling is guided by scaling laws [15; 21; 7; 16], which study the predictability of pre-training loss given the model and data sizes.
+
+While scaling laws focus on the pre-training loss, the scaling effect on the performance of downstream tasks has thus far less studied. Emergent abilities [47] are defined as abilities that present in larger LMs but not present in smaller one. The existence of such abilities is recently challenged for two reasons. First, small LMs trained on a sufficient number of tokens can outperform large models on tasks with claimed emergent abilities [44; 45; 19]. For example, LLaMA-13B with less compute [44] can outperform GPT-3 (175B) on MMLU [14]. Second, [37] claim that emergent abilities appear due to the nonlinear or discontinuous metrics selected to evaluate certain datasets, rather than from a fundamental change in larger models.
+
+[16] show that different combinations of model sizes and data sizes can lead to different pre-training losses even with the same training compute. Consequently, the pre-training loss can naturally better represent the learning status of LMs than the model or data sizes. However, the relationship between the loss of an LM and its performance on downstream tasks is not yet well understood. Existing literature has either focused on the transfer learning paradigm [25; 43] or constrained its study to single models, tasks, or prompting methods [40; 49].
+
+In this work, we propose to study emergent abilities from the perspective of pre-training loss instead of model size or training compute. To examine the relationship between the pre-training loss of LMs and their performance, we pre-train more than 30 LMs of varied model and data sizes from scratch, using a fixed data corpus, tokenization, and model architecture. Their downstream performance is evaluated on \(12\) diverse datasets covering different tasks, languages, prompting types, and answer forms. We demonstrate that the pre-training loss of an LM is predictive of its performance on downstream tasks, regardless of its model size or data size. The generality of this conclusion is further verified by extracting and observing the performance and loss relationship of the open LLaMA models [44].
+
+Over the course, we find that performance on certain downstream tasks only improves beyond the level of random guessing when the pre-training loss falls below a specific threshold, i.e., emergent abilities. Interestingly, the loss thresholds for these tasks are the same. When the loss is above this threshold, performance remains at the level of random guessing, even though performance on other tasks continues to improve from the outset. To exclude the impact of discontinuous metrics [37; 49], we evaluate the emergent performance increase using continuous metrics and show that the emergent abilities persist across both discontinuous and continuous metrics.
+
+Based on these observations, we define the emergent abilities of LMs from the perspective of pre-training loss: an ability is emergent if it is not present in language models with higher pre-training loss, but is present in language models with lower pre-training loss. According to the loss scaling laws [15; 21], the pre-training loss is a function of model size, data size, and training compute. Therefore, the new emergent abilities can also account for the previously-observed emergent abilities in terms of model size or training compute.
+
+The advantage of the new definition lies in its ability to better capture the tipping points in training trajectories when LMs acquire emergent abilities. Once again [47], the existence of emergent abilities suggests that we cannot predict all the abilities of LMs by simply extrapolating the performance of LMs with higher pre-training loss. Further scaling the model and data size to lower the pre-training loss may enable new abilities that were not present in previous LMs.
+
+## 2 The Pre-training Loss Predicts Task Performance?
+
+We study the relationship between the performance of the language models (LMs) on 12 downstream tasks and the pre-training loss. We pre-train LMs of different model sizes (300M, 540M, 1B, 1.5B, 3B, 6B, and 32B) on varied numbers of tokens with fixed data corpus, tokenization, and architecture. In addition, we leverage the open LLaMA [44] models (7B, 13B, 33B, and 65B) to validate our observations.
+
+\begin{table}
+\begin{tabular}{l l l l l} \hline \hline
+**Dataset** & **Task** & **Prompting Type** & **Answer Form** & **Metric** \\ \hline \hline \multicolumn{5}{c}{_English datasets_} \\ \hline TriviaQA [20] & Closed-book QA & Few-shot & Open-formed & EM \\ HellaSwag [52] & Commonsense NLI & Zero-shot & Multi-choice & Accuracy \\ RACE [23] & Reading Comprehension & Few-shot & Multi-choice & Accuracy \\ WinoGrande [35] & Coreference Resolution & Zero-shot & Multi-choice & Accuracy \\ MMLU [14] & Examination & Few-shot & Multi-choice & Accuracy \\ GSM8K [8] & Math Word Problem & Few-shot CoT & Open-formed & EM \\ \hline \hline \multicolumn{5}{c}{_Chinese datasets_} \\ \hline NLPCC-KBQA[10] & Closed-book QA & Few-shot & Open-formed & EM \\ ClozeT [51] & Commonsense NLI & Zero-shot & Multi-choice & Accuracy \\ CLUEWSC [50] & Coreference Resolution & Zero-shot & Multi-choice & Accuracy \\ C3 [42] & Reading Comprehension & Few-shot & Multi-choice & Accuracy \\ C-Eval [18] & Examination & Few-shot & Multi-choice & Accuracy \\ GSM8K-Chinese & Math Word Problem & Few-shot CoT & Open-formed & EM \\ \hline \hline \end{tabular}
+\end{table}
+Table 1: English and Chinese datasets evaluated in the experiment, and their task types, prompting types, answer forms and metrics. For prompting type, we refer to the chain-of-thought prompting [48] as few-shot CoT and the original in-context learning prompting [3] as few-shot.
+
+It is not straightforward that the loss of LMs decides the performance on downstream tasks. For simplicity, we consider the Exact Match (EM) metric with single-token target. The score \(\mathrm{EM}(\hat{y},y)\) for the prediction \(\hat{y}\) of the prompt \(x\) given the ground truth \(y\) is 1 if \(\hat{y}=y\) and 0 otherwise. The expectation of \(\mathrm{EM}(\hat{y},y)\) is
+
+\[\mathbb{E}[\mathrm{EM}(\hat{y},y)]=P_{\mathrm{LM}}(y|x)=\exp(-\ell(y|x)) \tag{1}\]
+
+where \(\ell(y|x)\) is the cross entropy loss of the LM given the context \(x\) and the target \(y\).
+
+Note that while \(\ell(y|x)\) has the same form as the pre-training loss \(L\), they are not equal. First, the pre-training loss is an average of all the tokens in all the documents pre-trained on. According to our empirical observation, the losses of different documents are not uniform. Second, if \(x\) and similar documents do not exist in the pre-training corpus, \(\ell(y|x)\) is the generalization loss, which is often related to other factors beyond the training loss, such as the model size. For example, in computer vision, a highly over-parameterized models often improve over an under-parameterized models in test performance when both models converge on the training data [9; 4].
+
+### Pre-training Setting
+
+All the models are pre-trained on a mixture of English and Chinese corpus. Both the English and Chinese corpora consist of webpages, wikipedia, books, and papers. The ratio of English to Chinese is 4:1 in the pre-training corpus. We tokenize the data with the byte pair encoding (BPE) algorith [38] with the SentencePiece package [22].
+
+The model architecture is similar to LLaMA [44] with two differences: we use grouped-query attention [1] to replace the multi-query attention and we apply rotary position embedding on half the dimensions of the query and key vectors.
+
+### Evaluation Tasks
+
+To present a comprehensive demonstration, we evaluate the pre-trained models on 12 datasets across different tasks and prompting types in both English and Chinese. The six task types include:
+
+**Closed-book QA:** Answering questions about the real world based solely on the pretrained knowledge. We use TriviaQA [23] for English. For Chinese, we build a closed-book QA dataset based on NLPCC-KBQA [10] dataset following the TriviaQA format.
+
+**Commonsense Natural Language Inference (NLI):** Selecting the most likely followup given an event description. We use the HellaSwag dataset [52] for English and the ClozeT dataset in [51] for Chinese.
+
+**Reading comprehension:** Reading a given article or paragraph and answering questions about it. We use RACE [23] for English and C3 [42] for Chinese. Both are based on multi-choice questions.
+
+**Coreference Resolution:** Given a sentence with pronouns, determine which pronoun refers to which entity. We use the WinoGrande dataset [35] for English and the CLUEWSC dataset [50] for Chinese.
+
+**Examination:** Multiple-choice questions in examinations. For English, we use MMLU [14], which includes mathematics, US history, computer science, law, and more. For Chinese, we use C-Eval [18] which comprises multiple-choice ranging from humanities to science and engineering.
+
+**Math Word Problem**: Solving real-life, situational and relevant problems using mathematical concepts. For English we use the GSM8K [8] dataset. For Chinese, we translate the questions and answers in GSM8K to Chinese, namely GSM8K-Chinese.
+
+The prompting types cover few-shot [3], zero-shot, and few-shot chain-of-thought (CoT) [48]. The datasets are summarized in Table 1.
+
+### Pre-training Loss vs. Performance
+
+In the first experiment, we train three models with 1.5B, 6B, and 32B parameters and observe their behaviors until trained on 3T, 3T, and 2.5T tokens, respectively. The training hyperparameters are shown in Table 3 (Appendix).
+
+We evaluate the performance of intermediate training checkpoints. The checkpoints are saved around every 43B tokens during pre-training. We plot the points of task performance (\(y\)-axis) and training loss (\(x\)-axis) in Figure 1. From the curves, we can see that the training loss is a good predictor of the performance on 12 downstream tasks.
+
+* Generally, the task performance improves as the training loss goes down, regardless of the model sizes. On MMLU, C-Eval, GSM8K, and GSM8K-Chinese, all models of three sizes perform at the random level until the pre-training loss decreases to about 2.2, after which the performance gradually climbs as the loss increases. Detailed analysis on this is shown in Section 3.
+* Importantly, the performance-vs-loss data points of different model sizes fall on the same trending curve. That is, by ignoring the color differences (model sizes), the data points of different models are indistinguishable. For example, when the training loss falls around 2.00, the green and orange points on TriviaQA are indistinguishable. This indicates that the model performance on downstream tasks largely correlates with the pre-training loss, _regardless of the model size._
+* Interestingly, we find that the overall training loss is a good predictor of performance on both English and Chinese tasks, although it is computed on a mixture of English and Chinese tokens. This implies that the learning dynamics of English and Chinese tokens are likely very similar during multilingual pre-training.
+
+Figure 1: **The performance-vs-loss curves of 1.5B, 6B, and 32B models. Each data point is the loss (\(x\)-axis) and performance (\(y\)-axis) of the intermediate checkpoint of one of the three models. We mark the results of random guess in black dashed lines.**
+
+### Training Token Count vs. Performance
+
+Following the empirical experiments in scaling laws [15; 21; 16], we further pre-train 28 relatively smaller models with different numbers of training tokens. The model sizes range from 300M, to 540M, 1B, 1.5B, 3B, and to 6B, while the numbers of pre-training tokens range from 33B to 500B. The learning rate schedule is set to reach the minimum at the corresponding token count, which is critical to the optimal performance [21; 16]. The number of tokens used and hyperparameters for all models are shown in Table 4 (Appendix).
+
+On each line, each data point represents the performance and pre-training loss of the corresponding model pre-trained completely from scratch with the certain token count (and learning rate schedule). We can see that similar to the observations from Figure 1, the data points of different models sizes and training tokens largely fall on the same trending curves. In other words, _the LMs with the same pre-training loss regardless of token count and model size exhibit the same performance on the 12 downstream tasks_.
+
+Another similar observation is that the performance curves on MMLU, C-Eval, GSM8K, and GSM8K-Chinese do not yield an uptrend, meaning that the performance of these models on these four tasks are close to random (with fewer than 500B tokens). For simplicity, we only plot the performance of the latest checkpoint in each training in Figure 2. The complete performance curves with intermediate checkpoints of each model, in which we can observe the same trend but larger variance, are shown in Figure 5 (Appendix).
+
+### LLaMA's Loss vs. Performance
+
+To validate the generality of our observations, we analyze a different model series with required information made publicly available, i.e., LLaMA [44]. Compared to our models, LLaMA uses a pre
+
+Figure 2: **The performance-vs-loss curves of smaller models pre-trained with different numbers of training tokens**. Each data point is the loss (\(x\)-axis) and performance (\(y\)-axis) of the final checkpoint of one model, i.e., each point corresponds to one model trained from scratch. We mark the results of random guess in black dashed lines.
+
+training corpus that excludes Chinese documents, leverages a different pre-training framework [29], and adopts a slightly different model architecture. Since the intermediate checkpoints of LLaMA are not available, we extract the pre-training loss and corresponding performance on six question answering and commonsense reasoning tasks from the figures in its original paper, and plot the points in Figure 3.
+
+Excitingly, most data points from the LLaMA models with different sizes (7B, 13B, 33B, 65B) fall on the same upwards trend. This observation further confirm our conclusion that the model's pre-training loss can predict its performance on downstream tasks, regardless of model size and token count. Note that there is one only exception at the early stage of LLaMA-65B. We can see that when the training loss is higher than 1.8, LLaMA-65B performs worse than smaller models with the same training loss. Without access to its intermediate checkpoints, we unfortunately cannot further analyze the result. Note that the outliers only constitute the initial 10% training tokens.
+
+Observed from previous experiments and analysis, we can conclude that the pre-training loss is a good indicator of LMs' performance on downstream tasks, independent of model sizes, training tokens, languages, and pre-training frameworks.
+
+## 3 Analysis of Different Tasks and Metrics
+
+### Performance Trends of Different Tasks
+
+In Figures 1 and 2, we can separate the datasets into two groups: First, on TriviaQA, HellaSwag, RACE, WinoGrande, NLPCC-KBQA, ClozeT, CLUEWSC, and C3, the performance improves smoothly with decreased pre-training loss from the very beginning. Second, on MMLU, C-Eval, GSM8K, and GSM8K-Chinese, the performance remains flat when the loss is higher than a certain threshold. Once the pre-training loss is lower than this threshold, the performance starts to improve.
+
+Take MMLU as an example of the second group, when the pre-training loss is higher than 2.2, the accuracy remains around 25%. Since each question in MMLU has four options, this means the model prediction is no better than random guessing. However, when the pre-training loss drops below 2.2, the accuracy increases as the loss decreases, similar to the trend observed in the first group of tasks. The performance trends of C-Eval, GSM8K, and GSM8K-Chinese follow a similar pattern. Despite differences in languages, tasks, prompting types, and answer forms among the four datasets are different, the thresholds for performance improvement are surprisingly all around 2.2.
+
+Figure 3: **The performance-vs-loss curves of LLaMA. The values of performance and training loss are extracted from the figures in the original LLaMA paper [44]. Note that the LLaMA2 paper [45] does not cover such figures with related information.**
+
+RACE in the first group has a prompting format similar to MMLU: both consist of multi-choice examination questions with in-context demonstrations, but their performance curves are quite different. We hypothesis that it is the task difficulty that makes the difference. Tasks of the first group of datasets are easier than those of the second group. For example, RACE requires the model to select correct answers for questions about a given article, and HellaSwag lets the model to select the possible followup of a situation based on commonsense. In contrast, MMLU and C-Eval consist of questions designed for high school, college, or professional examinations, requiring a broader range of knowledge. GSM8K and GSM8K-Chinese are math word problems that are used to be considered as impossible to solve by pre-trained language models without Chain-of-Thought prompting.
+
+The phenomenon can be related to grokking, which describes the improvement of performance from the random chance level to perfect generalization [31]. [31] find that this improvement can occur well past the point of overfitting. In pre-training, the models are usually underfitting instead of overfitting overall. Since the pre-training corpus is a mixture of different documents, it is possible that the model already fits some patterns--such as numerical addition--in the data, while still underfitting the overall corpus.
+
+Certainly, the observations on the second groups of datasets can also be related to emergent abilities [47], that is, abilities that only present in large models. According to the scaling law, with the number of training tokens fixed, the pre-training loss follows a power law with respect to model sizes. In other words, there is a monotonic relationship between model size and pre-training loss. For the second group of tasks, there is a threshold of model sizes that corresponds to the tipping point in the pre-training loss. When the model size exceeds this threshold, the model can exhibit performance above the random chance level.
+
+### Influence of Different Metrics
+
+[37] propose an alternative explanation of emergent abilities of LMs, that is, emergent abilities appear due to the researchers' choice of nonlinear or discontinuous metrics. The accuracy on multi-choice questions (e.g., MMLU) is discontinuous, since the score on a question is either 1 or 0. To validate this claim, we examine the intermediate checkpoints on MMLU and C-Eval with continuous metrics rather than accuracy (discontinuous) used in the original benchmarks. The first metric is the predicted probability of the correct answer (CorrectChoiceProb). The second one is the Brier Score [2] used in
+
+Figure 4: **The performance-vs-loss curves of different metrics on MMLU and C-Eval.** Accuracy: discontinuous; CorrectChoiceProb and BrierScore: continuous. We mark the result of random guess in black dashed lines.
+
+[37]:
+
+\[\mathrm{BrierScore}=\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{C}(y_{ij}-\hat{y}_{ij})^{2} \tag{2}\]
+
+where \(\hat{y}_{ij}\) is the predicted probability of sample \(i\) for class \(j\) and \(y_{ij}\) is the ground probability.
+
+We plot the results measured by different metrics on MMLU and C-Eval in Figure 4. All three metrics--accuracy, correct choice probability, and Brier Score--show emergent performance improvements (value increase for the first two and decrease for the third) when the pre-training loss drops below a certain threshold. The Brier Score also decreases when the pre-training loss is above the threshold. However, the decrease of Brier Score does not always represent improvements on the task, since the Brier Score is related to not only the predicted probability of the correct answer but also the predicted probabilities of the incorrect answers. We find that the distribution of the correct answers is uniform in the four options in MMLU and C-Eval. The best Brier Score for a context-free predictor is achieved by always giving uniform probability to all the options. In this case, the Brier Score is equal to 0.75. Therefore, the performance in terms of Brier Score is no better than random guess before the loss reaches the threshold. This observation further confirms our previous conclusion. We discuss the contrary observations of [37] and [49] in Appendix C.
+
+We conclude that emergent abilities of language models occur when the pre-training loss reaches a certain tipping point, and continuous metrics cannot eliminate the observed tipping point.
+
+## 4 Defining Emergent Abilities from the Loss Perspective
+
+In previous sections, we show that 1) the pre-training loss is predictive of the performance of language modes on downstream tasks, and 2) some tasks exhibit emergent performance improvements from the random guess level when the pre-training loss drops below a certain threshold regardless of model size, token count, and continuity of metrics. Based on these observations, we give a new definition of emergent abilities from the pre-training loss perspective:
+
+**Definition**.: _An ability is emergent if it is not present in models with higher pre-training loss but is present in models with lower pre-training loss._
+
+The normalized performance on an emergent ability as a function of the pre-training loss \(L\) is:
+
+\[\begin{cases}f(L)&\text{if }L<\eta\\ 0&\text{otherwise}\end{cases} \tag{3}\]
+
+where \(f(L)\) is a monotonically decreasing function of \(L\), \(\eta\) is the threshold, and the normalized performance of random guess is 0.
+
+In [15], they give the scaling relation for the loss with model size \(N\) when the number of training tokens \(D\) is fixed:
+
+\[L(N)=L_{\infty}+\left(\frac{N_{0}}{N}\right)^{\alpha_{N}} \tag{4}\]
+
+where \(L_{\infty}\) is the irreducible loss, and \(\alpha_{N}\) is the coefficient. The equation shows that the loss of language models follows a power-law plus a constant. Combining Equation (3) and Equation (4), we can get the normalized performance as a function of the model size \(N\)
+
+\[\begin{cases}f\left(L_{\infty}+\left(\frac{N_{0}}{N}\right)^{\alpha_{N}} \right)&\text{if }N\geq N_{0}\cdot\left(\eta-L_{\infty}\right)^{-\frac{1}{ \alpha_{N}}}\\ 0&\text{otherwise}\end{cases} \tag{5}\]
+
+From this equation, we can explain the emergent abilities observed in [47]: when model sizes are smaller than \(N_{0}\cdot\left(\eta-L_{\infty}\right)^{-1/\alpha_{N}}\), the normalized performance is zero. When model sizes exceed \(N_{0}\cdot\left(\eta-L_{\infty}\right)^{-1/\alpha_{N}}\), the increase in model size leads to a decrease of pre-training loss and an improvement in normalized performance.
+
+Related Work
+
+**Relationship of Pre-training Loss and Task Performance.** In the transfer learning setting, [25; 43] find that models with the same pre-training loss can have different downstream performance after finetuning, due to inductive bias in model sizes, model architectures, and training algorithms. For the prompted performance of large language models, [49] claim that perplexity is a strong predictor of in-context learning performance, but the evidence is limited to the OPT model [54] and a subset of BIG-Bench [41]. Instead, [40] find that low perplexity does not always imply high in-context learning performance when the pre-training corpus changes.
+
+**Emergent abilities.**[47] propose the idea of emergent abilities, abilities that only present in large language models. This is similar to the claim of [13] that it is more difficult to predict the capacities of language models than to predict the pre-training loss. The existence of emergent abilities has been challenged. [16] show that smaller language models trained with sufficient data can outperform undertrained larger language models, supported by follow-up models [44; 19; 45]. On the other hand, [37] claim that emergent abilities are due to the discontinuos metrics used for evaluation, also found in [49]. Similarly, [17] propose to predict the performance of emergent abilities with the infinite resolution evaluation metric. In this paper we prove the existence of emergent abilities from the perspecitve of pre-training loss, even with continuous metrics.
+
+## 6 Conclusion
+
+Our paper proposes a new definition of emergent abilities of language models from the perspective of pre-training loss. Empirical results show that the pre-training loss is a better metric to represent the scaling effect of language models than model size or training compute. The performance of emergent abilities exhibits emergent increase when the pre-training loss falls below a certain threshold, even when evaluated with continuous metrics.
+
+The new definition offers a precise characterization of the critical junctures within training trajectories where emergent abilities manifest. It encourages future studies to investigate the shifts in language models at these junctures, which facilitate the development of new capabilities.
+
+## 7 Limitation
+
+We study the relationship of pre-training loss and performance on downstream tasks of language models, across model sizes, training tokens, tasks, languages, prompting types, and answer forms. Factors we have not considered are model architectures and training algorithms. We analyze the performance-loss curves of LLaMA, a language model with a slightly different architecture, and fine that the relationship holds for the model family. But there are fundamentally different model architectures, such as routed Transformers [11], and non-Transformer architectures [12; 30] beyond our consideration. Both our models and LLaMA use AdamW optimizer [27], while there are other optimizers for language model pre-training [39; 24].
+
+The disadvantage of studying emergent abilities in the lens of pre-training loss is that the pre-training loss is affected by the tokenizer and the distribution of pre-training corpus. The values of pre-training loss of language models trained on different corpus are not directly comparable. One possible solution is to evaluate different language models on a public validation set with the normalized perplexity [34] to account for the different vocabulary sizes.
+
+The paper should not be considered as a push to expand model sizes and data sizes of language models beyond current scales. It is not guaranteed that new tipping points emerge in larger scales. Also, pre-training is not the only way to improve the performance of emergent abilities. For example, instruction tuning [46; 36; 6; 26] can improve the zero-shot performance of language models on unseen tasks, including the MMLU dataset. Future studies can analyze the acquisition of emergent abilities and lower the scale requirements.
+
+## References
+
+* [1] J. Ainslie, J. Lee-Thorp, M. de Jong, Y. Zemlyanskiy, F. Lebron, and S. Sanghai. GQA: training generalized multi-query transformer models from multi-head checkpoints. In H. Bouamor, J. Pino, and K. Bali, editors, _Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, EMNLP 2023, Singapore, December 6-10, 2023_, pages 4895-4901. Association for Computational Linguistics, 2023.
+* 3, 1950.
+* [3] T. B. Brown, B. Mann, N. Ryder, M. Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger, T. Henighan, R. Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter, C. Hesse, M. Chen, E. Sigler, M. Litwin, S. Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford, I. Sutskever, and D. Amodei. Language models are few-shot learners. In H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, editors, _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020.
+* [4] Y. Cao and Q. Gu. Generalization error bounds of gradient descent for learning over-parameterized deep relu networks. In _The Thirty-Fourth AAAI Conference on Artificial Intelligence, AAAI 2020, The Thirty-Second Innovative Applications of Artificial Intelligence Conference, IAAI 2020, The Tenth AAAI Symposium on Educational Advances in Artificial Intelligence, EAAI 2020, New York, NY, USA, February 7-12, 2020_, pages 3349-3356. AAAI Press, 2020.
+* [5] A. Chowdhery, S. Narang, J. Devlin, M. Bosma, G. Mishra, A. Roberts, P. Barham, H. W. Chung, C. Sutton, S. Gehrmann, P. Schuh, K. Shi, S. Tsyvashchenko, J. Maynez, A. Rao, P. Barnes, Y. Tay, N. Shazeer, V. Prabhakaran, E. Reif, N. Du, B. Hutchinson, R. Pope, J. Bradbury, J. Austin, M. Isard, G. Gur-Ari, P. Yin, T. Duke, A. Levskaya, S. Ghemawat, S. Dev, H. Michalewski, X. Garcia, V. Misra, K. Robinson, L. Fedus, D. Zhou, D. Ippolito, D. Luan, H. Lim, B. Zoph, A. Spiridonov, R. Sepassi, D. Dohan, S. Agrawal, M. Omernick, A. M. Dai, T. S. Pillai, M. Pellat, A. Lewkowycz, E. Moreira, R. Child, O. Polozov, K. Lee, Z. Zhou, X. Wang, B. Saeta, M. Diaz, O. Firat, M. Catasta, J. Wei, K. Meier-Hellstern, D. Eck, J. Dean, S. Petrov, and N. Fiedel. Palm: Scaling language modeling with pathways. _J. Mach. Learn. Res._, 24:240:1-240:113, 2023.
+* [6] H. W. Chung, L. Hou, S. Longpre, B. Zoph, Y. Tay, W. Fedus, E. Li, X. Wang, M. Dehghani, S. Brahma, A. Webson, S. S. Gu, Z. Dai, M. Suzgun, X. Chen, A. Chowdhery, S. Narang, G. Mishra, A. Yu, V. Y. Zhao, Y. Huang, A. M. Dai, H. Yu, S. Petrov, E. H. Chi, J. Dean, J. Devlin, A. Roberts, D. Zhou, Q. V. Le, and J. Wei. Scaling instruction-finetuned language models. _CoRR_, abs/2210.11416, 2022.
+* [7] A. Clark, D. de Las Casas, A. Guy, A. Mensch, M. Paganini, J. Hoffmann, B. Damoc, B. A. Hechtman, T. Cai, S. Borgeaud, G. van den Driessche, E. Rutherford, T. Hennigan, M. J. Johnson, A. Cassirer, C. Jones, E. Buchatskaya, D. Budden, L. Sifre, S. Osindero, O. Vinyals, M. Ranzato, J. W. Rae, E. Elsen, K. Kavukcuoglu, and K. Simonyan. Unified scaling laws for routed language models. In K. Chaudhuri, S. Jegelka, L. Song, C. Szepesvari, G. Niu, and S. Sabato, editors, _International Conference on Machine Learning, ICML 2022, 17-23 July 2022, Baltimore, Maryland, USA_, volume 162 of _Proceedings of Machine Learning Research_, pages 4057-4086. PMLR, 2022.
+* [8] K. Cobbe, V. Kosaraju, M. Bavarian, M. Chen, H. Jun, L. Kaiser, M. Plappert, J. Tworek, J. Hilton, R. Nakano, C. Hesse, and J. Schulman. Training verifiers to solve math word problems. _CoRR_, abs/2110.14168, 2021.
+* [9] Y. Dar, V. Muthukumar, and R. G. Baraniuk. A farewell to the bias-variance tradeoff? an overview of the theory of overparameterized machine learning. _CoRR_, abs/2109.02355, 2021.
+* [10] N. Duan. Overview of the nlpcc-iccpol 2016 shared task: Open domain chinese question answering. In _Natural Language Understanding and Intelligent Applications_, pages 942-948. Springer International Publishing, 2016.
+
+* [11] W. Fedus, B. Zoph, and N. Shazeer. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. _J. Mach. Learn. Res._, 23:120:1-120:39, 2022.
+* [12] D. Y. Fu, T. Dao, K. K. Saab, A. W. Thomas, A. Rudra, and C. Re. Hungry hungry hippos: Towards language modeling with state space models. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023.
+* 24, 2022_, pages 1747-1764. ACM, 2022.
+* [14] D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt. Measuring massive multitask language understanding. In _9th International Conference on Learning Representations, ICLR 2021, Virtual Event, Austria, May 3-7, 2021_. OpenReview.net, 2021.
+* [15] T. Henighan, J. Kaplan, M. Katz, M. Chen, C. Hesse, J. Jackson, H. Jun, T. B. Brown, P. Dhariwal, S. Gray, C. Hallacy, B. Mann, A. Radford, A. Ramesh, N. Ryder, D. M. Ziegler, J. Schulman, D. Amodei, and S. McCandlish. Scaling laws for autoregressive generative modeling. _CoRR_, abs/2010.14701, 2020.
+* [16] J. Hoffmann, S. Borgeaud, A. Mensch, E. Buchatskaya, T. Cai, E. Rutherford, D. de Las Casas, L. A. Hendricks, J. Welbl, A. Clark, T. Hennigan, E. Noland, K. Millican, G. van den Driessche, B. Damoc, A. Guy, S. Osindero, K. Simonyan, E. Elsen, J. W. Rae, O. Vinyals, and L. Sifre. Training compute-optimal large language models. _CoRR_, abs/2203.15556, 2022.
+* [17] S. Hu, X. Liu, X. Han, X. Zhang, C. He, W. Zhao, Y. Lin, N. Ding, Z. Ou, G. Zeng, et al. Predicting emergent abilities with infinite resolution evaluation. _arXiv e-prints_, pages arXiv-2310, 2023.
+* [18] Y. Huang, Y. Bai, Z. Zhu, J. Zhang, J. Zhang, T. Su, J. Liu, C. Lv, Y. Zhang, J. Lei, Y. Fu, M. Sun, and J. He. C-eval: A multi-level multi-discipline chinese evaluation suite for foundation models. _CoRR_, abs/2305.08322, 2023.
+* [19] A. Q. Jiang, A. Sablayrolles, A. Mensch, C. Bamford, D. S. Chaplot, D. de Las Casas, F. Bressand, G. Lengyel, G. Lample, L. Saulnier, L. R. Lavaud, M. Lachaux, P. Stock, T. L. Scao, T. Lavril, T. Wang, T. Lacroix, and W. E. Sayed. Mistral 7b. _CoRR_, abs/2310.06825, 2023.
+* August 4, Volume 1: Long Papers_, pages 1601-1611. Association for Computational Linguistics, 2017.
+* [21] J. Kaplan, S. McCandlish, T. Henighan, T. B. Brown, B. Chess, R. Child, S. Gray, A. Radford, J. Wu, and D. Amodei. Scaling laws for neural language models. _CoRR_, abs/2001.08361, 2020.
+* November 4, 2018_, pages 66-71. Association for Computational Linguistics, 2018.
+* [23] G. Lai, Q. Xie, H. Liu, Y. Yang, and E. H. Hovy. RACE: large-scale reading comprehension dataset from examinations. In M. Palmer, R. Hwa, and S. Riedel, editors, _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing, EMNLP 2017, Copenhagen, Denmark, September 9-11, 2017_, pages 785-794. Association for Computational Linguistics, 2017.
+
+* [24] H. Liu, Z. Li, D. Hall, P. Liang, and T. Ma. Sophia: A scalable stochastic second-order optimizer for language model pre-training. _CoRR_, abs/2305.14342, 2023.
+* [25] H. Liu, S. M. Xie, Z. Li, and T. Ma. Same pre-training loss, better downstream: Implicit bias matters for language models. In A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 22188-22214. PMLR, 2023.
+* [26] S. Longpre, L. Hou, T. Vu, A. Webson, H. W. Chung, Y. Tay, D. Zhou, Q. V. Le, B. Zoph, J. Wei, and A. Roberts. The final collection: Designing data and methods for effective instruction tuning. In A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 22631-22648. PMLR, 2023.
+* [27] I. Loshchilov and F. Hutter. Decoupled weight decay regularization. In _7th International Conference on Learning Representations, ICLR 2019, New Orleans, LA, USA, May 6-9, 2019_. OpenReview.net, 2019.
+* [28] OpenAI. GPT-4 technical report. _CoRR_, abs/2303.08774, 2023.
+* [29] M. Ott, S. Edunov, A. Baevski, A. Fan, S. Gross, N. Ng, D. Grangier, and M. Auli. fairseq: A fast, extensible toolkit for sequence modeling. In W. Ammar, A. Louis, and N. Mostafazadeh, editors, _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL-HLT 2019, Minneapolis, MN, USA, June 2-7, 2019, Demonstrations_, pages 48-53. Association for Computational Linguistics, 2019.
+* [30] M. Poli, S. Massaroli, E. Nguyen, D. Y. Fu, T. Dao, S. Baccus, Y. Bengio, S. Ermon, and C. Re. Hyena hierarchy: Towards larger convolutional language models. In A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, editors, _International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA_, volume 202 of _Proceedings of Machine Learning Research_, pages 28043-28078. PMLR, 2023.
+* [31] A. Power, Y. Burda, H. Edwards, I. Babuschkin, and V. Misra. Grokking: Generalization beyond overfitting on small algorithmic datasets. _CoRR_, abs/2201.02177, 2022.
+* [32] J. W. Rae, S. Borgeaud, T. Cai, K. Millican, J. Hoffmann, H. F. Song, J. Aslanides, S. Henderson, R. Ring, S. Young, E. Rutherford, T. Hennigan, J. Menick, A. Cassirer, R. Powell, G. van den Driessche, L. A. Hendricks, M. Rauh, P. Huang, A. Glaese, J. Welbl, S. Dathathri, S. Huang, J. Uesato, J. Mellor, I. Higgins, A. Creswell, N. McAleese, A. Wu, E. Elsen, S. M. Jayakumar, E. Buchatskaya, D. Budden, E. Sutherland, K. Simonyan, M. Paganini, L. Sifre, L. Martens, X. L. Li, A. Kuncoro, A. Nematzadeh, E. Gribovskaya, D. Donato, A. Lazaridou, A. Mensch, J. Lespiau, M. Tsimpoukelli, N. Grigorev, D. Fritz, T. Sottiaux, M. Pajarskas, T. Pohlen, Z. Gong, D. Toyama, C. de Masson d'Autume, Y. Li, T. Terzi, V. Mikulik, I. Babuschkin, A. Clark, D. de Las Casas, A. Guy, C. Jones, J. Bradbury, M. J. Johnson, B. A. Hechtman, L. Weidinger, I. Gabriel, W. Isaac, E. Lockhart, S. Osindero, L. Rimell, C. Dyer, O. Vinyals, K. Ayoub, J. Stanway, L. Bennett, D. Hassabis, K. Kavukcuoglu, and G. Irving. Scaling language models: Methods, analysis & insights from training gopher. _CoRR_, abs/2112.11446, 2021.
+* [33] C. Raffel, N. Shazeer, A. Roberts, K. Lee, S. Narang, M. Matena, Y. Zhou, W. Li, and P. J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _J. Mach. Learn. Res._, 21:140:1-140:67, 2020.
+* [34] J. Roh, S. Oh, and S. Lee. Unigram-normalized perplexity as a language model performance measure with different vocabulary sizes. _CoRR_, abs/2011.13220, 2020.
+* [35] K. Sakaguchi, R. L. Bras, C. Bhagavatula, and Y. Choi. Winogrande: An adversarial winograd schema challenge at scale. In _The Thirty-Fourth AAAI Conference on Artificial Intelligence, AAAI 2020, The Thirty-Second Innovative Applications of Artificial Intelligence Conference, IAAI 2020, The Tenth AAAI Symposium on Educational Advances in Artificial Intelligence, EAAI 2020, New York, NY, USA, February 7-12, 2020_, pages 8732-8740. AAAI Press, 2020.
+
+* [36] V. Sanh, A. Webson, C. Raffel, S. H. Bach, L. Sutawika, Z. Alyafeai, A. Chaffin, A. Stiegler, A. Raja, M. Dey, M. S. Bari, C. Xu, U. Thakker, S. S. Sharma, E. Szczechla, T. Kim, G. Chhabalani, N. V. Nayak, D. Datta, J. Chang, M. T. Jiang, H. Wang, M. Manica, S. Shen, Z. X. Yong, H. Pandey, R. Bawden, T. Wang, T. Neeraj, J. Rozen, A. Sharma, A. Santilli, T. Fevry, J. A. Fries, R. Teehan, T. L. Scao, S. Biderman, L. Gao, T. Wolf, and A. M. Rush. Multitask prompted training enables zero-shot task generalization. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [37] R. Schaeffer, B. Miranda, and S. Koyejo. Are emergent abilities of large language models a mirage? _CoRR_, abs/2304.15004, 2023.
+* [38] R. Sennrich, B. Haddow, and A. Birch. Neural machine translation of rare words with subword units. In _Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics, ACL 2016, August 7-12, 2016, Berlin, Germany, Volume 1: Long Papers_. The Association for Computer Linguistics, 2016.
+* [39] N. Shazeer and M. Stern. Adafactor: Adaptive learning rates with sublinear memory cost. In J. G. Dy and A. Krause, editors, _Proceedings of the 35th International Conference on Machine Learning, ICML 2018, Stockholmsmassan, Stockholm, Sweden, July 10-15, 2018_, volume 80 of _Proceedings of Machine Learning Research_, pages 4603-4611. PMLR, 2018.
+* [40] S. Shin, S. Lee, H. Ahn, S. Kim, H. Kim, B. Kim, K. Cho, G. Lee, W. Park, J. Ha, and N. Sung. On the effect of pretraining corpora on in-context learning by a large-scale language model. In M. Carpuat, M. de Marmeffe, and I. V. M. Ruiz, editors, _Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, NAACL 2022, Seattle, WA, United States, July 10-15, 2022_, pages 5168-5186. Association for Computational Linguistics, 2022.
+* [41] A. Srivastava, A. Rastogi, A. Rao, A. A. M. Shoeb, A. Abid, A. Fisch, A. R. Brown, A. Santoro, A. Gupta, A. Garriga-Alonso, A. Kluska, A. Lewkowycz, A. Agarwal, A. Power, A. Ray, A. Warstadt, A. W. Kocurek, A. Safaya, A. Tazarv, A. Xiang, A. Parrish, A. Nie, A. Hussain, A. Askell, A. Dsouza, A. Rahane, A. S. Iyer, A. Andreassen, A. Santilli, A. Stuhlmuller, A. M. Dai, A. La, A. K. Lampinen, A. Zou, A. Jiang, A. Chen, A. Vuong, A. Gupta, A. Gottardi, A. Norelli, A. Venkatesh, A. Gholamidavoodi, A. Tabassum, A. Menezes, A. Kirubarajan, A. Mullokandov, A. Sabharwal, A. Herrick, A. Efrat, A. Erdem, A. Karakas, and et al. Beyond the imitation game: Quantifying and extrapolating the capabilities of language models. _CoRR_, abs/2206.04615, 2022.
+* [42] K. Sun, D. Yu, D. Yu, and C. Cardie. Investigating prior knowledge for challenging chinese machine reading comprehension. _Trans. Assoc. Comput. Linguistics_, 8:141-155, 2020.
+* [43] Y. Tay, M. Dehghani, S. Abnar, H. W. Chung, W. Fedus, J. Rao, S. Narang, V. Q. Tran, D. Yogatama, and D. Metzler. Scaling laws vs model architectures: How does inductive bias influence scaling? In H. Bouamor, J. Pino, and K. Bali, editors, _Findings of the Association for Computational Linguistics: EMNLP 2023, Singapore, December 6-10, 2023_, pages 12342-12364. Association for Computational Linguistics, 2023.
+* [44] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M. Lachaux, T. Lacroix, B. Roziere, N. Goyal, E. Hambro, F. Azhar, A. Rodriguez, A. Joulin, E. Grave, and G. Lample. Llama: Open and efficient foundation language models. _CoRR_, abs/2302.13971, 2023.
+* [45] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, D. Bikel, L. Blecher, C. Canton-Ferrer, M. Chen, G. Cucurull, D. Esiobu, J. Fernandes, J. Fu, W. Fu, B. Fuller, C. Gao, V. Goswami, N. Goyal, A. Hartshorn, S. Hosseini, R. Hou, H. Inan, M. Kardas, V. Kerkez, M. Khabsa, I. Kloumann, A. Korenev, P. S. Koura, M. Lachaux, T. Lavril, J. Lee, D. Liskovich, Y. Lu, Y. Mao, X. Martinet, T. Mihaylov, P. Mishra, I. Molybog, Y. Nie, A. Poulton, J. Reizenstein, R. Rungta, K. Saladi, A. Schelten, R. Silva, E. M. Smith, R. Subramanian, X. E. Tan, B. Tang, R. Taylor, A. Williams, J. X. Kuan, P. Xu, Z. Yan, I. Zarov, Y. Zhang, A. Fan, M. Kambadur, S. Narang, A. Rodriguez, R. Stojnic, S. Edunov, and T. Scialom. Llama 2: Open foundation and fine-tuned chat models. _CoRR_, abs/2307.09288, 2023.
+
+* [46] J. Wei, M. Bosma, V. Y. Zhao, K. Guu, A. W. Yu, B. Lester, N. Du, A. M. Dai, and Q. V. Le. Finetuned language models are zero-shot learners. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [47] J. Wei, Y. Tay, R. Bommasani, C. Raffel, B. Zoph, S. Borgeaud, D. Yogatama, M. Bosma, D. Zhou, D. Metzler, E. H. Chi, T. Hashimoto, O. Vinyals, P. Liang, J. Dean, and W. Fedus. Emergent abilities of large language models. _Trans. Mach. Learn. Res._, 2022, 2022.
+* December 9, 2022_, 2022.
+* [49] M. Xia, M. Artetxe, C. Zhou, X. V. Lin, R. Pasunuru, D. Chen, L. Zettlemoyer, and V. Stoyanov. Training trajectories of language models across scales. In A. Rogers, J. L. Boyd-Graber, and N. Okazaki, editors, _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2023, Toronto, Canada, July 9-14, 2023_, pages 13711-13738. Association for Computational Linguistics, 2023.
+* [50] L. Xu, H. Hu, X. Zhang, L. Li, C. Cao, Y. Li, Y. Xu, K. Sun, D. Yu, C. Yu, Y. Tian, Q. Dong, W. Liu, B. Shi, Y. Cui, J. Li, J. Zeng, R. Wang, W. Xie, Y. Li, Y. Patterson, Z. Tian, Y. Zhang, H. Zhou, S. Liu, Z. Zhao, Q. Zhao, C. Yue, X. Zhang, Z. Yang, K. Richardson, and Z. Lan. CLUE: A chinese language understanding evaluation benchmark. In D. Scott, N. Bel, and C. Zong, editors, _Proceedings of the 28th International Conference on Computational Linguistics, COLING 2020, Barcelona, Spain (Online), December 8-13, 2020_, pages 4762-4772. International Committee on Computational Linguistics, 2020.
+* [51] Y. Yao, Q. Dong, J. Guan, B. Cao, Z. Zhang, C. Xiao, X. Wang, F. Qi, J. Bao, J. Nie, Z. Zeng, Y. Gu, K. Zhou, X. Huang, W. Li, S. Ren, J. Lu, C. Xu, H. Wang, G. Zeng, Z. Zhou, J. Zhang, J. Li, M. Huang, R. Yan, X. He, X. Wan, X. Zhao, X. Sun, Y. Liu, Z. Liu, X. Han, E. Yang, Z. Sui, and M. Sun. CUGE: A chinese language understanding and generation evaluation benchmark. _CoRR_, abs/2112.13610, 2021.
+* [52] R. Zellers, A. Holtzman, Y. Bisk, A. Farhadi, and Y. Choi. Hellaswag: Can a machine really finish your sentence? In A. Korhonen, D. R. Traum, and L. Marquez, editors, _Proceedings of the 57th Conference of the Association for Computational Linguistics, ACL 2019, Florence, Italy, July 28- August 2, 2019, Volume 1: Long Papers_, pages 4791-4800. Association for Computational Linguistics, 2019.
+* [53] A. Zeng, X. Liu, Z. Du, Z. Wang, H. Lai, M. Ding, Z. Yang, Y. Xu, W. Zheng, X. Xia, W. L. Tam, Z. Ma, Y. Xue, J. Zhai, W. Chen, Z. Liu, P. Zhang, Y. Dong, and J. Tang. GLM-130B: an open bilingual pre-trained model. In _The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023_. OpenReview.net, 2023.
+* [54] S. Zhang, S. Roller, N. Goyal, M. Artetxe, M. Chen, S. Chen, C. Dewan, M. T. Diab, X. Li, X. V. Lin, T. Mihaylov, M. Ott, S. Shleifer, K. Shuster, D. Simig, P. S. Koura, A. Sridhar, T. Wang, and L. Zettlemoyer. OPT: open pre-trained transformer language models. _CoRR_, abs/2205.01068, 2022.
+
+## Appendix A Pre-training Hyperparameters
+
+The hyperparameters for training of 1.5B, 6B, and 32B models are shown in Table 3. The hyperparameters for training of smaller models are shown in Table 4. The sequence length is 2048 and the optimizer is AdamW [27] with \(\beta_{1}=0.9\) and \(\beta_{2}=0.95\).
+
+## Appendix B Evaluation Dataset Statistics
+
+The evaluated splits and numbers of examples are summarized in Table 5. For English datasets, we follow Gopher [32] and Chinchilla [16]'s selection of evaluation splits. For Chinese datasets, we use the validation split when the ground labels are always available. For CLUEWSC, the size of the validation set is too small (100), so we combine the train and validation splits. GSM8K-Chinese is translated from GSM8K with machine translation and human proofreading.
+
+## Appendix C Are Emergent Abilities of Language Models a Mirage?
+
+[37] claim that emergent abilities proposed in [47] are mainly a mirage caused by nonlinear and discontinuos metrics. [49] also support the idea.
+
+[49] use the perplexity of correct options as the metric for BIG-Bench and find that the metric improves smoothly on almost all the tasks of BIG-Bench. We argue that the perplexity of correct options is not the correct metric to evaluate the performance of multi-choice questions. The correct metric of multi-choice questions should reflect the ability of distinguishing correct options from incorrect options. The perplexity of correct options and incorrect options may decrease simultaneously. In fact, [49] already observe perplexity of incorrect options decreasing during pre-training and only at the end of training that the perplexity of correct and incorrect options starts to diverge. This supports the existence of emergent abilities.
+
+[37] use Brier Score [2] as the metric for BIG-Bench. We argue that increase in Brier Score does not always represent improvement of performance on the multi-choice task, since Brier Score is also related to the allocation of probabilities for incorrect options. For example, questions in the MMLU dataset have four options (A, B, C, and D) and the frequency of the four options as correct is equal. Consider two models that give the same probability independent of questions. One model predicts \((1,0,0,0)\) for the four options and the other model predicts \((0.25,0.25,0.25,0.25)\). The Brier Score for the former is 1.5 while the Brier Score for the latter is 0.75. However, both models do not learn the relationship between questions and correct options at all. One can argue that the latter model better fits the distribution of correct options in the dataset, but the improvement is not as large as the different of 1.5 and 0.75. We should consider the Brier Score of 0.75 as the performance of the
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline Source & Ratio \\ \hline CommonCrawl & 80.2\% \\ Code & 10.0\% \\ Books & 3.8\% \\ Wikipedia & 3.8\% \\ Papers & 1.6\% \\ StackExchange & 0.6\% \\ \hline \hline \end{tabular}
+\end{table}
+Table 2: The ratio of different sources in the English corpus.
+
+\begin{table}
+\begin{tabular}{r r r r r r r r} \hline \hline Parameters & Tokens & d\_model & d\_hidden & n\_heads & n\_layers & Batch Size & Max LR \\ \hline
+1.5B & 3T & 2048 & 6912 & 16 & 24 & 1344 & 5e-4 \\
+6B & 3T & 4096 & 13696 & 32 & 28 & 4224 & 4e-4 \\
+32B & 2.5T & 6656 & 22272 & 52 & 58 & 8832 & 3e-4 \\ \hline \hline \end{tabular}
+\end{table}
+Table 3: Hyperparameters of pre-training of 1.5B, 6B, and 32B models.
+
+random guess baseline, and any decrease in Brier Score above 0.75 should not be considered as the real improvement on the task.
+
+In Figure 6 of [37], they evaluate 4 tasks in BIG-Bench with the Brier Score metric and find that the emergent abilities disapper. We hypothesis that they normalize the Brier Score with the number of options in each question, otherwise the Brier Score of 0.25 on the swahili_english_proverbs task is too low for the smallest model. Four tasks have 2, 2, 4, 5 options in each question. The values of
+
+\begin{table}
+\begin{tabular}{r r r r r r r} \hline \hline Parameters & Tokens & d\_model & d\_hidden & n\_heads & n\_layers & Batch Size & Max LR \\ \hline
+
+[MISSING_PAGE_POST]
+
+ \hline \hline \end{tabular}
+\end{table}
+Table 4: Hyperparameters of pre-training of smaller models. Each line represents one model pre-trained completely from scratch with the certain number of tokens and its corresponding learning rate schedule.
+
+\begin{table}
+\begin{tabular}{l|r r} \hline \hline Dataset & Evaluated Split & Num. Examples \\ \hline TriviaQA & validation & 11,313 \\ HellaSwag & validation & 10,042 \\ RACE & test & 4,934 \\ WinoGrande & validation & 1,267 \\ MMLU & test & 14,042 \\ GSM8K & test & 1,319 \\ NLPCC-KBQA & validation & 10,613 \\ ClozeT & validation & 938 \\ CLUEWSC & train \& validation & 508 \\ C3 & validation & 3,816 \\ C-Eval & validation & 1,346 \\ GSM8K-Chinese & test & 1,212 \\ \hline \hline \end{tabular}
+\end{table}
+Table 5: Statistics of evaluation datasets.
+
+Brier Score for random guess baselines on the four tasks are 0.25, 0.25, 0.1875, and 0.16. Only the largest model surpasses the random guess baseline. This also supports the existence of emergent abilities.
+
+## Appendix D Complete Performance-vs-Loss Curves of Smaller Models
+
+The performance-vs-loss curves for all the intermediate checkpoints are shown in Figure 5. The trend is the same as Figure 2, but with larger variance.
+
+## Appendix E Loss vs Compute as an Indicator of Performance
+
+We show the performance-compute curves in Figure 6. Compared with Figure 1, we observe that points from different models do not fall on the same curves on most tasks. This proves that pre-training loss is a better indicator of task performance than compute.
+
+Figure 5: The complete performance-vs-loss curves of smaller models.
+
+Figure 6: The performance-vs-compute curves of 1.5B, 6B, and 32B models.
