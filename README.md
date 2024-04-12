@@ -16,7 +16,6 @@
 | 2404.01261v1 | FABLES Evaluating faithfulness and content selection in book-length summarization | [arXiv](https://arxiv.org/abs/2404.01261v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01261v1) |
 | 2404.01204 | The Fine Line Navigating Large Language Model Pretraining with Down-streaming Capability Analysis | [arXiv](https://arxiv.org/abs/2404.01204) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01204) |
 | 2403.19270v1 | sDPO Dont Use Your Data All at Once | [arXiv](https://arxiv.org/abs/2403.19270v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.19270v1) |
-| 2403.18167v1 | Mechanisms of non-factual hallucinations in language models | [arXiv](https://arxiv.org/abs/2403.18167v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.18167v1) |
 | 2403.16971v2 | AIOS LLM Agent Operating System | [arXiv](https://arxiv.org/abs/2403.16971v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.16971v2) |
 | 2403.16952v1 | Data Mixing Laws Optimizing Data Mixtures by Predicting Language Modeling Performance | [arXiv](https://arxiv.org/abs/2403.16952v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.16952v1) |
 | 2403.15796v2 | Understanding Emergent Abilities of Language Models from the Loss Perspective | [arXiv](https://arxiv.org/abs/2403.15796v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.15796v2) |
