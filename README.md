@@ -23,7 +23,6 @@
 | 2403.16952v1 | Data Mixing Laws Optimizing Data Mixtures by Predicting Language Modeling Performance | [arXiv](https://arxiv.org/abs/2403.16952v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.16952v1) |
 | 2403.15796v2 | Understanding Emergent Abilities of Language Models from the Loss Perspective | [arXiv](https://arxiv.org/abs/2403.15796v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.15796v2) |
 | 2403.13799v1 | Reverse Training to Nurse the Reversal Curse | [arXiv](https://arxiv.org/abs/2403.13799v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13799v1) |
-| 2403.13372v2 | LlamaFactory Unified Efficient Fine-Tuning of 100+ Language Models | [arXiv](https://arxiv.org/abs/2403.13372v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13372v2) |
 | 2403.13187v1 | Evolutionary Optimization of Model Merging Recipes | [arXiv](https://arxiv.org/abs/2403.13187v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.13187v1) |
 | 2403.10131v1 | RAFT Adapting Language Model to Domain Specific RAG | [arXiv](https://arxiv.org/abs/2403.10131v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.10131v1) |
 | 2403.09629 | Quiet-STaR Language Models Can Teach Themselves to Think Before Speaking | [arXiv](https://arxiv.org/abs/2403.09629) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.09629) |
