@@ -85,6 +85,7 @@ def translate_html(html, arxiv_id, is_ar5iv=False):
         if tag_cnt_map.get("p", 0) == 0 and buffer:
             original_p = None
             original_figcaption = None
+            figcaption_suffix = None
 
             a_list = []
             cite_list = []
@@ -111,6 +112,9 @@ def translate_html(html, arxiv_id, is_ar5iv=False):
                     print(f"Error at line {line_idx}: cannot parse <p> in {arxiv_id}")
 
                 try:
+                    if "<figcaption" in src:
+                        figcaption_suffix = src.split("</figcaption>")[-1]
+
                     # extract the content inside of <figcaption>...</figcaption>, including all html tags
                     soup = bs(src, "html.parser")
                     for figcaption in soup.find_all("figcaption"):
@@ -195,7 +199,8 @@ def translate_html(html, arxiv_id, is_ar5iv=False):
                 if original_p:
                     tgt = str(original_p) + tgt + "</p>"
                 if original_figcaption:
-                    tgt = str(original_figcaption) + tgt + "</figcaption>"
+                    tgt = str(original_figcaption) + tgt + "</figcaption>" \
+                        + (figcaption_suffix if figcaption_suffix else "")
 
                 translated_lines.append(tgt)
 
