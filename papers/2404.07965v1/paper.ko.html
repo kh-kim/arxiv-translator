@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Rho-1: Not All Tokens Are What You Need\n' +
+      '\n' +
+      ' Zhenghao Lin\\({}^{\\star\\times\\phi}\\)   Zhibin Gou\\({}^{\\star\\pi\\phi}\\)   Yeyun Gong\\({}^{\\diamond\\phi}\\)   Xiao Liu\\({}^{\\diamond\\)   Yelong Shen\\({}^{\\phi}\\)\n' +
+      '\n' +
+      '**Ruochen Xu\\({}^{\\phi}\\)   Chen Lin\\({}^{\\diamond\\times}\\)   Yujiu Yang\\({}^{\\circ\\pi}\\)   Jian Jiao\\({}^{\\phi}\\)   Nan Duan\\({}^{\\phi}\\)   Weizhu Chen\\({}^{\\diamond}\\)**\n' +
+      '\n' +
+      'Xiamen University  \\({}^{\\pi}\\)Tsinghua University  \\({}^{\\phi}\\)Microsoft.\n' +
+      '\n' +
+      '[https://aka.ms/rho](https://aka.ms/rho)\n' +
+      '\n' +
+      '동등한 기여. 자세한 내용은 저자 기여를 참조하십시오. 마이크로소프트 리서치 아시아에서 인턴십을 하는 동안 일을 했습니다. EUR zhenghaolin@stu.xmu.edu.cn; zebgou@gmail.comCorrespondence authors.\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '이전의 언어 모델 사전 트레이닝 방법들은 모든 트레이닝 토큰들에 대해 일률적으로 다음 토큰 예측 손실을 적용하였다. 이 규범에 도전하면서 우리는 _"코퍼스의 모든 토큰이 언어 모델 훈련에 동등하게 중요한 것은 아니다"_라고 가정한다. 우리의 초기 분석은 언어 모델의 토큰 수준 훈련 역학에 대해 조사하며, 서로 다른 토큰에 대한 뚜렷한 손실 패턴을 드러낸다. 이러한 통찰력을 활용하여 우리는 Rho-1이라는 새로운 언어 모델을 소개한다. Rho-1은 말뭉치의 모든 다음 토큰을 예측하는 것을 배우는 전통적인 LM과 달리 원하는 분포와 정렬된 유용한 토큰을 선택적으로 훈련하는 선택적 언어 모델링(SLM)을 사용한다. 이 접근법은 참조 모델을 사용하여 토큰들을 사전 트레이닝한 후, 더 높은 초과 손실을 갖는 토큰들에 집중된 손실로 언어 모델을 트레이닝하는 것을 포함한다. 15B OpenWebMath 코퍼스에 대한 지속적인 사전 훈련 시 Rho-1은 9개의 수학 과제에서 최대 30%의 적은 샷 정확도에서 절대적인 개선을 보여준다. 미세 조정 후 Rho-1-1B와 7B는 MATH 데이터 세트에서 각각 40.6%와 51.8%의 최첨단 결과를 달성했으며 딥시매스와 사전 훈련 토큰의 3%만 일치했다. 또한, 80B 일반 토큰에 대한 사전 훈련 시, Rho-1은 15개의 다양한 태스크에서 평균 6.8%의 향상을 달성하여 언어 모델 사전 훈련의 효율성과 성능을 모두 증가시킨다.\n' +
+      '\n' +
+      '그림 1: 15B OpenWebMath 토큰을 사용하여 1B 및 7B LMs를 계속 사전 학습합니다. Rho-1은 제안된 선택적 언어 모델링(SLM)으로 훈련되고, 기준선은 인과적 언어 모델링을 사용하여 훈련된다. SLM은 GSM8k와 MATH에서 평균 소샷 정확도를 16% 이상 향상시켜 기준 성능을 5-10배 더 빠르게 달성했다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '모델 파라미터 및 데이터세트 크기를 스케일링하는 것은 대형 언어 모델에서 차후-토큰 예측 정확도를 일관되게 상승시켜, 인공 지능에서 상당한 발전을 가져왔다(Kaplan et al., 2020; Brown et al., 2020; OpenAI, 2023; Team et al., 2023). 그러나 사용 가능한 모든 데이터에 대한 교육이 항상 최적이거나 실현 가능한 것은 아니다. 그 결과, 다양한 휴리스틱 및 분류기(Brown et al., 2020; Wenzek et al., 2019)를 사용하여 학습 문서를 선택하는 데이터 필터링의 관행이 중요해졌다. 이러한 기술은 데이터 품질을 크게 개선하고 모델 성능을 향상시킵니다.\n' +
+      '\n' +
+      '그러나 철저한 문서 수준 필터링에도 불구하고 고품질 데이터 세트에는 그림 2(상위)와 같이 학습에 부정적인 영향을 미칠 수 있는 많은 노이즈 토큰이 여전히 포함되어 있다. 이러한 토큰을 제거하면 텍스트의 의미가 변경될 수 있는 반면, 지나치게 엄격한 필터링은 유용한 데이터를 배제할 수 있고(Welbl et al., 2021; Muennighoff et al., 2024), 편향으로 이어질 수 있다(Dodge et al., 2021; Longpre et al., 2023). 또한, 연구는 웹 데이터의 분포가 다운스트림 애플리케이션에 대한 이상적인 분포와 본질적으로 일치하지 않는다는 것을 나타낸다(Tay et al., 2022; Wettig et al., 2023). 예를 들어, 토큰 레벨에서의 공통 코퍼스는 예측하기 어려운 환각 또는 매우 모호한 토큰과 같은 바람직하지 않은 콘텐츠를 포함할 수 있다. 모든 토큰에 동일한 손실을 적용하면 비이익 토큰에 대한 계산이 낭비될 수 있으며, 이는 LLM의 잠재력을 단지 평범한 지능으로 제한할 수 있다.\n' +
+      '\n' +
+      '언어 모델이 토큰 수준에서 학습하는 방법을 탐구하기 위해 처음에 훈련 역학, 특히 일반적인 사전 훈련 동안 토큰 수준 손실이 어떻게 진화하는지 조사했다. SS2.1에서 우리는 다른 체크포인트에서 모델의 토큰 복잡성을 평가하고 토큰을 다른 유형으로 분류했다. 우리의 연구 결과는 상당한 손실 감소가 훈련 동안 선택된 토큰 그룹으로 제한된다는 것을 보여준다. 많은 토큰은 이미 학습된 "쉬운 토큰"이고, 일부는 가변적인 손실을 나타내고 수렴에 저항하는 "하드 토큰"이다. 이러한 토큰은 수많은 비효율적인 그라디언트 업데이트로 이어질 수 있습니다.\n' +
+      '\n' +
+      '이러한 분석을 바탕으로 새로운 SLM(Selective Language Modeling) 목표로 훈련된 Rho-1 모델을 소개한다. 도 2(오른쪽)에 도시된 바와 같이, 이 접근법은 전체 시퀀스를 모델에 입력하고 원하지 않는 토큰의 손실을 선택적으로 제거한다. 자세한 파이프라인은 그림 4에 나와 있습니다. 먼저 SLM은 고품질 말뭉치에 대한 참조 언어 모델을 학습합니다. 이 모델은 유틸리티 메트릭을 설정하여 원하는 분포에 따라 토큰을 점수화하여 부정한 토큰과 관련 없는 토큰을 자연스럽게 필터링합니다. 둘째, SLM은 참조 모델을 사용하여 손실(SS2.2)을 사용하여 말뭉치에서 각 토큰의 점수를 매긴다. 마지막으로, 참조와 학습 모델 사이에서 높은 초과 손실을 나타내는 토큰들에 대해서만 언어 모델을 학습시키고, 다운스트림 애플리케이션들(SS2.2)에 가장 유리한 토큰들을 선택적으로 학습시킨다.\n' +
+      '\n' +
+      '우리는 포괄적인 실험을 통해 SLM이 사전 훈련 동안 토큰 효율성을 크게 향상시키고 다운스트림 태스크에서 성능을 향상시킨다는 것을 보여준다. 또한, 본 연구 결과는 SLM이 목표 분포와 관련된 토큰을 효과적으로 식별하여 선택된 토큰으로 훈련된 모델에 대한 벤치마크에 대한 복잡도 점수를 향상시킨다는 것을 나타낸다. SS3.2는 효과의 효과를 나타낸다.\n' +
+      '\n' +
+      '그림 2: **상단:** 광범위하게 필터링된 사전 학습 코퍼스에도 토큰 수준 노이즈가 포함되어 있습니다. **왼쪽:** 이전 인과 언어 모델링(CLM)은 모든 토큰에서 학습합니다. **오른쪽:** 제안된 SLM(선택적 언어 모델링)은 유용하고 깨끗한 토큰에 손실을 선택적으로 적용합니다.\n' +
+      '\n' +
+      '수학 연속 사전 훈련에서 SLM: 1B 및 7B Rho-1 모두 GSM8k 및 MATH 데이터 세트에서 CLM 훈련 기준선을 16% 이상 능가한다. SLM은 그림 1과 같이 최대 10배 빠른 기준선 정확도에 도달한다. 놀랍게도 Rho-1-7B는 DeepSeekMath가 요구하는 500B 토큰에 비해 오직 15B 토큰만을 사용하는 DeepSeekMath-7B의 최첨단 성능과 일치한다. 미세 조정 시 Rho-1-1B 및 7B는 MATH에서 각각 40.6% 및 51.8%를 달성한다. 특히, Rho-1-1B는 초기 GPT-4의 CoT 성능 42.5%에 근접하여 40% 정확도를 초과하는 최초의 1B LM이다. SS3.3은 일반적인 사전 훈련에서 SLM의 유효성을 확인한다: SLM을 사용하여 80B 토큰에 대한 Tinyllama-1B를 훈련하는 것은 15개의 벤치마크에서 평균 6.8% 향상되며, 코드 및 수학 과제에서 10% 이상의 이득이 있다.\n' +
+      '\n' +
+      '## 2 선택적 언어 모델링\n' +
+      '\n' +
+      '### 모든 토큰이 동일하지 않음: 토큰 손실의 훈련 역학\n' +
+      '\n' +
+      '우리의 조사는 표준 사전 훈련 동안 개별 토큰의 손실이 어떻게 진화하는지에 대한 비판적 관점에서 시작한다. 우리는 OpenWebMath의 15B 토큰으로 Tinyllama-1B를 사전 교육하여 모든 1B 토큰 후에 체크포인트를 저장합니다. 그런 다음 약 320,000개의 토큰의 유효성 검사 세트를 사용하여 이러한 간격에서 토큰 수준 손실을 평가한다. 그림 3(a)는 토큰이 손실 궤적에 따라 네 가지 범주(지속적 고손실(H\\(\\rightarrow\\)H), 증가 손실(L\\(\\rightarrow\\)H), 감소 손실(H\\(\\rightarrow\\)L) 및 일관된 저손실(L\\(\\rightarrow\\)L)로 분류되는 현저한 패턴을 보여줍니다. 이러한 범주에 대한 자세한 내용은 SSB.1을 참조하세요. 분석 결과 토큰의 26%만이 현저한 손실 감소(H\\(\\rightarrow\\)L)를 나타내는 반면, 대다수(51%)는 L\\(\\rightarrow\\)L 범주에 남아 이미 학습되었음을 알 수 있습니다. 흥미롭게도, 토큰의 11%가 지속적으로 도전적(H\\(\\rightarrow\\)H)인데, 이는 높은 aleatoric 불확실성 때문일 수 있다[16]. 또한 12%의 토큰은 훈련 중에 예상치 못한 손실 증가(L\\(\\rightarrow\\)H)를 경험한다.\n' +
+      '\n' +
+      '우리의 두 번째 관찰은 상당한 수의 토큰 손실이 지속적인 변동을 나타내고 수렴에 저항한다는 것이다. 그림 3의 (b)와 (c)와 같이 많은 L\\(\\rightarrow\\)L과 H\\(\\rightarrow\\)H 토큰의 손실은 훈련 동안 높은 분산을 보여준다. SSB.2에서 우리는 이러한 토큰의 콘텐츠를 시각화하고 분석하며 많은 토큰이 잡음이 있음을 발견하며 이는 우리의 가설과 일치한다.\n' +
+      '\n' +
+      '결과적으로, 우리는 트레이닝 동안 각각의 토큰과 연관된 손실이 전체 손실과 같이 부드럽게 감소하지 않고, 대신에 상이한 토큰들 사이에 복잡한 트레이닝 동적(training dynamic)이 있음을 배운다. 훈련 중에 집중할 모델에 적합한 토큰을 선택할 수 있다면 모델의 훈련 궤적을 안정화하고 효율성을 높일 수 있다.\n' +
+      '\n' +
+      '### 선택적 언어 모델링\n' +
+      '\n' +
+      '문서 수준 필터링에서 참조 모델의 관행에 영감을 받아 "선택적 언어 모델링(SLM)"이라고 하는 토큰 수준 데이터 선택의 간단한 파이프라인을 제안한다. 우리의 방법은 그림 4와 같이 세 단계로 구성된다. 우리는 선별된 고품질 데이터 세트에서 참조 모델을 훈련하는 것으로 시작한다. 그런 다음 이 모델은 사전 훈련 코퍼스 내에서 각 토큰의 손실을 평가한다. 마지막 단계에서는 학습과 참조 모델 간의 초과 손실이 높은 토큰에 초점을 맞추어 언어 모델을 선택적으로 학습한다. 직관은 초과가 높은 토큰입니다.\n' +
+      '\n' +
+      '그림 3: **사전 훈련 중 네 가지 범주의 토큰 손실입니다.* * (a)는 사전 훈련 중 H\\(\\rightarrow\\)H, L\\(\\rightarrow\\)H, H\\(\\rightarrow\\)L 및 L\\(\\rightarrow\\)L 토큰의 손실을 보여줍니다. (b)와 (c)는 각각 사전 훈련 동안 L\\(\\rightarrow\\)L과 H\\(\\rightarrow\\)H에서 토큰 손실이 변동하는 세 가지 경우를 보여준다.\n' +
+      '\n' +
+      '손실은 더 배울 수 있고 원하는 분포와 더 잘 정렬되며, 자연스럽게 관련이 없거나 품질이 낮은 토큰을 제외한다. 아래에서는 각 단계에 대한 상세한 설명을 제공한다.\n' +
+      '\n' +
+      '참조 모델링은 원하는 데이터 분포를 반영하는 고품질 데이터 세트를 선별하는 것으로 시작합니다. 우리는 선별된 데이터에 대해 표준 교차 엔트로피 손실을 사용하여 참조 모델(RM)을 학습한다. 그런 다음 결과 RM은 더 큰 사전 훈련 코퍼스 내에서 토큰 손실을 평가하는 데 사용된다. 우리는 RM이 이 토큰에 할당할 확률을 기반으로 토큰 \\(x_{i}\\)의 참조 손실(\\(\\mathcal{L}_{\\text{ref}}\\))을 계산한다. 계산은 다음과 같이 공식화된다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\text{ref}}(x_{i})=-\\log P(x_{i}|x{<i}) \\tag{1}\\]\n' +
+      '\n' +
+      '각 토큰에 대해 \\(\\mathcal{L}_{\\text{ref}}\\)을 평가하여 선택적 사전 훈련에 대한 참조 손실을 설정함으로써 언어 모델링에서 가장 영향력 있는 토큰에 집중할 수 있다.\n' +
+      '\n' +
+      '선택적 PretrainingNote: 인과 언어 모델링(CLM)은 교차 엔트로피 손실을 사용한다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\text{CLM}}(\\theta)=-\\frac{1}{N}\\sum_{i=1}^{N}\\log P(x_{i}|x_{<i};\\theta) \\tag{2}\\]\n' +
+      '\n' +
+      '여기서, \\(\\mathcal{L}_{\\text{CLM}}(\\theta)\\)는 모델 \\(\\theta\\)에 의해 파라미터화된 손실 함수를 나타낸다. \\ (N\\)는 시퀀스의 길이이고, \\(x_{i}\\)는 시퀀스 내의 \\(i\\)번째 토큰이고, \\(x_{<i}\\)는 \\(i\\)번째 토큰 이전의 모든 토큰을 나타낸다. 대조적으로, 선택적 언어 모델링(SLM)은 참조 모델과 비교할 때 높은 초과 손실을 나타내는 토큰에 초점을 맞추어 언어 모델을 훈련시킨다. 토큰 \\(x_{i}\\)에 대한 초과 손실(\\(\\mathcal{L}_{\\Delta}\\))은 현재 훈련 모델 손실(\\(\\mathcal{L}_{\\theta}\\))과 기준 손실 간의 차이로 정의된다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\Delta}(x_{i})=\\mathcal{L}_{\\theta}(x_{i})-\\mathcal{L}_{\\text{ ref}}(x_{i}) \\tag{3}\\]\n' +
+      '\n' +
+      '우리는 토큰 선택 비율 \\(k\\%\\)을 도입하는데, 이것은 토큰의 초과 손실에 기초하여 포함될 토큰의 비율을 결정한다. 선택된 토큰들에 대한 교차 엔트로피 손실은 다음과 같이 계산된다:\n' +
+      '\n' +
+      '\\[\\mathcal{L}_{\\text{SLM}}(\\theta)=-\\frac{1}{N*k\\%}\\sum_{i=1}^{N}I_{k\\%}(x_{i} )\\cdot\\log P(x_{i}|x_{<i};\\theta) \\tag{4}\\]\n' +
+      '\n' +
+      '여기서 \\(N*k\\%\\)는 초과 손실의 상위 \\(k\\%\\)에 속하는 토큰의 수를 정의합니다. 인디케이터 함수 \\(I_{k\\%}(x_{i})\\)는 다음과 같이 정의된다:\n' +
+      '\n' +
+      '\\[I_{k\\%}(x_{i})=\\begin{cases}1&\\text{ if $x_{i}$ is in top $k\\%$ of $\\mathcal{L}_{\\Delta}$}\\\\ 0&\\text{otherwise}\\end{cases} \\tag{5}\\]\n' +
+      '\n' +
+      '이는 언어 모델이 학습하는데 가장 유익하다고 여겨지는 토큰에만 손실이 적용되도록 보장한다. 실제로 토큰 선택은 토큰의 초과 손실에 따라 일괄적으로 순위를 매기고 훈련에 토큰의 상위 \\(k\\%\\)만을 사용함으로써 구현될 수 있다. 이 과정은\n' +
+      '\n' +
+      '그림 4: **SLM(Selective Language Modeling) 파이프라인**.** SLM은 사전 훈련 중에 중요하고 깨끗한 토큰에 집중하여 언어 모델 성능을 최적화합니다. 여기에는 세 가지 단계가 포함됩니다. (1단계) 처음에는 고품질 데이터에 대한 참조 모델을 학습합니다. (단계 2) 그런 다음, 참조 모델을 사용하여 말뭉치에서 각 토큰의 손실을 채점한다. (단계 3) 마지막으로, 기준 손실에 비해 더 높은 초과 손실을 보이는 토큰들에 대해 선택적으로 언어 모델을 트레이닝한다.\n' +
+      '\n' +
+      '사전 훈련 중에 추가 비용을 발생시키지 않고 원하지 않는 토큰에 대한 손실을 제거하여 우리의 접근 방식을 효율적이고 쉽게 통합할 수 있다.\n' +
+      '\n' +
+      '## 3 Experiments\n' +
+      '\n' +
+      '우리는 수학적 영역과 일반 영역 모두에서 모델을 지속적으로 사전 훈련하고 SLM의 효과를 이해하기 위해 절제 및 분석 실험을 설계했다.\n' +
+      '\n' +
+      '### Experimental Setup\n' +
+      '\n' +
+      '참조 모델 훈련 우리의 수학적 참조 모델을 훈련시키기 위해 우리는 0.5B 고품질, 수학 관련 토큰의 데이터 세트를 수집했다. 이 데이터세트는 GPT(Yu et al., 2024; Huang et al., 2024)로부터의 합성 데이터와 수동으로 큐레이트된 데이터의 혼합이다(Yue et al., 2024; Ni et al., 2024). 일반 참조 모델의 경우 툴루-v2(Ivison et al., 2023) 및 OpenHermes-2.5(Teknium, 2023)와 같은 오픈 소스 데이터 세트에서 1.9B 토큰의 코퍼스를 컴파일했다. 우리는 3개의 에포크에 대한 참조 모델을 훈련시켰다. 최대 학습률은 코사인 감쇠 스케줄을 적용하여 1B 모델의 경우 5e-5, 7B 모델의 경우 1e-5로 설정하였다. 최대 시퀀스 길이를 1B 모델의 경우 2048, 7B 모델의 경우 4096으로 설정하여 모델 입력을 위해 여러 샘플을 이러한 길이로 패킹했다. 모든 주요 실험에서 연속 사전 훈련 모델과 참조 모델을 _동일한_ 기본 모델로 초기화했다.\n' +
+      '\n' +
+      'Pretraining Corpus 수학적 추론을 위해 Common Crawl의 수학 관련 웹 페이지에서 가져온 약 14B 토큰으로 구성된 OpenWebM(OWM) 데이터 세트(Paster 등, 2023)를 활용한다. 일반 도메인에서, 우리는 SlimPajama를 결합한다(Daria et al., 2023).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c|c c c c c c c c c|c} \\hline \\hline \\multirow{2}{*}{**Model**} & \\multirow{2}{*}{\\(|\\mathbf{\\theta}|\\)**Data**} & \\multicolumn{2}{c}{\\begin{tabular}{c} **Uniq. Train** \\\\ **Toks** \\\\ \\end{tabular} } & \\multicolumn{2}{c}{\\begin{tabular}{c} **Train** \\\\ **Toks** \\\\ \\end{tabular} } & \\multicolumn{2}{c}{**CSM8K MATH’**} & \\multicolumn{2}{c}{**SVAMP ASDiv MAWPS**} & \\multicolumn{2}{c}{**TAB MQa**} & \\multicolumn{2}{c}{\n' +
+      '\\begin{tabular}{c} **MMLLU** \\\\ **STEM** \\\\ \\end{tabular} } & \\multirow{2}{*}{**SAT\\({}^{\\dagger}\\)**} & \\multirow{2}{*}{**AVG**} \\\\ \\hline  & & & \\multicolumn{8}{c}{1-2B Base Models} \\\\ \\hline Tinylama & 1.1B & - & - & - & 2.9 & 3.2 & 11.0 & 18.1 & 20.4 & 12.5 & 14.6 & 16.1 & 21.9 & 13.4 \\\\ Phi-1.5 & 1.3B & - & - & - & 32.4 & 4.2 & 43.4 & 53.1 & 66.2 & 24.4 & 14.3 & 21.8 & 18.8 & 31.0 \\\\ Qwen1.5 & 1.8B & - & - & - & 36.1 & 6.8 & 48.5 & 63.6 & 79.0 & 29.2 & 25.1 & 31.3 & 40.6 & 40.0 \\\\ Gemma & 2.0B & - & - & - & 18.8 & 11.4 & 38.0 & 56.6 & 72.5 & 36.9 & 26.8 & 34.4 & 50.0 & 38.4 \\\\ DeepSeeKLIM & 1.3B & OWM & 14B & 150B & 11.5 & 8.9 & - & - & - & - & 29.6 & 31.3 & - \\\\ DeepSeeKLIM & 1.3B & - & 120B & 150B & 23.8 & 13.6 & - & - & - & - & - & 33.1 & 56.3 & - \\\\ \\hline \\multicolumn{11}{c}{Continual Pretraining on Tinylama-1B} \\\\ \\hline Tinylama-CT & 1.1B OWM & 14B & 15B & 6.4 & 2.4 & 21.7 & 36.7 & 47.7 & 17.9 & 13.9 & 23.0 & 25.0 & 21.6 \\\\ Rho-1-Math & 1.1B OWM & 14B & 9B & 29.8 & 14.0 & 49.2 & 61.4 & 79.8 & 25.8 & 30.4 & 24.7 & 28.1 & 38.1 \\\\ \\(\\Delta\\) & & -40\\% & +23.4 & +11.6 & +27.5 & +24.7 & +32.1 & +7.9 & +16.5 & +1.7 & 43.1 & **+16.5** \\\\ \\hline Rho-1-Math & 1.1B OWM & 14B & 30B & 36.2 & 15.6 & 52.1 & 67.0 & 83.9 & 29.0 & 32.5 & 23.3 & 28.1 & 40.9 \\\\ \\hline \\multicolumn{11}{c}{\\(\\geq\\) 7B Base Models} \\\\ \\hline LLaMA-2 & 7B & - & - & 14.0 & 3.6 & 39.5 & 51.7 & 63.5 & 30.9 & 12.4 & 32.7 & 34.4 & 31.4 \\\\ Mistral & 7B & - & - & 41.2 & 11.6 & 64.7 & 68.5 & 87.5 & 52.9 & 33.0 & 49.5 & 59.4 & 52.0 \\\\ Minerva & 8B & - & 39B & 164B & 16.2 & 14.1 & - & - & - & - & - & 35.6 & - & - \\\\ Minerva & 62B & - & 39B & 109B & 52.4 & 27.6 & - & - & - & - & 53.9 & - & - \\\\ Minerva & 540B & - & 39B & 26B & 58.8 & 33.6 & - & - & - & - & 63.9 & - & - \\\\ LLemma & 7B PPile & 55B & 200B & 38.8 & 17.2 & 56.1 & 69.1 & 82.4 & 48.7 & 41.0 & 45.4 & 59.4 & 50.9 \\\\ LLemma & 34B PPile & 55B & 50B & 54.2 & 23.0 & 67.9 & 75.7 & 90.1 & 57.0 & 49.8 & 54.7 & 68.8 & 60.1 \\\\ Inter-Math & 7B & - & 31B & 125B & 41.8 & 14.4 & 61.6 & 66.8 & 83.7 & 50.0 & 57.3 & 24.8 & 37.5 & 48.7 \\\\ Intem-Math & 20B & - & 31B & 125B & 65.4 & 30.0 & 75.7 & 79.3 & 94.0 & 50.9 & 38.5 & 53.1 & 71.9 & 62.1 \\\\ DeepSeeKMath & 7B & - & 120B & 500B & 64.1 & 34.2 & 74.0 & 83.9 & 92.4 & 63.4 & 62.4 & 56.4 & 84.4 & 68.4 \\\\ \\hline \\multicolumn{11}{c}{Continual Pretraining on Mistral-7B} \\\\ \\hline Mistral-CT & 7B OWM & 14B & 15B & 42.9 & 22.2 & 68.6 & 71.0 & 86.1 & 45.1 & 47.7 & 52.6 & 65.6 & 55.8 \\\\ Rho-1-Math & 7B OWM & 14B & 10.5B & 66.9 & 31.0 & 77.8 & 79.0 & 93.9 & 49.9 & 58.7 & 54.6 & 84.4 & 66.2 \\\\ \\(\\Delta\\) & & -30\\% & +24.0 & +8.8 & +9.2 & +8.0 & +7.8 & +4.8 & +11.0 & +2.0 & +18.8 & +10.4 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: **수학 사전 훈련의 소수 샷 CoT 추론 결과입니다. 모든 모델은 적은 샷 프롬프트로 테스트됩니다. 이전의 최상의 결과는 파란색으로 강조 표시되지만, 우리의 최상의 결과는 보라색으로 표시됩니다. \\ ({}^{*}\\) 고유한 수학 관련 토큰만 계산됩니다. Rho-1의 경우 훈련에 사용되는 선택된 토큰만 계산합니다. \\ ({}^{\\dagger}\\)우리는 OpenAI의 MATH subset (Lightman et al., 2023)을 사용하여 평가하는데, 이는 일부 원본 테스트 샘플이 PRM800k와 같은 공개 훈련 세트에 사용되었기 때문이다. \\ ({}^{\\ddagger}\\) SAT에는 32개의 4가지 선택 문제만 있으므로 가능한 경우 마지막 세 가지 검사점에 대한 결과를 평균합니다. **\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:6]\n' +
+      '\n' +
+      'Rho-1-7B는 MATH 데이터 세트에서 각각 40.6%와 51.8%의 최신 기술을 달성했다. 일부 보이지 않는 작업(예: TabMWP 및 GSM-Hard)에서 Rho-1은 또한 어느 정도의 일반화 가능성을 보여주며, 평균 소샷 정확도 개선은 Rho-1-Math-1B에서 6.2%, Rho-1-Math-7B에서 2.7%이다.\n' +
+      '\n' +
+      '### 일반 사전 훈련 결과\n' +
+      '\n' +
+      '우리는 800억 토큰에 대한 Tinyllama-1.1B를 지속적으로 훈련하여 일반적인 사전 훈련에서 SLM의 효능을 확인한다. 그림 5에 표시된 결과는 타이닐라마가 이미 이러한 토큰의 대다수에 대해 광범위한 훈련을 받았지만 SLM의 적용은 직접 연속 사전 훈련과 비교하여 15개의 벤치마크에서 평균 6.8%의 향상을 산출한다는 것을 나타낸다. 특히 코드와 수학 과제에서 개선이 두드러져 10%를 넘어섰다.\n' +
+      '\n' +
+      '### Analysis\n' +
+      '\n' +
+      '선택한 토큰 손실 정렬 다운스트림 성능 참조 모델을 사용하여 토큰을 필터링하고 모든/선택된 토큰에 대한 훈련 후 유효성 검사 손실의 변화를 탐색하면서 다운스트림 손실과의 관계를 관찰합니다. 그림 6과 같이 약 4B 토큰을 사전 훈련하고 사전 훈련 프로세스 동안 서로 다른 사전 훈련 방법 및 검증 세트에 손실의 변동 곡선을 표시했다. 참조 모델에 의해 선택된 토큰에서 Rho-1의 평균 손실 감소가 정규 사전 훈련에 비해 더 크다는 것을 관찰할 수 있다. 반대로 선택되지 않은 토큰에서는 정규 사전 훈련의 평균 손실 감소가 더 크다. 무화과(a), 무화과(b)를 무화과(c)와 연관시키면 선택된 토큰에 대해 훈련된 모델이 다운스트림 손실이 더 크게 감소한다는 것을 발견하는 것은 어렵지 않은 반면, 일반적인 사전 훈련은 훈련 단계에서 모든 토큰의 평균 손실을 감소시키기는 하지만 다운스트림 손실이 크게 감소하기 어렵다. 따라서 사전 교육을 위한 토큰을 선택하는 것이 더 효율적일 것으로 기대한다.\n' +
+      '\n' +
+      '또한, 그림 7의 멱 법칙을 통해 선택된 토큰의 손실을 다운스트림 태스크 성과와 연관시켰으며, 이는 동시 연구와 유사하다(Gadre et al., 2024). 그래프의 데이터 포인트로부터 피팅된 곡선을 관찰하면 SLM에 의해 선택된 토큰의 평균 손실은 다운스트림 태스크 성과와 양의 상관 관계를 나타내는 반면, 선택되지 않은 토큰의 평균 손실은 다운스트림 태스크 성과와 음의 상관 관계를 나타낸다. 따라서 모델의 궁극적인 성과에 도움이 되기 위해 모든 토큰의 손실이 감소할 필요는 없다. 자세한 내용은 부록 D를 참조하십시오.\n' +
+      '\n' +
+      '그림 5: **일반 사전 훈련 결과**. 우리는 80G 일반 토큰에 대해 Tinyllama-1B를 지속적으로 사전 교육합니다. Tinyllama-CT는 CLM으로 훈련되고 Rho-1은 제안된 SLM으로 훈련됩니다.**\n' +
+      '\n' +
+      'SLM으로 선택된 토큰은 무엇인가? SLM 방법으로 선택된 토큰을 사전 훈련에서 분석하여 작동 메커니즘을 더 탐구하는 것을 목표로 한다. 이를 위해 OpenWebMath를 이용하여 Rho-1의 학습 중 토큰 선택 과정을 시각화한다. SSE.1에서 실제 사전 훈련 동안 유지된 토큰을 파란색으로 강조 표시했다. SLM 방법에 의해 선택된 토큰의 대부분은 수학과 밀접한 관련이 있으며, 수학적 내용과 관련된 원래 말뭉치의 부분에 대해 모델을 효과적으로 훈련시킨다는 것을 관찰한다.\n' +
+      '\n' +
+      '또한, 훈련 과정에서 다양한 체크포인트에 대한 토큰 필터링의 차이를 조사하고 다른 체크포인트에서 이러한 토큰의 복잡성을 테스트했다. 그림 8에 예시된 바와 같이, 우리는 후기 체크포인트들에 의해 선택된 토큰들이 훈련의 후기 단계들로 갈수록 더 높은 당혹감을 갖고 초기 단계들에서 더 낮은 당혹감을 갖는 경향이 있다는 것을 발견했다. 이는 모델이 먼저 학습 가능한 공간이 더 큰 토큰을 최적화하여 학습 효율을 높일 수 있음을 시사할 수 있다. 또한, 선택된 토큰의 손실에 대한 샘플별 "이중 하강"(Nakkiran et al., 2021)을 발견했는데, 여기서 선택 토큰의 복잡성은 처음에 감소하기 전에 증가한다. 이는 각 체크포인트에서 가장 필요한 사람들을 대상으로 초과손실을 기준으로 토큰을 선택하는 효과일 수 있다.\n' +
+      '\n' +
+      '토큰 선택 비율의 영향 SLM의 토큰 선택 비율이 미치는 영향을 조사한다. 일반적으로, 선택 비율은 마스크드 언어 모델(Masked Language Models, MLM)의 트레이닝에서 이전에 채용된 접근법과 유사하게 휴리스틱 규칙에 의해 정의된다(Devlin et al., 2019; Liu et al., 2019). 그림 9와 같이 선택된 토큰은 원래 토큰의 약 60%를 차지하기에 적합하다.\n' +
+      '\n' +
+      '그림 6: **사전 훈련 손실 및 다운스트림 손실의 역학입니다.** (a) 및 (c)는 SLM 및 CLM 방법 모두에서 사전 훈련 중에 SLM에 의해 선택/선택되지 않은 토큰의 손실을 나타내는 반면, (b)는 다운스트림 말뭉치에서 SLM 및 CLM 방법의 손실을 나타냅니다. 총 40억 토큰으로 사전 훈련하는 과정을 통해 위의 결과를 검정하였다.\n' +
+      '\n' +
+      '그림 7: **SLM에서 선택된 토큰/선택되지 않은 토큰 손실과 다운스트림 작업 성능 간의 관계입니다.* * y 축은 GSM8k 및 MATH에서 평균 소샷 정확도를 나타냅니다. x축은 해당 체크포인트(2B, 5B, 8B, 11B, 14B)에서 선택된 토큰/선택되지 않은 토큰에 대한 평균 손실을 나타낸다.\n' +
+      '\n' +
+      'Weak-to-Strong Generation은 참조 및 연속 사전 훈련에 동일한 기본 모델을 사용하는 주요 실험과는 별도로, 더 작은 참조 모델이 더 큰 모델의 사전 훈련을 효과적으로 안내할 수 있는지 조사한다. 우리는 Tinyllma-1.1B를 참조 모델로 사용하고 Llama-2-7B를 수학에 지속적으로 사전 훈련한다. 표 3에 제시된 결과는 소형 모델과 대형 모델 사이의 상당한 격차에도 불구하고(Li 등, 2023), 토큰 선택에 소형 참조 모델을 사용하는 것이 더 큰 모델의 사전 훈련에 여전히 이점을 얻을 수 있음을 나타낸다. 참조 모델과 훈련 모델이 다른 어휘를 갖는 경우, 토큰 정렬(Wan 등, 2024; Fu 등, 2023)을 수행하는 것을 고려할 수 있으며, 이는 향후 작업을 위해 남겨둔다.\n' +
+      '\n' +
+      '## 4 관련 작업\n' +
+      '\n' +
+      '사전 학습 데이터 최적화 사전 학습 말뭉치를 최적화하는 목적은 사전 학습 데이터 혼합물의 품질과 규모를 개선하여 언어 모델 학습의 성능과 효율성을 극대화하는 것이다. 이는 전형적으로 크롤링(Raffel et al., 2020) 또는 합성(Polu and Sutskever et al., 2020; Gunasekar et al., 2023), 중복제거(Lee et al., 2021; Kandpal et al., 2022; Tirumala et al., 2023), 필터링 및 선택(Albalak et al., 2024), 뿐만 아니라 데이터 구성(Xie et al., 2024) 및 커리큘럼(Chen et al., 2024; MA et al., 2024)을 포함한다.\n' +
+      '\n' +
+      '데이터 선택 미세 조정을 위한 데이터 선택은 품질 개선(Li 등, 2023), 다양성(Liu 등, 2024), 및 분포 매칭(Li 등, 2023; Xia 등, 2024; Ni 등, 2024)에 초점을 맞추어 광범위하게 연구되었다. 사전 트레이닝을 위해, 휴리스틱-기반(_예를 들어,_언어 및 아이템 카운트 필터링), 분류기-기반(Brown et al., 2020), 및 퍼플렉시티-기반 접근법들(Wenzek et al., 2019)을 포함하는 다양한 경량 필터들이 활용된다. 예를 들어 대규모 공개 RedPajama-Data-v2 데이터 세트(컴퓨터, 2023)는 데이터 필터링 및 재가중치를 위해 40개 이상의 품질 지표를 활용한다. 그럼에도 불구하고, 블록리스트(Raffel et al., 2020) 및 Safety API 필터링(Welbl et al., 2021)과 같은 엄격한 필터링은 평가 손실을 손상시키거나 바이어스를 유발하는 것으로 밝혀졌다(Dodge et al., 2021). 우리가 아는 한, 우리는 가장 근본적인 세분성에서 데이터 품질과 정보 밀도를 향상시키는 것을 목표로 하는 토큰 수준 데이터 선택을 처음으로 탐구한다.\n' +
+      '\n' +
+      '언어 모델 훈련 역학 언어 모델의 훈련 역학을 조사하는 것은 훈련 과정 전반에 걸쳐 그들의 행동을 이해하는 데 필수적이다. 본 연구는 내적 표상(Saphra and Lopez, 2018), 언어적 지식의 습득(Choshen et al., 2021; Liu et al., 2021), 그로킹 현상(Power et al., 2022)을 연구한다.\n' +
+      '\n' +
+      'Xia et al.(2022)의 분석은 다양한 크기의 모델에서 토큰 수준의 훈련 궤적을 조사하는 우리와 가장 관련이 있다. 그러나 우리의 연구 결과는 복잡성의 변화가 거의 없는 토큰이 "이미 배웠다"고 가정하는 Xia 등(2022)의 연구 결과와 다르다. 우리는 수렴에 저항하는 "쉬운 토큰"과 "하드 토큰"을 포함한 토큰 패턴의 스펙트럼을 식별한다. 이를 인식하여 영향력 있는 토큰을 대상으로 하여 학습 과정을 최적화하는 선택적 언어 모델링 방법을 제안한다.\n' +
+      '\n' +
+      'Scaling LawsScaling 법칙은 매개변수 수, 데이터 크기 및 계산과 같은 요인이 언어 모델 성능 및 행동에 미치는 영향을 발견하는 데 도움이 됩니다. 이러한 연구는 일반적으로 멱법칙 Kaplan 등(2020), Hernandez 등(2021), 최적 자원 할당 Hoffmann 등(2022), 다운스트림 태스크 Wei 등(2022), Isik 등(2024), Gadre 등(2024), 아키텍처 Tay 등(2022), 암기 Tirumala 등(2022), Carlini 등(2022), Henighan 등(2023), Biderman 등(2024), 반복 데이터 Hernandez 등(2022), Muennighoff 등(2024), Xue 등(2024)에 초점을 맞춘다. 모델 성능에 관한 대부분의 스케일링 법칙은 모든 트레이닝 토큰에 대한 교차 엔트로피 손실을 연구하는 반면, 우리는 원하는 분포의 토큰 손실에 초점을 맞춘다.\n' +
+      '\n' +
+      '## 5 토의 및 미래 작업\n' +
+      '\n' +
+      '일반화 수학 연속 사전 훈련은 그림 6과 같이 SLM만을 사용한 훈련은 참조 모델이 초점을 맞춘 영역으로 빠르게 수렴하여 선택되지 않은 토큰의 손실이 크게 증가한다. 증가된 손실에서 편향과 같은 부작용이 아직 관찰되지 않았지만, 텍스트 및 코드에 대한 일반적인 사전 훈련 손실은 Ouyang 등(2022) 및 Azerbayev 등(2023)이 제안한 바와 같이 Goodhart 및 Goodhart(1984)에 과적합하는 것을 방지할 수 있다. 또한, 향후 노력은 DeepSpeedMath Shao 등(2024)에 예시된 바와 같이 참조 모델의 말뭉치 범위를 넓히고 사전 훈련 데이터 크기를 확대할 수 있다.\n' +
+      '\n' +
+      '예산 제약으로 인해 확장성은 더 작은 모델(<=7B 매개 변수)과 더 작은 데이터 세트(<100B 토큰)에 대한 방법의 효과만 검증했다. 더 작은 모델은 관련 없는 토큰의 손실을 제거하고 중요한 토큰에 집중함으로써 상당한 이점을 얻을 수 있습니다. 그러나, 광범위한 말뭉치에 대해 훈련된 매우 큰 모델들은 유용한 데이터를 압축하기 위해 (즉, 모든 것을 압축하기 위해) 이러한 귀납적 편향을 자연적으로 개발할 수 있지만, 현재로서는 비효율적으로 들릴 수 있다. 따라서 향후 연구에서는 이러한 선택적 언어 모델링 기법이 매우 큰 모델과 데이터 Kaplan 등(2020)으로 확장될 수 있는지 연구해야 한다.\n' +
+      '\n' +
+      '훈련이 참조 모델이 필요한가?토큰 점수를 매기기 위해서는 고품질의 참조 모델이 필요하다. 이것은 소량의 고품질 데이터로 훈련된 기본 모델 또는 성능이 뛰어난 오픈 소스 모델일 수 있다. 사실, 참조 모델에서 입력 로그프로브 또는 복잡성만 필요하기 때문에 더 강력한 독점 모델 API를 사용할 수도 있다. 토큰을 입력하고 API에서 반환한 입력의 로그 확률을 참조 점수로 사용할 수 있습니다. 우리는 이것을 미래의 일을 위해 남겨둔다.\n' +
+      '\n' +
+      'SLM을 개선할 수 있는 방법 SLM의 많은 자연적인 확장, 예를 들어 토큰을 선택하는 대신 재가중치는 견고성을 향상시킬 수 있다; 강화 학습으로 사전 훈련을 안내하기 위해 보상 모델로 참조 모델을 사용한다; 과적합을 줄이기 위해 여러 참조 모델을 채택한다; 지속적인 개선을 위해 토큰 수준 커리큘럼 학습 및 반복 전략을 설계한다. _etc_\n' +
+      '\n' +
+      'SLM SLM의 사용 확장은 많은 SFT 데이터 세트의 노이즈 및 분포 불일치를 해결하기 위해 감독 미세 조정으로 확장될 수 있다. 또 다른 잠재적인 응용 프로그램은 유용성, 진실성 및 무해성을 강조하기 위해 참조 모델을 훈련하여 사전 훈련 단계에서 기본적으로 정렬된 기본 모델을 얻을 수 있다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Kaplan 등(2020) Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 신경 언어 모델의 법칙을 조정합니다. _ arXiv preprint arXiv:2001.08361_, 2020.\n' +
+      '* Brown 등(2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models is few-shot learners. _ Advances in neural information processing systems_, 33:1877-1901, 2020.\n' +
+      '* OpenAI (2023) OpenAI. Gpt-4 기술 보고서, 2023년\n' +
+      '* Team et al. (2023) Gemini Team, Rohan Anil, Sebastian Borgeaud, Yonghui Wu, Jean-Baptiste Alayrac, Jiahui Yu, Radu Soricut, Johan Schalkwyk, Andrew M Dai, Anja Hauth, et al. Gemini: a family of highly capable multimodal models. _ arXiv preprint arXiv:2312.11805_, 2023.\n' +
+      '* Wenzek 등(2019) Guillaume Wenzek, Marie-Anne Lachaux, Alexis Conneau, Vishrav Chaudhary, Francisco Guzman, Armand Joulin, and Edouard Grave. Ccnet: 웹 크롤 데이터에서 고품질 단일 언어 데이터 세트를 추출합니다. _ arXiv preprint arXiv:1911.00359_, 2019.\n' +
+      '* Welbl 등(2021) Johannes Welbl, Amelia Glaese, Jonathan Uesato, Sumanth Dathathri, John Mellor, Lisa Anne Hendricks, Kirsty Anderson, Pushmeet Kohli, Ben Coppin, and Po-Sen Huang. 언어 모델 해독에 대한 도전 계산 언어학 협회의 _발견: EMNLP 2021_, 2447-2469, 2021 페이지.\n' +
+      '* Muennighoff 등(2024) Niklas Muennighoff, Alexander Rush, Boaz Barak, Teven Le Scao, Nouamane Tazi, Aleksandra Piktus, Sampo Pyysalo, Thomas Wolf, and Colin A Raffel. 데이터 제한 언어 모델의 크기 조정 _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Dodge 등(2021) Jesse Dodge, Maarten Sap, Ana Marasovic, William Agnew, Gabriel Ilharco, Dirk Groeneveld, Margaret Mitchell, and Matt Gardner. 대형 웹텍스트 말뭉치 문서화: 크롤링된 거대한 말뭉치에 대한 사례 연구 2021년 자연 언어 처리 실증 방법에 관한 회의록에서 2021년 1286-1305페이지입니다.\n' +
+      '* Longpre 등(2023) Shayne Longpre, Gregory Yauney, Emily Reif, Katherine Lee, Adam Roberts, Barret Zoph, Denny Zhou, Jason Wei, Kevin Robinson, David Mimno, et al. A pretrainer\'s guide to training data: Measuring of effects of data age, domain coverage, quality, & toxicity. _ arXiv preprint arXiv:2305.13169_, 2023.\n' +
+      '* Tay 등(2022) Yi Tay, Mostafa Dehghani, Samira Abnar, Hyung Won Chung, William Fedus, Jinfeng Rao, Sharan Narang, Vinh Q Tran, Dani Yogatama, and Donald Metzler. 스케일링 법칙 대 모델 아키텍처: 귀납적 편향이 스케일링에 어떻게 영향을 미치는가? _ arXiv preprint arXiv:2207.10551_, 2022.\n' +
+      '* Wettig 등(2023) Alexander Wettig, Tianyu Gao, Zexuan Zhong, and Danqi Chen. 마스크 언어 모델링에서 15%를 마스크해야 합니까? Andreas Vlachos와 Isabelle Augenstein에서 편집자들은 _Proceedings of the 17th Conference of the European Chapter of the Computational Linguistics_ 2985-3000, Dubrovnik, Croatia, May 2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.eacl-main.217. URL [https://aclanthology.org/2023.eacl-main.217](https://aclanthology.org/2023.eacl-main.217)\n' +
+      '* Hullermeier and Waegeman (2021) Eyke Hullermeier and Willem Waegeman. 머신러닝의 개념적, 인식론적 불확실성: 개념과 방법에 대한 소개 _ Machine learning_, 110(3):457-506, 2021.\n' +
+      '* Yu et al.(2024) Longhui Yu, Weisen Jang, Han Shi, Yu Jincheng, Zhengying Liu, Yu Zhang, James Kwok, Zhenguo Li, Adrian Weller, and Weiyang Liu. 메타매스: 큰 언어 모델에 대한 자신의 수학적 질문을 부트스트랩합니다. 2024년 ICLR에서요\n' +
+      '*황 등(2024) Yiming Huang, Xiao Liu, Yeyun Gong, Zhibin Gou, Yelong Shen, Nan Duan, and Weizhu Chen. 수학적 추론에 대한 향상된 키포인트 기반 데이터 합성 _ arXiv preprint arXiv:2403.02333_, 2024.\n' +
+      '* Yue 등(2024) Xiang Yue, Xingwei Qu, Ge Zhang, Yao Fu, Wenhao Huang, Huan Sun, Yu Su, and Wenhu Chen. 매머드: 하이브리드 수업 튜닝을 통해 수학 일반주의 모델을 구축합니다. 2024년 ICLR에서요\n' +
+      '* Ni et al. (2024) Xinzhe Ni, Yeyun Gong, Zhibin Gou, Yelong Shen, Yujiu Yang, Nan Duan, and Weizhu Chen. 수학적 추론을 위한 영향력 있는 자료의 미스터리 탐구, 2024.\n' +
+      '* Ivison 등(2023) Hamish Ivison, Yizhong Wang, Valentina Pyatkin, Nathan Lambert, Matthew Peters, Pradeep Dasigi, Joel Jang, David Wadden, Noah A Smith, Iz Beltagy, et al. Camels in a changing climate: Enhancing lm adaptation with tolu 2. _arXiv preprint arXiv:2311.10702_, 2023.\n' +
+      '* Yu et al.(2020)* Tehuim(2023) Teknium. Openhermes 2.5: 일반리스트 llm 보조자를 위한 합성 데이터의 개방형 데이터 세트, 2023. URL [https://huggingface.co/datasets/teknium/OpenHermes-2.5](https://huggingface.co/datasets/teknium/OpenHermes-2.5)입니다.\n' +
+      '* Lightman et al. (2023) Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. 차근차근 확인해보겠습니다. _ arXiv preprint arXiv:2305.20050_, 2023.\n' +
+      '*Paster et al.(2023) Keiran Paster, Marco Dos Santos, Zhangir Azerbayev, and Jimmy Ba. Openwebmath: 고품질 수학 웹 텍스트의 오픈 데이터세트, 2023.\n' +
+      '* Daria et al. (2023) Soboleva Daria, Al-Khateeb Faisal, Myers Robert Steeves Jacob R, Hestness Joel, and Dey Nolan. SlimPajama: RedPajama의 627B 토큰이 청소되고 중복 제거된 버전입니다. [https://www.cerebras.net/blog/slimpajama-a-627b-token-cleaned-and-deduplicated-version-of-redpajama] 2023 URL [https://huggingface.co/datasets/cerebras/SlimPajama-627B](https://huggingface.co/datasets/cerebras/SlimPajama-627B)입니다.\n' +
+      '* Li et al.(2023) Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Kocetkov, Chenghao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, Qian Liu, Evgeni Zhelozhskii, Terry Yue Zhuo, Thomas Wang, Olivier Dehaene, Mishig Davaadorj, Logesh Kumar Umapathi, Jian Zocca, Oleh Shliazhko, Nicolas Gontier, Ming-Ho Yee, Logesh Kumar Oblakulov, Zhallas Wang, Rudra Murthy V, Jason Stillerman, Manan Dey, Paulo Villegas, Maxim Kunakov, Fedor Zdhaonv, Manuel Romero, Tony Lee, Nadav Timor, Jennifer Ding, Tri Dao, Mayank Mishra, Alex Gu, Jennifer Robinson, Carolyn Jane Anderson, Brendan Dolan-Gavitt, Danish Contractor, S 스타코드: 출처가 여러분과 함께 할 것입니다! _ CoRR_, abs/2305.06161, 2023a.\n' +
+      '* Zhang 등(2024) Peiyuan Zhang, Guangtao Zeng, Tianduo Wang, and Wei Lu. Tinyllama: 오픈소스 소형 언어 모델, 2024.\n' +
+      '* Jiang 등(2023) Albert Q Jiang, Alexandre Sablayrolles, Arthur Mensch, Chris Bamford, Devendra Singh Chaplot, Diego de las Casas, Florian Bressand, Gianna Lengyel, Guillaume Lample, Lucile Saulnier, et al. Mistral 7b. _ arXiv preprint arXiv:2310.06825_, 2023.\n' +
+      '* Team et al.(2024) Gemma Team, Thomas Mensard, Cassidy Hardin, Robert Dadashi, Surya Bhupatiraju, Shreya Pathak, Laurent Sifre, Morgena Riviere, Mihir Sanjay Kale, Juliette Love, et al. Gemma: Open models based on gemini research and technology. _ arXiv preprint arXiv:2403.08295_, 2024.\n' +
+      '* Bai 등(2023) Jinze Bai, Shuai Bai, Yunfei Chu, Zeyu Cui, Kai Dang, Xiaodong Deng, Yang Fan, Wenbin Ge, Yu Han, Fei Huang, et al. Qwen technical report. _ arXiv preprint arXiv:2309.16609_, 2023.\n' +
+      '* Li et al.(2023b) Yuanzhi Li, Sebastien Bubeck, Ronen Eldan, Allie Del Giorno, Suriya Gunasekar, and Yin Tat Lee. 교과서만 있으면 됩니다. ii: phi-1.5 기술 보고서, 2023b.\n' +
+      '* DeepSeek-AI (2024) DeepSeek-AI. 딥섹 llm: 장기주의를 가진 오픈 소스 언어 모델을 확장합니다. _ arXiv preprint arXiv:2401.02954_, 2024. URL [https://github.com/deepseek-ai/DeepSeek-LLM](https://github.com/deepseek-ai/DeepSeek-LLM).\n' +
+      '* Shao et al.(2024a) Zhihong Shao, Peiyi Wang, Qiao Zhu, Runxin Xu, Junxiao Song, Mingchuan Zhang, Y.K. Li, Y. 우, 다야 궈 심층수학: 개방형 언어 모델에서 수학적 추론의 한계를 밀어붙이는 것, 2024a. URL [https://arxiv.org/abs/2402.03300](https://arxiv.org/abs/2402.03300).\n' +
+      '* Roziere et al.(2023) Baptiste Roziere, Jonas Gehring, Fabian Gloeckle, Sten Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi Adi, Jingyu Liu, Tal Remez, Jeremy Rapin, et al. Code Ilama: Open foundation models for code _ arXiv preprint arXiv:2308.12950_, 2023.\n' +
+      '* Lewkowycz 등(2022) Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, et al. Solving quantitative reasoning problems with language models. _ Advances in Neural Information Processing Systems_, 35:3843-3857, 2022.\n' +
+      '* Azerbayev et al. (2023) Zhangir Azerbayev, Hailey Schoelkopf, Keiran Paster, Marco Dos Santos, Stephen McAleer, Albert Q Jiang, Jia Deng, Stella Biderman, and Sean Welleck. 수학에 대한 개방형 언어 모델입니다. _ arXiv preprint arXiv:2310.10631_, 2023.\n' +
+      '* Ying 등 (2024) Huaiyuan Ying, Shuo Zhang, Linyang Li, Zhejian Zhou, Yunfan Shao, Zhaoye Fei, Yichuan Ma, Jiawei Hong, Kuikun Liu, Ziyi Wang, et al. Internlm-math: Open math large language models toward verifiable reasoning. _ arXiv preprint arXiv:2402.06332_, 2024.\n' +
+      '* Gou 등(2024) Zhibin Gou, Zhihong Shao, Yeyun Gong, Yujiu Yang, Minlie Huang, Nan Duan, Weizhu Chen, et al. Tora: 수학 문제 해결을 위한 도구 통합 추론 에이전트. 2024년 ICLR에서요\n' +
+      '* Zhang et al.(2020)Woossuk Kwon, Zhuohan Li, Siyuan Zhang, Ying Sheng, Liaminin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, and Ion Stoica. 페이지 주의와 함께 제공되는 대용량 언어 모델을 위한 효율적인 메모리 관리. 2023년 ACM SIGOPS 29th Symposium에서.\n' +
+      '* Wei et al.(2022) Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. Chain-of-thought prompting elicits reasoning in large language models. _NIPS_, 35권, 24824-24837 페이지, 2022a.\n' +
+      '* Shao et al.(2024) Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Mingchuan Zhang, YK Li, YWu, and Daa Guo. 심층수학: 개방형 언어 모델에서 수학적 추론의 한계를 밀어붙입니다. _ arXiv preprint arXiv:2402.03300_, 2024b.\n' +
+      '* Gadre et al. (2024) Samir Yitzhak Gadre, Georgios Smyrnis, Vaishaal Shankar, Suchin Gururangan, Mitchell Wortsman, Rulin Shao, Jean Mercat, Alex Fang, Jeffrey Li, Sedrick Keh, Rui Xin, Marianna Nezhurina, Igor Vasiljevic, Jenia Jitsev, Alexandros G. Dimakis, Gabriel Ilharco, Shuran Song, Thomas Kollar, Yair Carmon, Achal Dave, Reinhard Heckel, Niklas Muennighoff, and Ludwig Schmidt. 언어 모델은 오버 트레이닝 및 다운스트림 작업을 통해 안정적으로 확장됩니다. _ Preprint_, 2024.\n' +
+      '* Nakkiran et al. (2021) Preetum Nakkiran, Gal Kaplun, Yamini Bansal, Tristan Yang, Boaz Barak, and Ilya Sutskever. 더 큰 모델과 더 많은 데이터가 손상되는 딥 더블 다운: _ Journal of Statistical Mechanics: Theory and Experiment_, 2021(12):124003, 2021.\n' +
+      '* Devlin 등(2019) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: 언어 이해를 위한 딥 양방향 트랜스포머의 사전 훈련. NAACL-HLT(1)_에서 페이지 4171-4186. Association for Computational Linguistics, 2019.\n' +
+      '* Liu 등(2019) Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke Zettlemoyer, and Veselin Stoyanov. 로베르타: 강인하게 최적화된 BERT 사전 훈련 접근법입니다. _ CoRR_, abs/1907.11692, 2019.\n' +
+      '* Li et al.(2023c) Xiang Lisa Li, Ari Holtzman, Daniel Fried, Percy Liang, Jason Eisner, Tatsunori Hashimoto, Luke Zettlemoyer, and Mike Lewis. 대비 디코딩: 최적화로서 개방형 텍스트 생성. *ACL(1)_에서, 페이지 12286-12312. Association for Computational Linguistics, 2023c.\n' +
+      '*완 등(2024) 판치완, 신팅황, 덩차이, 샤오준취안, 웨이비, 슈밍시. 대형 언어 모델의 지식 융합. _The Twelfth International Conference on Learning Representations_, 2024. URL [https://openreview.net/forum?id=j1Dsk12qcz](https://openreview.net/forum?id=j1Dsk12qcz)입니다.\n' +
+      '* Fu et al.(2023) Yao Fu, Hao Peng, Litu Ou, Ashish Sabharwal, and Tushar Khot. 다단계 추론을 위해 더 작은 언어 모델을 전문화합니다. [Machine Learning에 대한 국제 회의]에서 페이지 10421-10430. PMLR, 2023.\n' +
+      '* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 통합 텍스트 대 텍스트 변환기를 사용하여 전이 학습의 한계를 탐색합니다. _ Journal of machine learning research_, 21(140):1-67, 2020.\n' +
+      '* Polu and Sutskever (2020) Stanislas Polu and Illya Sutskever. 자동화 정리 증명을 위한 생성 언어 모델링 _ arXiv preprint arXiv:2009.03393_, 2020.\n' +
+      '* Gunasekar et al. (2023) Suriya Gunasekar, Yi Zhang, Jyoti Aneja, Caio Cesar Teodoro Mendes, Allie Del Giorno, Sivakanth Gopi, Mojan Javaheripi, Piero Kauffmann, Gustavo de Rosa, Olli Saarikivi, et al. 교재만 있으면 됩니다. _ arXiv preprint arXiv:2306.11644_, 2023.\n' +
+      '* Lee et al.(2021) Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch, and Nicholas Carlini. 훈련 데이터를 복제하면 언어 모델이 더 좋아집니다. _ arXiv preprint arXiv:2107.06499_, 2021.\n' +
+      '* Kandpal et al.(2022) Nikhil Kandpal, Eric Wallace, and Colin Raffel. 학습 데이터를 복제하면 언어 모델의 개인 정보 보호 위험이 완화됩니다. [Machine Learning에 대한 국제 회의]에서 페이지 10697-10707. PMLR, 2022.\n' +
+      '* Tirumala 등(2023) Kushal Tirumala, Daniel Simig, Armen Aghajanyan, and Ari Morcos. D4: 문서 중복 제거 및 다양화를 통한 llm 사전 훈련 개선 _NIPS_에서 볼륨 36, 2023.\n' +
+      '* Albalak 등(2024) Alon Albalak, Yanai Elazar, Sang Michael Xie, Shayne Longpre, Nathan Lambert, Xinyi Wang, Niklas Muennighoff, Bairu Hou, Liangming Pan, Haewon Jeong, Colin Raffel, Shiyu Chang, Tatsunori Hashimoto, and William Yang Wang. 언어 모델에 대한 데이터 선택에 대한 조사, 2024.\n' +
+      '*Xie et al.(2024) Sang Michael Xie, Hieu Pham, Xuanyi Dong, Nan Du, Hanxiao Liu, Yifeng Lu, Percy S Liang, Quoc V Le, Tengyu Ma, and Adams Wei Yu. 도레미: 데이터 혼합을 최적화하면 언어 모델 사전 훈련이 빨라집니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Xu et al. (2020)Mayee Chen, Nicholas Roberts, Kush Bhatia, Jue Wang, Ce Zhang, Frederic Sala, and Christopher Re. 스킬잇! 언어 모델을 이해하고 훈련하기 위한 데이터 기반 기술 프레임워크입니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* MA _et al._ [2024] YINGWEI MA, Yue Liu, Yue Yu, Yuanliang Zhang, Yu Jiang, Changjian Wang, and Shanshan Li. 코드 데이터가 LLMs 추론에 도움이 되는 훈련 단계는 무엇입니까? _The Twelfth International Conference on Learning Representations_, 2024. URL [https://openreview.net/forum?id=KIPJKST4gw](https://openreview.net/forum?id=KIPJKST4gw)\n' +
+      '* Li _et al._ [2023] Ming Li, Yong Zhang, Zhitao Li, Jiuhai Chen, Lichang Chen, Ning Cheng, Jianzong Wang, Tianyi Zhou, and Jing Xiao. 양에서 질까지: 명령어 튜닝을 위한 자체 안내 데이터 선택으로 llm 성능을 향상시킵니다. _ arXiv preprint arXiv:2308.12032_, 2023d.\n' +
+      '* Liu _et al._ [2024] Wei Liu, Weihao Zeng, Keqing He, Yong Jiang 및 Junxian He. 정렬에 좋은 데이터를 만드는 것은 무엇입니까? 수업 튜닝에서 자동 데이터 선택에 대한 포괄적인 연구 2024년 ICLR에서요\n' +
+      '* Li _et al._ [2022a] Yunshui Li, Bingyuan Hui, Xiaobo Xia, Jiaxi Yang, Min Yang, Lei Zhang, Shuzheng Si, Junhao Liu, Tongliang Liu, Fei Huang, et al. One shot learning as instruction data prospector for large language models. _ arXiv preprint arXiv:2312.10302_, 2023e.\n' +
+      '* Xia _et al._ [2024] Mengzhou Xia, Sadhika Malladi, Suchin Gururangan, Sanjeev Arora 및 Danqi Chen. 덜: 대상 명령어 튜닝을 위해 영향력 있는 데이터를 선택합니다. _ arXiv preprint arXiv:2402.04333_, 2024.\n' +
+      '* Computer [2023] Together Computer. Redpajama: 대용량 언어 모델을 학습하기 위한 오픈 데이터 세트, 2023. URL [https://github.com/togethercomputer/RedPajama-Data](https://github.com/togethercomputer/RedPajama-Data)입니다.\n' +
+      '* Saphra and Lopez [2018] Naomi Saphra and Adam Lopez. svcca를 사용하여 언어 모델의 학습 역학을 이해합니다. _ arXiv preprint arXiv:1811.00225_, 2018.\n' +
+      '* Choshen _et al._ [2021] Leshem Choshen, Guy Hacohen, Daphna Weinshall 및 Omri Abend. 신경 언어 모델의 문법 학습 궤적입니다. _ arXiv preprint arXiv:2109.06096_, 2021.\n' +
+      '* Liu _et al._ [2021] Leo Z Liu, Yizhong Wang, Jungo Kasai, Hannaneh Hajishirzi, and Noah A Smith. 시간이 지남에 따라 탐사: 로버타는 언제 무엇을 알고 있습니까? _ arXiv preprint arXiv:2104.07885_, 2021.\n' +
+      '* Power _et al._ [2022] Alethea Power, Yuri Burda, Harri Edwards, Igor Babuschkin 및 Vedant Misra. Grokking: 작은 알고리즘 데이터 세트에서 과적합 이상의 일반화입니다. _ arXiv preprint arXiv:2201.02177_, 2022.\n' +
+      '* Xia _et al._ [2022] Mengzhou Xia, Mikel Artetxe, Chunting Zhou, Xi Victoria Lin, Ramakanth Pasunuru, Danqi Chen, Luke Zettlemoyer, and Ves Stoyanov. 규모에 걸친 언어 모델의 학습 궤적입니다. _ arXiv preprint arXiv:2212.09803_, 2022.\n' +
+      '* Hernandez _et al._ [2021] Danny Hernandez, Jared Kaplan, Tom Henighan 및 Sam McCandlish. 전송에 대한 크기 조정 법칙입니다. _ arXiv preprint arXiv:2102.01293_, 2021.\n' +
+      '* Hoffmann _et al._ [2022] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, et al. Training compute-optimal large language models. _ arXiv preprint arXiv:2203.15556_, 2022.\n' +
+      '* Wei _et al._ [2022b] Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. Emergent abilities of large language models. _ arXiv preprint arXiv:2206.07682_, 2022b.\n' +
+      '* Isik _et al._ [2024] Berivan Isik, Natalia Ponomareva, Hussein Hazimeh, Dimitris Paparas, Sergei Vassilvitskii 및 Sanmi Kovejo. 대형 언어 모델의 다운스트림 작업 성능에 대한 법칙 크기 조정 _ arXiv preprint arXiv:2402.04177_, 2024.\n' +
+      '* Tirumala _et al._ [2022] Kushal Tirumala, Aram Markosyan, Luke Zettlemoyer 및 Armen Aghajanyan. 과적합하지 않은 암기: 대규모 언어 모델의 훈련 역학 분석 _ Advances in Neural Information Processing Systems_, 35:38274-38290, 2022.\n' +
+      '* Carlini _et al._ [2022] Nicholas Carlini, Daphne Ippolito, Matthew Jagielski, Katherine Lee, Florian Tramer 및 Chiyuan Zhang. 신경 언어 모델에서 암기를 수량화하는 중입니다. _ arXiv preprint arXiv:2202.07646_, 2022.\n' +
+      '* Henighan _et al._ [2023] Tom Henighan, Shan Carter, Tristan Hume, Nelson Elhage, Robert Lasenby, Stanislav Fort, Nicholas Schiefer 및 Christopher Olah. 중첩, 암기, 이중 하강 트랜스포머 회로 Thread_, 2023.\n' +
+      '* Biderman _et al._ [2024] Stella Biderman, USVSN PRASHANTH, Lintang Sutawika, Hailey Schoelkopf, Quentin Anthony, Shivanshu Purohit 및 Edward Raff. 대형 언어 모델에서 새롭고 예측 가능한 암기입니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Berman _et al._ [2021]Danny Hernandez, Tom Brown, Tom Conerly, Nova DasSarma, Dawn Drain, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Tom Henighan, Tristan Hume, et al. Scaling laws and interpretability of learning from repeated data. _ arXiv preprint arXiv:2205.10487_, 2022.\n' +
+      '*Xue 등(2024) Fuzhao Xue, Yao Fu, Wangchunshu Zhou, Zangwei Zheng, and Yang You. 반복하거나 반복하지 않으려면: 토큰 위기에서 llm 크기 조정에 대한 통찰력 _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.\n' +
+      '* Goodhart & Goodhart (1984) Charles AE Goodhart and CAE Goodhart. _ 재무 관리의 문제: 영국의 경험_ 1984년 스프링어\n' +
+      '* Ouyang et al.(2022) Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. _ 신경 정보 처리 시스템_, 35:27730-27744, 2022에서의 진보.\n' +
+      '* Cobbe 등(2021) Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 수학 단어 문제를 해결하기 위한 교육 검증자, 2021. URL [https://arxiv.org/abs/2110.14168](https://arxiv.org/abs/2110.14168).\n' +
+      '* Hendrycks 등(2021) Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. 상기 수학 데이터셋을 이용하여 수학 문제 풀이를 측정하는 단계를 포함하는 것을 특징으로 하는 수학 문제 풀이 방법. 2021년 NIPS에서요\n' +
+      '* Gao et al.(2022) Luyu Gao, Aman Madaan, Shuyan Zhou, Uri Alon, Pengfei Liu, Yiming Yang, Jamie Callan, and Graham Neubig. Pal: 프로그램 지원 언어 모델. _ arXiv preprint arXiv:2211.10435_, 2022.\n' +
+      '* Patel 등 (2021) Arkil Patel, Satwik Bhattacharya, and Navin Goyal. NLP 모델은 정말 간단한 수학 단어 문제를 해결할 수 있을까? <프로ceedings of the 2021 Conference of the North American Chapter of the Computational Linguistics: Human Language Technologies_, pages 2080-2094, Online, June 2021. Association for Computational Linguistics} doi: 10.18653/v1/2021.naacl-main.168. URL [https://aclanthology.org/2021.naacl-main.168](https://aclanthology.org/2021.naacl-main.168).\n' +
+      '* Miao et al.(2020) Shen-yun Miao, Chao-Chun Liang, and Keh-Yih Su. 영어 수학 단어 문제 풀이를 평가하고 개발하기 위한 다양한 코퍼스. [컴퓨팅 언어학 협회 제58차 연례 회의]에서 2020년 7월 온라인 975-984페이지. 컴퓨팅 언어학 협회. doi: 10.18653/v1/2020.acl-main.92. URL [https://aclanthology.org/2020.acl-main.92](https://aclanthology.org/2020.acl-main.92).\n' +
+      '* Koncel-Kedziorski et al.(2016) Rik Koncel-Kedziorski, Subhro Roy, Aida Amini, Nate Kushman, and Hannaneh Hajishirzi. MAWPS: 수학 단어 문제 저장소. 2016년 컴퓨터 언어학 협회의 북미 회의 회보: 인간 언어 기술_ 페이지 1152-1157, 캘리포니아 샌디에이고, 2016년 6월. 컴퓨터 언어학 협회. doi: 10.18653/v1/N16-1136. URL [https://aclanthology.org/N16-1136](https://aclanthology.org/N16-1136).\n' +
+      '* Lu et al. (2023) Pan Lu, Liang Qiu, Kai-Wei Chang, Ying Nian Wu, Song-Chun Zhu, Tanmay Rajpurohit, Peter Clark, and Ashwin Kalyan. 반구조화된 수학적 추론을 위한 정책 기울기를 통한 동적 프롬프트 학습 _The Eleventh International Conference on Learning Representations_, 2023. URL [https://openreview.net/forum?id=DHyHRBuJUTN](https://openreview.net/forum?id=DHyHRBuJUTN).\n' +
+      '* Amini et al.(2019) Aida Amini, Saadia Gabriel, Peter Lin, Rik Koncel-Kedziorski, Yejin Choi, and Hannaneh Hajishirzi. Mathqa: 연산 기반 형식론으로 해석 가능한 수학 단어 문제 풀이를 지향합니다. _ arXiv preprint arXiv:1905.13319_, 2019.\n' +
+      '* Hendrycks 등(2020) Dan Hendrycks, Collin Burns, Steven Basart, Andy Zou, Mantas Mazeika, Dawn Song, and Jacob Steinhardt. 대규모 멀티태스킹 언어 이해를 측정하는 중입니다. _ arXiv preprint arXiv:2009.03300_, 2020.\n' +
+      '* Gao 등 (2022) Leo Gao, Jonathan Tow, Baber Abbasi, Stella Biderman, Sid Black, Anthony DiPofi, Charles Foster, Laurence Golding, Jeffrey Hsu, Alain Le Noac\'t, Haonan Li, Kyle McDonell, Niklas Muennighoff, Chris Ociepa, Jason Phang, Laria Reynolds, Hailey Schoelkopf, Aviya Skowron, Lintang Suatawika, Eric Tang, Anish Thite, Ben Wang, Kevin Wang, and Andy Zou. 소샷 언어 모델 평가를 위한 프레임워크, 12 2023. URL [https://zenodo.org/records/10256836](https://zenodo.org/records/10256836).\n' +
+      '* Suzgun 등(2022) Mirac Suzgun, Nathan Scales, Nathanael Scharli, Sebastian Gehrmann, Yi Tay, Hyung Won Chung, Aakanksha Chowdhery, Quoc V Le, Ed H Chi, Denny Zhou, et al. Challenging big-bench tasks and whether the chain-of-thought can solve them _ arXiv preprint arXiv:2210.09261_, 2022.\n' +
+      '* Zhong et al. (2023) 완준 Zhong, Ruixiang Cui, Yiduo Guo, Yaobo Liang, Shuai Lu, Yanlin Wang, Amin Saied, Weizhu Chen, and Nan Duan. 애지벌: 기반 모델을 평가하기 위한 인간 중심 벤치마크입니다. _ arXiv preprint arXiv:2304.06364_, 2023.\n' +
+      '* Zhou et al. (2020)Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문을 풀었다고 생각해? try arc, ai2 reasoning challenge. _ arXiv preprint arXiv:1803.05457_, 2018.\n' +
+      '* Clark et al. [2019] Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. Boolq: Exploring the surprising difficulty of natural yes/no questions. _arXiv preprint arXiv:1905.10044_, 2019.\n' +
+      '* Bisk et al. [2020] Yonatan Bisk, Rowan Zellers, Jianfeng Gao, Yejin Choi, et al. Piga: Reasoning about physical commonsense in natural language. In _Proceedings of the AAAI conference on artificial intelligence_, volume 34, pages 7432-7439, 2020.\n' +
+      '* Zellers et al. [2019] Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. Hellaswag: Can a machine really finish your sentence? _arXiv preprint arXiv:1905.07830_, 2019.\n' +
+      '* Sakaguchi et al. [2021] Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula, and Yejin Choi. Winogrande: An adversarial winograd schema challenge at scale. _Communications of the ACM_, 64(9):99-106, 2021.\n' +
+      '* Mihaylov et al. [2018] Todor Mihaylov, Peter Clark, Tushar Khot, and Ashish Sabharwal. Can a suit of armor conduct electricity? a new dataset for open book question answering. _arXiv preprint arXiv:1809.02789_, 2018.\n' +
+      '* Zheng et al. [2023] Qinkai Zheng, Xiao Xia, Xu Zou, Yuxiao Dong, Shan Wang, Yufei Xue, Lei Shen, Zihan Wang, Andi Wang, Yang Li, et al. Codegeex: A pre-trained model for code generation with multilingual benchmarking on humaneval-x. In _Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining_, pages 5673-5684, 2023.\n' +
+      '* Clark et al. [2020] Jonathan H Clark, Eunsol Choi, Michael Collins, Dan Garrette, Tom Kwiatkowski, Vitaly Nikolaev, and Jennimaria Palomaki. Tydi qa: A benchmark for information-seeking question answering in tyologically diverse languages. _Transactions of the Association for Computational Linguistics_, 8:454-470, 2020.\n' +
+      '* Austin et al. [2021] Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski, David Dohan, Ellen Jiang, Carrie Cai, Michael Terry, Quoc Le, et al. Program synthesis with large language models. _arXiv preprint arXiv:2108.07732_, 2021.\n' +
+      '* Guo et al. [2024] Daya Guo, Qihao Zhu, Dejian Yang, Zhenda Xie, Kai Dong, Wentao Zhang, Guanting Chen, Xiao Bi, Y Wu, YK Li, et al. Deepseek-coder: When the large language model meets programming-the rise of code intelligence. _arXiv preprint arXiv:2401.14196_, 2024.\n' +
+      '\n' +
+      'Author Contributions\n' +
+      '\n' +
+      '정하오린은 세부 토큰 선정 프로세스를 설계 및 구현하고, 광범위한 예비 실험을 수행했으며, 사전 훈련 및 평가 파이프라인을 개발했으며, 대부분의 사전 훈련 실험 및 분석을 수행하고, 기준선을 구현했으며, 글쓰기에 크게 기여했다. Zhibin Gou는 예비 제안을 제시했고, 토큰 재가중치에 초과 손실을 사용하는 방법을 소개했으며, 컴파일된 고품질 말뭉치, 훈련된 참조 모델, 미세 조정 및 평가 파이프라인을 설정하고, 실험 분석을 설계했으며, 글쓰기에 크게 기여했다. 예윤공은 초기 프로젝트를 제안하고 웨이주 첸과 공동주도로 프로젝트를 진행했으며 실험과 글쓰기에 대한 광범위한 조언과 지침을 제공하고 팀 협업과 자원 관리를 총괄했다. 샤오 류, 옌룽 쉰, 뤄첸 쉬, 첸린, 유주양, 지안 자오, 난두안이 연구 멘토링을 제공하고 프로젝트를 조정했으며 글쓰기에 기여했다.\n' +
+      '\n' +
+      '## 사전 학습에서 토큰의 부록 B 분석 및 시각화\n' +
+      '\n' +
+      '### 4가지 범주 토큰에 대한 자세한 내용\n' +
+      '\n' +
+      '토큰을 H\\(\\rightarrow\\)H, L\\(\\rightarrow\\)H, H\\(\\rightarrow\\)L, L\\(\\rightarrow\\)L의 네 가지 범주로 분류한다. 훈련 과정에서 각 10억 토큰 훈련 데이터에 대한 훈련 후 각 토큰의 손실을 수집했다. 그런 다음 선형 피팅을 사용하고 훈련 과정에서 손실이 감소했는지 여부에 대한 증거로 첫 번째 포인트와 마지막 포인트 간의 손실 차이를 취했다.\n' +
+      '\n' +
+      '구체적으로, 토큰의 손실 \\((l_{0},l_{1},...,l_{n})\\)의 시퀀스를 갖는다고 가정하자. 우리의 목표는 각 데이터 포인트 간의 차이의 제곱합과 선형 예측값을 최소화하는 것이다:\n' +
+      '\n' +
+      '\\[f(a,b)=\\text{minimize}\\sum_{i=0}^{n}(l_{i}-(ax_{i}+b))^{2}, \\tag{6}\\]\n' +
+      '\n' +
+      '여기서 \\(x_{0}=0\\)는 초기 체크포인트이고 \\(x_{n}=n\\)는 최종 체크포인트이다. 이를 적합 방정식에 대입하면, \\(\\mathcal{L}_{\\text{start}}=b\\)와 \\(\\mathcal{L}_{\\text{end}}=an+b\\)의 적합 후 시작과 끝에서 손실 값을 얻을 수 있다. 손실 변화는 \\(\\Delta\\mathcal{L}=\\mathcal{L}_{\\text{end}}-\\mathcal{L}_{\\text{start}}\\)로 표현될 수 있다. 한편, 마지막 검사점의 평균 손실을 \\(\\mathcal{L}_{\\text{mean}}\\)로 표현한다.\n' +
+      '\n' +
+      '다음으로, 토큰은 \\(\\Delta\\mathcal{L}\\)와 \\(\\mathcal{L}_{\\text{mean}}\\)를 기준으로 분류할 수 있다. 우리는 \\(\\Delta\\mathcal{L}<-0.2\\)를 H\\(\\rightarrow\\)L(손실이 높음에서 낮음) 카테고리 토큰으로 분류하고, \\(\\Delta\\mathcal{L}>0.2\\)를 L\\(\\rightarrow\\)H(손실이 낮음에서 높음) 카테고리 토큰으로 분류한다. \\(-0.2\\leq\\Delta\\mathcal{L}\\leq 0.2\\)와 \\(l_{n}\\leq\\mathcal{L}_{\\text{mean}}\\)이면, 토큰은 L\\(\\rightarrow\\)L(손실이 낮음)로 분류된다; \\(l_{n}}> \\mathcal{L}_{\\text{mean}}\\), 이들은 H\\(\\rightarrow\\)H(손실률이 여전히 높다)로 분류된다. 그림 10에서는 실제 텍스트에서 토큰의 네 가지 범주의 예를 시각화한다.\n' +
+      '\n' +
+      '### Pretrainig에서 비-수렴 토큰\n' +
+      '\n' +
+      'SS2.1에서는 훈련 과정에서 소수의 토큰만이 H\\(\\rightarrow\\)L 범주에 속한다고 언급하였다. 나머지 범주인 H\\(\\rightarrow\\)H와 L\\(\\rightarrow\\)L 토큰 중에는 훈련 시 상당한 변동을 보이는 토큰이 있다. 또한 H\\(\\rightarrow\\)L 토큰이 효과적으로 학습되지 않는 경우도 있다. 따라서 분석에서 상당한 변동성과 뚜렷한 손실을 나타내는 이러한 범주에서 해당 토큰을 구체적으로 선택합니다. 훈련 과정에서 비정상적인 행동을 보이는 이러한 토큰을 시각화합니다. 그림 11에서 볼 수 있듯이 이러한 토큰의 대부분은 다소 혼란스러운 말뭉치에서 비롯된다는 것을 알 수 있다. 예를 들어, 말뭉치는 사용자 정의 기호, 이해할 수 없는 횡설수설, 시간표 및 서지 참조와 같은 정보의 혼합을 포함할 수 있다. 정규 텍스트의 세그먼트 내에서, 또한 공통 접속사, 단어 접미사 및 구두점 표시의 사용에 변동이 있을 수 있다. 후자는 훈련에 반드시 재앙이 아닐 수 있다; 사실, 그것은 정상적인 발생을 나타낼 수 있다. 그러나 전자로 인한 손실을 효과적으로 완화할 수 있다면 보다 안정적이고 효율적인 모델 학습으로 이어질 수 있다.\n' +
+      '\n' +
+      'Evaluation Details\n' +
+      '\n' +
+      '### Math Evaluation\n' +
+      '\n' +
+      '초등부터 대학 수준까지 다양한 어려움, 여러 수학적 영역, 객관식, 개방형 문항을 포함한 다양한 문항 유형을 포괄하여 다양한 수학 추론 벤치마크에 걸쳐 모형에 대한 종합적인 평가를 실시하였다. 우리의 벤치마크로는 GSM8k [Cobbe et al., 2021], MATH [Hendrycks et al., 2021], GSM-Hard [Gao et al., 2022], SVAMP [Patel et al., 2021], ASDIV [Miao et al., 2020], MAWPS [Koncel-Kedziorski et al., 2016], TabMWP (TAB) [Lu et al., 2023], MathQA (MQA) [Amini et al., 2019], MMLU-STEM [Hendrycks et al., 2020], SAT [Azerbayev et al., 2023] 등이 있다.\n' +
+      '\n' +
+      '### General Evalution\n' +
+      '\n' +
+      '일반 도메인의 평가에서 lm-평가-harness [Gao et al., 2023] 및 평가 모델을 따라 MMLU [Hendrycks et al., 2020], BBH [Suzgun et al., 2022], AGIEval [Zhong et al., 2023], ARC-Easy and ARC-Challenge [Clark et al., 2018], BoolQ [Clark et al., 2019], PIQA [Bisk et al., 2020], Hellaswag [Zellers et al., 2019], WinoGrande [Sakaguchi et al., 2021], OpenBookQA [Mihaylov et al., 2018]. HumanEval [Zheng et al., 2023] 및 TydiQA [Clark et al., 2020]에서, 우리는 open-instrcut [Ivison et al., 2023]의 평가 파이프라인을 따르고, HumanEval에 대한 Pass@1 및 Pass@1 및 TydiQA에 대한 F1을 보고한다. MBPP [Austin et al., 2021] 벤치마크의 경우 DeepSeek-Coder [Guo et al., 2024]의 평가 파이프라인을 따르고 Pass@1 및 Pass@10을 보고한다.\n' +
+      '\n' +
+      '## 부록 D 선택한 토큰의 손실이 다운스트림 작업 성능에 미치는 영향\n' +
+      '\n' +
+      '이 섹션에서는 선택한 토큰의 손실과 다운스트림 작업의 성능을 상관시키는 세부 정보를 선언합니다. 동시 연구는 다운스트림 태스크에서 모델의 성능과 스케일링 법칙의 영향을 연구하기 위해 유사한 방법을 탐색했다[Gadre 등, 2024]. 여기에서 우리의 분석은 선택/비선택 토큰에 대한 손실 감소/증가와 다운스트림 태스크에 대한 모델의 성능 사이의 관계를 설명하는 것을 목표로 한다는 점에서 다르다.\n' +
+      '\n' +
+      '모델의 다운스트림 태스크 성능을 측정하기 위한 표준으로 MATH와 GSM8K의 평균 정확도를 사용한다. 그림 7의 데이터 포인트 추세를 기반으로 다운스트림 태스크의 평균 정확도와 선택/비선택 토큰의 손실 간의 관계를 제안하며,\n' +
+      '\n' +
+      '\\[Acc(\\mathcal{L})=\\log(a*\\mathcal{L}+c) \\tag{7}\\]\n' +
+      '\n' +
+      '매개변수 \\(a\\) 및 \\(c\\)는 데이터에서 적합됩니다. 선택한 토큰의 손실 \\(\\mathcal{L}_{s}\\)이 피팅에 사용되는 경우 \\(a>0\\)입니다. 반대로 선택되지 않은 토큰의 손실 \\(\\mathcal{L}_{us}\\)이 피팅에 사용되면 \\(a<0\\). 따라서, 선택된 토큰에 대해 모델을 훈련시키는 것은 다운스트림 태스크에서 모델의 성능을 효과적으로 향상시킬 수 있는 반면, 선택되지 않은 토큰은 다운스트림 태스크에서 모델의 성능에 해로운 영향을 미칠 수 있다고 믿는다.\n' +
+      '\n' +
+      '## 부록 E SLM에 의해 선택된 토큰 예제\n' +
+      '\n' +
+      '### 토큰 선택 예제\n' +
+      '\n' +
+      '그림 12에서는 SLM 방법으로 선택한 토큰의 몇 가지 예를 제시하며, 파란색으로 표시된 콘텐츠는 사전 훈련 과정에서 실제로 선택한 토큰을 나타낸다.\n' +
+      '\n' +
+      '### Dynamic Token Selected\n' +
+      '\n' +
+      '그림 13에서 우리는 SLM 훈련 과정 전반에 걸쳐 토큰 선택 경향의 동적 변화를 보여준다. 토큰 선택에서 현재 경향을 분석하기 위해 훈련 과정 중 4개의 체크포인트(0%, 33%, 66%, 100%)를 선택했다. 토큰 선택에 대한 선호도는 높은 선호도에서 낮은 선호도에 이르기까지 다양한 색상으로 표시되며, 일반적으로 각각 진한 파란색, 파란색, 검은색, 주황색 및 진한 주황색으로 표시된다.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:19]\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:20]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:21]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:22]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
