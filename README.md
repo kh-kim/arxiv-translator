@@ -13,6 +13,7 @@
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
 | 2404.07965v1 | Rho-1 Not All Tokens Are What You Need | [arXiv](https://arxiv.org/abs/2404.07965v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07965v1) |
+| 2404.07647v1 | Why do small language models underperform? Studying Language Model Saturation via the Softmax Bottleneck | [arXiv](https://arxiv.org/abs/2404.07647v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07647v1) |
 | 2404.04167v3 | Chinese Tiny LLM Pretraining a Chinese-Centric Large Language Model | [arXiv](https://arxiv.org/abs/2404.04167v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.04167v3) |
 | 2404.01261v1 | FABLES Evaluating faithfulness and content selection in book-length summarization | [arXiv](https://arxiv.org/abs/2404.01261v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01261v1) |
 | 2404.01204 | The Fine Line Navigating Large Language Model Pretraining with Down-streaming Capability Analysis | [arXiv](https://arxiv.org/abs/2404.01204) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01204) |
