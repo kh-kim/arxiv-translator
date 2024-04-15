@@ -66,6 +66,7 @@
 | 2306.01116 | The RefinedWeb Dataset for Falcon LLM Outperforming Curated Corpora with Web Data and Web Data Only | [arXiv](https://arxiv.org/abs/2306.01116) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2306.01116) |
 | 2305.18290v2 | Direct Preference Optimization Your Language Model is Secretly a Reward Model | [arXiv](https://arxiv.org/abs/2305.18290v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2305.18290v2) |
 | 2304.08177v3 | Efficient and Effective Text Encoding for Chinese LLaMA and Alpaca | [arXiv](https://arxiv.org/abs/2304.08177v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2304.08177v3) |
+| 2303.18223 | A Survey of Large Language Models | [arXiv](https://arxiv.org/abs/2303.18223) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2303.18223) |
 | 2110.03215 | Towards Continual Knowledge Learning of Language Models | [arXiv](https://arxiv.org/abs/2110.03215) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2110.03215) |
 | 2107.06499 | Deduplicating Training Data Makes Language Models Better | [arXiv](https://arxiv.org/abs/2107.06499) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2107.06499) |
 
