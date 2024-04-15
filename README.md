@@ -61,6 +61,7 @@
 | 2310.11511 | Self-RAG Learning to Retrieve Generate and Critique through Self-Reflection | [arXiv](https://arxiv.org/abs/2310.11511) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.11511) |
 | 2310.08754v4 | Tokenizer Choice For LLM Training Negligible or Crucial? | [arXiv](https://arxiv.org/abs/2310.08754v4) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.08754v4) |
 | 2310.04799v2 | Chat Vector A Simple Approach to Equip LLMs with Instruction Following and Model Alignment in New Languages | [arXiv](https://arxiv.org/abs/2310.04799v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.04799v2) |
+| 2309.15402 | A Survey of Chain of Thought Reasoning Advances Frontiers and Future | [arXiv](https://arxiv.org/abs/2309.15402) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2309.15402) |
 | 2309.12288 | The Reversal Curse LLMs trained on A is B fail to learn B is A | [arXiv](https://arxiv.org/abs/2309.12288) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2309.12288) |
 | 2308.12284 | D4 Improving LLM Pretraining via Document De-Duplication and Diversification | [arXiv](https://arxiv.org/abs/2308.12284) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2308.12284) |
 | 2306.01116 | The RefinedWeb Dataset for Falcon LLM Outperforming Curated Corpora with Web Data and Web Data Only | [arXiv](https://arxiv.org/abs/2306.01116) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2306.01116) |
