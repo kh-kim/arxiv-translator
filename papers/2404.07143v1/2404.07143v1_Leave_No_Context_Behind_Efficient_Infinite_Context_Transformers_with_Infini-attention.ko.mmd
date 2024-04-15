@@ -1,0 +1,243 @@
+# Leave No Context Behind:
+
+인피니-어텐션을 갖는 효율적인 인피니 컨텍스트 트랜스포머
+
+ 선덴수렌 문크달라이, 마날 파루키와 싯다르스 고팔
+
+Google
+
+tsendsuren@google.com
+
+###### Abstract
+
+본 논문에서는 Transformer 기반 대용량 언어 모델(Large Language Models, LLM)을 무한히 긴 입력으로 확장하기 위한 효율적인 방법을 제안한다. 제안된 방법의 핵심 요소는 Infini-attention이라고 불리는 새로운 주의 기법이다. 인피니 어텐션은 압축 메모리를 바닐라 어텐션 메커니즘에 통합하고 단일 트랜스포머 블록에서 마스킹된 로컬 어텐션 메커니즘과 장기 선형 어텐션 메커니즘 모두에 구축한다. 본 논문에서는 1B LLM과 8B LLM을 사용하여 긴 컨텍스트 언어 모델링 벤치마크, 1M 시퀀스 길이 수동적 컨텍스트 블록 검색 및 500K 길이의 책 요약 태스크에 대한 제안 방법의 효율성을 보인다. 제안하는 방법은 최소 경계 메모리 파라미터를 도입하여 LLMs에 대한 빠른 스트리밍 추론을 가능하게 한다.
+
+## 1 Introduction
+
+메모리는 특정 컨텍스트에 맞춘 효율적인 계산을 가능하게 하기 때문에 지능의 초석 역할을 한다. 그러나, 트랜스포머들(Vaswani et al., 2017) 및 트랜스포머-기반 LLMs들(Brown et al., 2020; Touvron et al., 2023; Anil et al., 2023; Groeneveld et al., 2024)은 주의 메커니즘의 특성상, 제한된 컨텍스트-의존 메모리를 갖는다. 트랜스포머의 주의 메커니즘은 메모리 공간과 계산 시간 모두에서 2차 복잡성을 나타낸다. 예를 들어, 어텐션 Key-Value(KV) 상태들은 배치 크기 512 및 컨텍스트 길이 2048을 갖는 500B 모델에 대한 3TB 메모리 풋프린트를 갖는다(Pope et al., 2023). 실제로 LLM을 더 긴 시퀀스(즉, 1M 토큰)로 스케일링하는 것은 표준 트랜스포머 아키텍처로 어렵고 더 길고 긴 컨텍스트 모델을 제공하는 것은 재정적으로 비용이 많이 든다.
+
+압축 메모리 시스템들은 극도로 긴 시퀀스들에 대한 어텐션 메커니즘보다 더 확장가능하고 효율적일 것을 약속한다(Kanerva, 1988; Munkhdalai et al., 2019). 입력 시퀀스 길이에 따라 성장하는 어레이를 사용하는 대신에, 압축 메모리는 주로 제한된 저장 및 계산 비용으로 정보를 저장하고 리콜하기 위해 고정된 수의 파라미터를 유지한다. 압축 메모리에서, 새로운 정보는 이 정보가 나중에 다시 복구될 수 있는 목적으로 그것의 파라미터들을 변경함으로써 메모리에 추가된다. 그러나, 현재 상태에 있는 LLM들은 품질과 함께 단순성의 균형을 맞추는 효과적이고 실용적인 압축 메모리 기술을 아직 보지 못했다.
+
+그림 1: 무한히 긴 컨텍스트를 처리하기 위해 선형 주의력을 갖는 추가적인 압축 메모리를 갖는다. \ (\{KV\}_{s-1}\) 및 \(\{KV\}_{s}\)는 각각 현재 및 이전 입력 세그먼트에 대한 주의 키 및 값이고 \(Q_{s}\)는 주의 쿼리이다. PE는 위치 임베딩을 나타낸다.
+
+본 논문에서는 트랜스포머 LLM이 무한히 긴 입력을 효과적으로 처리할 수 있는 새로운 접근 방법을 제안한다. 제안된 접근법의 핵심 구성 요소는 인피니-어텐션(그림 1)으로 명명된 새로운 어텐션 기술이다. 인피니-어텐션은 압축 메모리를 바닐라 어텐션 메커니즘(Bahdanau et al., 2014; Vaswani et al., 2017)에 통합하고 단일 트랜스포머 블록에서 마스킹된 로컬 어텐션 및 장기 선형 어텐션 메커니즘 둘 다에서 구축한다.
+
+트랜스포머 어텐션 레이어에 대한 이러한 미묘하지만 중요한 수정은 지속적인 사전 훈련 및 미세 조정을 통해 기존 LLM의 자연스러운 확장을 무한히 긴 컨텍스트로 가능하게 한다.
+
+인피니 어텐션은 장기 기억 통합 및 검색을 위해 표준 어텐션 계산의 모든 키, 값 및 쿼리 상태를 재사용한다. 우리는 주의력의 오래된 KV 상태를 표준 주의 메커니즘과 같이 버리는 대신 압축 메모리에 저장한다. 그런 다음 후속 시퀀스를 처리할 때 주의 쿼리 상태를 사용하여 메모리에서 값을 검색한다. 최종 컨텍스트 출력을 계산하기 위해, Infini-attention은 장기 메모리-검색된 값들과 로컬 어텐션 컨텍스트들을 집계한다.
+
+실험 결과, 본 논문에서 제안한 방법이 메모리 크기 측면에서 114배 이해율을 가지면서 긴 문맥 언어 모델링 벤치마크에서 기준 모델보다 우수한 성능을 보임을 보였다. 모델은 100K 시퀀스 길이로 훈련될 때 훨씬 더 나은 복잡성을 달성한다. 1B LLM은 자연스럽게 1M 시퀀스 길이로 확장되며 인피니 주의를 주입하면 파사스키 검색 작업을 해결한다. 마지막으로, Infini-attention을 갖는 8B 모델이 500K 길이의 책 요약 작업에서 지속적인 사전 훈련과 작업 미세 조정 후에 새로운 SOTA 결과에 도달한다는 것을 보여준다.
+
+요약하면, 우리의 작업은 다음과 같은 기여를 한다.
+
+1. 실용적이면서도 강력한 주의 메커니즘 - 장기 압축 메모리 및 로컬 인과 주의를 갖는 인피니 주의 - 장거리 및 단거리 문맥 의존성을 모두 효율적으로 모델링하기 위해 도입한다.
+2. Infini-attention은 표준 스케일링된 도트-제품 주의에 최소한의 변화를 도입하고, 플러그 앤 플레이 연속 사전 훈련 및 설계에 의한 롱-컨텍스트 적응을 지원한다.
+3. 우리의 접근법은 트랜스포머 LLM이 제한된 메모리를 사용하여 무한히 긴 컨텍스트로 확장하고 스트리밍 방식으로 극도로 긴 입력을 처리함으로써 리소스를 계산할 수 있게 한다.
+
+## 2 Method
+
+그림 2는 우리의 모델인 Infini-Transformer와 Transformer-XL을 비교한 것이다(Dai et al., 2019). Transformer-XL과 유사하게, Infini-Transformer는 세그먼트들의 시퀀스에서 동작한다. 우리는 각 세그먼트 내에서 표준 인과 점-제품 주의 컨텍스트를 계산한다. 따라서 점-곱 어텐션 계산은 인덱스 \(S\) (\(N\)는 세그먼트 길이)로 현재 세그먼트의 총 \(N\) 토큰 수를 포괄한다는 의미에서 국소적이다.
+
+그러나, 로컬 주의(Dai et al., 2019)는 다음 세그먼트를 처리할 때 이전 세그먼트의 주의 상태를 버린다. 인피니-트랜스포머에서는 이전 KV 주의 상태를 생략하는 대신 압축 메모리로 전체 컨텍스트 히스토리를 유지하기 위해 재사용할 것을 제안한다. 따라서 인피니-트랜스포머의 각 주의층은 전역 압축 상태와 국부 세립 상태를 모두 가지고 있다. 우리는 이러한 효율적인 주의 메커니즘인 인피니 주의라고 부르며, 이는 그림 1에 예시되고 다음 섹션에서 형식적으로 설명된다.
+
+### Infini-attention
+
+그림 1과 같이, 우리의 인피니 주의는 로컬 및 글로벌 컨텍스트 상태를 모두 계산하고 출력을 위해 결합한다. 멀티 헤드 어텐션(MHA)과 유사하게, 도트-제품 어텐션 외에 어텐션 레이어당 병렬 압축 메모리의 수(\(H\)는 어텐션 헤드의 수)를 유지한다.
+
+#### 2.1.1 Scaled Dot-product Attention
+
+다중 헤드 스케일링된 도트-제품 주의(Vaswani et al., 2017), 특히 자체 주의 변형(Munkhdalai et al., 2016; Cheng et al., 2016)은 LLM에서 주요 구성 요소였다. 맥락 의존적 동적 계산을 모델링하는 MHA의 강력한 능력과 시간적 마스킹의 편리성은 자기회귀 생성 모델에서 광범위하게 활용되었다.
+
+바닐라 MHA의 단일 헤드는 다음과 같이 입력 세그먼트 \(X\in\mathbb{R}^{N\times d_{model}}\)의 시퀀스로부터 주의 컨텍스트 \(A_{dot}\in\mathbb{R}^{N\times d_{value}}\)를 계산한다. 먼저 어텐션 쿼리, 키 및 값 상태를 계산합니다.
+
+\[K=XW_{K},~{}V=XW_{V}\text{ 및 }Q=XW_{Q}. \tag{1}\]
+
+여기서, \(W_{K}\in\mathbb{R}^{d_{model}\times d_{bay}}\), \(W_{V}\in\mathbb{R}^{d_{model}\times d_{value}}\) 및 \(W_{Q}\in\mathbb{R}^{d_{model}\times d_{bay}}\)는 훈련 가능한 투영 행렬이다. 그런 다음 주의 컨텍스트는 다른 모든 값의 가중 평균으로 계산됩니다.
+
+\[A_{dot}=\text{softmax}\left(\frac{QK^{T}}{\sqrt{d_{model}}}\right)V. \tag{2}\]
+
+MHA의 경우, 각 시퀀스 요소에 대해 \(H\)개의 어텐션 컨텍스트 벡터를 병렬로 계산하고, 두 번째 차원을 따라 연결한 다음, 마지막으로 연결된 벡터를 모델 공간에 투영하여 어텐션 출력을 얻는다.
+
+#### 2.1.2 압축 메모리
+
+Infini-attention에서는 압축 메모리를 위한 새로운 메모리 엔트리를 계산하는 대신 질의, 키 및 값 상태(\(Q\), \(K\) 및 \(V\))를 dot-product 어텐션 계산에서 재사용한다. 도트-프로덕트 어텐션과 압축 메모리 사이의 상태 공유 및 재사용은 효율적인 플러그인-플레이 롱-컨텍스트 적응을 가능하게 할 뿐만 아니라 트레이닝 및 추론 속도를 빠르게 한다. 이전 작업(Munkhdalai et al., 2019)과 유사하게, 우리의 목표는 키 및 가치 상태의 바인딩을 압축 메모리에 저장하고 쿼리 벡터를 사용하여 검색하는 것이다.
+
+그림 2: Infini-Transformer (상단)는 전체 컨텍스트 이력을 갖는 반면 Transformer-XL (하단)은 마지막 세그먼트에 대해서만 KV 상태들을 캐싱하기 때문에 오래된 컨텍스트들을 폐기한다.
+
+문헌에 제안된 다양한 형태의 압축 메모리(Hopfield, 1982; Kanerva, 1988; Schlag et al., 2019; Munkhdalai et al., 2019)가 있지만, 단순성과 계산 효율성을 위해, 이 작업에서 우리는 메모리를 연관 매트릭스로 매개화한다(Schlag et al., 2020). 이 방법은 메모리 업데이트 및 검색 프로세스를 선형 주의 메커니즘(Shen et al., 2018)으로 캐스팅하고 관련 방법에서 안정적인 훈련 기술을 활용할 수 있도록 한다. 특히, Katharopoulos et al.(2020)의 갱신 규칙과 검색 메커니즘은 주로 단순성과 경쟁적인 성능 때문에 채택되었다.
+
+**메모리 검색.** Infini-attention에서 쿼리 \(Q\in\mathbb{R}^{N\times d_{key}}\)를 사용하여 메모리 \(M_{\text{s}-1}\in\mathbb{R}^{d_{key}\times d_{value}}\)에서 새 콘텐츠 \(A_{mem}\in\mathbb{R}^{N\times d_{value}}\)를 검색합니다.
+
+\[A_{mem}=\frac{\sigma(Q)M_{\text{s}-1}}{\sigma(Q)z_{\text{s}-1}}. \tag{3}\]
+
+여기서, \(\sigma\) 및 \(z_{\text{s}-1}\in\mathbb{R}^{d_{key}}\)는 각각 비선형 활성화 함수 및 정규화 항이다. Katharopoulos et al. (2020)에 이어 모든 키에 대한 합을 정규화 항 \(z_{\text{s}-1}\)으로 기록하고 요소별 ELU + 1을 활성화 함수로 사용한다(Clevert et al., 2015).
+
+**메모리 업데이트** 검색이 완료되면 새로운 KV 항목으로 메모리 및 정규화 용어를 업데이트하고 다음 상태를 다음과 같이 가져옵니다.
+
+\[M_{\text{s}}\gets M_{\text{s}-1}+\sigma(K)^{T}V\text{ and }z_{\text{s}} \gets z_{\text{s}-1}+\sum_{t=1}^{N}\sigma(K_{t}). \tag{4}\]
+
+새로운 메모리 상태 \(M_{\text{s}}\)와 \(z_{\text{s}}\)는 다음 세그먼트 \(S+1\)로 전달되어 각 주의 계층에서 반복으로 구축된다. 우측항 \(\sigma(K)^{T}V\)는 Eq. (4)는 결합 결합 연산자로 알려져 있다(Smolensky, 1990; Hebb, 2005; Schlag et al., 2020).
+
+델타 규칙(Munkhdalai et al., 2019; Schlag et al., 2020, 2021)의 성공에 영감을 받아 인피니 주의에 통합했습니다. 델타 규칙은 연관 바인딩들을 새로운 업데이트로서 적용하기 전에 먼저 기존의 값 엔트리들을 검색하고 새로운 값들로부터 그것들을 빼냄으로써 약간 개선된 메모리 업데이트를 시도한다.
+
+\[M_{\text{s}}\gets M_{\text{s}-1}+\sigma(K)^{T}(V-\frac{\sigma(K)M_{\text{ s}-1}}{\sigma(K)z_{\text{s}-1}}). \tag{5}\]
+
+이 갱신 규칙(\(Linear+Delta\))은 KV 바인딩이 메모리에 이미 존재하는 경우 수정되지 않은 연관 행렬을 남기는 반면, 여전히 수치 안정성을 위해 전자의 정규화 항(\(Linear\))과 동일한 정규화 항을 추적한다.
+
+**장기 컨텍스트 주입.** 학습된 게이팅 스칼라 \(\beta\)를 통해 로컬 주의 상태 \(A_{dot}\) 및 메모리 검색된 콘텐츠 \(A_{mem}\)를 집계합니다.
+
+\[A=\text{sigmoid}}(\beta)\odot A_{mem}+(1-\text{sigmoid}}(\beta))\odot A_{ dot}. \tag{6}\]
+
+이것은 모델에서 장기 정보 흐름과 지역 정보 흐름 사이의 학습 가능한 트레이드오프를 허용하면서 헤드당 트레이닝 파라미터로서 단일 스칼라 값만을 추가한다(Wu et al., 2022).
+
+표준 MHA와 유사하게, 다중 헤드 Infini-attention에 대해 우리는 \(H\)개의 문맥 상태들을 병렬로 계산하고, 이들을 연결하여 최종 주의 출력 \(O\in\mathbb{R}^{N\times d_{mult}}\):
+
+\[O=[A^{1};\dots A^{H}]W_{O} \tag{7}\]
+
+여기서 \(W_{O}\in\mathbb{R}^{H\times d_{value}\times d_{model}}\)는 훈련 가능한 가중치이다.
+
+### 메모리 및 유효 컨텍스트 창
+
+인피니-트랜스포머는 메모리 풋프린트가 제한된 무한 컨텍스트 창을 사용할 수 있습니다. 이를 설명하기 위해 표 1은 이전 세그먼트 레벨 메모리 모델을 나열하고 있다.
+
+[MISSING_PAGE_FAIL:5]
+
+## 3 Experiments
+
+본 논문에서 제안하는 Infini-Transformer 모델은 매우 긴 입력 시퀀스(long-context language modeling, 1M length passkey context block retrieval, 500K length book summary)를 포함하는 벤치마크에 대해 평가하였다. 언어 모델링 벤치마크의 경우 모델을 처음부터 훈련하는 반면 패스키 및 책 요약 작업의 경우 기존 LLM을 지속적으로 사전 훈련하여 접근 방식의 플러그 앤 플레이 긴 컨텍스트 적응 능력을 강조한다.
+
+### Long-context Language Modeling
+
+우리는 PG19(Rae et al., 2019) 및 Arxiv-math(Wu et al., 2022) 벤치마크에서 작은 Infini-Transformer 모델을 훈련하고 평가했다. 우리의 설정은 기억 트랜스포머의 설정과 매우 유사하다(Wu et al., 2022). 즉, 모든 모델에는 12개의 레이어와 128차원의 8개의 어텐션 헤드가 있으며 은닉 레이어 4096이 있는 FFN이 있다.
+
+인피니-어텐션 세그먼트 길이 \(N\)는 모든 어텐션 레이어에 대해 2048로 설정하고 입력 시퀀스 길이는 훈련에 대해 32768로 설정한다. 이를 통해 인피니 어텐션은 압축 메모리 상태에서 16단계에 걸쳐 롤을 풀 수 있다. RMT 기준선의 경우 요약 프롬프트 길이 50, 100 및 150과 시퀀스 길이 4096, 8196 및 32768을 사용하여 여러 번의 실행을 수행했다. 요약 벡터 100개를 사용한 RMT는 8196개의 길이 시퀀스에 대해 훈련되었을 때 가장 좋은 결과를 제공했다.
+
+언어 모델링 실험의 주요 결과는 표 2에 요약되어 있다. 우리의 Infini-Transformer는 9\({}^{th}\) 레이어에서 65K의 길이를 갖는 벡터 검색 기반 KV 메모리를 가진 Memorizing Transformer 모델보다 114x 적은 메모리 파라미터를 유지하면서 Transformer-XL(Dai et al., 2019) 및 Memorizing Transformers(Wu et al., 2022) 베이스라인보다 우수하다.
+
+**100K 길이 훈련** 훈련 시퀀스 길이를 32K에서 100K로 추가로 늘리고 Arxiv-math 데이터 세트에서 모델을 훈련했다. 100K 훈련은 _Linear_ 및 _Linear_\(+\)_Delta_ 모델에 대해 복잡도 점수를 **2.21** 및 **2.20** 으로 추가로 줄였습니다.
+
+**게이팅 점수 시각화** 그림 3은 각 계층의 모든 주의 헤드에 대한 압축 메모리에 대해 게이팅 점수 _sigmoid_(\(\beta\))를 시각화합니다. 훈련 후 인피니-어텐션에는 0 또는 1에 가까운 게이팅 점수를 가진 특수 헤드와 0.5에 가까운 점수를 가진 믹서 헤드의 두 가지 유형이 나타난다. 특수 헤드는 로컬 어텐션 계산을 통해 컨텍스트 정보를 처리하거나 압축 메모리에서 검색하는 반면 특수 헤드는 로컬 어텐션 계산을 통해 컨텍스트 정보를 처리하거나 압축 메모리에서 검색하는 것이다.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline Model & Memory size (comp.) & XL. cache & Segment length & PG19 & Arxiv-math \\ \hline Transformer-XL & 50M (3.7x) & 2048 & 2048 & 11.88 & 2.42 \\ Memorizing Transformers & 183M (1x) & 2048 & 2048 & 11.37 & 2.26 \\ RMT & 2.5M (73x) & None & 2048 & 13.27 & 2.55 \\ \hline Infini-Transformer (Linear) & 1.6M (114x) & None & 2048 & **9.65** & 2.24 \\ Infini-Transformer (Linear + Delta) & 1.6M (114x) & None & 2048 & 9.67 & **2.23** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: Long-context 언어 모델링 결과를 평균 토큰 수준의 복잡도 측면에서 비교한다. Comp.는 압축비를 나타낸다. 인피니-트랜스포머는 메모리 길이가 65K인 암기 트랜스포머를 능가하며, 114배 압축률을 달성한다.
+
+\begin{table}
+\begin{tabular}{l c c c c c} \hline \hline  & \multicolumn{4}{c}{Zero-shot} \\ \cline{2-5}  & 32K & 128K & 256K & 512K & 1M \\ \hline Infini-Transformer (Linear) & 14/13/98 & 11/14/100 & 6/3/100 & 6/7/99 & 8/6/98 \\ Infini-Transformer (Linear + Delta) & 13/11/99 & 6/9/99 & 7/5/99 & 6/8/97 & 7/6/97 \\ \hline \hline \multicolumn{5}{c}{FT (400 steps)} \\ \cline{2-5} Infini-Transformer (Linear) & 100/100/100 & 100/100/100 & 100/100/100 & 97/99/100 & 96/94/100 \\ Infini-Transformer (Linear + Delta) & 100/100/100 & 100/100/99 & 100/100/99 & 100/100/100 & 100/100/100 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 인피니-트랜스포머는 5K 길이 입력에서 미세 조정될 때 최대 1M 컨텍스트 길이로 패스키 작업을 해결했다. 길이가 32K에서 1M인 긴 입력의 다른 부분(_start/middle/end_)에 숨겨진 패스키에 대한 토큰 수준의 검색 정확도를 보고한다.
+
+믹서 헤드는 현재 컨텍스트 정보와 장기 메모리 콘텐츠를 함께 단일 출력으로 집계합니다. 흥미롭게도, 각 층은 적어도 하나의 단거리 헤드를 가지며, 출력 층까지 입력 신호의 순방향 전파를 허용한다. 우리는 또한 순방향 계산 동안 장단기 콘텐츠 검색의 인터리빙을 관찰했다.
+
+### LLM 연속 Pre-training
+
+기존 LLM의 긴 컨텍스트 적응을 위해 가벼운 연속 사전 훈련을 수행했다. 사전 트레이닝 데이터는 길이가 4K 토큰보다 많은 C4 텍스트(Raffel et al., 2020) 뿐만 아니라 PG19 및 Arxiv-math 코퍼스를 포함한다. 세그먼트 길이 \(N\)는 실험 전반에 걸쳐 2K로 설정되었다.
+
+**1M 패스키 검색 벤치마크.** 1B LLM에서 바닐라 MHA를 인피니 주의로 교체하고 길이가 4K인 입력에 대해 계속 사전 훈련했다. 모델은 패스키 검색 태스크(Mothashami and Jaggi, 2024)에서 미세 조정하기 전에 배치 크기가 64인 30K 단계 동안 훈련되었다.
+
+패스키 태스크는 난수를 긴 텍스트로 숨기고 모델 출력에서 다시 묻는다. 분산 텍스트의 길이는 텍스트 청크를 여러 번 반복함으로써 가변된다. 이전 작업(Chen 등, 2023a)은 8B LLMA 모델이 Position Interpolation과 동일한 32K 길이 입력으로 미세 조정될 때 최대 32K 길이의 작업을 해결할 수 있음을 보여주었다. 우리는 이 도전을 더 취하고 1M 길이 체제에 대해 테스트하기 위해 5K 길이 입력에서만 미세 조정한다.
+
+표 3은 32K에서 1M 범위의 입력 길이를 가진 테스트 하위 집합에 대한 토큰 수준 정확도를 보고한다. 각 테스트 서브세트에 대해 입력 시퀀스의 시작, 중간 또는 끝 주위에 위치하도록 패스키의 위치를 제어했다. 우리는 제로 샷 정확도와 미세 조정 정확도를 모두 보고했다. 인피니-트랜스포머는 400단계 동안 5K 길이 입력에서 미세 조정 후 최대 1M 컨텍스트 길이로 작업을 해결했다.
+
+**500K 길이의 책 요약(BookSum).** 30K 단계에 대해 8K 입력 길이의 8B LLM 모델을 지속적으로 사전 훈련하여 접근 방식을 확장했습니다. 그런 다음 책 요약 태스크인 BookSum(Kryscinski et al., 2021)에 대해 미세 조정했는데, 여기서 목표는 전체 책 텍스트의 요약을 생성하는 것이다.
+
+미세 조정을 위해 입력 길이를 32K로 설정하고 평가를 위해 500K로 증가시킨다. 우리는 0.5와 \(top_{p}=0.95\)의 생성 온도를 사용하고 디코딩 단계 수를 1024로 설정하여 각 책의 요약을 생성한다.
+
+\begin{table}
+\begin{tabular}{l r r r r} \hline \hline Model & Rouge-1 & Rouge-2 & Rouge-L & Overall \\ \hline BART & 36.4 & 7.6 & 15.3 & 16.2 \\ BART + Unlimiformer & 36.8 & 8.3 & 15.7 & 16.9 \\ PRIMERA & 38.6 & 7.2 & 15.6 & 16.3 \\ PRIMERA + Unlimiformer & 37.9 & 8.2 & 16.3 & 17.2 \\ \hline Infini-Transformers (Linear) & 37.9 & 8.7 & 17.6 & 18.0 \\ Infini-Transformers (Linear + Delta) & **40.0** & **8.8** & **17.9** & **18.5** \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 500K 장부 요약(BookSum) 결과. BART, PRIMERA 및 Unlimiformer 결과는 Bertsch et al.(2024)로부터 나온 것이다.
+
+그림 4: 인피니-트랜스포머는 입력으로 제공되는 더 많은 책 텍스트와 함께 더 나은 Rouge 전체 점수를 얻는다.
+
+표 4는 요약 태스크(Lewis et al., 2019; Xiao et al., 2021) 및 이들의 검색 기반 롱-컨텍스트 확장(Bertsch et al., 2024)을 위해 특별히 구축된 인코더-디코더 모델들과 우리의 모델을 비교한다. 본 논문에서 제안하는 모델은 기존의 베스트 결과보다 우수한 성능을 보이며, 책의 전체 텍스트를 처리함으로써 북섬에 대한 새로운 SOTA를 달성한다. 또한 그림 4에서 BookSum 데이터의 유효성 검사 분할에 대한 전체 Rouge 점수를 표시했습니다. 책에서 입력으로 제공되는 텍스트가 많을수록 인피니 변환기가 요약 성능 메트릭을 개선한다는 분명한 경향이 있습니다.
+
+## 4 관련 작업
+
+**압축 메모리.** 생물학적 뉴런의 가소성에 의해 영감을 받은(Munkhdalai and Yu, 2017; Miconi et al., 2018), 압축 메모리는 정보를 저장하고 검색하기 위해 메모리로서 캐스트 파라미터화된 함수를 접근한다(Hinton and Plaut, 1987; Schmidhuber, 1992; Ba et al., 2016; Munkhdalai et al., 2019). 입력 시퀀스 길이에 따라 성장하는 트랜스포머 KV 메모리 어레이(Vaswani et al., 2017; Wu et al., 2022)와 달리, 압축 메모리 시스템은 계산 효율을 위해 일정한 수의 메모리 파라미터를 유지한다. 파라미터들은 정보를 저장하기 위해 업데이트 규칙으로 수정되고, 그 다음 메모리 판독 메커니즘을 통해 검색된다(Graves et al., 2014; Sukhbaatar et al., 2015; Munkhdalai and Yu, 2017b).
+
+압축된 입력 표현들은 과거 시퀀스 세그먼트들의 요약으로서 볼 수 있다(Rae et al., 2019; Chevalier et al., 2023). 이러한 방향에 따라, 보다 최근의 작업들은 효율적인 롱-컨텍스트 모델링을 위해 입력 시퀀스를 압축하기 위해 트랜스포머 LLM 자체를 활용하고 있다(Bulatov et al., 2022; Chevalier et al., 2023; Ge et al., 2023; Mu et al., 2024). 그러나, 압축 트랜스포머(Rae et al., 2019)를 포함하는 이전의 세그먼트-레벨 압축 방법들은 여전히 새로운 세그먼트들에 대한 공간을 확보하기 위해 오래된 세그먼트들의 메모리 엔트리들을 폐기하고, 그들의 컨텍스트 윈도우를 가장 최근의 세그먼트들로 제한한다. 이것은 반복되는 방식으로 고정된 양의 메모리 매개변수에 대한 증분 메모리 업데이트를 계산하는 인피니 주의와 대조적이다.
+
+**Long-context Continual pre-training.** do-product attention layer를 확장하고 Long-context용 LLMs을 계속 학습시키는 작업 라인이 있다(Xiong et al., 2023; Fu et al., 2024). 어텐션 확장들은 어텐션 계층(Chen 등, 2023; Ratner 등, 2022; Mohtashami and Jaggi, 2024)에 희소성을 통합하는 것뿐만 아니라 위치 인코딩들을 조작하는 것(Chen 등, 2023; Peng 등, 2023)과 같은 위치 인코딩-기반 방법들(Chen 등, 2023)이 어텐션 계층에서의 위치 바이어스를 조정하는 것만으로 데이터 효율적일 수 있지만, 이들은 추론을 위해 여전히 비용이 많이 든다.
+
+주의 메커니즘은 또한 주의 싱크(Xiao et al., 2023) 및 손실-인-더-미들(Liu et al., 2024)의 문제들에 취약하다. 결과적으로, 그들은 훈련 중에 관찰된 것보다 문맥 길이가 더 긴 체제에서 고군분투한다(Press et al., 2021; Kazemnejad et al., 2024). 제안된 Infini-attention은 고정된 로컬 어텐션 윈도우를 갖는 긴 시퀀스들에 대해 세그먼트 레벨 스트리밍 계산을 가능하게 함으로써 이러한 문제들을 해결한다. 인피니-트랜스포머는 32K 및 심지어 5K 길이 시퀀스에서 훈련될 때 1M 입력 길이 영역으로 성공적으로 외삽된다.
+
+**효율적인 주의력** 효율적인 주의력 기술은 근사치 또는 시스템 수준 최적화를 통해 점 제품 주의력의 효율성을 향상시키려고 시도합니다. 희박성 기반(Child et al., 2019; Beltagy et al., 2020; Sukhbaatar et al., 2021; Ding et al., 2023) 및 선형 주의 근사화(Shen et al., 2018; Katharopoulos et al., 2020; Schlag et al., 2021)를 포함하는 효율적인 주의 근사화의 상이한 형태들에 대해 다수의 방향들이 탐색되었다. 이들 중, 선형 주의 변형들은 연관 기억 행렬(Schlag et al., 2020; Schlag et al., 2021) 및 메타학습된 신경 기억(Munkhdalai et al., 2019)과 밀접한 관련이 있으며, 여기서 KV 바인딩들(Smolensky, 1990)은 새로운 맥락 정보에 관련하여 수정된 Fast-Weights(Hinton and Plaut, 1987; Schmidhuber, 1992; Ba et al., 2016)에 저장된다. 보다 최근에, 정확한 주의력 계산을 보다 효율적으로 하기 위해 특정 하드웨어 아키텍처를 활용함으로써 시스템-레벨 최적화 기술들이 제안되었다(Dao et al., 2022; Liu et al., 2023).
+
+## 5 Conclusion
+
+효과적인 기억 시스템은 LLM으로 긴 맥락을 이해하는 것뿐만 아니라 추론, 계획, 새로운 지식을 위한 지속적인 적응, 심지어 학습 방법을 배우는 데에도 중요하다. 본 연구에서는 바닐라 도트-제품 어텐션 레이어에 압축 메모리 모듈을 밀접하게 통합한다. 어텐션 레이어에 대한 이러한 미묘하지만 중요한 수정은 LLM들이 제한된 메모리 및 계산 자원들로 무한히 긴 컨텍스트들을 프로세싱할 수 있게 한다. 본 논문에서 제안한 방법이 긴 문맥 언어 모델링 벤치마크와 책 요약 작업에서 기준선을 능가하는 동시에 입력 시퀀스의 백만 길이 체제로 자연스럽게 확장될 수 있음을 보인다. 또한, 본 논문에서 제안한 방법의 우수한 길이 일반화 성능을 보인다. 최대 5K 시퀀스 길이 패스키 인스턴스에서 미세 조정된 1B 모델은 1M 길이 문제를 해결했다.
+
+## References
+
+* Anil 등(2023) Rohan Anil, Andrew M Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, et al. Palm 2 technical report. _ arXiv preprint arXiv:2305.10403_, 2023.
+* Ba 등(2016) Jimmy Ba, Geoffrey E Hinton, Volodymyr Mnih, Joel Z Leibo, and Catalin Ionescu. 최근 과거에 주의를 기울이기 위해 빠른 가중치를 사용합니다. _ 신경 정보 처리 시스템의 진보_, 29, 2016.
+* Bahdanau et al.(2014) Dzmitry Bahdanau, 경현 Cho, and Yoshua Bengio. 정렬 및 번역을 공동으로 학습하여 신경망을 기계 번역합니다. _ arXiv preprint arXiv:1409.0473_, 2014.
+* Beltagy et al. (2020) Iz Beltagy, Matthew E Peters, and Arman Cohan. Longformer: 긴 문서 변환기입니다. _ arXiv preprint arXiv:2004.05150_, 2020.
+*Bertsch et al. (2024) Amanda Bertsch, Uri Alon, Graham Neubig, and Matthew Gormley. Unlimiformer: 길이 입력이 무제한인 장거리 변압기 _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.
+* Brown 등(2020) Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models is few-shot learners. _ Advances in neural information processing systems_, 33:1877-1901, 2020.
+* Bulatov 등 (2022) Aydar Bulatov, Yury Kuratov, and Mikhail Burtsev. 순환 메모리 변압기입니다. _ Neural Information Processing Systems_, 35:11079-11091, 2022에서의 진보.
+* Chen et al.(2023a) Shouyuan Chen, Sherman Wong, Liangjian Chen, and Yuandong Tian. 위치 보간을 통해 대규모 언어 모델의 컨텍스트 창을 확장합니다. _ arXiv preprint arXiv:2306.15595_, 2023a.
+* Chen et al.(2023b) Yukang Chen, Shengju Qian, Haotian Tang, Xin Lai, Zhijian Liu, Song Han, and Jiaya Jia. Longlora: 긴 컨텍스트의 대용량 언어 모델의 효율적인 미세 조정입니다. _ arXiv preprint arXiv:2309.12307_, 2023b.
+*Cheng et al.(2016) Jianpeng Cheng, Li Dong, and Mirella Lapata. 머신 판독을 위한 장기 단기 메모리 네트워크입니다. _ arXiv preprint arXiv:1601.06733_, 2016.
+* Chevalier 등(2023) Alexis Chevalier, Alexander Wettig, Anirudh Ajith, and Danqi Chen. 컨텍스트 압축에 언어 모델을 적용합니다. _ arXiv preprint arXiv:2305.14788_, 2023.
+* Child et al. (2019) Rewon Child, Scott Gray, Alec Radford, and Ilya Sutskever. 희소 변압기를 사용하여 긴 시퀀스를 생성합니다. _ arXiv preprint arXiv:1904.10509_, 2019.
+* Clevert 등(2015) Djork-Arne Clevert, Thomas Unterthiner, and Sepp Hochreiter. 지수 선형 단위(elus)에 의한 빠르고 정확한 딥 네트워크 학습 _ arXiv preprint arXiv:1511.07289_, 2015.
+
+* Dai 등(2019) Zihang Dai, Zhilin Yang, Yiming Yang, Jaime Carbonell, Quoc V Le, and Ruslan Salakhutdinov. 트랜스포머-xl: 고정 길이 컨텍스트를 넘어 주의 깊은 언어 모델입니다. _ arXiv preprint arXiv:1901.02860_, 2019.
+* Dao et al.(2022) Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and Christopher Re. 플래시 어텐션: io-awareness로 빠르고 메모리 효율적인 정확한 주의력. _ Advances in Neural Information Processing Systems_, 35:16344-16359, 2022.
+* Ding 등 (2023) Jiayu Ding, Shuming Ma, Li Dong, Xingxing Zhang, Shaohan Huang, Wenhui Wang, Nanning Zheng, and Furu Wei. Longnet: 트랜스포머를 1,000,000,000 토큰으로 확장합니다. _ arXiv preprint arXiv:2307.02486_, 2023.
+* Fu et al.(2024) Yao Fu, Rameswar Panda, Xinyao Niu, Xiang Yue, Hannaneh Hajishirzi, Yoon Kim, and Hao Peng. 언어 모델을 128k 컨텍스트로 확장하기 위한 데이터 엔지니어링입니다. _ arXiv preprint arXiv:2402.10171_, 2024.
+* Ge et al. (2023) Tao Ge, Jing Hu, Xun Wang, Si-Qing Chen, and Furu Wei. 대용량 언어 모델의 컨텍스트 압축을 위한 컨텍스트 내 자동 인코더 _ arXiv preprint arXiv:2307.06945_, 2023.
+* Graves et al.(2014) Alex Graves, Greg Wayne, and Ivo Danihelka. 신경 튜링 머신입니다. _ arXiv preprint arXiv:1410.5401_, 2014.
+* Groeneveld 등(2024) Dirk Groeneveld, Iz Beltagy, Pete Walsh, Akshita Bhagia, Rodney Kinney, Oyvind Tafjord, Ananya Harsh Jha, Hamish Ivison, Ian Magnusson, Yizhong Wang, et al. Olmo: Accelerating the science of language models. _ arXiv preprint arXiv:2402.00838_, 2024.
+* Hebb(2005) Donald Olding Hebb. _ 행동조직: 신경심리학 이론_. 심리학 기자, 2005년
+* Hinton & Plaut (1987) Geoffrey E Hinton and David C Plaut. 오래된 기억을 없애기 위해 빠른 가중치를 사용한다. "Proceedings of the ninth annual conference of the Cognitive Science Society"에서, pp. 177-186, 1987.
+* Hopfield (1982) John J Hopfield. 새로운 집합적 계산 능력을 가진 신경망과 물리적 시스템. _ Proceedings of the National Academy of sciences_, 79(8):2554-2558, 1982.
+* Kanerva (1988) Pentti Kanerva. _ 희소 분산 메모리_. 1988년 MIT 기자
+* Katharopoulos et al.(2020) Angelos Katharopoulos, Apoorv Vyas, Nikolaos Pappas, and Francois Fleuret. 트랜스포머는 rnns: 선형 주의력을 갖는 고속 자기회귀 변압기이다. International conference on machine learning_에서, pp. 5156-5165. PMLR, 2020.
+* Kazemnejad 등(2024) Amirhossein Kazemnejad, Inkit Padhi, Karthikeyan Natesan Ramamurthy, Payel Das, and Siva Reddy. 위치 인코딩이 변압기의 길이 일반화에 미치는 영향 _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.
+* Kryscinski 등(2021) Wojciech Kryscinski, Nazneen Rajani, Divyansh Agarwal, Caiming Xiong, and Dragomir Radev. 북섬: 긴 형식의 내러티브 요약을 위한 데이터 집합입니다. _ arXiv preprint arXiv:2105.08209_, 2021.
+* Lewis 등(2019) Mike Lewis, Yinhan Liu, Naman Goyal, Marjan Ghazvininejad, Abdelrahman Mohamed, Omer Levy, Ves Stoyanov, and Luke Zettlemoyer. 바트: 자연어 생성, 번역 및 이해를 위한 시퀀스 대 시퀀스 사전 교육을 노이즈 제거합니다. _ arXiv preprint arXiv:1910.13461_, 2019.
+* Liu et al. (2023) Hao Liu, Matei Zaharia, and Pieter Abbeel. 무한에 가까운 컨텍스트에 대해 블록별 변환기로 주의를 끕니다. _ arXiv preprint arXiv:2310.01889_, 2023.
+* Liu et al.(2024) Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paranjape, Michele Bevilacqua, Fabio Petroni, and Percy Liang. 중간에 분실: 언어 모델이 긴 컨텍스트를 사용하는 방법 _ 계산 언어학 협회의 트랜잭션_, 12:157-173, 2024.
+* Miconi et al.(2018) Thomas Miconi, Kenneth Stanley, and Jeff Clune. 미분 가능한 가소성: 역전파를 가진 훈련용 플라스틱 신경망. In _International Conference on Machine Learning_, pp. 3559-3568. PMLR, 2018.
+* Liu et al.(2019)* Mohtashami and Jaggi(2024) Amirkeivan Mohtashami and Martin Jaggi. 트랜스포머의 랜덤 액세스 무한 컨텍스트 길이입니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.
+* Mu et al.(2024) Jesse Mu, Xiang Li, and Noah Goodman. 요지 토큰으로 프롬프트를 압축하는 방법을 배웁니다. _ 신경 정보 처리 시스템_, 36, 2024에서의 진보.
+* Munkhdalai and Yu (2017a) Tsendsuren Munkhdalai and Hong Yu. 메타 네트워크 In _International conference on machine learning_, pp. 2554-2563. PMLR, 2017a.
+* Munkhdalai and Yu (2017b) Tsendsuren Munkhdalai and Hong Yu. 신경 의미 인코더 회의 진행입니다. 계산 언어학 협회 Meeting_, volume 1, pp. 397. NIH Public Access, 2017b.
+* Munkhdalai et al.(2016) Tsendsuren Munkhdalai, John P Lalor, and Hong Yu. 신경 집중 모델을 사용한 인용 분석. In _Proceedings of the Seventh International Workshop on Health Text Mining and Information Analysis_, pp. 69-77, 2016.
+* Munkhdalai et al.(2019) Tsendsuren Munkhdalai, Alessandro Sordoni, Tong Wang, and Adam Trischler. 메탈리어드 뉴럴 메모리. _ 신경 정보 처리 시스템의 진보_, 32, 2019.
+* Peng 등(2023) Bowen Peng, Jeffrey Quesnelle, Honglu Fan, and Enrico Shippole. Yarm: 대규모 언어 모델의 효율적인 컨텍스트 창 확장입니다. _ arXiv preprint arXiv:2309.00071_, 2023.
+* Pope et al. (2023) Reiner Pope, Sholto Douglas, Aakanksha Chowdhery, Jacob Devlin, James Bradbury, Jonathan Heek, Kefan Xiao, Shivani Agrawal, and Jeff Dean. 변압기 추론을 효율적으로 조정합니다. _ Proceedings of Machine Learning and Systems_, 5, 2023.
+* Press et al.(2021) Ofir Press, Noah A Smith, and Mike Lewis. 짧은 트레인, 긴 테스트: 선형 편향에 주의하면 입력 길이 외삽이 가능합니다. _ arXiv preprint arXiv:2108.12409_, 2021.
+* Rae 등(2019) Jack W Rae, Anna Potapenko, Siddhant M Jayakumar, and Timothy P Lillicrap. 장거리 시퀀스 모델링을 위한 압축 트랜스포머입니다. _ arXiv preprint arXiv:1911.05507_, 2019.
+* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 통합 텍스트 대 텍스트 변환기를 사용하여 전이 학습의 한계를 탐색합니다. _ The Journal of Machine Learning Research_, 21(1):5485-5551, 2020.
+* Ratner 등 (2022) Nir Ratner, Yoav Levine, Yoatan Belinkov, Ori Ram, Omri Abend, Ehud Karpas, Amnon Shashua, Kevin Leyton-Brown, and Yoav Shoham. 병렬 컨텍스트 창은 대용량 언어 모델의 컨텍스트 내 학습을 개선합니다. _ arXiv preprint arXiv:2212.10947_, 2022.
+* Schlag 등(2019) Imanol Schlag, Paul Smolensky, Roland Fernandez, Nebojsa Joic, Jurgen Schmidhuber, and Jianfeng Gao. 수학 문제 해결을 위해 명시적 관계 인코딩으로 변환기를 강화합니다. _ arXiv preprint arXiv:1910.06611_, 2019.
+* Schlag 등(2020) Imanol Schlag, Tsendsuren Munkhdalai, Jurgen Schmidhuber. 빠른 가중치 메모리를 사용하여 연관 추론을 학습합니다. _ arXiv preprint arXiv:2011.07831_, 2020.
+* Schlag 등(2021) Imanol Schlag, Kazuki Irie, Jurgen Schmidhuber. 선형 변압기는 은밀하게 빠른 중량 프로그래머입니다. In _International Conference on Machine Learning_, pp. 9355-9366. PMLR, 2021.
+* Schmidhuber (1992) Jurgen Schmidhuber. 빠른 무게의 메모리를 제어하는 방법: 동적 반복 네트워크의 대안입니다. _ Neural Computation_, 4(1):131-139, 1992.
+* Shazeer and Stern (2018) Noam Shazeer and Mitchell Stern. Adafactor: sublinear memory cost를 갖는 Adaptive learning rate. In _International Conference on Machine Learning_, pp. 4596-4604. PMLR, 2018.
+* Shen et al.(2018) Zhuoran Shen, Mingyuan Zhang, Haiyu Zhao, Shuai Yi, and Hongsheng Lee. 효율적인 주의: 선형 복잡성을 가진 주의 _ arXiv preprint arXiv:1812.01243_, 2018.
+* Smolensky (1990) Paul Smolensky. 연결주의 시스템에서 텐서 제품 변수 바인딩 및 기호 구조의 표현입니다. _ Artificial intelligence_, 46(1-2):159-216, 1990.
+
+* Sukhbaatar et al.(2015) Sainbayar Sukhbaatar, Jason Weston, Rob Fergus, et al. End-to-end memory networks. _ 신경 정보 처리 시스템의 진보_, 28, 2015.
+* Sukhbaatar et al.(2021) Sainbayar Sukhbaatar, Da Ju, Spencer Poff, Stephen Roller, Arthur Szlam, Jason Weston, and Angela Fan. 모든 기억이 평등하게 만들어지는 것은 아니다: 만료를 통해 잊는 것을 배우는 것이다. In _International Conference on Machine Learning_, pp. 9902-9912. PMLR, 2021.
+* Touvron 등(2023) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _ arXiv preprint arXiv:2307.09288_, 2023.
+* Vaswani 등(2017) Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 주목해 주십시오. _ 신경 정보 처리 시스템의 발전_, 30, 2017.
+* Wu et al.(2022) Yuhuai Wu, Markus N Rabe, DeLesley Hutchins, and Christian Szegedy. 변압기 외우기 arXiv preprint arXiv:2203.08913_, 2022.
+*Xiao et al. (2023) Guangxuan Xiao, Yuandong Tian, Beidi Chen, Song Han, and Mike Lewis. 어텐션 싱크가 있는 효율적인 스트리밍 언어 모델입니다. _ arXiv preprint arXiv:2309.17453_, 2023.
+* Xiao et al.(2021) Wen Xiao, Iz Beltagy, Giuseppe Carenini, and Arman Cohan. 프리메라: 다중 문서 요약을 위한 피라미드 기반 마스킹 문장 사전 훈련 _ arXiv preprint arXiv:2110.08499_, 2021.
+* Xiong 등(2023) Wenhan Xiong, Jingyu Liu, Igor Molybog, Hejia Zhang, Prajwal Bhargava, Rui Hou, Louis Martin, Rashi Rungta, Karthik Abinav Sankararaman, Barlas Oguz, et al. Effective long-context scaling of foundation models. _ arXiv preprint arXiv:2309.16039_, 2023.
+
+## 부록 추가 교육 세부 정보
+
+장문 언어 모델링 작업을 위해 0.003, 0.005, 0.01, 0.03의 값에 대해 작은 탐색을 수행하여 학습률을 0.01로 설정하였으며, 1000단계의 선형 웜업과 함께 Adafactor Optimizer(Shazeer & Stern, 2018)를 사용하여 코사인 감쇠를 수행하였다. 우리는 메모리를 절약하기 위해 각 세그먼트 뒤에 그래디언트 체크포인팅을 적용했다. 배치 크기는 64로 설정하였으며, LLM 실험은 연속 사전 훈련과 과제 미세 조정 시 학습률을 0.0001로 설정하였다.
+
+## 부록 B 암호 검색 작업
+
+아래에서는 패스키 태스크의 입력 형식을 보여 주었다.
+
+관련 없는 많은 텍스트 안에 중요한 정보가 숨겨져 있다. 찾아서 외워. 나는 거기에서 중요한 정보에 대해 당신에게 퀴즈를 낼 것이다. 잔디가 푸르다. 하늘은 푸르다. 태양은 노랗다. 시작합니다 다시 왔다 갔다 해 (다시 x 번 반복) 패스 키는 **9054** 입니다. 명심해 **9054** 는 패스 키입니다. 잔디가 푸르다. 하늘은 푸르다. 태양은 노랗다. 시작합니다 또 시작이네 (y번 반복) 패스키는 무엇인가요? 상기 패스키는,
