@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '[MISSING_PAGE_FAIL:1]\n' +
+      '\n' +
+      '본 논문에서는 FLAN-T5 (Longpre et al., 2023) 모델을 이용하여 다양한 LMs에 유연하게 적용할 수 있는 프레임워크를 제안한다. 제안된 프레임워크는 QA 및 CoT 데이터에 대해 오픈 소스 및 명령어 튜닝이 가능하여 추가적인 훈련이나 프롬프트 엔지니어링 없이 기성품에서 사용할 수 있다. 1 실험 결과는 LM-유도 CoT 프롬프트가 표준 프롬프트와 기존 CoT 프롬프트보다 우수함을 보여준다. 보다 정확하게는, (1) LM-Guided CoT with KD and Self-consistency (SC) decoding strategy (Wang et al., 2022b)는 성능 이득을 최대화하며; (2) RL은 전반적인 이론적 품질 및 태스크 성능의 약간의 증가에 기여하며; (3) 큰 LM에 대해 최고 품질의 근거를 선택하는 것이 항상 향상된 태스크 성능을 보장하는 것은 아니다. 이 연구는 상대적으로 작은 LM을 미세 조정함으로써 큰 LM을 직접 최적화하는 독특한 대안을 제시한다. 더욱이, CoT 추론 내에서 두 가지 기본 하위 작업의 명확한 분리는 실무자들에게 각 작업에 대한 더 큰 통제권을 부여한다.\n' +
+      '\n' +
+      '각주 1: 명령어 튜닝 오픈 LLaMa(7B) 모델에 대한 작은 실험도 수행하였고 제로 샷 설정에서 FLAN-T5보다 성능이 현저히 떨어지는 것을 확인하였다.\n' +
+      '\n' +
+      '## 2 관련 작업\n' +
+      '\n' +
+      '**Rationale Distillation.** 계산 효율성 또는 작업 성능을 위해 최근 문헌에서는 작은 LMs의 추론 능력을 향상시키는 방법을 탐색했습니다. Li et al. (2023); Shridhar et al. (2023); Ma et al. (2023)은 근거증류를 실험했는데, 여기서 작은 학생 LM은 큰 교사 LM으로부터 학습하여 CoT 근거를 생성한다. 이러한 연구는 주로 대규모 LMs와 다운스트림 과제에서의 성과를 비교하는 데 초점을 맞추었지만 교사 모델에서 상속되었을 수 있는 생성된 근거의 오류를 해결하는 데 대한 연구는 제한적이었다.\n' +
+      '\n' +
+      '**합리적인 평가 및 정제** 근거 증류를 넘어 컨텍스트에서 생성된 추론 단계의 어떤 측면이 다운스트림 작업 성능에 기여하는지 밝히려는 노력이 증가하고 있다. Wang et al.(2022a)은 합리적인 논리와 질의와의 관련성이 성공적인 CoT 추론의 핵심 요소라고 보고한다. 정보성, 일관성, 반복 등과 같은 보다 다양한 측면의 렌즈로부터 추론 단계의 타당성을 측정한 연구는 거의 없다(Golovneva et al., 2022; Prasad et al., 2023). RL은 LM에서 잘못된 정렬 행동을 해결하기 위한 접근법으로 인기를 얻었지만 근거 수정 분야는 제한된 연구를 보았다.\n' +
+      '\n' +
+      '## 3 LM-Guided Chain-of-Thought\n' +
+      '\n' +
+      '제안된 프레임워크는 입력 인스턴스가 주어진 최적 근거를 생성하는 것에 초점을 맞춘 경량 모델 \\(M^{S}\\)과 \\(M^{S}\\)에 의해 생성된 근거를 기반으로 출력을 예측하는 블랙박스 대형 모델 \\(M^{L}\\)의 두 가지 LMs로 구성된다.\n' +
+      '\n' +
+      '### _Rationale Distillation_\n' +
+      '\n' +
+      '**Rationale Generation.** 일반적으로 다중 홉 추출 QA 데이터 세트에는 질문 \\(Q\\), 컨텍스트 \\(C\\) 및 해당 진실 답변 \\(A\\) 목록이 포함됩니다. 각 입력 (\\(q\\), \\(c\\))-출력 (\\(a\\)) 쌍에 대해, 우리는 감독 방식으로 논리 생성을 위한 논리 \\(M^{S}\\)를 훈련하기 위해 상응하는 지상 진리 논리 \\(r\\)가 필요하다. 그러나 대부분의 QA 벤치마크는 \\(r\\)을 제공하지 않는다. \\(r\\)에 대한 수동 주석이 노동 집약적이고 시간이 많이 걸린다는 점을 감안할 때, 우리는\n' +
+      '\n' +
+      '제공된 맥락을 바탕으로 다음 질문(Q)에 대해 단계별로 추론하여 답변한다.\n' +
+      '\n' +
+      '**Context**: \\(c\\)\n' +
+      '\n' +
+      '**Q**: \\(q\\)\n' +
+      '\n' +
+      '**A**: 단계별로 생각해 봅시다.\n' +
+      '\n' +
+      '세대를 위해 우리는 그리디 디코딩을 사용합니다. _i.e._ 각 세대 단계에서 가장 그럴듯한 토큰을 선택합니다.\n' +
+      '\n' +
+      '**Rationale 필터링 및 훈련** 지식 증류와 관련하여 데이터 청소 프로세스는 교사 LM에서 학생 LM으로 상속되는 세대에 포함된 오류 또는 소음을 방지하는 데 중요한 역할을 합니다. 따라서, 우리는 프롬프트(_i.e._, 최종 답변을 제공하기 전에 근거를 제공하지 않음) 및 부정확한 답변 예측에 대한 불성실한 응답과 연관된 샘플들을 필터링한다. 마지막으로 다음 프롬프트를 사용하여 \\(M^{S}\\)을 지시 조정합니다.\n' +
+      '\n' +
+      '질문(Q)과 맥락이 주어지면, 질문에 답하기 위해 차근차근 추론 사슬을 생성한다.\n' +
+      '\n' +
+      '**Context**: \\(c\\)\n' +
+      '\n' +
+      '**Q**: \\(q\\)\n' +
+      '\n' +
+      '**Reasoning**: \\(r^{\\prime}\\)\n' +
+      '\n' +
+      '나머지 논문의 경우, 우리는 이론적-증류 모델을 \\(M^{*}\\)로 나타낸다.\n' +
+      '\n' +
+      '### _Rationale Refinement_\n' +
+      '\n' +
+      '**Anotation for Rationale Quality Measurement.** 이전 텍스트 및 근거 생성 평가 메트릭(Golovneva et al., 2022; Fu et al., 2023)에서 영감을 받아 SS3.1에서 \\(M^{*}\\)에 의해 생성된 근거의 8가지 언어적 측면(사실성, 관련성, 논리성, 일관성, 일관성, 유창성, 자연성, 가독성)을 정량화하려고 시도합니다. 생성된 추론으로 \\(r^{*}\\)을 나타내겠습니다. 비교에 사용할 수 있는 진실 근거 \\(r\\)가 없기 때문에, 우리의 메트릭은 \\(r^{*}\\)와 기존 입력 중 하나 (\\(q\\) 또는 \\(c\\)) 쌍을 사용하여 참조가 없다. 표 1은 각 애스펙트 타입 및 입력 조합을 설명한다. RL에서 보상 채점을 위해 이러한 메트릭을 사용하려는 것이므로 정확한 메트릭을 갖는 것이 중요하다. 따라서 우리는 인간 주석을 통해 모든 측면 유형에 대한 작은 집합(n=100)의 금 라벨을 얻는다. 주석 프로세스 및 결과에 대한 자세한 설명은 SS11.1에 보고되어 있다.\n' +
+      '\n' +
+      '**합리적인 품질에 대한 자동 측정** 수동 주석은 상당한 가치를 제공하지만 RL의 컨텍스트 내에서 빈번한 보상 점수 부여로 인해 현저하게 어려워집니다. 따라서 이 프로세스를 자동화하는 몇 가지 방법을 조사합니다. Ye와 Durrett(2022)은 토큰 수준의 어휘 중복을 통해 사실성과 관련성을 평가하기 위한 간단하면서도 효과적인 접근법을 도입했다. 우리는 사실성과 관련성 측정을 위한 그들의 방법을 따른다. 나머지 6개 카테고리에 대해서는 두 가지 방법을 고려한다. 첫 번째 접근법은 최근 연구(_e.g._, Liu et al. (2023), Wang et al. (2023))에서 영감을 받아 참조 없는 NLG 평가자로 기능하기 위해 큰 LM을 활용하는 것이다. 대조적으로, 두 번째 접근법은 인간 주석이 달린 데이터를 사용하여 간단한 기계 학습 분류기를 훈련시키는 것을 포함한다. 두 접근법 모두 SS11.2에 포괄적으로 설명되어 있다. 추론 시간 효율성과 인간 주석자에 대한 더 높은 정렬 점수로 인해(표 5 참조), 우리는 모든 실험에 대한 두 번째 방법에 의존한다.\n' +
+      '\n' +
+      '**Rationale Refinement에 대한RL.** 다음으로 PPO(Proximal Policy Optimization)를 사용하여 지식 증류 \\(M^{*}\\)를 업데이트하기 위해 설정된 평가 메트릭을 보상 신호로 활용하는 방법에 대해 자세히 설명합니다(Schulman et al., 2017). 학습 데이터에서 각 입력(\\(q\\), \\(c\\)-출력(\\(a\\)) 쌍이 주어지면 먼저 \\(M^{*}\\)을 프롬프트하여 상응하는 근거 \\(r^{*}\\)를 생성한다. 생성 과정에서 자동 평가 메트릭에서 반환되는 모든 값을 집계하여 화면별 보상( \\(R_{aspect}\\)으로 표시)을 측정합니다. 2 다음, \\(r^{*}\\)을 \\(M^{L}\\)로 전달하여 답변 예측 \\(a^{*}\\)을 검색하고 작업별 보상( \\(R_{taskAcc}\\)으로 표시)을 계산합니다. 구체적으로, 우리는 예측된 답변과 진실된 답변 사이의 F1 점수를 활용한다:\n' +
+      '\n' +
+      '각주 2: 또한 점수에 대해 정규화 또는 가중 합산으로 테스트하지만 성능에 영향을 미치지 않았다.\n' +
+      '\n' +
+      '\\[R_{\\text{taskAcc}}=\\begin{cases}1&\\text{if }F1(a,a^{*})>0.5,\\\\ 0&\\text{else}.\\end{cases}\\]\n' +
+      '\n' +
+      '모델 학습에 대한 최종 보상 점수는 \\(R_{aspect}\\)와 \\(R_{taskAcc}\\)의 합이다. Stiennon et al.(2020)에 이어, 우리는 학습된 정책 LM과 \\(M^{S}\\) 사이의 Kullback Leibler(KL) 발산을 기반으로 벌점을 통합한다.\n' +
+      '\n' +
+      '## 4 실험 및 결과\n' +
+      '\n' +
+      '### Experimental Setup\n' +
+      '\n' +
+      '**모델 및 데이터 세트.** \\(M^{S}\\)에는 FLAN-T5 소형(80M)을 사용하고 \\(M^{L}\\)에는 FLAN-T5 XXL(11B)을 사용합니다. HotpotQA(Yang et al., 2018)와 2Wiki-MultiHopQA(Ho et al., 2020)는 모두 입력 질문과 답변으로 구성되며, 문단에 지원 사실이 포함되어 있는지 여부를 나타내는 지원성 레이블이 있는 9-10개의 문맥 문단으로 구성된다. FLAN-T5의 입력 토큰 크기 제한으로 인해 지원 단락만 컨텍스트로 사용한다.\n' +
+      '\n' +
+      '**훈련 및 평가 설정** 모델 훈련에 두 데이터 세트(데이터당 15K 샘플)에서 무작위로 샘플링된 훈련 데이터 하위 집합을 사용합니다. 무자격 추론을 필터링한 결과 23K개의 샘플이 생성된다. 훈련과 관련된 모든 하이퍼파라미터는 SS11.3에서 찾을 수 있다. 예비 실험에 따르면, CoT 프롬프트의 영향은 (1) 질문이 지나치게 단순하여 중간 추론 과정의 중요성을 모호하게 하고, (2) 이미 관련 배경 정보를 가지고 있는 LMs(예를 들어, Flan-T5는 다양한 질문 응답 데이터 세트에서 미세 조정됨)의 두 가지 잠재적 요인으로 인해 감소하는 것으로 나타났다. 모델이 파라메트릭 메모리를 기반으로 응답하는 것을 방지하기 위해 Ye and Durrett(2022) 및 Zhao 등(2023)이 취한 접근법과 유사하게 기존 평가 데이터를 더 어렵게 만들려고 시도한다. 각 데이터 세트에 대해 표준 프롬프트의 예측 결과를 활용하고 1000개의 입력 인스턴스를 선택합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|c|l|} \\hline\n' +
+      '**Aspects** & **Descriptions** \\\\ \\hline Factuality & Percentage (0.0-1.0) measuring if the reasoning is grounded based on the context _(Input \\(c\\) \\& \\(r^{\\prime}\\))_ \\\\ \\hline Relevance & Percentage (0.0-1.0) measuring if the reasoning is relevant to the question _(Input \\(q\\) \\& \\(r^{\\prime}\\))_ \\\\ \\hline Logicality & Binary (0 or 1) measuring if the reasoning is logical and can reach a final answer \\\\ \\hline Consistency & Binary (0 or 1) measuring if the reasoning remains consistent and coherent _(Input \\(q\\) \\& \\(r^{\\prime}\\))_ \\\\ \\hline Coherence & Binary (0 or 1) measuring if the reasoning is without redundant information _(Input \\(q\\) \\& \\(r^{\\prime}\\))_ \\\\ \\hline Fluency & Binary (0 or 1) measuring if the reasoning is well-written and grammatically correct _(Input \\(r^{\\prime}\\))_ \\\\ \\hline Naturalness & Binary (0 or 1) measuring if the reasoning is natural and human-like _(Input: \\(r^{\\prime}\\))_ \\\\ \\hline Readability & Binary (0 or 1) measuring if the reasoning is easy to follow and understandable _(Input: \\(r^{\\prime}\\))_ \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: 평가에 사용된 8가지 근거 측면의 설명 \\ (q\\), \\(c\\) 및 \\(r^{\\prime}\\)는 각각 작은 LM에 의해 생성된 질문, 컨텍스트 및 해당 근거를 나타낸다.\n' +
+      '\n' +
+      '그 결과 \\(M^{L}\\)이 정답을 맞혔고, 모형에서 틀린 답변이 나온 문항에서 1,000개가 추가되었다. 그 결과 총 2000개의 평가 샘플이 생성된다.\n' +
+      '\n' +
+      '**기준 및 평가 메트릭** 표준 프롬프트 및 CoT 프롬프트를 기준선으로 사용합니다(표 3 참조). 또한 다중 추론 경로(n=10)를 샘플링하고 가장 일관된 답변을 선택하는 SC 디코딩 전략[22]을 실험한다. 평가를 위해, (1) 정확한 일치(EM), 예측이 진실 답변과 정확하게 일치하는지 여부를 계산하는 것, (2) F1, 예측과 진실 답변 사이의 평균 단어 중복을 계산하는 것, (3) 답변 포함 3, 진실 답변이 예측에 언급되었는지 여부를 계산하는 것의 세 가지 메트릭을 보고한다.\n' +
+      '\n' +
+      '각주 3: 모델이 종종 더 광범위한 응답(_e.g._, 그라운드 트루스)을 제공하기 때문에 이 측정을 포함했습니다.\n' +
+      '\n' +
+      '### Results\n' +
+      '\n' +
+      '**기준 성능.** 표 2에서 볼 수 있듯이 \\(M^{L}\\)(FLAN-T5 XXL과 동일)는 표준 프롬프트와 비교할 때 두 데이터 세트(HotpotQA에 대한 답변 포함 점수를 제외)에서 EM 및 F1 점수가 떨어졌기 때문에 원래 CoT 프롬프트의 이점을 얻지 못한다는 것을 발견했습니다. 이는 50B 미만의 파라미터를 갖는 모델이 제한된 추론 능력을 나타낸다는 이전의 연구 결과와 일치한다. 또한 HotpotQA보다 2WikiMultihopQA(EM과 F1의 경우 거의 10%)에서 성능 저하가 더 큰 것으로 나타났다. 잘못된 예측을 수동으로 검사한 결과, \\(M^{L}\\)은 문맥에서 문장을 반복하기 쉬웠고 질문에 대한 최종 답변을 제공하지 못했다. 이것은 문맥이 너무 길어지면 모델이 얼굴을 마주하게 된다는 것을 암시합니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c} \\hline \\hline \\multirow{2}{*}{Prompt} & Rationale & \\multicolumn{3}{c}{HotpotQA} & \\multicolumn{3}{c}{2WikiMultiHopQA} \\\\ \\cline{3-7}  & Provision? & & & & & \\\\ \\cline{3-7}  & & EM & F1 & \\begin{tabular}{c} Answer \\\\ Inclusion \\\\ \\end{tabular} & EM & F1 &\n' +
+      '\\begin{tabular}{c} Answer \\\\ Inclusion \\\\ \\end{tabular} \\\\ \\hline standard prompting & ✗ & 0.5 & **0.714** & 0.583 & 0.5 & 0.625 & 0.647 \\\\ CoT prompting & ✓ & 0.483 & 0.686 & 0.611 & 0.4 & 0.532 & 0.561 \\\\ CoT prompting + SC & ✗ & 0.503 & 0.70 & 0.624 & 0.471 & 0.603 & 0.625 \\\\ \\hline LM-guided CoT prompting (KD) & ✓ & 0.507 & 0.702 & 0.625 & 0.506 & 0.626 & 0.661 \\\\ LM-guided CoT prompting (KD + SC) & ✗ & **0.513** & **0.714** & **0.635** & **0.524** & **0.644** & **0.679** \\\\ LM-guided CoT prompting & ✓ & 0.503 & 0.698 & 0.625 & 0.507 & 0.631 & 0.665 \\\\ (KD + \\(R_{aspect}\\)) & ✓ & 0.508 & 0.704 & 0.627 & 0.503 & 0.622 & 0.657 \\\\ LM-guided CoT prompting & & & & & & \\\\ (KD + \\(R_{aspect}\\) + ranking) & ✓ & 0.5 & 0.698 & 0.623 & 0.501 & 0.619 & 0.653 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 2: 기준선의 예측 성능 결과와 우리의 접근법에 대해 답변한다. 이 방법은 단일 방법이 아닌 여러 가지 근거의 변형을 초래할 수 있기 때문에 SC 디코딩을 비합리적인 조항으로 간주한다. 굵게 표시된 값은 가장 높은 점수를 나타내고 밑줄이 그어진 값은 두 번째로 높은 점수이다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|c|p{142.3pt}|p{142.3pt}|} \\hline\n' +
+      '**Type** & **Description** & **Template** \\\\ \\hline Standard prompting & \\begin{tabular}{c} Directly predicting the answer \\\\ based on input \\\\ \\end{tabular} & \\begin{tabular}{c} Based on the provided context, answer the following question (Q). \\\\ Context: \\(c\\) \\\\ \\end{tabular} \\\\ \\hline CoT prompting & \\begin{tabular}{c} Predicting the answer after \\\\ generating the reasoning \\\\ \\end{tabular} & \\begin{tabular}{c} Based on the provided context, answer the following question (Q) \\\\ by reasoning step-by-step. \\\\ Context: \\(c\\) \\\\ \\end{tabular} \\\\ \\hline LM-guided (our method) & \\begin{tabular}{c} Predicting the answer with \\\\ conditional generation upon \\\\ the LM-generated reasoning \\\\ \\end{tabular} &\n' +
+      '\\begin{tabular}{c} Based on the provided context, answer the following question (Q) \\\\ by reasoning step-by-step. \\\\ Context: \\(c\\) \\\\ \\end{tabular} \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: 답변 예측 작업에 사용된 각 프롬프트의 설명 및 템플릿 \\ (q\\), \\(c\\) 및 \\(r^{\\prime}\\)는 각각 작은 LM에 의해 생성된 질문, 컨텍스트 및 해당 근거를 나타낸다.\n' +
+      '\n' +
+      '내용을 소화하고 타당한 추론 단계를 설정하는 데 어려움이 있습니다. 전반적으로 SC CoT 프롬프트는 모델이 특히 2WikiMulti-hopQA의 경우 답변 예측 오류에서 눈에 띄게 복구할 수 있도록 한다.\n' +
+      '\n' +
+      '**LM 유도 CoT 성능.** 표 2는 이 방법의 성능을 종합적으로 분류한 것입니다. 또한, 여러 추론 경로를 샘플링하고 그에 따라 가장 최적의 근거를 순위화하는 접근 방식의 확장을 탐구한다. KD만을 사용한 방법은 HotpotQA의 경우 2%, 2WikiMultiHopQA의 경우 10%의 이득으로 원래의 CoT를 능가한다. 그림 2는 답변 예측과 근거 자질을 모두 향상시키는 데 있어 우리 방법의 효율성을 강화하는 모든 프롬프트 기술의 각 근거 자질을 보여준다. 긴 컨텍스트를 가진 질문에 대한 원래 CoT 프롬프트를 사용할 때 모델은 제공된 컨텍스트에서 문장을 자주 재활용하고 질문에 대한 결정적인 답변을 제공하기 위해 고군분투한다. 이러한 경향은 우리의 접근법으로 완화되어 오류율이 크게 감소한다. 또한 CoT 프롬프팅 + SC의 성능을 능가하며 EM 및 F1 측면에서 표준 프롬프팅과 동등하다. 응답 포함 점수의 경우 LM 유도 CoT 프롬프팅이 표준 프롬프팅보다 약간 높다(1-2%). 또한 LM 유도 CoT 프롬프트 + SC는 모든 설정에서 가장 높은 성능을 달성합니다.\n' +
+      '\n' +
+      '그림 2와 같이 RL의 구현은 모델이 이론적 자질과 과제 수행 모두에서 추가적인 개선을 달성할 수 있도록 한다. 그러나 Joshi et al. (2023)의 연구 결과에 따르면, 최고 품질의 근거를 선택할 때 최대화된 근거 품질의 비용으로 작업 수행의 약간의 감소가 관찰된다. 여기에 관련된 몇 가지 근본적인 요인(예: 모델의 불성실성)이 있을 수 있지만, 이것은 이 작업의 범위가 아니다.\n' +
+      '\n' +
+      '## 5 Conclusion\n' +
+      '\n' +
+      '**LM-Guided CoT** 는 (1) 근거 생성 및 (2) 답변 예측의 두 가지 모델을 사용하여 기존 CoT 프롬프트를 두 단계로 분해하는 새로운 프레임워크입니다. 여기에는 추론 능력을 큰 LM에서 작은 LM으로 증류하고 RL로 추가로 최적화하는 것이 포함된다. 결과는 우리의 방법이 모든 기준선보다 우수하다는 것을 보여주며, CoT 프롬프트 패러다임 내에서 문제를 해결하기 위한 효과적이고 자원 효율적인 접근법 역할을 할 가능성을 강조한다. 한편, 우리는 또한 답변 예측을 위한 최고 품질의 근거를 선택하는 것이 과제 성과를 일관되게 향상시키지 않을 수 있음을 발견했다. 이는 LM이 생성한 합리 유틸리티와 전반적인 작업 수행 간의 보다 조화로운 균형을 탐색할 필요성을 촉구한다.\n' +
+      '\n' +
+      '## 6 Limitations\n' +
+      '\n' +
+      '제안된 프레임워크는 플러그 앤 플레이 방식으로 다양한 모델 조합을 원활하게 수용할 수 있지만, 실험 보고를 FLAN-T5로 제한했다. 유사한 맥락에서 이 작업은 다중 홉 QA의 작업만을 탐색하여 다른 추론 작업에 대한 일반화 가능성에 대한 열린 질문을 남겼다. 우리는 정교한 추론이 필요한 다양한 영역에 걸쳐 접근법의 적용을 확장하기 위한 향후 연구 노력을 기대한다. 마지막으로, 리소스 제약으로 인해 확립된 측면 평가 메트릭에 대한 광범위한 인간 주석을 수집할 수 없었다.\n' +
+      '\n' +
+      '## 7 윤리적 고려 사항\n' +
+      '\n' +
+      '우리가 작업에 사용하는 모든 데이터 세트는 공개적으로 사용할 수 있으며 논문 전반에 걸쳐 원본 작성자에게 적절한 크레딧을 부여했다. 우리는 때때로 생성된 근거에 비사실적이고 모욕적인 진술이 포함될 수 있음을 인정한다. 이러한 유물을 배포할 계획이 없기 때문에 피해 가능성을 효과적으로 줄입니다.\n' +
+      '\n' +
+      '## 8 Acknowledgments\n' +
+      '\n' +
+      '귀중한 피드백을 제공해 주신 모든 검토자에게 감사드립니다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Fleiss (1971) Joseph L Fleiss. 1971. 다수의 평가자 간의 명목 규모 일치를 측정하는 단계. _ 심리학\n' +
+      '\n' +
+      '그림 2: HotpotQA(왼쪽) 및 2WikiMultiHopQA(오른쪽)에 대한 평균 답변 예측 성능(세 가지 평가 메트릭에 걸쳐) 및 평균 근거 품질 점수(_i.e._, \\(R_{aspect}\\))입니다. 오른쪽 y축은 평균 답변 예측 점수를 나타내고 왼쪽 y축은 평균 근거 품질 점수를 나타낸다.\n' +
+      '\n' +
+      'bullet_, 76(5):378.\n' +
+      '* Fu et al.(2023) Jinlan Fu, See-Kiong Ng, Zhengbao Jiang, and Pengfei Liu. 2023. Gptscore: 원하는 대로 평가합니다. _ arXiv preprint arXiv:2302.04166_.\n' +
+      '* Golovneva et al. (2022) Olga Golovneva, Moya Chen, Spencer Poff, Martin Corredor, Luke Zettlemoyer, Maryam Fazel-Zarandi, and Asli Celikyilmaz. 2022. Roscoe: 단계별 추론을 채점하기 위한 메트릭 집합입니다. _ <표상학습에 관한 제11차 국제학술대회>에서.\n' +
+      '* Joshi et al. (2023) Brihi Joshi, Ziyi Liu, Sahana Ramnath, Aaron Chan, Zhewei Tong, Shaoliang Nie, Oifan Wang, Yejin Choi, and Xiang Ren. 2023. 기계이유는 인간에게 유용하지 않은가? 자유 텍스트 근거의 인간 효용을 측정하고 개선합니다. _ arXiv preprint arXiv:2305.07095_.\n' +
+      '* Jung et al.(2022) 정재훈, 리안후이 진, 션 웰렉, 페제 브라만, 찬드라 바가바툴라, 로난 르 브라, 예진 최. 2022. 해석적 프롬프트: 재귀적 설명과 논리적으로 일관된 추론. _ arXiv preprint arXiv:2205.11822_.\n' +
+      '* Khot 등(2022) Tushar Khot, Harsh Trivedi, Matthew Finlayson, Yao Fu, Kyle Richardson, Peter Clark, and Ashish Sabharwal. 2022. 분해 프롬프트: 복잡한 작업을 해결하기 위한 모듈식 접근법 _ arXiv preprint arXiv:2210.02406_.\n' +
+      '* Lanham et al. (2023) Tamera Lanham, Anna Chen, Ansh Radhakrishnan, Benoit Steiner, Carson Denison, Danny Hernandez, Dustin Li, Esin Durmus, Evan Hubinger, Jackson Kernion, et al. 2023. Measuring faithfulness in chain-of-thought reasoning. _ arXiv preprint arXiv:2307.13702_.\n' +
+      '* Lewkowycz 등(2022) Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henryk Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, et al. 2022. Solving quantitative reasoning problems with language models. _ Advances in Neural Information Processing Systems_, 35:3843-3857.\n' +
+      '* Li et al. (2023) Liunian Harold Li, Jack Hessel, Youngjae Yu, Xiang Ren, Kai-Wei Chang, and Yejin Choi. 2023. Symbolic chain-of-thought distillation: 작은 모델도 단계별로 "Think"할 수 있습니다. _ arXiv preprint arXiv:2306.14050_.\n' +
+      '* Liu et al. (2023) Yang Liu, Dan Iter, Yichong Xu, Shuohang Wang, Ruochen Xu, and Chenguang Zhu. 2023. Gptsval: Nlg evaluation using gpt-4 with better human alignment. _ arXiv preprint arXiv:2303.16634_.\n' +
+      '* Longpre 등(2023) Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V Le, Barret Zoph, Jason Wei, et al. 2023. The fian collection: Designing data and methods for effective instruction tuning _ arXiv preprint arXiv:2301.13688_.\n' +
+      '* Ma et al.(2023) Yuhan Ma, Haiqi Jiang, and Chenyou Fan. 2023. Sci-cot: 과학 qa를 위한 작은 모델에서 향상된 지식 증류를 위해 큰 언어 모델을 활용합니다. _ arXiv preprint arXiv:2308.04679_.\n' +
+      '* Prasad et al. (2023) Archiki Prasad, Swamadeep Saha, Xiang Zhou, and Mohit Bansal. 2023. Receval: 정확성과 정보성을 통해 추론 사슬을 평가합니다. _ arXiv preprint arXiv:2304.10703_.\n' +
+      '* Schulman 등(2017) John Schulman, Filip Wolski, Pratulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. 근접 정책 최적화 알고리즘. _ arXiv preprint arXiv:1707.06347_.\n' +
+      '* Shridhar et al.(2023) Kumar Shridhar, Alessandro Stolfo, and Mrinmaya Sachan. 2023. 추론 능력을 더 작은 언어 모델로 증류합니다. 계산 언어학 협회의 결과: ACL 2023_, 7059-7073 페이지입니다.\n' +
+      '* Stiennon 등(2020) Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. 2020. 인간 피드백으로 요약하는 학습. _ Advances in Neural Information Processing Systems_, 33:3008-3021.\n' +
+      '* Turpin 등 (2023) Miles Turpin, Julian Michael, Ethan Perez, and Samuel R Bowman. 2023. 언어 모델이 항상 그들이 생각하는 것을 말하는 것은 아닙니다: 생각의 연쇄에서 불성실한 설명이 촉발됩니다. _ arXiv preprint arXiv:2305.04388_.\n' +
+      '* Wang et al.(2022a) Boshi Wang, Sewon Min, Xiang Deng, Jiaming Shen, You Wu, Luke Zettlemoyer, and Huan Sun. 2022a. 연쇄적 사고에 대한 이해 촉구: 무엇이 중요한지에 대한 실증적 연구 _ arXiv preprint arXiv:2212.10001_.\n' +
+      '* Wang et al. (2023) Jiaan Wang, Yunlong Liang, Fandong Meng, Haoxiang Shi, Zhixu Li, Jinan Xu, Jianfeng Qu, and Jie Zhou. 2023. 채팅은 좋은 평가자입니까? 예비 연구. _ arXiv preprint arXiv:2303.04048_.\n' +
+      '* Wang et al.(2022b) Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. 2022b. 자기일관성은 언어 모델에서 사고 추론의 사슬을 개선합니다. _ arXiv preprint arXiv:2203.11171_.\n' +
+      '* Wei et al.(2022a) Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel, Barret Zoph, Sebastian Borgeaud, Dani Yogatama, Maarten Bosma, Denny Zhou, Donald Metzler, et al. 2022a. 대형 언어 모델의 최신 능력입니다. _ arXiv preprint arXiv:2206.07682_.\n' +
+      '* Wang et al.(2022b)Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Fei Xia, Ed Chi, Quoc V Le, Denny Zhou, et al. 2022b. 사고 연쇄 프롬프트는 대규모 언어 모델에서 추론을 유도합니다. _ Advances in Neural Information Processing Systems_, 35:24824-24837.\n' +
+      '* Ye and Durrett (2022) Xi Ye and Greg Durrett. 2022. The unreliability of explanation in few-shot prompting for textual reasoning. _ 신경 정보 처리 시스템_, 35:30378-30392에서의 진보.\n' +
+      '* Zhao et al.(2023) Ruochen Zhao, Xingxuan Li, Shafiq Joty, Chengwei Qin, and Lidong Bing. 2023. 검증 및 편집: 지식 강화 사고 사슬 프레임워크입니다. _ arXiv preprint arXiv:2305.03268_.\n' +
+      '\n' +
+      '## 10 언어 리소스 참조\n' +
+      '\n' +
+      '* Ho et al.(2020) Ho, Xanh and Nguyen, Anh-Khoa Duong and Sugawara, Saku and Aizawa, Akiko. 2020. _추론 단계의 포괄적인 평가를 위한 다중 홉 QA 데이터 세트 구성_ 입니다.\n' +
+      '* Yang et al.(2018) Yang, Zhilin and Qi, Peng and Zhang, Saizheng and Bengio, Yoshua and Cohen, William W and Salakhutdinov, Ruslan and Manning, Christopher D. 2018. _HotpotQA: A dataset for various, explainable multi-hop question answering_.\n' +
+      '\n' +
+      '## 11 Appendices\n' +
+      '\n' +
+      '### Rationale 품질 측정을 위한 인간 주석\n' +
+      '\n' +
+      '**주석 세부 정보** 3명의 연구자가 훈련 데이터에서 무작위로 샘플링된 100개의 인스턴스를 수동으로 검사했습니다. 주석 프로세스의 품질과 일관성을 보장하기 위해 한 연구자는 각 측면의 정의를 설명하는 주석 명령어(표 1 참조)와 각 측면 범주에 대한 4개의 시연 사례를 설계했다. 그림 3에는 논리성에 대한 데모 예가 표시됩니다. 이러한 예들은 100개의 주석 샘플들의 초기 세트에 포함되지 않았던 나머지 트레이닝 세트로부터 랜덤하게 선택되고, 애스펙트 설명에 기초하여 수동으로 주석이 달린다. 주석이 완료되면 평균 Fleiss\' Kappa 계수(Fleiss, 1971)를 계산하여 제출된 주석 결과의 신뢰성을 검증하기 위해 평가자 간 일치율을 측정했다. 모든 측면 범주에서 3명의 주석자 간의 평균 카파 점수는 0.56으로 중간 정도의 일치율을 나타낸다. 궁극적으로, 우리는 3명의 주석자가 제출한 주석 라벨의 모드를 취하여 이를 지상 진리로 간주한다.\n' +
+      '\n' +
+      '**양상 유형과 작업 성능 간의 관계 분석** 레이블이 지정된 100개의 인스턴스를 기반으로 사후 분석을 수행하여 제안된 측면이 예측 성능에 응답하는 것과 어떻게 관련이 있는지 파악합니다. 레이블 분포는 다음과 같다 : correct (n=78) vs. (n=22). 우리는 정답과 오답에 따른 평가 점수의 평균 차이를 비교한다. 그림 4와 같이 정답 예측과 관련된 근거는 잘못된 예측을 한 근거보다 점수가 높은 경향이 있다. 특히, 일관성이 가장 큰 평균 차이를 가지며, 가독성과 논리성이 그 뒤를 잇고 있다. 유창성과 자연스러움을 위해, 그 차이는 미미해 보인다. 통계적 유의성을 검증하기 위해 통계 테스트를 추가로 수행한다. T-test 결과 일관성(\\(p=0.003\\)), 가독성(\\(p=0.0002\\)), 논리성(\\(p=0.05\\))에서 관찰된 평균 차이가 \\(p<0.05\\)와 통계적으로 유의한 것으로 확인되었다.\n' +
+      '\n' +
+      '### Rationale 품질 자동 측정\n' +
+      '\n' +
+      '**방법 1: Large LMs로부터의 자체 평가** Fu 등(2023)은 제로샷 명령 및 인컨텍스트 학습을 통해 달성된 신경 텍스트 평가에서 Large LMs의 출현 능력을 입증했다. 핵심 아이디어는 원하는 과제의 자연어 설명과 평가 측면을 고려할 때 큰 LMs는 학습 과정 없이 다차원 텍스트 품질을 평가할 수 있다는 것이다. 이에 동기화되어 FLAN-T5 XXL에 기계 생성 근거의 6가지 측면을 평가하도록 지시한다. Fu et al. (2023)의 실험과 유사하게, 우리는 명령어 전용 프롬프트(IST) 및 명령어+시범 프롬프트(IDM)의 성능을 조사한다. \\(q\\)와 \\(r^{\\prime}\\)는 아직 평가되지 않은 질문과 기계 생성 근거를 나타낸다고 하자. \\ (d\\)는 표 1로부터의 우리의 관심의 양태 정의를 나타낸다. IST에 사용되는 프롬프트 템플릿은:\n' +
+      '\n' +
+      '제공된 정보를 바탕으로 질문에 답하세요. 질문: 주어진 추론 \\(d\\)이 가능할까요? 네 (b) 아니오.\n' +
+      '\n' +
+      '**Information**:\n' +
+      '\n' +
+      '질문 : \\(q\\) 추론 : \\(r^{\\prime}\\) 정답 :\n' +
+      '\n' +
+      'IDM에 대한 프롬프트 템플릿은 IST와 동일하지만 몇 가지 작업 데모를 포함합니다. 시연 횟수는 1회부터 4회까지이다. 우리는 인간 주석 명령어(SS11.1)에 포함된 동일한 시연을 사용한다. 마지막으로, 우리는 예측을 여러 번 샘플링하고(n = 10) 모드를 최종 예측으로 취하는 SC 디코딩과 결합하여 IST를 평가한다. FLAN-T5 XXL의 근거 평가가 인간 주석과 밀접하게 일치하는지 확인하기 위해 100개의 인간 표지된 예를 사용하여 5개의 프롬프트 기반 실험에 대한 매크로 F1 점수를 계산한다(표 4). 유창성을 제외한 대부분의 경우 IST 프롬프트가 가장 높은 성능을 보여준다.\n' +
+      '\n' +
+      '**방법 2: Human-Annotated Data를 사용한 감독 학습** 여기서 SS11.1의 100 그라운드 트루스 데이터를 사용하여 로지스틱 회귀 분류기를 학습합니다. 입력 데이터를 TF-IDF 벡터로 변환하여 수행할 수 있습니다. 학습 데이터 크기가 작기 때문에 각 측면 유형에 대해 6개의 모델을 갖는 대신 두 개의 독립적인 이진 분류기를 학습한다. 첫 번째 모델은 주어진 추론이 논리적이고 일관적이며 일관성이 있는지 예측하는 것이지만, 두 번째 모델은 추론이 유창하고 자연스럽고 읽을 수 있는지 예측하는 데 중점을 둔다. 구성 요소 중 하나 이상이 충족되지 않으면 음수 레이블로 간주한다. 최종 레이블 분포는 논리성, 일관성, 일관성(0: 60 vs. 1: 40)이다. (0:20 vs. 1:80). 학습에는 90%의 데이터세트(n=90)를 사용하고 평가에는 나머지 10%(n=10)를 사용한다.\n' +
+      '\n' +
+      '도 4: 답변 예측 정확도에 의한 인간 주석 결과의 평균 스코어.\n' +
+      '\n' +
+      '그림 3: "논리성" 주석에 대한 시연 예제입니다.\n' +
+      '\n' +
+      '**메서드 1 대. 방법 2**. 우리는 RL에 대한 보상을 제공하는 데 어떤 것이 더 적합한지 평가하려고 시도한다. 공정한 비교를 위해 방법 2에서 사용된 것과 동일한 평가 데이터를 사용한다. 방법 1은 6개의 측면 범주를 가지고 있기 때문에 최상의 성능 접근법을 사용하여 개별 결과를 얻고 방법 2에서와 같이 둘로 그룹화한다. 표 5는 방법 1과 방법 2에 대한 정확도, 매크로 정밀도, 매크로 재현율 및 매크로 F1을 보고한다. 결과는 방법 2의 모델이 비교적 작은 데이터 세트에 대해 훈련되지만 방법 2가 방법 1에 비해 인간의 판단과 더 일치한다는 것을 나타낸다. 또한 방법 2를 사용한 추론 시간이 방법 1보다 훨씬 빨라 RL 설정에서 보상을 쉽게 검색할 수 있다. 결과적으로, 우리는 모든 실험에 방법 2를 사용한다.\n' +
+      '\n' +
+      '### Training Configuration\n' +
+      '\n' +
+      '우리는 모델 훈련 과정에서 활용되는 하이퍼파라미터에 대한 포괄적인 설명을 제공한다.\n' +
+      '\n' +
+      '**Rationale Distillation.** 교사 모델에서 근거 생성을 위해 두 데이터 세트 각각에서 15K 개의 예를 무작위로 샘플링하여 총 30K 개의 예를 생성했다. 잘못된 근거를 필터링한 후 데이터 세트는 총 23K개의 예제로 축소되었다. 90%의 데이터는 훈련에 사용되었고 나머지 10%는 검증에 사용되었다. 교육을 위해 16GB 구성의 NVIDIA 테슬라 V100 GPU 8개를 사용했다. 학습에 대한 하이퍼파라미터는 학습 속도에 대한 3e-3, 5 에폭, 64 배치 크기입니다.\n' +
+      '\n' +
+      '**Rationale Refinement에 대한RL.** RL의 경우 RL로 변압기 LMs를 훈련하는 도구 세트를 제공하는 Huggingface의 TRL4 라이브러리를 활용했습니다. 근거 증류에 사용된 동일한 예를 사용하는 대신 FLAN-T5 XXL이 질문에 올바르게 대답하지 못한 5000개의 예를 선택적으로 선택했다. 이 선택의 이유는 도전적인 질문에 대한 모델의 노출을 증가시켜 더 많은 학습 신호를 받을 가능성을 높이기 위함이었다. 훈련에는 90%의 데이터를 사용하고 검증에는 나머지 10%를 사용했다. 훈련 하이퍼파라미터는 다음과 같다 : 학습률에 대한 1.4e-5, 1 epoch, 16 배치 크기. 생성 구성의 경우 top_k를 0.0, top_p를 1.0으로 설정하고 샘플링을 활성화했다.\n' +
+      '\n' +
+      '각주 4: [https://huggingface.co/docs/trl/index](https://huggingface.co/docs/trl/index)\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c c c c c c c} \\hline \\hline \\multicolumn{2}{c|}{Prompting} & Coherence & Consistency & Logicality & Fluency & Naturalness & Readability \\\\ \\hline \\multirow{2}{*}{IST} & IST & 0.52 & **0.70** & 0.73 & 0.91 & **0.52** & **0.86** \\\\  & IST + self-consistency & **0.53** & 0.67 & **0.74** & 0.90 & 0.50 & 0.85 \\\\ \\hline \\multirow{4}{*}{IDM} & IDM (1 shot) & **0.53** & 0.64 & 0.70 & **0.92** & 0.29 & 0.70 \\\\  & IDM (2 shot) & **0.53** & 0.62 & 0.73 & 0.91 & 0.24 & 0.69 \\\\  & IDM (3 shot) & 0.51 & 0.62 & 0.73 & 0.88 & 0.28 & 0.67 \\\\  & IDM (4 shot) & 0.52 & 0.62 & 0.70 & 0.89 & 0.36 & 0.50 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 4: 100개의 인간-표지된 예에 기초한 방법 1로부터의 5개의 프롬프트-기반 실험에 대한 매크로 F1 점수. 굵게 표시된 값은 각 측면에서 최고의 성능을 나타냅니다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c|c c c c c c c} \\hline \\hline \\multirow{2}{*}{Methods} & \\multicolumn{3}{c}{Coherence \\& Consistency \\& Logicality} & Fluency \\& Naturalness \\& Readability \\\\ \\cline{2-9}  & Acc & Precision & Recall & F1 & Acc & Precision & Recall & F1 \\\\ \\hline Method 1 & 0.62 & 0.62 & 0.6 & 0.6 & 0.7 & 0.7 & **0.81** & 0.67 \\\\ Method 2 & **0.8** & **0.79** & **0.79** & **0.79** & **0.9** & **0.94** & 0.75 & **0.9** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 5: 평가 결과(방법 1 vs. 방법 2). 굵게 표시된 값은 각 측면에서 최고의 성능을 나타냅니다.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

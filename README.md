@@ -19,6 +19,7 @@
 | 2404.05875v1 | CodecLM Aligning Language Models with Tailored Synthetic Data | [arXiv](https://arxiv.org/abs/2404.05875v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.05875v1) |
 | 2404.05405 | Physics of Language Models Part 33 Knowledge Capacity Scaling Laws | [arXiv](https://arxiv.org/abs/2404.05405) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.05405) |
 | 2404.04167v3 | Chinese Tiny LLM Pretraining a Chinese-Centric Large Language Model | [arXiv](https://arxiv.org/abs/2404.04167v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.04167v3) |
+| 2404.03414v1 | Can Small Language Models Help Large Language Models Reason Better? LM-Guided Chain-of-Thought | [arXiv](https://arxiv.org/abs/2404.03414v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.03414v1) |
 | 2404.01261v1 | FABLES Evaluating faithfulness and content selection in book-length summarization | [arXiv](https://arxiv.org/abs/2404.01261v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01261v1) |
 | 2404.01204 | The Fine Line Navigating Large Language Model Pretraining with Down-streaming Capability Analysis | [arXiv](https://arxiv.org/abs/2404.01204) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.01204) |
 | 2403.19270v1 | sDPO Dont Use Your Data All at Once | [arXiv](https://arxiv.org/abs/2403.19270v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2403.19270v1) |
