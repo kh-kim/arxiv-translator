@@ -12,6 +12,7 @@
 
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
+| 2404.12241v1 | Introducing v05 of the AI Safety Benchmark from MLCommons | [arXiv](https://arxiv.org/abs/2404.12241v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.12241v1) |
 | 2404.07965v1 | Rho-1 Not All Tokens Are What You Need | [arXiv](https://arxiv.org/abs/2404.07965v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07965v1) |
 | 2404.07647v1 | Why do small language models underperform? Studying Language Model Saturation via the Softmax Bottleneck | [arXiv](https://arxiv.org/abs/2404.07647v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07647v1) |
 | 2404.07143v1 | Leave No Context Behind Efficient Infinite Context Transformers with Infini-attention | [arXiv](https://arxiv.org/abs/2404.07143v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07143v1) |
