@@ -17,6 +17,7 @@
 | 2404.10981v1 | A Survey on Retrieval-Augmented Text Generation for Large Language Models | [arXiv](https://arxiv.org/abs/2404.10981v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.10981v1) |
 | 2404.10198v1 | How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs internal prior | [arXiv](https://arxiv.org/abs/2404.10198v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.10198v1) |
 | 2404.10102v1 | Chinchilla Scaling A replication attempt | [arXiv](https://arxiv.org/abs/2404.10102v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.10102v1) |
+| 2404.09516v1 | State Space Model for New-Generation Network Alternative to Transformers A Survey | [arXiv](https://arxiv.org/abs/2404.09516v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.09516v1) |
 | 2404.07965v1 | Rho-1 Not All Tokens Are What You Need | [arXiv](https://arxiv.org/abs/2404.07965v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07965v1) |
 | 2404.07647v1 | Why do small language models underperform? Studying Language Model Saturation via the Softmax Bottleneck | [arXiv](https://arxiv.org/abs/2404.07647v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07647v1) |
 | 2404.07503v1 | Best Practices and Lessons Learned on Synthetic Data for Language Models | [arXiv](https://arxiv.org/abs/2404.07503v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07503v1) |
