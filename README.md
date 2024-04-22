@@ -13,6 +13,7 @@
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
 | 2404.12241v1 | Introducing v05 of the AI Safety Benchmark from MLCommons | [arXiv](https://arxiv.org/abs/2404.12241v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.12241v1) |
+| 2404.10981v1 | A Survey on Retrieval-Augmented Text Generation for Large Language Models | [arXiv](https://arxiv.org/abs/2404.10981v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.10981v1) |
 | 2404.10198v1 | How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs internal prior | [arXiv](https://arxiv.org/abs/2404.10198v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.10198v1) |
 | 2404.10102v1 | Chinchilla Scaling A replication attempt | [arXiv](https://arxiv.org/abs/2404.10102v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.10102v1) |
 | 2404.07965v1 | Rho-1 Not All Tokens Are What You Need | [arXiv](https://arxiv.org/abs/2404.07965v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.07965v1) |

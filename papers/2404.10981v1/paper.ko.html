@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '대용량 언어 모델을 위한 검색 기반 텍스트 생성에 관한 연구\n' +
+      '\n' +
+      'Yizheng Huang\n' +
+      '\n' +
+      'York University\n' +
+      '\n' +
+      'hyz@yorku.ca\n' +
+      '\n' +
+      '&Jimmy X. 황\n' +
+      '\n' +
+      'York University\n' +
+      '\n' +
+      'jhuang@yorku.ca\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '검색-증강 생성(retrieval-Augmented Generation, RAG)은 최신 외부 정보의 동적 통합을 가능하게 하여 대용량 언어 모델(LLM)의 정적 한계를 해결하기 위해 검색 방법을 딥러닝 발전과 병합한다. 주로 텍스트 도메인에 초점을 맞춘 이 방법론은 LLM에 의한 그럴듯하지만 잘못된 응답 생성에 대한 비용 효율적인 솔루션을 제공하여 실제 데이터를 사용하여 출력의 정확성과 신뢰성을 향상시킨다. 본 논문은 RAG의 복잡성이 증가하고 성능에 영향을 미칠 수 있는 여러 개념을 통합함에 따라 RAG 패러다임을 검색 전, 검색 후, 생성의 네 가지 범주로 구성하여 검색 관점에서 세부적인 관점을 제공한다. RAG의 진화를 개괄하고 주요 연구 분석을 통해 현장의 진행을 논의한다. 또한, RAG에 대한 평가 방법을 소개하고, 당면한 과제를 해결하고 향후 연구 방향을 제안한다. 조직화된 프레임워크와 범주화를 제공함으로써 RAG에 대한 기존 연구를 통합하고 기술 기반을 명확히 하며 LLM의 적응성과 응용 가능성을 강조하는 것을 목표로 한다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'ChatGPT의 등장은 대화형 능력과 광범위한 적용으로 인해 학계와 산업계 모두에 상당한 영향을 미쳤으며, 선도적인 인공지능 도구로 자리매김하고 있다(Laskar et al., 2023; Jahan et al., 2023; Huang and Huang, 2024). ChatGPT의 핵심에는 큰 언어 모델(LLM) GPT-4가 있는데, 이는 (OpenAI 등, 2023)에 자세히 설명되어 있으며, 이는 이전보다 많은 향상을 보았으며, 다양한 자연어 처리(NLP) 작업에서 탁월한 능력을 보여준다(Laskar 등, 2020). 이러한 발전에도 불구하고 LLM의 채택은 주로 광범위한 데이터 세트에 대한 의존으로 인해 몇 가지 중요한 문제를 강조했다. 이러한 의존은 교육 후 새로운 정보를 통합할 수 있는 능력을 제한하여 세 가지 주요 과제로 이어진다. 첫째, 접근성과 적용성을 극대화하기 위한 광범위하고 일반적인 데이터에 초점을 맞추면 전문 영역에서 하위 성능의 결과가 나타난다. 둘째, 데이터 주석 및 모델 학습에 필요한 중요한 리소스와 결합된 온라인 데이터의 신속한 생성은 LLM의 업데이트 상태를 유지하는 능력을 방해한다. 셋째, LLM은 "환각"으로 알려진 설득력이 있지만 부정확한 응답을 생성하기 쉬우며, 이는 사용자를 오도할 수 있다.\n' +
+      '\n' +
+      '이러한 문제를 해결하는 것은 LLM이 다양한 도메인에 걸쳐 효과적으로 활용되기 위해 중요하다. 유망한 해결책은 검색-증강 생성(RAG: Retrieval-Augmented Generation) 기술의 통합이며, 이는 질의에 응답하여 외부 데이터를 가져와 보다 정확하고 현재 출력을 보장함으로써 모델을 보완한다. 그림 1은 RAG가 ChatGPT가 초기 훈련 데이터를 넘어 정확한 답변을 제공하는 것을 가능하게 할 수 있는 방법을 보여준다.\n' +
+      '\n' +
+      '2020년 Lewis et al.(Lewis et al., 2020)에 의해 도입된 이후 RAG 기술은 상당한 발전을 거쳤으며, 특히 ChatGPT의 성공에 영향을 받았다. 그러나 RAG의 메커니즘에 대한 철저한 분석과 후속 연구에 의한 진행에 관한 문헌에는 눈에 띄는 격차가 있다. 또한, 이 분야는 다양한 연구 집중과 유사한 방법에 대한 모호한 용어의 사용으로 인해 혼란을 초래하는 것이 특징이다. This paper aims to clarify\n' +
+      '\n' +
+      '그림 1: RAG 혜택의 예 ChatGPT는 훈련 데이터의 범위를 넘어서는 응답할 수 없는 질문을 해결하고 올바른 결과를 생성한다.\n' +
+      '\n' +
+      '이러한 측면은 RAG에 대한 구조화된 개요를 제공하고 다양한 방법을 분류하며 이 연구 영역에 대한 심층적인 이해를 제공하는 것이다. 이 조사는 주로 RAG의 텍스트 적용에 초점을 맞출 것이며, 이는 이 분야에서 연구 노력의 현재 강조를 반영한다.\n' +
+      '\n' +
+      'RAG는 검색 방법과 고급 딥러닝을 결합하여 관련 정보를 효과적으로 검색하고 정확한 응답을 생성하는 두 가지 주요 질문을 해결한다. RAG의 워크플로우는 섹션 2에 요약되어 방법론을 사전 검색, 검색, 사후 검색 및 생성 단계로 분류한다. 이 섹션은 3에서 6까지 이러한 단계 내의 기술에 대한 심층 분석을 제공한다. 섹션 7은 사용된 검색기 및 생성기와 함께 검토된 연구의 요약을 제공한다. 섹션 8은 RAG에 대한 평가 방법론을 자세히 설명한다. 9절에서는 텍스트 기반 연구에 집중하고 이미지 및 다중 모드 데이터 고려 사항으로 확장하여 향후 연구 방향을 탐구한다. 그 결론은 제10절에서 제시된다.\n' +
+      '\n' +
+      '본 논문의 공헌은 다음과 같다. 본 논문은 RAG 영역을 이해하기 위한 포괄적인 프레임워크를 제공하고 개선 영역과 향후 연구를 위한 과제를 식별한다. 그것은 RAG의 핵심 기술에 대한 상세한 분석을 제공하여 검색 및 생성을 다루는 데 있어 그들의 강점을 조사한다. 또한 RAG 연구에 사용된 평가 방법을 소개하고 현재 과제를 강조하며 향후 연구에 대한 유망한 방향을 제시한다.\n' +
+      '\n' +
+      '## 2 RAG Framework\n' +
+      '\n' +
+      '환각은 LLM이 최신 정보에 액세스할 수 없기 때문에 발생하며, 이러한 한계는 모델의 훈련 데이터 세트에 대한 의존에서 비롯된다. RAG는 LLM의 학습 데이터에 외부 소스로부터의 현재 정보를 검색 모델을 통해 보완함으로써 정확한 응답 생성을 가능하게 함으로써 이 문제에 대한 해결책을 제시한다. RAG는 일반적으로 LLM에 필요한 광범위한 훈련 및 미세 조정 프로세스에 대한 보다 비용 효율적인 대안을 제시한다. 이 새로운 데이터를 LLM에 직접 통합할 필요 없이 전통적인 검색 방법 또는 사전 훈련된 LM을 통해 새로운 정보를 동적으로 통합할 수 있다. 이 기능은 RAG를 유연하고 확장 가능하게 만들어 다양한 목적을 위해 다양한 LLM에 걸쳐 적용을 용이하게 한다. RAG를 통해 검색된 정보는 인간이 저작한 실제 데이터에서 파생되며, 이는 생성 프로세스를 단순화할 뿐만 아니라 생성된 응답의 신뢰성을 증가시킨다. 그림 2는 기본 워크플로와 패러다임이 있는 통합된 RAG 프레임워크를 나타낸다.\n' +
+      '\n' +
+      'Khandelwal et al.(Khandelwal et al., 2020)의 연구는 훈련 데이터 세트 자체에서 관련 정보에 액세스하는 것이 LLM 성능을 크게 향상시킬 수 있음을 보여주며, 이는 RAG의 효과를 강조한다. 시간이 지남에 따라 RAG는 보충 정보를 제공하는 수단에서 검색 및 생성 구성 요소 간의 다중 상호 작용을 가능하게 하는 수단으로 발전했다. 이것은 검색된 정보의 정확도를 정제하고 생성된 출력의 품질을 반복적으로 개선하기 위해 여러 라운드의 검색을 수행하는 것을 포함한다. 랭체인1, 라말덴덱스2와 같은 플랫폼은 RAG 접근법을 모듈화하여 적응성을 높이고 응용 범위를 확장했다. 이러한 플랫폼은 여러 검색 반복에서 반복 생성까지 RAG의 다양한 측면을 다루기 위해 다양한 방법론을 사용함에도 불구하고 기본 RAG 워크플로우를 준수합니다. 이러한 일관성은 운영을 이해하고 추가 개발을 위한 기회를 찾는 데 중요하다.\n' +
+      '\n' +
+      '각주 1: [https://www.langchain.com](https://www.langchain.com)\n' +
+      '\n' +
+      '각주 2: [https://www.llamaindex.ai](https://www.llamaindex.ai)\n' +
+      '\n' +
+      '### Basic RAG Workflow\n' +
+      '\n' +
+      'RAG의 기본 워크플로우는 외부 소스를 포함하는 인덱스를 만드는 것으로 시작합니다. 이 인덱스는 특정 쿼리를 기반으로 하는 리트리버 모델을 통해 관련 정보를 검색할 수 있는 기반이 된다. 최종 단계는 생성기 모델을 포함하며, 생성기 모델은 검색된 정보를 질의와 결합하여 원하는 출력을 생성한다.\n' +
+      '\n' +
+      '#### 2.1.1 Indexing\n' +
+      '\n' +
+      '효율적인 검색은 포괄적인 인덱싱으로 시작되며, 여기서 데이터 준비가 핵심이다. 이 단계는 Manning 등(2008)의 인덱싱에 대한 텍스트의 적합성을 높이기 위해 토큰화, 형태소 분석, 불용어 제거와 같은 텍스트 정규화 과정을 포함한다. 그런 다음 텍스트 세그먼트는 보다 집중된 검색을 용이하게 하기 위해 문장 또는 단락으로 조직되어 관련 키워드를 포함하는 세그먼트를 정확하게 찾아낼 수 있다. 딥러닝의 통합은 텍스트의 의미 벡터 표현을 생성하기 위한 사전 훈련된 LM의 사용을 통해 인덱싱에 혁명을 일으켰다. 광범위한 데이터 모음에서 검색을 수행하여 검색 효율성을 크게 향상시킵니다.\n' +
+      '\n' +
+      '#### 2.1.2 Retrieval\n' +
+      '\n' +
+      'BM25 알고리즘(Hancock-Beaulieu et al., 1996)과 같은 전통적인 검색 방법들이 문서 랭킹을 위한 용어 빈도 및 존재에 초점을 맞추는 반면, 이들은 종종 질의들의 의미론적 정보를 간과한다. 현재 전략은 BERT(Devlin et al., 2019)와 같은 사전 훈련된 LMs를 활용하며, 이는 쿼리의 의미적 본질을 보다 효과적으로 포착한다. 이 모델들은 동의어와 어구의 구조를 고려하여 검색 정확도를 향상시키며, 이를 통해 의미적 유사도 검출을 통해 문서 순위를 정제한다. 이것은 일반적으로 문서들과 쿼리들 사이의 벡터 거리들을 측정함으로써 달성되며, 전통적인 검색 메트릭들을 의미론적 이해와 결합하여 관련되고 사용자 의도와 정렬된 검색 결과들을 산출한다.\n' +
+      '\n' +
+      '#### 2.1.3 Generation\n' +
+      '\n' +
+      '생성 단계는 질의와 관련이 있고 검색된 문서에서 발견된 정보를 반영하는 텍스트를 생성하는 작업을 수행한다. 통상적인 방법은 질의를 검색된 정보와 연결시키는 것을 수반하고, 그 후 텍스트 생성을 위해 LLM에 공급된다(Li 등, 2022). 생성된 텍스트의 검색된 콘텐츠와의 정렬 및 정확성을 보장하는 것은 과제를 제시하지만, 또한 소스 재료에 밀접하게 밀착하는 것과 결과물을 창의성으로 주입하는 것 사이의 균형을 맞추는 것이 필수적이다. 생성된 텍스트는 검색된 문서로부터 정보를 정확하게 전달하고 질의 의도와 일치시키는 동시에, 검색된 데이터 내에 명시적으로 포함되지 않은 새로운 통찰력 또는 관점을 도입할 수 있는 유연성을 제공해야 한다.\n' +
+      '\n' +
+      '### RAG Paradigm\n' +
+      '\n' +
+      'RAG 패러다임은 도메인 내에서 연구를 조직하여 LLM 성능을 향상시키기 위한 간단하면서도 강력한 프레임워크를 제공한다. RAG의 핵심은 고품질 결과를 생성하는 데 중요한 검색 메커니즘이다. 따라서 이 패러다임은 검색의 관점에서 사전 검색, 검색, 사후 검색, 생성의 네 가지 주요 단계로 구조화된다. 반복적인 검색 생성 주기를 포함하는 단일 홉 및 다중 홉 검색 접근법 모두 이 4단계 구조를 따른다. 그림 3은 RAG의 핵심 기법의 분류 트리이다.\n' +
+      '\n' +
+      '#### 2.2.1 Pre-Retrieval\n' +
+      '\n' +
+      '검색 증강 생성의 사전 검색 단계는 성공적인 데이터 및 쿼리 준비를 위한 기초를 제공하여 효율적인 정보 검색을 보장한다. 이 단계에는 효과적인 데이터 액세스를 준비하는 필수 작업이 포함됩니다.\n' +
+      '\n' +
+      '인덱싱 프로세스는 인덱싱으로 시작되며, 인덱싱은 정보를 빠르고 정확하게 검색할 수 있도록 조직화된 시스템을 구축한다. 인덱싱의 특수성은 작업 및 데이터 유형에 따라 다릅니다. 예를 들어, 문장-레벨 인덱싱은 질문-답변 시스템들이 정확하게 답변들을 찾는데 유익한 반면, 문서-레벨 인덱싱은 그들의 주요 개념들 및 아이디어들을 이해하기 위해 문서들을 요약하는데 더 적절하다.\n' +
+      '\n' +
+      '그림 2: 기본 워크플로 및 패러다임이 있는 통합 RAG 프레임워크입니다.\n' +
+      '\n' +
+      '쿼리 조작 인덱싱 후에는 인덱싱된 데이터와 더 잘 일치하도록 사용자 쿼리를 조정하기 위해 쿼리 조작이 수행됩니다. 이것은 질의 재작성(Jansen et al., 2009; Yu et al., 2020), 사용자의 의도에 더 가깝게 정렬하기 위해 질의를 재작성하는 질의 확장(Huang et al., 2013), 동의어 또는 관련 용어를 통해 더 관련된 결과를 캡처하기 위해 질의를 확장하는 질의 확장(Huang et al., 2013), 및 일관된 질의 매칭을 위해 스펠링 또는 용어의 차이를 해결하는 질의 정규화를 포함한다.\n' +
+      '\n' +
+      '데이터 수정은 검색 효율성을 높이는 데에도 중요합니다. 이 단계는 결과의 품질을 향상시키기 위해 관련 없는 또는 중복 정보를 제거하고 검색된 콘텐츠의 관련성 및 다양성을 높이기 위해 메타데이터와 같은 추가 정보로 데이터를 풍부하게 하는 것과 같은 전처리 기술을 포함한다(Bevilacqua et al., 2022).\n' +
+      '\n' +
+      '#### 2.2.2 Retrieval\n' +
+      '\n' +
+      '검색 & 랭킹 검색 단계는 검색과 랭킹의 조합이다. 생성 모델의 출력 품질을 향상시키기 위해 데이터 세트에서 문서를 선택하고 우선순위를 지정하는 데 중점을 둡니다. 이 단계는 검색 알고리즘을 사용하여 인덱싱된 데이터를 탐색하여 사용자의 쿼리와 일치하는 문서를 찾습니다. 관련 문서들을 식별한 후, 이들 문서들을 초기에 순위화하는 프로세스는 질의에 대한 그들의 관련성에 따라 정렬하기 시작한다.\n' +
+      '\n' +
+      '#### 2.2.3 Post-Retrieval\n' +
+      '\n' +
+      '검색 후 단계는 초기에 검색된 문서를 정제하여 텍스트 생성의 품질을 향상시키는 역할을 한다. 이 단계는 최종 생성 작업을 위해 문서 선택을 최적화하는 것을 목표로 하는 재순위화 및 필터링으로 구성된다.\n' +
+      '\n' +
+      '재순위화 단계에서는 이전에 검색된 문서를 재평가하고 점수를 매기고 재편성한다. 목적은 질의와 가장 관련성이 높은 문서를 보다 정확하게 강조하여 관련성이 낮은 문서의 중요성을 줄이는 것이다. 이 단계는 정밀도를 향상시키기 위해 추가 메트릭과 외부 지식 소스를 통합하는 것을 포함한다. 이러한 맥락에서, 이용 가능한 후보 문서들의 제한된 세트(Huang and Hu, 2009)로 인해, 정확도는 우수하지만 효율성이 낮은 사전-트레이닝된 모델들이 효과적으로 채용될 수 있다.\n' +
+      '\n' +
+      '필터링 필터링은 지정된 품질 또는 관련성 표준을 충족하지 못하는 문서를 제거하는 것을 목표로 합니다. 이는 특정 관련성 레벨 미만의 문서들을 배제하기 위해 최소 관련성 스코어 임계치를 설정하는 것과 같은 여러 접근법들을 통해 행해질 수 있다. 또한, 사용자들로부터의 피드백 또는 사전 관련성 평가들의 사용은 필터링 프로세스를 조정하는 것을 보조하여, 가장 관련성이 높은 문서들만이 텍스트 생성을 위해 유지된다는 것을 보장한다(Khattab and Zaharia, 2020; Huang and Huang, 2023).\n' +
+      '\n' +
+      '#### 2.2.4 Generation\n' +
+      '\n' +
+      '생성 단계는 생성된 응답의 품질을 향상시키기 위해 검색된 정보를 활용하는 역할을 하는 RAG 프로세스의 중요한 구성 요소이다. 이 단계는 읽을 수 있고 매력적이며 유익한 콘텐츠를 제작하는 것을 목표로 하는 여러 하위 단계를 포함한다.\n' +
+      '\n' +
+      '생성 단계의 중심에서 강화는 강화 단계이며, 여기서 목표는 검색 정보를 사용자의 질의와 병합하여 일관성 있고 관련 있는 응답을 생성하는 것이다. 여기에는 검색된 콘텐츠에 추가 세부 정보를 추가하여 정교화하는 과정이 포함된다. 리프레이징, 리구조화 등의 방법을 통해 산출물의 명확성, 일관성, 양식적 어필을 높여 산출물의 질을 높이려는 노력이 집중되고 있다. 다양한 출처의 정보를 결합하여 종합적인 시각을 제공하고, 내용의 정확성과 관련성을 확보하기 위한 검증을 수행한다.\n' +
+      '\n' +
+      'CustomizationCustomization은 사용자의 특정 선호도 또는 요청의 컨텍스트에 맞게 콘텐츠를 조정하는 것을 포함하는 선택적 단계입니다. 이 맞춤법에는 대상 청중의 요구 또는 콘텐츠가 제시될 형식에 맞게 콘텐츠를 조정하고 콘텐츠의 본질을 간결하게 전달하기 위해 정보를 압축하는 것이 포함된다. 이 프로세스는 또한 핵심 사항이나 주장을 강조하는 요약 또는 초록을 만드는 것을 수반하며, 산출물이 유익하고 간결하다는 것을 보장한다.\n' +
+      '\n' +
+      '## 3 Pre-Retrieval\n' +
+      '\n' +
+      '### Indexing\n' +
+      '\n' +
+      'kNN-LMs(Khandelwal et al., 2020)에서 입증된 바와 같이 k-최근접 이웃(kNN) 알고리즘과 사전 훈련된 신경 LMs의 통합은 언어 모델링에서 상당한 진전을 나타낸다.\n' +
+      '\n' +
+      '이 방법은 텍스트 모음에서 생성된 데이터 저장소를 사용하여 문맥적으로 관련된 예제의 동적 검색을 가능하게 하여 추가적인 훈련 없이 복잡성을 개선할 수 있다.\n' +
+      '\n' +
+      '효율성으로 알려진 FAISS Johnson 등(2021)은 인덱싱 목적으로 많은 연구에서 Khandelwal 등(2020); Lewis 등(2020); Khattab 등(2022)을 채택하였다. 일부 연구는 HNSW(Hierarchical Navigable Small World) 근사 Malkov 및 Yashunin(2020)과 같은 향상된 기능을 통합하여 더 빠른 검색 Lewis 등(2020)을 달성한다. 또한 Webgt Nakano 등(2021)에 설명된 실제 사용자 검색 이력을 기반으로 인덱싱을 위해 Bing API 3을 활용하는 것과 같은 대체 도구는 조사 중인 다양한 인덱싱 기술을 보여줍니다.\n' +
+      '\n' +
+      '각주 3: [https://www.microsoft.com/en-us/bing/apis/bing-web-search-api](https://www.microsoft.com/en-us/bing/apis/bing-web-search-api)\n' +
+      '\n' +
+      '또한 MEMWALKER Chen et al. (2023)은 입력 텍스트로부터 메모리 트리를 생성함으로써 LLMs에서 컨텍스트 윈도우 크기의 한계를 극복하기 위한 혁신적인 방법을 소개한다. 이 트리는 처음에 텍스트를 더 작은 조각으로 분할한 다음 이러한 세그먼트를 요약 노드의 계층적 구조로 요약하여 많은 양의 정보를 효율적으로 인덱싱하고 관리함으로써 형성된다.\n' +
+      '\n' +
+      '### Query Manipulation\n' +
+      '\n' +
+      'FiD Izacard and Grave (2021), COKLi et al. (2023), Query2doc Wang et al. (2023) 등의 연구는 더 적절한 검색 결과를 얻기 위해 새로운 쿼리를 생성하거나 기존 쿼리를 정제하는 것의 중요성을 강조한다. 이러한 연구 노력은 구조화된 것이든 비구조화된 것이든 다양한 지식 소스에 적합하도록 여러 지문에서 증거를 효율적으로 수집하고 쿼리를 맞춤화할 필요성을 강조한다. 유사 문서의 생성에서부터 질의 향상을 위한 기술들은 다양한 정보 검색 데이터 세트에 걸쳐 검색 성능을 강화시키는 것으로 나타났다.\n' +
+      '\n' +
+      '쿼리 조작에 대한 추가 탐구는 Step-Back Zheng et al.(2023)과 PROMPTAGATOR Dai et al.(2023)에 의해 수행되었으며, 이는 고수준의 개념을 추상화하거나 프롬프트 기반 쿼리 생성을 위해 LLMs을 활용하는 데 중점을 둔다. 이러한 전략은 태스크를 보다 일반화된 버전으로 재조정하거나 제한된 예제에서 태스크 특정 쿼리를 만들어 검색 시스템의 기능과 쿼리를 더 잘 정렬하기 위해 노력한다. 이러한 방법론은 질의와 색인된 데이터 간의 일관성을 향상시켜 보다 적절하고 통찰력 있는 정보의 검색을 용이하게 한다.\n' +
+      '\n' +
+      '더욱이, KnowledGPT Wang et al.(2023)과 Rewrite-Retrieve-Read Ma et al.(2023)은 "program of thought"를 통해 질의 조작을 위한 접근법들을 소개하고, 혁신적인 질의 재작성 기법들을 소개한다. KnowledGPT는 지식베이스와 인터페이스할 코드를 생성하여 사용자 질의를 구조화된 검색 명령어로 변환함으로써 혁신한다. 대조적으로, Rewrite-Retrieve-Read는 쿼리 재구성을 위해 훈련 가능한 컴팩트 LM을 활용하여, 사용자의 의도 및 컨텍스트를 보다 효과적으로 반영하도록 조정한다.\n' +
+      '\n' +
+      '마지막으로, FLARE Jiang et al. (2023)은 쿼리 포뮬레이션에 대한 신뢰에 기초한 전략을 제시한다,\n' +
+      '\n' +
+      '그림 3: RAG의 핵심 기법 분류 트리\n' +
+      '\n' +
+      '정보 요구 사항을 정확하게 반영하는 쿼리 작성에 중점을 둡니다. 이 방법은 생성된 문장들 또는 그 단편들의 사용을 검색 질의들의 기초로서 통합한다. 문장을 직접 사용하도록 선택하거나, 낮은 신뢰도의 토큰을 모호하게 하거나, 명시적인 질문을 공식화함으로써, 이 접근법은 검색 프로세스의 효율성을 높여, 검색된 정보가 생성 프로세스의 요구 사항을 충실히 만족하도록 하는 것을 목표로 한다.\n' +
+      '\n' +
+      '### Data Modification\n' +
+      '\n' +
+      'RA-DIT(Lin et al., 2023) 및 RECITE(Sun et al., 2023)는 내부 데이터 수정을 통한 증강을 강조한다. RA-DIT는 LLM과 리트리버에 대한 미세 조정 데이터 세트를 구별하여 LLM의 문맥 이해와 리트리버의 쿼리 정렬 능력을 강화한다. 반면에 RECITE는 생성된 인용 및 응답의 다양성과 관련성을 높이기 위해 통로 힌트와 합성 질문-통로 쌍을 활용한다. 이 접근법은 모델의 지식 기반을 넓히고 응답 정확도를 개선하고자 한다.\n' +
+      '\n' +
+      'UPRISE(Cheng et al., 2023) 및 GENREAD(Yu et al., 2023)는 외부 데이터의 미세화를 목표로 한다. UPRISE는 원시 작업 데이터를 구조화된 형식으로 변환하고 프롬프트의 선택을 세분화하여 검색 결과를 향상시킵니다. 대조적으로, GENREAD에서 사용하는 클러스터링 기반 프롬프트 방법은 질문에서 문서를 생성하고 관련 없는 데이터를 제거하기 위해 클러스터링하여 다양한 컨텍스트 통찰력으로 입력을 풍부하게 한다. 이 기법은 생성 모델을 보다 풍부한 정보 집합으로 제공함으로써 생성 모델의 성능을 향상시키는 것을 목적으로 한다.\n' +
+      '\n' +
+      '더욱이, KnowledGPT(Wang et al., 2023)는 엔티티 링킹을 통해 구조화된, 의미론적으로 풍부한 정보를 갖는 원시 텍스트 데이터를 증강하는 데 전용된다. 이 강화 프로세스는 데이터를 더 응집적으로 구조화하고 쿼리에 더 적합하도록 만들 뿐만 아니라 모델의 검색 효율성을 높인다. 정확하고 연결된 지식을 활용하여 모델의 이해와 관련 응답을 생성하는 능력을 향상시켜 전체 성능을 향상시킵니다.\n' +
+      '\n' +
+      '## 4 Retrieval\n' +
+      '\n' +
+      '### Search & Ranking\n' +
+      '\n' +
+      'Atlas (Izacard et al., 2023)는 Attention Distillation 및 Perplexity Distillation을 포함한 소수의 샷 학습 접근법을 조사하여 리트리버를 더 많은 관련 문서를 검색하는 방향으로 조정한다. IRCOT(Trivedi et al., 2023)는 검색의 효율성을 향상시키기 위해 검색과 추론을 통합한다. SURGE(Kang et al., 2023)는 지식 그래프로부터 관련 서브그래프들을 추출하기 위해 서브그래프 리트리버를 채용하는 반면, AAR(Yu et al., 2023)은 관련 문서들의 페칭에서 LLMs들을 돕기 위해 검색 선호도들을 수정한다.\n' +
+      '\n' +
+      'PRCA(Yang et al., 2023)는 정확한 질의 응답에 중요한 내용을 우선순위화하기 위해 지도 학습 전략을 사용하여 문서로부터 관련되고 컨텍스트가 풍부한 정보를 추출하기 위해 도메인-특정 추상적 요약(domain-specific abstractive summaryization)을 사용하는 것에 초점을 맞추고 있다. 한편, MEMWALKER(Chen et al., 2023)은 구성된 메모리 트리에서 내부 검색 및 랭킹 메커니즘을 활용하여 긴 컨텍스트 질문 응답을 위한 관련 정보를 식별한다. 추가적으로, FLARE(Jiang et al., 2023)의 Confidence-based Active Retrieval approach는, 낮은 신뢰 토큰들이 외부 지식에 대한 필요성을 시그널링한다는 통찰을 활용하여, 생성된 문장들의 신뢰 레벨들에 기초하여 정보 검색을 동적으로 트리거한다.\n' +
+      '\n' +
+      '## 5 Post-Retrieval\n' +
+      '\n' +
+      '### Re-Ranking\n' +
+      '\n' +
+      'Re2G(Glass et al., 2022)는 질의와 통과를 동시에 분석하기 위해 BERT 트랜스포머를 활용하여 재순위화를 위한 시퀀스-쌍 분류 접근법을 소개한다. 수열 간의 교차 주의를 사용하는 이 상호 작용 모델은 초기 검색 단계에서 일반적으로 사용되는 표현 모델과 대조를 제공한다. PROMPTTAGATOR(Dai et al., 2023)는 또한 재-스코어링을 위해 교차-어텐션 모델을 채용한다. 그것의 "Lift Yourself Up" 전략은 추가 생성 라운드를 위해 풀에서 최적의 후보를 반복적으로 선택하여 자가 생성 콘텐츠를 통해 콘텐츠 품질을 점진적으로 향상시킨다.\n' +
+      '\n' +
+      'Re-ranking은 InContext RALM(Ram et al., 2023)의 중요한 초점이기도 하다. 재순위에 대한 두 가지 접근법, 즉 언어 모델을 이용한 제로샷 재순위와 학습된 모델을 통한 예측 재순위를 탐색한다. 이 단계는 언어 모델 성능 향상을 위한 기대 효용을 기반으로 문서 선택을 정제하는 것을 목표로 한다. ITER-RETGEN(Shao et al., 2023)은 특히 LLM 출력으로부터의 관련성 신호에 기초하여 재순위자로부터 조밀한 리트리버로 지식 증류를 활용하여 검색 노력을 미세 조정한다. 재평가 모델의 이러한 최적화는 쿼리 뉘앙스를 보다 정확하게 캡처하여 문서 선택을 개선하는 것을 목표로 한다.\n' +
+      '\n' +
+      'DKS-RAC(Huang et al., 2023)은 시퀀스 레벨에서 답변과 검색된 패시지 사이의 지식을 정렬하기 위한 DKS(Dense Knowledge Similarity)를 제시한다. 이 접근법은 지식 유사성을 기반으로 한 통과 선택에 직접적인 영향을 미치기 때문에 재순위로 분류되어 쿼리와 문서 간의 일치를 정제한다.\n' +
+      '\n' +
+      'FiD-light(Hofstatter et al., 2023)는 랭킹 순서를 최적화하기 위해 소스 포인터들을 채용하는 리스트형 자기회귀 재-랭킹 방법을 도입한다. 이 방법은 생성된 텍스트와 소스 패시지 사이의 링크를 유지하여, 보다 구조화된 생성 프로세스를 가능하게 한다. 관련 정보 소스에 대한 포인터로서 모델의 출력 내에 텍스트 인용을 통합함으로써, 이 접근법은 조직화된 검색 및 생성 프로세스를 용이하게 하여 생성된 콘텐츠의 전체 일관성 및 관련성을 향상시킨다.\n' +
+      '\n' +
+      '### Filtering\n' +
+      '\n' +
+      'COK(Li et al., 2023)는 검색된 지식으로 반복적으로 근거를 정제하는 것을 목표로 하는 점진적 Rationale Correction 기법을 제시한다. 이 방법은 연속 최적화 프로세스를 구성하여 콘텐츠 생성에 사용되는 정보의 관련성과 품질을 크게 향상시킨다. Self-RAG(Asai et al., 2023)는 무관한 내용을 효율적으로 필터링하기 위해 자기-반사 메커니즘을 도입한다. 비판 토큰을 사용하여 이 접근법은 검색된 구절의 관련성, 지원성 및 유용성을 평가하여 고품질 정보만 콘텐츠 생성 프로세스에 통합되도록 한다.\n' +
+      '\n' +
+      '추가로, FiD-TF(Berchansky et al., 2023) 및 RECOMP(Xu et al., 2023)는 검색된 문서들로부터 관련 없는 또는 중복 토큰들 및 정보의 제거에 전용된다. FiD-TF는 불필요한 토큰을 식별하고 제거하는 동적 메커니즘을 채택하여 정보 처리의 효율성을 향상시킨다. 반면에 RECOMP는 문서를 간결한 요약으로 압축하여 생성 프로세스에 가장 적합한 내용만을 선택하는 데 중점을 둔다. 이러한 방법들은 관련되고 지지적인 정보만이 활용되도록 보장함으로써 콘텐츠 생성 워크플로우를 간소화하여, 생성된 콘텐츠의 전반적인 품질 및 관련성을 향상시킨다.\n' +
+      '\n' +
+      '## 6 Generation\n' +
+      '\n' +
+      '### Enhancing\n' +
+      '\n' +
+      'DSP(Khattab et al., 2022)는 다양한 구절에서 집계된 정보를 기반으로 질문을 요약하고 답변하기 위해 다중 검색 쿼리를 생성하도록 설계된 프레임워크를 도입한다. 이 프레임워크는 CombSUM(Fox and Shaw, 1994)을 사용하여 서로 다른 검색 목록에 걸쳐 패시지에 대한 누적 확률 점수를 계산하여 여러 소스로부터 포괄적인 응답의 컴파일을 용이하게 한다.\n' +
+      '\n' +
+      'PRCA(Yang et al., 2023)는 Reward-Driven Stage를 개략적으로 설명하며, 여기서 증류된 컨텍스트는 생성기로부터의 피드백에 기초하여 정제된다. 강화 학습을 활용하여, 이 단계는 관련 컨텍스트를 제공하기 위해 수신된 보상에 따라 PRCA의 파라미터를 조정한다. 목적은 추출된 컨텍스트를 발전기의 특정 요구 사항을 충족하도록 미세 조정함으로써, 발전 프로세스를 최적화하는 것이다.\n' +
+      '\n' +
+      'REPLUG(Shi et al., 2023)는 블랙 박스 LM에 의한 최종 예측 이전에 검색된 문서들을 입력 컨텍스트에 사전대기하는 방법을 제안한다. 검색된 문서를 병렬로 인코딩하기 위해 앙상블 전략을 도입하여 LM 문맥 길이의 한계를 극복하고 증가된 계산 자원의 할당을 통해 정확도를 향상시킨다. 이 접근법은 LM이 더 넓은 범위의 관련 정보에 액세스할 수 있도록 보장함으로써 생성 프로세스를 개선한다.\n' +
+      '\n' +
+      'RECITE(Sun et al., 2023)는 자기-일관성 기술을 구현하는데, 이는 다수의 인용을 독립적으로 생성하고 가장 적절한 답변을 결정하기 위해 다수의/다수 투표 시스템을 채용하는 것을 포함한다. 이 방법은 답변의 신뢰성과 정확성을 높이고, 이에 따라 출력의 품질과 신뢰성을 향상시키도록 설계된다.\n' +
+      '\n' +
+      '### Customization\n' +
+      '\n' +
+      '(Luo 등, 2023)에 의해 소개된 PKG 프레임워크는 LMs의 출력을 커스터마이징하기 위한 접근법을 나타낸다. 사전 학습된 모델을 사용하여 내부적으로 배경 지식을 생성함으로써, PKG는 전통적인 외부 검색 프로세스의 필요성을 제거한다. 이 방법은 도메인 또는 태스크 특정 지식을 생성 단계에 직접 통합하여 주어진 컨텍스트 또는 요구 사항에 특별히 맞춤화된 응답을 생성하는 LM의 능력을 크게 향상시킨다.\n' +
+      '\n' +
+      'Self-RAG(Asai et al., 2023)는 사용자 지정 가능한 디코딩 알고리즘 내에 반사 토큰들을 통합하는 전략을 제공한다. 이 기법은 특정 작업을 기반으로 모델의 검색 및 생성 동작을 동적으로 조정하여 보다 다양한 응답 생성을 가능하게 한다. 요구 사항에 따라 이 접근법은 정확성 또는 창의성을 위해 튜닝될 수 있어 다양한 요구를 충족하는 출력을 생성하는 데 유연성을 제공한다.\n' +
+      '\n' +
+      'SURGE(Kang et al., 2023)는 그래프-텍스트 대비 학습의 적용을 통해 커스터마이징을 달성한다. 이 방법은 생성된 대화 응답들이 검색된 서브그래프에 포함된 지식과 밀접하게 정렬되어, 대화 컨텍스트에 구체적이고 관련되며 깊게 뿌리내린 응답들을 산출하도록 보장한다. 검색된 지식과 생성된 텍스트 사이의 일관성을 유지함으로써 SURGE는 서브그래프의 세부 지식을 정확하게 반영하는 출력을 생성할 수 있어 응답의 관련성과 특수성을 향상시킨다.\n' +
+      '\n' +
+      '## 7 RAG 비교\n' +
+      '\n' +
+      '### RAG의 포괄적 요약\n' +
+      '\n' +
+      '표 1은 이 논문에서 논의된 RAG 연구에 대한 자세한 분석을 제시한다. 분석에 따르면 이러한 연구의 대부분은 LLM의 내용을 풍부하게 하기 위해 외부 데이터 소스를 활용했다. 단일 홉 검색보다 다중 홉 검색에 대한 선호가 언급되었으며, 이는 반복 검색 라운드가 일반적으로 우수한 결과를 산출한다는 것을 나타낸다. 즉, 대부분의 방법들은 높은 품질의 후보 문서들을 확보하기 위해 밀집 검색을 사용한다. 검색 전 단계에서 데이터 세트를 수정하는 것과 비교하여 검색 성능을 향상시키기 위해 쿼리를 조작하는 데 중점을 두는 연구가 더 많다. 또한 검색 단계를 최적화하는 데 상당한 중점을 두고 있어 연구에서 중요한 역할을 강조한다. 그러나 이를 미래 탐구의 잠재적 영역으로 지적하면서 세대 단계에서 커스터마이징에 초점을 맞춘 연구는 부족한 것으로 보인다. 전반적으로 RAG의 목표는 LLM의 응답 품질을 향상시키는 것이지만 검색 측면을 개선하기 위한 더 많은 노력이 이루어졌다.\n' +
+      '\n' +
+      '### 검색 및 생성기\n' +
+      '\n' +
+      'RAG에서는 리트리버와 생성기가 주요 구성 요소입니다. 표 2는 본 논문에서 논의된 연구에서 사용된 검색기 및 생성기를 요약한 것이다. 표에서 대부분의 생성기가 고급 언어 모델을 사용하지만 상당수의 검색기가 효율성 때문에 여전히 전통적인 BM25를 사용하고 있음이 분명하다. 검색 방법은 RAG에서 중요한 측면이며 강조\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|} \\hline \\multicolumn{1}{|c|}{**Racev**} & \\multicolumn{1}{|c|}{**Tourified Methods**} & \\multicolumn{1}{|c|}{**Multiple-hop**} & \\multicolumn{1}{|c|}{**Training**} & \\multicolumn{1}{|c|}{**Predefined**} & \\multicolumn{1}{|c|}{**Racev**} & \\multicolumn{1}{|c|}{**Predefined**} & \\multicolumn{1}{|c|}{**Predefined**} & \\multicolumn{1}{|c|}{**Predefined**} & \\multicolumn{1}{|c|}{**Predefined**} & \\multicolumn{1}{|c|}{**Predefined**} & \\multicolumn{1}{|c|}{**Comments**} \\\\ \\hline \\multicolumn{1}{|c|}{**RAG**} & \\multicolumn{1}{|c|}{**Tourified Methods**} & \\multicolumn{1}{|c|}{**Multiple-hop**} & \\multicolumn{1}{|c|}{**Tourified Methods**} & \\multicolumn{1}{|c|}{**Two-shot**} & \\multicolumn{1}{|c|}{**Two-\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:9]\n' +
+      '\n' +
+      '### Retrieval-based Aspect\n' +
+      '\n' +
+      '정보 검색에서, 검색 결과의 품질은 일반적으로 MAP(Mean Average Precision), Precision, Reciprocal Rank, 및 NDCG(Normalized Discounted Cumulative Gain)와 같은 표준 메트릭을 사용하여 평가된다(Radlinski and Craswell, 2010; Reimers and Gurevych, 2019; Nogueira et al., 2019). 이러한 메트릭은 주로 주어진 쿼리에 대한 검색된 문서의 관련성을 평가합니다.\n' +
+      '\n' +
+      'RAG의 검색 기반 메트릭은 생성 작업을 지원하기 위해 관련 정보를 검색하는 효과에 중점을 둡니다. 여기에는 질의에 응답하기 위한 정확한 정보를 제공함에 있어서 검색된 문서의 정밀도를 측정하는 Accuracy, 및 관련 정보가 발견되지 않을 때 응답을 거절하는 시스템의 능력을 평가하는 Rejection Rate(Chen 등, 2023b)가 포함된다. 추가적으로, 에러 검출 레이트(Chen 등, 2023b)는 검색된 문서들로부터 부정확하거나 오판의 소지가 있는 정보를 식별하고 무시하기 위한 모델의 능력을 평가한다. 컨텍스트 관련성(Context Relevance)은 검색한 문서의 쿼리와 관련성을 평가하는 또 다른 필수 메트릭입니다. 응답을 생성하는 데 사용되는 정보가 쿼리의 컨텍스트와 직접 관련이 있는지 확인하는 것이 중요합니다. Faithfulness(Shahul et al., 2023)는 생성된 콘텐츠가 검색된 문서들에서 정보를 반영하는 정확도를 측정하여, 잘못된 정보를 갖지 않는 생성 프로세스를 보장한다.\n' +
+      '\n' +
+      '### Generation-based Aspect\n' +
+      '\n' +
+      'LLM에 의해 생성된 텍스트의 품질을 평가하는 것은 표준 메트릭을 사용하여 다양한 다운스트림 태스크에 대한 성능을 분석하는 것을 포함한다. 이러한 메트릭은 언어적 품질, 일관성, 정확성 및 생성된 텍스트가 지상 진실 데이터를 반영하는 정도를 평가한다. 언어적 품질과 일관성은 인간이 제작한 텍스트와의 유창성 및 유사성을 측정하는 BLEU(Papineni et al., 2002), 주요 아이디어 및 구문을 캡슐화하는 텍스트의 용량을 측정하기 위해 참조 요약과의 중첩을 정량화하는 ROUGE-L(Lin, 2004) 등의 메트릭을 통해 평가된다. 정확도 및 지상 진실 데이터와의 중첩은 EM 및 F1 Score와 같은 메트릭을 사용하여 측정되며, 이는 각각 완전히 정확한 답변의 백분율을 결정하고 부정확성을 최소화하면서 관련 답변을 검색하는 데 있어 정밀도 및 재현율의 균형 있는 평가를 제공한다.\n' +
+      '\n' +
+      '이러한 표준 메트릭들 외에도, 평가는 또한 태스크-특정 기준들 및 특정 애플리케이션들에 맞춤화된 신규 메트릭들을 통합할 수 있다. 예를 들어, 대화 생성에서는 응답 다양성과 자연스러움을 평가하기 위해 복잡성과 엔트로피를 사용한다. 또한, 오도율 및 재피어런스율(Liu et al., 2023)과 같은 메트릭은 잘못된 정보 및 부정확성을 피하기 위한 모델의 능력을 측정한다. 다른 전문 메트릭은 RAG 시스템 순위의 정확도를 평가하기 위한 Answer Relevance(Shahul et al., 2023), 쿼리들에 대한 응답들의 정밀도를 평가하는; Kendall\'s tau(Saad-Falcon et al., 2023), 다수의 정답들을 갖는 태스크들에서 정확도 평가를 미세 조정하는 Micro-F1(Saad-Falcon et al., 2023); 및 예측 정확도는, 생성된 답변들의 정렬을 예상 응답들과 직접 측정함으로써, 정확한 콘텐츠를 생성하는데 있어서 시스템의 유효성에 대한 직접적인 통찰을 제공한다.\n' +
+      '\n' +
+      '## 9 Future Directions\n' +
+      '\n' +
+      '### Retrieval Quality\n' +
+      '\n' +
+      'RAG를 LLM에 통합하는 것은 가짜 뉴스를 포함한 인터넷에서 신뢰할 수 없는 방대한 정보로 인해 심각한 장애물에 직면해 있다. 이것은 유용한 지식을 정확하게 검색하기 위한 과제를 제시하여 LLM에 의한 응답의 신뢰할 수 없는 생성으로 이어진다. 그 결과, LLMs는 gen\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|c|c|c|c|} \\hline\n' +
+      '**Evaluation Framework** & **Aspects** & **Methods** & **Metrics** \\\\ \\cline{3-4} \\multirow{3}{*}{RAGAS (Shahul et al., 2023)} & \\multirow{3}{*}{Quality of RAG Systems} & Contrast Relevance & Extracted Semantics / Total Sequences & \\\\ \\cline{3-4}  & & & Average Precision & Average Precision \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{Parallement} & \\multicolumn{1}{c|}{} & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{Contract Relevance} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\hline \\multirow{3}{*}{ARIS (Saad-Falcon et al., 2023)} & \\multirow{3}{*}{Imposing RAGAS} & \\multirow{3}{*}{Imposing RAGAS} & \\multirow{3}{*}{Conference Intervals} & KLT (Pétroni et al., 2021) \\\\ \\cline{3-4}  & & & \\multicolumn{1}{c|}{} & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\hline \\multirow{3}{*}{RECALL (Liu et al., 2023)} & \\multirow{3}{*}{Counterfactual Robustness} & Reopage Quality & \\multicolumn{1}{c|}{} & \\multicolumn{1}{c|}{} & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\hline \\multirow{3}{*}{RGB (Chen et al., 2023b)} & \\multirow{3}{*}{Impact of RAG on LLM} & Negative Rigging & Rejection Rate & \\multicolumn{1}{c|}{} & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\cline{3-4}  & & \\multicolumn{1}{c|}{} & & \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 3: 부정확한 정보에 기초한 상이한 RAG 평가 프레임워크세레이트 콘텐츠의 비교, 그들의 신뢰성을 약화시킨다. 최근의 연구 노력은 정확하고 신뢰할 수 있는 응답을 생성하는 LLM의 효율성, 확장성 및 효율성을 개선하기 위해 검색 방법을 향상시키는 데 초점을 맞추고 있다.\n' +
+      '\n' +
+      '미분 가능한 검색 인덱스 Tay 등(2022)과 Bevilacqua 등(2022)은 Transformer 모델 내에서 검색 프로세스를 통합하는 미분 가능한 검색 인덱스를 개발하여 텍스트 쿼리를 문서 식별자에 직접 매핑할 수 있다. 이러한 접근 방식은 보다 효율적이고 확장 가능한 검색을 위해 우수한 성능과 잠재력을 제공한다.\n' +
+      '\n' +
+      'Generative Models for SearchGEREChen 등(2022)은 사실 검증 작업을 위한 문서 제목과 증거 문장을 직접 생성할 수 있다. PARADELi 등(2024)은 통로 표현을 통일된 문서 관련성 점수로 집계하는 문서 재순위를 위한 방법이다. 이 두 가지 방법 모두 기존 방법보다 검색 품질이 크게 향상되었음을 보여준다.\n' +
+      '\n' +
+      'Fine-tuning Pre-trained Language ModelsRankTSZhuang et al.(2023)은 텍스트 랭킹을 위해 특별히 T5 프레임워크를 Fine-tuning하는 모델이다. 순위 손실을 활용하여 성능 메트릭을 최적화하고 도메인 외 데이터에서 유망한 제로샷 성능을 보여줍니다.\n' +
+      '\n' +
+      'Noise PowerCuconasu 등(2024)은 IR 성분이 RAG 시스템에 미치는 영향에 대한 포괄적인 분석을 제공하여 관련 없는 문서를 포함하면 정확도가 크게 향상될 수 있음을 보여줍니다. 기존의 검색 전략에 도전하고 검색과 언어 생성 모델을 통합하는 전문 접근 방식을 개발할 수 있는 가능성을 강조한다.\n' +
+      '\n' +
+      '### Multimodal RAG\n' +
+      '\n' +
+      '멀티모달 RAG 도메인은 텍스트와 시각적 이해의 융합에서 중추적인 발전을 강조하면서 상당한 성장을 경험했다. MuRAGChen et al.(2022)의 도입은 언어 생성을 위한 텍스트 정보와 시각적 정보를 융합하여 멀티모달 데이터 세트에 대한 새로운 표준을 확립함으로써 획기적인 발전을 이루었다. 이 모델은 질의 응답 및 추론 작업에서 정확도를 높이기 위해 멀티모달 메모리 시스템을 사용하는 것의 효율성을 보여주었다.\n' +
+      '\n' +
+      'MuRAG 이후, REVEALHu et al. (2023) 및 Re-ImagenChen et al. (2023)과 같은 연구는 시각적 질의 응답 및 텍스트-이미지 생성을 향상시키는 데 초점을 맞추었다. 그들은 각각 동적 검색 메커니즘의 통합과 이미지 충실도의 개선을 통해 이를 달성했다. 이러한 발전은 이미지 캡션을 위한 Sarto et al. Sarto et al. (2022), 텍스트-오디오 생성을 위한 Yuan et al. Yuan et al. (2023)과 같은 연구자들에 의해 추가 모델의 기반을 마련하여 RAG의 적용 범위를 다양한 양식에 걸쳐 넓히고 생성된 출력의 품질과 사실성을 향상시켰다. 또한 Re-ViLMYang et al.(2023)은 검색 증강 시각 언어 모델을 통해 이미지 캡션 기능을 개선했다. 모델 매개변수를 미세 조정하고 혁신적인 필터링 전략을 구현함으로써 보다 정확하고 맥락적으로 적절한 캡션을 생성하는 데 진전을 이루었다. 외부 리소스를 활용함으로써 이러한 모델은 전통적인 벤치마크에 비해 상당한 향상을 제공하여 다양한 지식 소스를 통합하는 이점을 강조했습니다.\n' +
+      '\n' +
+      '## 10 Conclusions\n' +
+      '\n' +
+      '본 논문에서는 RAG 영역을 이해하기 위한 포괄적인 프레임워크를 제시하여 LLM의 능력 향상에 대한 중요성을 강조하였다. 본 연구는 RAG에 대한 구조화된 개요, 다양한 방법의 범주화, 핵심 기술과 평가 방법에 대한 심층 분석을 통해 향후 연구의 방향을 조명한다. 그것은 개선을 위한 중요한 영역을 식별하고 특히 텍스트 컨텍스트에서 RAG 응용 프로그램을 발전시키기 위한 잠재적인 방향을 설명한다. 이 조사는 RAG 분야의 핵심 개념을 검색 관점에서 해명하는 것을 목표로 하며, 정확한 검색과 정보 생성에 있어 추가적인 탐색과 혁신을 촉진하고자 한다.\n' +
+      '\n' +
+      '## 11 Limitations\n' +
+      '\n' +
+      '이 조사는 기존 RAG 모델을 종합적으로 검토하여 핵심 기술을 검색 관점에서 4가지 주요 단계로 요약한다. 일부 방법은 여러 단계를 포함할 수 있으며 이러한 단계를 분리하면 고유한 연결이 잠재적으로 모호해질 수 있음을 인식한다. 그럼에도 불구하고, 주요 목표는 접근법의 복잡성을 단순화하고 그것이 다루는 특정 문제를 명확하게 설명하는 것이다. 이를 통해 추가 최적화 및 개선을 위해 익은 영역을 보다 명확하게 식별할 수 있다. 철저한 조사에도 불구하고 현장과 페이지 제한의 급속한 진화는 특정 측면이 완전히 분석되고 탐구되지 않았거나 최근 개발이 누락되었을 수 있음을 의미한다. 이 논문은 RAG 개발에 도움이 될 수 있는 평가 방법을 언급하고 있지만, 랭체인이나 라마인덱스와 같은 성숙한 도구도 유용한 자원으로 인정하고 있다. 그러나 이 조사의 초점은 평가 파이프라인을 자세히 설명하거나 이러한 도구가 구체적으로 사용되는 방법이 아니라 평가 측면이 RAG의 발전을 지원할 수 있는 방법을 설명하는 데 있다. 이 선택은 RAG 모델을 정제하고 개선하는 데 방법론적 명확성과 평가 도구의 적용의 중요성을 강조하면서 향후 작업을 위한 영역을 강조한다.\n' +
+      '\n' +
+      '## Acknowledgements\n' +
+      '\n' +
+      '이 작업은 캐나다의 자연 과학 및 공학 연구 위원회(NSERC)와 요크 연구 의장(YRC) 프로그램의 지원을 받았다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* A. Asai, Z. 우영 Wang, A. Sil, and H. Hajishirzi (2023) Self-RAG: learn to retrieve, generate, and critique through self-reflection. arXivabs/2310.11511. 인용: SS1.\n' +
+      '* M. Berchansky, P. Izsak, A. Caciularu, I. Dagan, and M. Wasserblat (2023)토큰 제거를 통한 검색 증강 리더 모델의 최적화 In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, pp. 1506-1524. 인용: SS1.\n' +
+      '* 12월 9일, Cited by: SS1.\n' +
+      '* 12월 9일, Cited by: SS1.\n' +
+      '* 12월 9일, Cited by: SS1.\n' +
+      '* S. Black, G. Leo, P. Wang, C. Leahy, and S. Biderman (2021)GPT-Neo: 대규모 자기회귀 언어 모델링과 메쉬-텐서플로우. 외부 링크: 2102.03046 인용: SS1.\n' +
+      '* S. Borgeaud, A. Mensch, J. Hoffmann, T. 차이 러더포드 Millican, G. van den Driessche, J. Lesquiat, B. Damoc, A. Clark, D. de Las Casas, A. Guy, J. Menick, R. 링태 헤니건 황락 Maggiore, C. Jones, A. Cassirer, A. Brock, M. Paganini, G. Irving, O. 비닐, S. 오신데로 Simonyan, J. W. Rae, E. Elsen, and L. Sifre (2022)수조 개의 토큰에서 검색하여 언어 모델을 개선합니다. In International Conference on Machine Learning (ICML), pp. 2206-2240. Cited by: SS1.\n' +
+      '* T. B. Brown, B. Mann, N. 라이더 Subbiah, J. Kaplan, P. Dhariwal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell, S. Agarwal, A. Herbert-Voss, G. Krueger, T. 헤니간 Child, A. Ramesh, D. M. Ziegler, J. Wu, C. Winter, C. Hesse, M. 천은실러 리트윈 Gray, B. Chess, J. Clark, C. Berner, S. McCandlish, A. Radford, I. Sutskever, D. Amodei(2020) 언어 모델은 거의 샷이 되지 않는 학습자이다. In Conference on Neural Information Processing Systems (NeurIPS), Vol. abs/2005.14165. Cited by: SS1.\n' +
+      '*H. Chen, R. Pasunuru, J. Weston, A. Celikyilmaz (2023)Walking down the memory maze: beyond context limit through interactive reading. arXivabs/2310.05029. 인용: SS1.\n' +
+      '* J. Chen, R. 장재국 팬, X. Cheng (2022)Gere: 텍스트 검증을 위한 생성적 증거 검색. 제45회 국제 ACM SIGIR 정보 검색 연구 개발 회의: SS1에 인용됨.\n' +
+      '* J. Chen, H. Lin, X. 한명락 Sun (2023)Benchmarking large language models in retrieval-augmented generation. arXivabs/2309.01431. 인용: SS1.\n' +
+      '* M. 천진투렉 Wuan, H. Ponde de Oliveira Pinto, J. Kaplan, H. Edwards, Y. 버다 Joseph, G. Brockman, and others (2021)Evaluating large language models trained on code. arXivabs/2107.03374. 인용: SS1.\n' +
+      '* W. Chen, H. Hu, C. Saharia, and W. W. Cohen (2023)Re-imagen: retrieval-augmented text-to-image generator. International Conference on Learning Representations (ICLR), 인용: SS1.\n' +
+      '*Zhihong Chen, Feng Jiang, Junying Chen, Tiannan Wang, Fei Yu, Guiming Chen, Hongbo Zhang, Juhao Liang, Chen Zhang, Zhiyi Zhang 등을 포함한다. 2023d. 피닉스: 언어 전반에 걸쳐 수다를 떨고 있는 민주화. _ arXiv_, abs/2304.10453.\n' +
+      '* Cheng et al. (2023d) Daixuan Cheng, Shaohan Huang, Junyu Bi, Yuefeng Zhan, Jianfeng Liu, Yujing Wang, Hao Sun, Furu Wei, Weiwei Deng, and Qi Zhang. 2023d. Uprise: Zero-Shot 평가 향상을 위한 범용 프롬프트 검색. "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_", pages 12318-12337. Association for Computational Linguistics.\n' +
+      '*Cheng et al. (2023) Xin Cheng, Di Luo, Xiuying Chen, Lemao Liu, Dongyan Zhao, and Rui Yan. 2023b. 셀프 업: 셀프 메모리를 사용한 검색 강화 텍스트 생성 신경 정보 처리 시스템에 대한 37차 회의에서 볼륨 abs/2305.02437.\n' +
+      '* Chowdhery 등(2019) Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsvyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vanodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunipa Dev, Henryk Michalewski, Xavier Garcia, Vedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luna, Daphne Ippolito, Bar 다이, 타누말라얀 산카라나라야나 필랄리, 마리 펠라트, 에이토르 르코위츠, 에리카 모이라라, 레원 차일드, 올렉산드르 폴로조프, 캐서린 리, 종웨이 저우, 쉬에지 왕, 브레넌 새타, 마크 디아즈, 오르한 피라트, 미셸 카타스타, 제이슨 웨이, 캐시 마이어-헬스턴, 더글러스 엑, 제프 딘, 슬라브 페트로프, 노아 피델. 2023. Palm: Scaling Language Modeling with Pathways. _ JMLR_, 24:240:1-240:113.\n' +
+      '* Chung et al.(2022) Hyung Won Chung, Le Hou, S. 롱프레, 바렛 조프, 이타이, W. Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, Albert Webson, S. 구, 주윤다이, 미락 수즈건, 신윤 첸, 아악크샤 초우데리, 다샤 발터, 샤란 나랑, 가우라브 미슈라, 애덤스 웨이 위, 빈센트 자오, 옌핑 황, 앤드류 M. Dai, Hongkun Yu, Slav Petrov, E. Chi, J. Dean, Jacob Devlin, Adam Roberts, Denny Zhou, Quoc V. 레, 제이슨 웨이 2022. Scaling Instruction-Finetuned Language Models. _ arXiv_, abs/2210.11416.\n' +
+      '* Conneau 등(2020) Alexis Conneau, Kartikay Khandelwal, Naman Goyal, Vishrav Chaudhary, Guillaume Wenzek, Francisco Guzman, Edouard Grave, Myle Ott, Luke Zettlemoyer, and Veselin Stoyanov. 2020. Unsupervised Cross-Lingual Representation Learning at Scale. [계산 언어학 협회 제58차 연례 회의]에서 8440-8451쪽. 계산 언어학 협회.\n' +
+      '* Cuconsu 등(2024) Florin Cuconsu, Giovanni Trappolini, Federico Siciliano, Simone Filice, Cesare Campagnano, Yoelle Maarek, Nicola Tonellotto, and Fabrizio Silvestri. 2024. The Power of Noise: Redefining Retrieval for RAG Systems. _ arXiv_, abs/2401.14887.\n' +
+      '* Dai et al.(2023) Zhuyun Dai, Vincent Y. 자오, 지마, 이루앙, 지안모 니, 징루, 안톤 바칼로프, 켈빈 구우, 키스 B 홀, 밍웨이 창. 2023. Promptagator: Few-shot Dense Retrieval From 8 examples. International Conference on Learning Representations (ICLR)_에서.\n' +
+      '* Devlin 등(2019) Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. 2019. Bert: Pre-training of Deep Bidirectional Transformers for Language Understanding. <프로시빙스 of the 2019 Conference of the North>에서 4171-4186 페이지. 계산 언어학 협회.\n' +
+      '* Dinan 등(2019) Emily Dinan, Stephen Roller, Kurt Shuster, Angela Fan, Michael Auli, and Jason Weston. 2019. Wikipedia의 마법사: Knowledge-Powered Conversational Agents. International Conference on Learning Representations (ICLR)_에서.\n' +
+      '* Du et al.(2022) Zhengxiao Du, Yujie Qian, Xiao Liu, Ming Ding, Jiezhong Qiu, Zilin Yang, and Jie Tang. 2022. Glm: 일반 언어 모델 프리트레이닝 with Autoregressive Blank Infilling. <계산 언어학 협회 제60차 연례 회의(제1권: 장문)>에서_ 계산 언어학 협회\n' +
+      '* ElSahar et al. (2018) Hady ElSahar, Pavlos Vougiouklis, Arslen Remaci, Christophe Gravier, Jonathon S. 헤어, 프레데리크 라우레스트 엘레나 심펄 2018. T-REx: A Large Scale Alignment of Natural Language with Knowledge Base Triples. LREC(언어 자원 및 평가에 관한 국제 회의)_에서.\n' +
+      '* Feng 등(2023) Zhangyin Feng, Xiaocheng Feng, Dezhi Zhao, Maojin Yang, and Bing Qin. 2023. Retrieval-generation synergy augmented large language models. _ arXiv_, abs/2310.05149.\n' +
+      '* Fox and Shaw (1994) Edward A. Fox and Joseph A. Shaw. 1994. 다중 검색의 조합. *TREC-2: 텍스트 검색 회의_, 500215, 105-108 페이지.\n' +
+      '*Gao et al.(2021) Tianyu Gao, Xingcheng Yao, and Danqi Chen. 2021. Simcse: Simple Contrastive Learning of Sentence Embeddings. "프로시빙스 of the 2021 Conference on Empirical Methods in Natural Language Processing"에서 6894-6910 페이지. Computational Linguistics.\n' +
+      '* Glass et al.(2022) Michael Glass, Gaetano Rossiello, Md Faisal Mahbub Chowdhury, Ankita Naik, Pengshan Cai, and Alfio Gliozzo. 2022. Re2g: Retrieve, Rerank, Generate. "Proceedings of the 2022 Conference of NorthAmerican Chapter of Computational Linguistics: Human Language Technologies_", 2701-2715 페이지. Computational Linguistics.\n' +
+      '* Gottschalk and Demidova (2018) Simon Gottschalk and Elena Demidova. 2018. _EventKG: 다국어 이벤트 중심 시간 지식 그래프_ 스프링거 국제 출판사\n' +
+      '* Guu et al.(2020) Kelvin Guu, Kenton Lee, Zora Tung, Panupong Pasupat, and Ming-Wei Chang. 2020. 검색 증강 언어 모델 사전 훈련. ICML(International Conference on Machine Learning)_에서 3929-3938 페이지입니다.\n' +
+      '* Hamilton (2020) William L. 해밀턴 2020. _그래프 표현 학습_ 입니다. 스프링거 국제 출판사\n' +
+      '*Hancock-Beaulieu et al. (1996) Micheline Hancock-Beaulieu, Mike Gatford, Xiangji Huang, Stephen E. Robertson, Steve Walker, and P. W. Williams. 1996. Okapi at TREC-5. In _Proceedings of The Fth Text REtrieval Conference, TREC 1996, Gaithersburg, Maryland, USA, November 20-22, 1996_, volume 500-238 of _NIST Special Publication_. 국립표준기술원(NIST)\n' +
+      '*Hofstatter et al. (2023) Sebastian Hofstatter, Jiecao Chen, Karthik Raman, and Hamed Zamani. 2023. Fid-light: 효율적이고 효과적인 검색 증강 텍스트 생성. 제46회 국제 ACM SIGIR 정보 검색 연구 개발 회의 회보에서 1437-1447페이지입니다.\n' +
+      '* Hu et al. (2022) Ziniu Hu, Ahmet Iscen, Chen Sun, Zirui Wang, Kai-Wei Chang, Yizhou Sun, Cordelia Schmid, David A. Ross, and Alireza Fathi. 2022. Reveal: Retrieval-Augmented Visual-Language Pre-Training with Multi-Source Multimodal Knowledge Memory. <2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)_, pages 23369-23379. IEEE.\n' +
+      '* Huang et al.(2022) Jie Huang, Hanyin Shao, Kevin Chen-Chuan Chang, Jinjun Xiong, and Wen-mei Huu. 2022. 이해 Jargon: Combining Extraction and Generation for Definition Modeling. <자연어 처리의 경험적 방법에 관한 2022년 회의>에서. 계산 언어학 협회\n' +
+      '* Huang 등(2013) Jimmy Xiangji Huang, Jun Miao, and Ben He. 2013. Adaptive co-training을 이용한 고성능 쿼리 확장. _ Inf. 공정. Manag._ , 49(2):441-453.\n' +
+      '* Huang et al. (2023) Wenyu Huang, Mirella Lapata, Pavlos Vougiouklis, Nikos Papasarantopoulos, and Jeff Z Pan. 2023. Retrieval Augmented Generation with Rich Answer Encoding. _ Proc. of IJCNLP-AACL_, 2023.\n' +
+      '* Huang and Hu (2009) Xiangji Huang and Jinmin Hu. 2009. A bayesian learning approach to promoting diversity in ranking for biomedical information retrieval. "Proceedings of the 32nd Annual International ACM SIGIR Conference on Research and Development in Information Retrieval, SIGIR 2009, Boston, MA, USA, July 19-23, 2009_, pages 307-314. ACM.\n' +
+      '*황과 황(2024) 이정황과 지미황. 2024. 차세대 정보 검색을 위한 채팅 탐색: 기회와 도전. _ CoRR_, abs/2402.11203.\n' +
+      '* 26th European Conference on Artificial Intelligence, 9월 30일\n' +
+      '- 2023년 10월 4일 폴란드 크라쿠프\n' +
+      '- 제12회 PAIS 2023(Prestigious Applications of Intelligent Systems) 회의를 포함하여, _Frontiers in Artificial Intelligence and Applications_, 1109-1115 페이지. IOS 프레스.\n' +
+      '* Izacard 등 (2022) Gautier Izacard, Mathilde Caron, Lucas Hosseini, Sebastian Riedel, Piotr Bojanowski, Armand Joulin, and Edouard Grave. 2022. Unsupervised Dense Information Retrieval with Contrastive Learning. _ Transactions on Machine Learning Research (TMLR)_, 2022.\n' +
+      '* Izacard and Grave (2021) Gautier Izacard and Edouard Grave. 2021. Open Domain Question Answering을 위한 Generative Models을 이용한 Passage Retrieval 활용 <프로시빙스 of the 16th Conference of the European Chapter of Computational Linguistics: Main Volume_, pages 874-880. Association for Computational Linguistics>에서.\n' +
+      '* Izacard 등 (2023) Gautier Izacard, Patrick S. H. Lewis, Maria Lomeli, Lucas Hosseini, Fabio Petroni, Timo Schick, Jane Dwivedi-Yu, Armand Joulin, Sebastian Riedel, and Edouard Grave. 2023. Atlas: Retrieval Augmented Language Models을 사용한 Few-shot Learning. _ JMLR_, 24:251:1-251:43.\n' +
+      '* Jahan et al. (2023) Israt Jahan, Md. 타미드 라흐만 라스카, 천펑 지미 샹지 황 2023. Evaluation of chatgpt on biommedical tasks: A zero-shot comparison with fine-tuned generative transformers _ CoRR_, abs/2306.04504.\n' +
+      '* Jansen et al.(2009) Bernard J. Jansen, Danielle L. 부스, 아만다 스핑크 2009. Patterns of query reformulation during web searching. _ J Assoc. Inf. Sci. Technol._ , 60(7):1358-1371.\n' +
+      '* Ji et al. (2023) Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu, Dan Su, Yan Xu, Etsuko Ishii, Yejin Bang, Andrea Madotto, and Pascale Fung. 2023. Survey of 환각 in natural language generation. _ ACM Comput. Surv._ , 55(12):248:1-248:38.\n' +
+      '*장 외 (2023) 정바오 장, 프랭크 F. 쉬, 루위 가오, 즈칭 선, 치안 류, 제인 드위베디-유, 이밍 양, 제이미 캘란, 및 그레이엄 노이비히. 2023. Active Retrieval Augmented Generation. EMNLP(자연 언어 처리)의 경험적 방법에 대한 회의)에서 7969-7992 페이지를 참조하십시오.\n' +
+      '* Johnson et al.(2021) Jeff Johnson, Matthijs Douze, and Herve Jegou. 2021. gpus와의 수십억 규모 유사성 검색. _ IEEE Transactions on Big Data_, 7(3):535-547.\n' +
+      '* Joshi et al.(2017) Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. 2017. Triviaqa: 멀리서 큰 스케일\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:15]\n' +
+      '\n' +
+      'Ziyang Luo, Can Xu, Pu Zhao, Xiubo Geng, Chongyang Tao, Jing Ma, Qingwei Lin, Daxin Jiang. 2023. Parametric Knowledge Guiding이 포함된 대용량 언어 모델을 확장합니다. _ arXiv_, abs/2305.04757.\n' +
+      '* Ma et al. (2023) Xinbei Ma, Yeyun Gong, Pengcheng He, Hai Zhao, and Nan Duan. 2023. Query Rewriting in Retrieval-Augmented Large Language Models. "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing_", pages 5303-5315. Association for Computational Linguistics.\n' +
+      '* Malkov and Yashunin (2020) Yu A. Malkov and D. A. Yashunin. 2020. 계층적 탐색 가능한 작은 세계 그래프를 사용하여 효율적이고 강력한 근사 최근접 이웃 탐색 _ IEEE Transactions on Pattern Analysis and Machine Intelligence_, 42(4):824-836.\n' +
+      '* Manning 등 (2008) Christopher D. Manning, Prabhakar Raghavan, and Hinrich Schutze. 2008. _정보 검색 소개_ 입니다. 케임브리지 대학 출판사\n' +
+      '* Nakano 등(2021) Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, and others. 2021. Webgpt: 인간 피드백을 사용한 브라우저 지원 질문 답변입니다. _ arXiv_, abs/2112.09332.\n' +
+      '* Ni et al.(2022) Jianmo Ni, Chen Qu, Jing Lu, Zhuyun Dai, Gustavo Hernandez Abrego, Ji Ma, Vincent Zhao, Yi Luan, Keith Hall, Ming-Wei Chang, and Yinfei Yang. 2022. Large Dual Encoder Are Generalizable Retrievers. *Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing_, pages 9844-9855. Association for Computational Linguistics.\n' +
+      '* Nogueira et al.(2019) Rodrigo Nogueira, Wei Yang, Kyunghyun Cho, and Jimmy Lin. 2019. BERT를 갖는 다단계 문서 랭킹. _ CoRR_, abs/1910.14424.\n' +
+      '* OpenAI 등(2023) OpenAI, Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, Janko Bavarian, Jeff Belgum, Irwan Babuschkin, Suchir Balaji, Valerie Balcom, Paul Baltescu, Haiming Bao, Mo Bavarian, Jeff Belgum, Irwan Bello, Jake Berdine, Gabriel Bernadet-Shapiro, Christopher Berner, Shyamal Anadkat, Janko Babuschkin, 안나-Luisa Brakman, Greg Brockman, Tim Brooks, Miles Brundage, Kevin Button, Trevor Cai, Rosie Campbell, Andrew Cann, 브리트니 케리, 첼시 칼슨, 로리 카마이클, Sully Chen, Ruby Chen, Jason Chen, Mark Chen, Ben Chess, Chester Cho, 2023. Gpt-4 Technical Report. _ PRINT_.\n' +
+      '* Ouyang et al.(2022) Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike, and Ryan Lowe. 2022. 인간 피드백으로 지침을 따르도록 언어 모델을 훈련합니다. NeurIPS(Neural Information Processing Systems)에 관한 회의_에서.\n' +
+      '* Papineni et al. (2002) Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. 2002. Bleu: a method for automatic evaluation of machine translation. 2009년 4월 2일 오후 3시 23분, CarrotsneedaQUANGO2 작성 : 24 계산 언어학 협회\n' +
+      '* Peng 등(2023) Baolin Peng, Chunyuan Li, Pengcheng He, Michel Galley, and Jianfeng Gao. 2023. Instruction tuning with gpt-4. _arXiv_.\n' +
+      '* Petroni 등(2021) Fabio Petroni, Aleksandra Piktus, Angela Fan, Patrick Lewis, Majid Yazdani, Nicola De Cao, James Thorne, Yacine Jernite, Vladimir Karpukhin, Jean Maillard, Vassilis Plachouras, Tim Rocktaschel, and Sebastian Riedel. 2021. Kilt: 지식 집약적 언어 작업에 대한 벤치마크. 전산 언어학 협회의 2021년 북미 회의 회보: 인간 언어 기술_, 2523-2544 페이지. 전산 언어학 협회.\n' +
+      '* Radlinski and Craswell (2010) Filip Radlinski and Nick Craswell. 2010. 정보 검색 메트릭의 민감도 비교. "Proceedings of the 33rd International ACM SIGIR Conference on Research and Development in Information Retrieval"에서, SIGIR \'10, pages 667-674, New York, NY, USA. 컴퓨팅 기계 협회\n' +
+      '*Radlinski et al. (2019)Colin Raffel, Noam M. 샤저, 애덤 로버츠, 캐서린 리, 샤란 나랑, 마이클 마테나, 옌치 저우, 웨이 리, 피터 제이 류. 2020. Unified Text-to-Text Transformer를 사용하여 전이 학습의 한계 탐색 _ JMLR(Journal of Machine Learning Research)_, 21:140:1-140:67.\n' +
+      '* Ram et al. (2023) Ori Ram, Yoav Levine, Itay Dalmedigos, Dor Muhlgay, Amnon Shashua, Kevin Leyton-Brown, and Yoav Shoham. 2023. In-Context Retrieval-Augmented Language Models. _ 계산 언어학 협회의 트랜잭션_, 11:1316-1331.\n' +
+      '* Ram et al.(2022) Ori Ram, Gal Shachaf, Omer Levy, Jonathan Berant, and Amir Globerson. 2022. 학습 to Retrieve Passages without Supervision. <2022년 북미 컴퓨터 언어학 협회 회의: 인간 언어 기술>에서. 계산 언어학 협회\n' +
+      '* Reimers and Gurevych (2019) Nils Reimers and Iryna Gurevych. 2019. Sentence BERT: Sentence Embeddings using Siamese BERT-Networks. "Proceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP)_", pages 3980-3990. Association for Computational Linguistics.\n' +
+      '* Robertson and Zaragoza (2009) Stephen Robertson and Hugo Zaragoza. 2009. The Probabilistic Relevance Framework: Bm25 and Beyond. _ Foundations and Trends(r) in Information Retrieval_, 3(4):333-389.\n' +
+      '* Saad-Falcon 등(2023) Jon Saad-Falcon, O. 카타브, 크리스토퍼 포츠, 마테이 자하리아 2023. Ares: 자동 평가 프레임워크 for Retrieval-Augmented Generation Systems. _ arXiv_, abs/2311.09476.\n' +
+      '* Sarto et al.(2022) Sara Sarto, Marcella Cornia, Lorenzo Baraldi, and Rita Cucchiara. 2022. Retrieval-Augmented Transformer for Image Captioning. <콘텐츠 기반 멀티미디어 인덱싱 국제회의>에서. ACM.\n' +
+      '* Shahul et al. (2023) ES Shahul, Jithin James, Luis Espinosa Anke, and S. 쇼커트 2023. Ragas: Automated Evaluation of Retrieval Augmented Generation. _ arXiv_, abs/2309.15217.\n' +
+      '* Shao et al. (2023) Zhihong Shao, Yeyun Gong, Yelong Shen, Minlie Huang, Nan Duan, and Weizhu Chen. 2023. Enhancing Retrieval-Augmented Large Language Models with Iterative Retrieval-Generation Synergy. 계산 언어학 협회의 _Findings of the Association for Computational Linguistics: EMNLP 2023_, pages 9248-9274. Association for Computational Linguistics.\n' +
+      '* Shi et al.(2023) Weijia Shi, Sewon Min, Michihiro Yasunaga, Min준 Seo, Rich James, Mike Lewis, Luke Zettlemoyer, and Wen-tau Yih. 2023. Replug: Retrieval-augmented black-box language models. _ arXiv_, abs/2301.12652.\n' +
+      '* Sun et al.(2023) Zhiqing Sun, Xuezhi Wang, Yi Tay, Yiming Yang, and Denny Zhou. 2023. Recitation-Augmented Language Models. International Conference on Learning Representations (ICLR)_에서.\n' +
+      '* Tay et al.(2023) Yi Tay, Mostafa Dehghani, Vinh Q. Tran, Xavier Garcia, Jason Wei, Xuezhi Wang, Hyung Won Chung, Dara Bahri, Tal Schuster, Huaixu Tiewan Zheng, Denny Zhou, Neil Houlsby, and Donald Metzler. 2023. Ul2: Unifying Language Learning Paradigms. International Conference on Learning Representations (ICLR)_에서.\n' +
+      '* Tay et al. (2022) Yi Tay, Vinh Tran, Mostafa Dehghani, Jianmo Ni, Dara Bahri, Harsh Mehta, Zhen Qin, Kai Hui, Zhe Zhao, Jai Prakash Gupta, Tal Schuster, William W. 코헨과 도널드 메츨러 2022. Transformer Memory as a Differentiable Search Index. NeurIPS(Neural Information Processing Systems)에 관한 회의_에서.\n' +
+      '* Thorne et al.(2018) James Thorne, Andreas Vlachos, Christos Christodoulopoulos, and Arpit Mittal. 2018. Fever: a Large-scale Dataset for Fact Extraction and VERification. "Proceedings of the 2018 Conference of the North American Chapter of the Computational Linguistics: Human Language Technologies, Volume 1 (Long Papers)_, pages 809-819. Association for Computational Linguistics.\n' +
+      '* Touvron 등(2023a) Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar 등 2023a. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ arXiv_, abs/2302.13971.\n' +
+      '* Touvron et al.(2023b) Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, and others. 2023b. 라마 2: 오픈 파운데이션과 미세 조정된 채팅 모델입니다. _ arxiv_, abs/2307.09288.\n' +
+      '* Trivedi et al. (2023) Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot, and Ashish Sabharwal. 2023. Interleaving Retrieval with Chain-of-Think Reasoning for Knowledge-Intensive Multi-Step Questions. 《제61회 컴퓨터 언어학 협회 연례 회의(제1권: 장문)》에서 10014-10037쪽 컴퓨터 언어학 협회.\n' +
+      '* Vaswani et al.(2017) Ashish Vaswani, Noam M. Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan. 고메즈, 루카스 카이저 일리아 폴로수킨 2017. 주의력만 있으면 됩니다. _신경 정보 처리 시스템_에서 5998-6008 페이지입니다.\n' +
+      '* Wang et al.(2019) Alex Wang, Yada Pruksachatkun, Nikita Nangia, Amampreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. 보우먼 2019. Superglue: A Sticker Benchmark for General-Purpose Language Understanding Systems. NeurIPS(Conference on Neural Information Processing Systems)_에서 3261-3275 페이지입니다.\n' +
+      '* Wang and Komatsuzaki (2021) Ben Wang and Aran Komatsuzaki. 2021. GPT-J-6B: 600억 매개 변수 자동 회귀 언어 모델 [https://github.com/kingoflolz/mesh-transformer-jax] (https://github.com/kingoflolz/mesh-transformer-jax).\n' +
+      '\n' +
+      '량왕, 난양, 후루웨이 2023a. Query2doc: 대규모 언어 모델을 사용한 쿼리 확장. "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing"에서, 9414-9423 페이지. Computational Linguistics.\n' +
+      '* Wang et al.(2023b) Xintao Wang, Qian Yang, Yongting Qiu, Jiaqing Liang, Qi He, Zhouhong Gu, Yanghua Xiao, and W. 왕 2023b. Knowledgpt: 지식 기반에 대한 검색 및 저장소 액세스를 통해 대규모 언어 모델을 개선합니다. _ arXiv_, abs/2308.11761.\n' +
+      '* Workshop et al. (2022) BigScience Workshop, Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, and others. 2022. Bloom: A 176b-parameter open-access multilingual language model. _ arXiv_, abs/2211.05100.\n' +
+      '* Xiong et al.(2021) Lee Xiong, Chenyan Xiong, Ye Li, Kwok-Fung Tang, Jialin Liu, Paul N. 베넷, 주나이드 아메드 아놀드 오버위크 2021. Approximate Nearest Neighbor Negative Contrastive Learning for Dense Text Retrieval. International Conference on Learning Representations (ICLR)_에서.\n' +
+      '*Xu et al.(2023) Fangyuan Xu, Weijia Shi, and Eunsol Choi. 2023. Recomp: Impro Improving Retrieval-Augmented LMs with Compression and Selective Augmentation. _ arXiv_, abs/2310.04408.\n' +
+      '* Yang et al.(2023a) Haoyan Yang, Zhitao Li, Yong Zhang, Jianzong Wang, Ning Cheng, Ming Li, and Jing Xiao. 2023a. Prca: 플러그형 보상 구동 컨텍스트 어댑터를 통한 질의 응답 검색을 위한 블랙박스 대형 언어 모델 적합 "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing"에서, 페이지 5364-5375. Computational Linguistics.\n' +
+      '* Yang et al.(2018) Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and Christopher D. Manning. 2018. Hotpotqa: Dataset for Diverse, Explainable Multi-hop Question Answering. "Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing"에서 2369-2380 페이지. Computational Linguistics.\n' +
+      '* Yang et al. (2023) Zhuolin Yang, Wei Ping, Zihan Liu, Vijay Korthikanti, Weili Nie, De-An Huang, Linxi Fan, Zhiding Yu, Shiyi Lan, Bo Li, Mohammad Shoeybi, Ming-Yu Liu, Yuke Zhu, Bryan Catanzaro, Chaowei Xiao, and Anima Anandkumar. 2023b. Re-ViLM: Zero 및 Few-Shot 이미지 캡션을 위한 검색-증강 비주얼 언어 모델. 계산 언어학 협회의 _Findings of the Association for Computational Linguistics: EMNLP 2023_, pages 11844-11857. The Association for Computational Linguistics.\n' +
+      '* Yu et al. (2020) Shi Yu, Jiahua Liu, Jingqin Yang, Chenyan Xiong, Paul N. 베넷, 젠펑 가오, 지위안 류 2020. 소수샷 생성 대화형 쿼리 다시 쓰기. "Proceedings of the 43rd International ACM SIGIR conference on research and development in Information Retrieval, SIGIR 2020, Virtual Event, China, July 25-30, 2020_, pages 1933-1936. ACM.\n' +
+      '* Yu et al.(2023a) Wenhao Yu, Dan Iter, Shuohang Wang, Yichong Xu, Mingxuan Ju, Soumya Sanyal, Chenguang Zhu, Michael Zeng, and Meng Jiang. 2023a. 검색이 아닌 생성: 대규모 언어 모델은 강력한 컨텍스트 생성자입니다. International Conference on Learning Representations (ICLR)_에서.\n' +
+      '* Yu et al.(2022) Wenhao Yu, Chenguang Zhu, Zaitang Li, Zhiting Hu, Qingyun Wang, Heng Ji, and Meng Jiang. 2022. A survey of knowledge-enhanced text generation. _ ACM Comput. Surv._ , 54(11s):227:1-227:38.\n' +
+      '* Yu et al.(2023b) Zichun Yu, Chenyan Xiong, Shi Yu, and Zhiyuan Liu. 2023b. 확장 적응 검색은 일반 플러그인으로서 언어 모델의 일반화를 향상시킨다. 《제61회 컴퓨터 언어학 협회 연례 회의(제1권: 장문)》에서 2421-2436쪽 컴퓨터 언어학 협회.\n' +
+      '* Yuan et al. (2023) Yi Yuan, Haobe Liu, Xubo Liu, Qiushi Huang, Mark D Plumbley, and Wenwu Wang. 2023. 검색-증강 텍스트-오디오 생성. _ arXiv_, abs/2309.08051.\n' +
+      '* Zhang et al. (2022) Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, and others. 2022. Opt: 미리 훈련된 변압기 언어 모델을 엽니다. _ arXiv_, abs/2205.01068.\n' +
+      '* Zheng et al. (2023) Huaixiu Steven Zheng, Swaroop Mishra, Xinun Chen, Heng-Tze Cheng, E. Chi, Quoc V. 레, 데니 저우 2023. 한 걸음 뒤로 물러나: 대규모 언어 모델에서 추상화를 통해 추론을 불러일으킵니다. _ arXiv_, abs/2310.06117.\n' +
+      '*Zhuang et al. (2023) Honglei Zhuang, Zhen Qin, Rolf Jagerman, Kai Hui, Ji Ma, Jing Lu, Jianmo Ni, Xuanhui Wang, and Michael Bendersky. 2023. Rankt5: Text Ranking with Ranking Losses를 위한 Fine-Tuning T5. 제46회 국제 ACM SIGIR 정보 검색 연구 개발 회의 회보에서. ACM.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
