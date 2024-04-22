@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Efficient Continual Pre-training for Building Domain Specific Large Language Models\n' +
+      '\n' +
+      ' Yong Xie\n' +
+      '\n' +
+      'UIUC\n' +
+      '\n' +
+      'yongxie2@illinois.edu\n' +
+      '\n' +
+      'This work was done during Yong\'s internship at Amazon\n' +
+      '\n' +
+      '&Karan Aggarwal\n' +
+      '\n' +
+      'Amazon\n' +
+      '\n' +
+      'kagg@amazon.com\n' +
+      '\n' +
+      '&Aitzaz Ahmad\n' +
+      '\n' +
+      'Amazon\n' +
+      '\n' +
+      'aitzaza@amazon.com\n' +
+      '\n' +
+      'These authors contributed equally to this work\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Large language models (LLMs) have demonstrated remarkable open-domain capabilities. Traditionally, LLMs tailored for a domain are trained from scratch to excel at handling domain-specific tasks. In this work, we explore an alternative strategy of continual pre-training as a means to develop domain-specific LLMs. We introduce _FinPythia-6.9B_, developed through domain-adaptive continual pre-training on the financial domain. Continual pre-trained FinPythia showcases consistent improvements on financial tasks over the original foundational model. We further explore simple but effective data selection strategies for continual pre-training. Our data selection strategies outperforms vanilla continual pre-training\'s performance with just 10% of corpus size and cost, without any degradation on open-domain standard tasks. Our work proposes an alternative solution to building domain-specific LLMs from scratch in a cost-effective manner.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Large Language Models (LLMs) have exhibited a profound understanding of natural language, improving performance on an array of tasks [5]. Using open web data has helped in creating general-purpose LLMs with a broad range of capabilities. General-purpose LLMs are however not "specialists"; for example, while LLMs could write good news articles, it would be hard-pressed to write specialized legal documents.\n' +
+      '\n' +
+      'In order to make a specialist or domain-specific LLM, they need to be trained on domain data. Approaches for building domain-specific LLMs can be categorized into two categories: training domain-specific LLMs from scratch or using continual pre-training existing LLMs with domain data. Most researchers have taken the first approach of building domain-specific LLMs from scratch. Prominent examples are the Med-PaLM family [23; 24] for the medical domain, Galactica for scientific papers [26], and BloombergGPT [31] for finance. Little attention has been paid to building domain-specific LLMs using domain-adaptive continual pre-training, despite being a much cheaper alternative. Notably, PMC-LLaMA [30], a medical LLM was trained through continual pre-training of LLaMA [27] on medical papers. Continual pre-training can also be used for updating a LLM with the latest knowledge in an evolving environment.\n' +
+      '\n' +
+      'In this work, we explore the following: 1) Is domain-adaptive continual pre-training helpful in building domain-specific LLMs?; 2) Can we employ data selection strategies for a more effective domain-adaptive continual pre-training?; and 3) Does domain-adaptive continual pre-training hurt LLM\'s open-domain capabilities? We answer these questions in the confines of finance domain by training a continually pre-trained model, FinPythia, built on top of Pythia [4].\n' +
+      '\n' +
+      'We report a boost on financial benchmarks [33] after continual pre-training on domain data of size 8% of what Pythia was trained on as an answer to the first question. We also observe an evidence of latest financial domain knowledge acquisition in FinPythia during qualitative analysis. To answer the second question, we propose two simple data selection techniques, task-aware _Efficient Task-Similar Domain-Adaptive Continual Pre-training_ (ETS-DACP) and _Efficient Task-Agnostic Domain-Adaptive Continual Pre-training_ (ETA-DACP). These methods outperform the performance of domain-adaptive continual pre-training with just 10% of selected domain data or 0.8% of Pythia\'s training corpus. We use three metrics for data selection: similarity, perplexity, and token type entropy. While similarity needs task data as seed, the latter two metrics are task-agnostic. To answer the third question, we benchmark these continually pre-trained models on four open-domain standard tasks like MMLU and TruthfulQA. We observe no significant performance change, indicating that LLM retains its general capabilities while adapting to the domain.\n' +
+      '\n' +
+      'The main contributions of this paper are threefold. Firstly, we curate a large-scale financial corpus comprising 16 billion words sourced from financial datasets. Secondly, our experiments demonstrate the promise of building domain-specific LLMs through continual pre-training, further validating and extending the findings obtained from smaller language models [8]. This finding provides insights for building domain-specific LLMs with lower costs, as an alternative to expensive pre-training from scratch. Our results indicate that continual pre-training maintains the same open-domain performance as the original foundation model. Lastly, we propose two Efficient Domain-adaptive Continual Pre-training methods as a more efficient approach to vanilla continual pre-training. Our novel approach deploys data selection strategies that can achieve better performance with a fraction of the cost of the domain-adaptive continual pre-training.\n' +
+      '\n' +
+      '## 2 Methodology\n' +
+      '\n' +
+      'In this section, we describe the curation of our financial corpus used for continual pre-training, our domain-adaptive continual pre-training, task-adaptive continual pre-training, and our proposed task-aware domain-adaptive continual pre-training.\n' +
+      '\n' +
+      '### Financial Corpus Curation\n' +
+      '\n' +
+      'In our evaluation of data sources, we consider three dimensions: public availability, licensing, and scale. We use two sources of data for the financial corpus: the financial news common crawl and SEC filings. Financial News CommonCrawl is curated by filtering out financial news from the public CommonCrawl data. We follow the de-duplication procedure of Pythia suite [4] to remove duplicate training data. While there is conflicting evidence of duplication hurting the performance [4; 14], there is no evidence of the benefits of duplication in the training data. Hence, for a more efficient training, we use de-duplication following [4]. Using these two sources, we create a combined dataset of 23.9 billion tokens (16.5 billion words). Details of curation steps can be found in Appendix E.\n' +
+      '\n' +
+      '### Domain-adaptive Continual Pre-training (DACP)\n' +
+      '\n' +
+      'Typically, domain-specific LLMs are built by training the model from scratch using massive amounts of domain data. This procedure has two drawbacks: it is quite costly and needs much higher amounts of domain data, which is not as feasible in lower data domains like finance with very specialized and\n' +
+      '\n' +
+      'Figure 1: Labeled task data, task-similar domain data and domain corpus in a manifold space.\n' +
+      '\n' +
+      'confidential data. Domain-adaptive continual pre-training (DACP) is a straightforward alternative to building from scratch; we continually pre-train a general-purpose LLM on a large scale corpus of domain-specific unlabeled data. Domain-adaptive continual pre-training has shown the ability to adapt the language models to better fit the in-domain distribution [8; 12; 32; 21]. They also enable large language models to acquire new knowledge as new data appears [11; 10], instead of training the model from scratch. We use DACP in our experiments to benchmark its benefits.\n' +
+      '\n' +
+      '### Task-Adaptive Continual Pre-training (TACP)\n' +
+      '\n' +
+      'Task-adaptive continual pre-training (TACP) refers to continual pre-training aiming to enhance performance on a targeted task. TACP has been studied in the context of smaller language models like BERT by pre-training the language model on labeled and unlabeled data from the task [8; 1; 6] showing improvements over the task. While task data is usually quite limited, TACP shows considerable effects on smaller language models like BERT. We benchmark TACP on our four financial evaluation tasks.\n' +
+      '\n' +
+      '### Towards an Efficient Domain-adaptive Continual Pre-training\n' +
+      '\n' +
+      'The primary limitation of TACP lies in its focus on constructing task-specific LLMs instead of foundation LLMs, owing to the sole use of unlabeled task data for training. While DACP uses a much larger domain corpus, it is prohibitively expensive. To address these limitations, we propose two approaches: _Efficient Task-Similar Domain-Adaptive Continual Pre-training_ (ETS-DACP) and _Efficient Task-Agnostic Domain-Adaptive Continual Pre-training_ (ETA-DACP). While ETS-DACP aims to build foundation LLMs for a set of tasks by tailoring the DACP to emphasize the significance of these tasks, ETA-DACP is more general and selects the most informative samples from the domain corpus for continual pre-training.\n' +
+      '\n' +
+      'FormulationWe first formalize the problem. We are given an unlabeled domain pre-training corpus, \\(\\mathcal{U}\\) represented by green region in Figure 1. Next, we can take two scenarios: absence or presence of an unlabeled task corpus. The first scenario of the presence of a task corpus, which can be a single or group of tasks, \\(\\mathcal{T}\\) is depicted as the red region in Figure 1. Typically, the task corpus is a subset of the domain corpus, \\(\\mathcal{T}\\subset\\mathcal{U}\\), with \\(|\\mathcal{U}|>>|\\mathcal{T}|\\). The goal of data selection is to select a subset, \\(\\mathcal{D}\\subset\\mathcal{U}\\), that is most helpful for pre-training the LLM model. We also assume that the selected domain corpus subset is much larger than the task corpus, \\(|\\mathcal{D}|>>|\\mathcal{T}|\\), as is a typical case. The data selection problem can be formally defined as selection of optimal \\(\\mathcal{D}^{*}\\subset U\\):\n' +
+      '\n' +
+      '\\[\\mathcal{D}^{*}=\\operatorname*{argmin}_{\\mathcal{D}^{*}\\subset\\mathcal{U}}\\ \\mathbb{E}_{x\\in\\mathcal{T}}[\\mathcal{L}_{t}(y|f(\\theta^{*};x))] \\tag{1}\\]\n' +
+      '\n' +
+      'where, \\(f(\\theta;\\cdot)\\) is a LLM with parameters \\(\\theta\\), \\(y\\) is the task output, \\(x\\) is an input in target task data \\(\\mathcal{T}\\), and \\(\\mathcal{L}_{t}\\) is the target task loss or metric. \\(\\theta^{*}\\) is computed on pre-training task with \\(\\mathcal{L}_{\\mathrm{pre-train}}\\) as the pre-training loss, and \\(x_{u}\\) as the unlabeled sample in \\(\\mathcal{D}\\):\n' +
+      '\n' +
+      '\\[\\theta^{*}=\\operatorname*{argmin}_{\\theta}\\ \\mathbb{E}_{x_{u}\\in\\mathcal{D}}[ \\mathcal{L}_{\\mathrm{pre-train}}(f(\\theta;x_{u}))] \\tag{2}\\]\n' +
+      '\n' +
+      'Our domain-adaptive continual pre-training can be viewed from the lens of unsupervised domain adaptation [7]. Our source data is the large unsupervised domain corpus, while the target data is the target task data. With pre-training, we do not have control over the alignment with task training data itself; our idea is that by aligning with the domain during pre-training, we could align the LLM with the task. This intuition is backed by evidence of LLM pre-training helping the performance over open domain tasks. We use the generalization bound from [7; 2] since our problem is similar to unsupervised domain adaptation. Consider a hypothesis space \\(\\mathcal{H}_{p}\\) with \\(f\\in\\mathcal{H}_{p}\\); generalization errors on source \\(\\mathcal{D}\\) and task data \\(\\mathcal{T}\\) as \\(\\epsilon_{\\mathcal{D}}\\) and \\(\\epsilon_{\\mathcal{T}}\\), respectively. The generalization bound can be given:\n' +
+      '\n' +
+      '\\[\\epsilon_{\\mathcal{T}}(f)\\leq\\epsilon_{\\mathcal{D}}(f)+\\frac{1}{2}d_{\\mathcal{ H}_{p}\\Delta\\mathcal{H}_{p}}(\\mathcal{D},\\mathcal{T})+\\mathcal{C} \\tag{3}\\]\n' +
+      '\n' +
+      'where, \\(d_{\\mathcal{H}_{p}\\Delta\\mathcal{H}_{p}}\\) is the distribution discrepancy distance between \\(\\mathcal{D}\\) and \\(\\mathcal{T}\\) that is bounded by [7]:\n' +
+      '\n' +
+      '\\[d_{\\mathcal{H}_{p}\\Delta\\mathcal{H}_{p}}(\\mathcal{D},\\mathcal{T})=\\sup_{f,f^{ \\prime}\\in\\mathcal{H}_{p}}|\\mathbb{E}_{x\\in\\mathcal{D}}[f(x)\\neq f^{\\prime}(x )]-\\mathbb{E}_{x\\in\\mathcal{T}}[f(x)\\neq f^{\\prime}(x)]|\\leq 2\\sup_{\\alpha(h) \\in\\mathcal{H}_{d}}[\\alpha(h)-1] \\tag{4}\\]\n' +
+      '\n' +
+      'where, \\(\\alpha(h)\\) is optimal domain classifier and \\(\\mathcal{H}_{d}\\) is the hypothesis space of domain classifier. Zhao et al [35] prove that optimal state of minimum discrepancy distance \\(d_{\\mathcal{H}_{p}\\Delta\\mathcal{H}_{p}}(\\mathcal{D},\\mathcal{T})\\) is when the domain classifier has random predictions achieving a state of highest entropy. We argue that it is achieved when the representations for samples in two domains are most similar, leading to a random domain classifier that is unable to distinguish between the two dataset distributions. Motivated by this intuition, we can use a strategy based on selecting samples with the most similar representations to our task dataset \\(\\mathcal{T}\\). We use the embedding similarity as a proxy for dataset similarity as getting the optimal representation is challenging in unpractical in the case of large corpus.\n' +
+      '\n' +
+      '#### 2.4.1 Efficient Task-Similar Domain-adaptive Continual Pre-training\n' +
+      '\n' +
+      'We stipulate that we can form an optimal set \\(\\mathcal{D}^{*}\\) by selecting a portion of the domain data that is much closer to the task data (red) given by the blue region based on intuition before. We refer to this as _Efficient Task-Similar Domain-adaptive Continual Pre-training_ (ETS-DACP). Fine-tuning LLMs can take a good amount of instructions, which are quite costly to create. ETS-DACP directly addresses this situation by using the relatively limited unlabeled task data to sample similar samples from the larger pool of pre-training domain corpus. We are motivated by prior research showing that unsupervised training on tokens that closely align with the target domain and tasks can lead to improved performance [8, 1, 6]. Therefore, we hypothesize that continual pre-training LLMs on the unlabeled task data can be beneficial for target task performance as it adapts the model to the distribution of task tokens.\n' +
+      '\n' +
+      'We use similarity between embeddings of task data and domain corpus samples to perform data selection. This allows us to select a subset from the domain corpus that closely resembles the distribution of task data. To quantify document-level task similarity, we employ cosine similarity between the document embedding and task data embedding. Prior works like [13] calculate embeddings from language model (RoBERTa) for a given unlabeled sample twice, which is not practical for LLMs. It takes a forward pass to compute the embeddings using LLM over entire corpus, or 25% of compute of using to train the pre-train the LLM over the entire corpus. We compute embeddings using the _Spacy_ model [9]. This approach allows us to cost-effectively measure the alignment between task-specific information and the financial corpus, enabling more focused and targeted pre-training.\n' +
+      '\n' +
+      '#### 2.4.2 Efficient Task-Agnostic Domain-adaptive Continual Pre-training\n' +
+      '\n' +
+      'While the previous case dealt with scenarios where task data is provided to us, in this method we explore scenarios where we do not have task data. This method also overcomes the limitation of ETS-DACP which makes the LLM too tuned to the task data instead of broader domain. We stipulate that two dimensions are important for obtaining domain information from a subset of pre-training domain data: **novelty** and **diversity**.\n' +
+      '\n' +
+      '**Novelty** refers to the information that was unseen by the LLM before. We gauge the level of novelty in a document based on the **perplexity** recorded by LLM. Documents with higher perplexity are less represented in the original training corpus, thus being more likely to contain novel knowledge for the model. Such samples are also viewed as more difficult to learn [3]. Hence, these samples can be valuable in continual pre-training to help models acquire novel information.\n' +
+      '\n' +
+      'Evaluating perplexity directly on the benchmark model incurs significant costs, as the inference requires approximately 25% of the training compute. To minimize this cost, we employ Pythia-70m as a surrogate model for computing document perplexity. Our preliminary experiment using a sample dataset reveals a strong correlation of 0.97 between the perplexity obtained from Pythia-1B and Pythia-70m. This high correlation justifies the use of a smaller model as a reliable surrogate, enabling more cost-effective sampling based on perplexity.\n' +
+      '\n' +
+      '**Diversity** captures the diversity of distributions of token types in the domain corpus. Diversity has been shown to be an effective feature in related research on curriculum learning in language modeling [28, 21]. We use part-of-speech (POS) tagging to get token types. Since entropy has been shown to be one of the best measures of diversity [3], we use **entropy** of POS tags [28] as our diversity measure.\n' +
+      '\n' +
+      '#### 2.4.3 Data Sampling Strategy\n' +
+      '\n' +
+      'We proposed ETS-DACP and ETA-DACP to enhance vanilla DACP by refining the pre-training data through active selection of relevant samples. We can select the data in two ways:Hard Sampling:We rank the samples in the domain corpus by the measure of choice. We select top-k samples from the domain corpus based on the metric(s), where \\(k\\) is the number of samples needed to hit the pre-decided token budget for continual pre-training.\n' +
+      '\n' +
+      'Soft Sampling:In this case, instead of giving binary weights by leaving out all the other examples in the corpus, we assign soft weights based on the distance metric. This allows for the continual pre-training to see the samples outside the blue region in Figure 1 as well, adding some diversity to the pre-training data.\n' +
+      '\n' +
+      'We use the following three dimensions for selecting samples: similarity to task data (ETS-DACP), perplexity as a proxy for novelty (ETA-DACP), and diversity measured by token type entropy (ETA-DACP). In order to convert metric values into sampling probabilities, we propose a method based on quantile ranges. To achieve this, we first calculate the 0-100 quantiles for each metric within the training data. By dividing the range into 100 intervals using the 100 quantile values, documents are then assigned probabilities corresponding to the interval they fall into. This approach effectively normalizes our metrics, allowing for the aggregation of different metric types.\n' +
+      '\n' +
+      '## 3 Experimental Setup\n' +
+      '\n' +
+      '### Evaluation tasks\n' +
+      '\n' +
+      'We evaluate the models on financial tasks to evaluate the effectiveness of our domain-adaptive continual pre-training. We adopt the _FLARE_ framework [33] to evaluate our models. FLARE extends the LLM evaluation framework _lm-evaluation-harmess3_ by including various financial tasks. We follow their instruction prompt, data split, and metric computation for comparison. We consider following 4 tasks used in [31; 33]: (1) **Financial Phrase Bank**. FPB is a sentiment classification task on financial news [19]. The sentiment reflects whether the news is considered as positive/neutral/negative by investors. (2) **FiQA SA.** An aspect based sentiment classification task based on financial news and headlines [18]. (3) **Headline.** Binary classification task on whether a headline on a financial entity contains certain information [25]. Each news article is associated with 9 tags like "price or not", "price up", "price down", "price stable", "past price", and "asset". (4) **NER.** Financial named entity extraction task is based on credit risk assessment section of SEC reports. Words in this task are annotated with PER, LOC, ORG, and MISC.\n' +
+      '\n' +
+      'Footnote 3: [https://github.com/EleutherAI/Im-evaluation-harmess](https://github.com/EleutherAI/Im-evaluation-harmess)\n' +
+      '\n' +
+      '### Training Setup and Infrastructure\n' +
+      '\n' +
+      'For our benchmark pre-trained LLM model, we select 1B and 6.9B parameter models from the Pythia suite [4]. The Pythia model suite offers a diverse array of model sizes, ranging from 70 million to 12 billion parameters. The continual pre-training configuration is tailored from Pythia\'s training setup [4]. Specifically, we set a learning rate of 1.2e-05 for FinPythia-6.9B and 3e-05 for _FinPythia-1B_, the smallest learning rates in their original schedules. We use small learning rates to mitigate catastrophic forgetting. We keep them constant throughout the course for efficient pre-training. We use the precision of fb16 rather than fp16 used in Pythia. We half the original batch size to 512.\n' +
+      '\n' +
+      'We run the continual pre-training job on one P4d.24xlarge instance through AWS SageMaker. As the model size is moderate, we only use data parallelism via DeepSpeed ZeRO Stage 2 [20] with activation checkpointing enabled. It takes 18 days for FinPythia-6.9B to pre-train and 3 days for FinPythia-1B to pre-train on 24 billion tokens.\n' +
+      '\n' +
+      '## 4 Results and Analysis\n' +
+      '\n' +
+      '### Domain-adaptive Continual Pre-training\n' +
+      '\n' +
+      'To monitor the pre-training process, we randomly sample 0.1% of our financial corpus as a financial test dataset. The model is also evaluated on the Pile test dataset. The loss trajectory for FinPythia-6.9B is reported in Figure 2. The training loss is smoothed using a moving average of 50 optimization steps. We observe a sharp decrease in Financial test (Fin test) loss during the early stage of continual pre-training, and the progress gradually becomes saturated, similar to the loss trajectory of training from scratch [31; 27]. The loss log suggests that domain-adaptive continual pre-trainingsucceeds in adopting Pythia to the financial domains at the expense of a mild increase in Pile loss (Pile test).\n' +
+      '\n' +
+      'To evaluate financial domain tasks, we compare FinPythia and Fynthia-1B exhibit superior performance on tasks FPB, Headline, and NER while showing comparatively lower results on the FiQA SA task compared with Pythia counterparts. DACP boosts the average task performance by 2.8% for the 1B model and 8.3% for the 6.9B model. These outcomes directly substantiate the impact of domain-adaptive continual pre-training on enhancing in-domain task performance. Furthermore, Pythia-6.9B outperforms OPT-7B, BLOOM-7B, and GPT-J-GB on average.\n' +
+      '\n' +
+      '_Comparison with BloombergGPT_: results reported on FLARE are not directly comparable with results reported in BloombergGPT [31] on the same tasks, as the data splits used are not public. We could not match the performance of publicly available models like OPT-66B or GPT-NeoX reported by [31], on all four tasks. See the detailed comparison between the results in Appendix A.\n' +
+      '\n' +
+      '_Qualitative Evaluation_: qualitative examples generated by Pythia-6.9B and FinPythia-6.9B are presented in Table 2. Upon examination, we observe that FinPythia-6.9B generates more relevant and detailed responses for finance-related questions. It acquired the financial events knowledge post 2021 with the continual pre-training. These findings suggest that the DACP helps FinPythia-6.9B acquire in-domain knowledge.\n' +
+      '\n' +
+      '### Efficient Domain-adaptive Continual Pre-training\n' +
+      '\n' +
+      'FLARE uses 5-shot in-context performance over the entire training data, _i.e.,_ each test example while evaluating each model sees different train examples. This also makes it harder to compare\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{|c|c|c c c c c c c c|} \\hline  & \\multicolumn{2}{c|}{**BloombergGPT**} & **OPT 7B** & **BLOOM 7B** & **GPT-J-GB** & **Pythia 1B** & **Pythia 7B** & **FinPythia 1B** & **FinPythia 7B** \\\\ \\hline\n' +
+      '**FPB** & Acc & 57.22 & 52.68 & 50.21 & 42.85 & 54.64 & 47.14 & **59.90** \\\\ F1 & 51.07\\({}^{*}\\) & **65.77** & 52.11 & 49.31 & 4.94 & 55.79 & 46.52 & 64.43 \\\\ \\hline\n' +
+      '**FiQA SA** & Acc & - & 40.43 & **70.21** & 60.42 & 54.51 & 60.85 & 46.13 & 52.34 \\\\ \\hline\n' +
+      '**F1** & 75.07\\({}^{*}\\) & 31.29 & **74.11** & 62.14 & 56.29 & 61.33 & 44.53 & 53.04 \\\\ \\hline\n' +
+      '**Headline** & F1 & 82.20\\({}^{*}\\) & **62.62** & 42.68 & 45.54 & 47.33 & 43.83 & 53.02 & 54.14 \\\\ \\hline\n' +
+      '**NER** & F1 & 60.82\\({}^{*}\\) & 41.91 & 18.97 & 35.87 & 49.15 & 41.60 & **55.51** & 48.42 \\\\ \\hline\n' +
+      '**Average** & F1 & 67.29\\({}^{*}\\) & 50.40 & 46.97 & 48.22 & 48.53 & 50.64 & **49.90** & **54.83** \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: 5-shot results on financial tasks from domain adaptive continual pre-training. \\(*\\) indicates that the results are reported from BloombergGPT [31], which are not comparable as they have been evaluated with different prompts and data splits. The values is not directly comparable to others. **Bold** indicates the best results among all the evaluated models except BloombergGPT. _Underline_ indicates the better results between FinPythia and Pythia of the same sizes.\n' +
+      '\n' +
+      'Figure 2: Training loss of FinPythia-6.9B. FinPythia-6.9B achieves significant loss drop in financial corpus at mild expense of Pile loss.\n' +
+      '\n' +
+      'different models, as each test example sees completely different 5 training examples across models. To overcome this randomness and make the comparisons more fair, we set aside a pool of 50 labeled data samples from the training dataset for each task, referred to as the "shot pool". For the remaining training samples, we remove their labels and utilize them as unlabeled task data, which is used in our data selection strategy utilizing task data. This particular configuration is adopted because we do not have access to unlabeled task data to evaluate the efficacy of TACP. By using this setup, we also simulate the constraints posed by scarce labeled data. Although this approach creates unlabeled task data for TACP, the size is too small, containing only 0.24 million tokens from the four tasks.\n' +
+      '\n' +
+      'Using Efficient DACP methods, we select 10% subset of the financial corpus for each method. We also create another version of ETS-DACP called **ETS-DACP-com** by using the other two measures with similarity by averaging all three measures for ranking/weighting. To mitigate overfitting, both the TACP and Efficient DACP methods run for a single epoch, employing the same pre-training configuration as DACP to ensure a fair comparison. We run these experiments with Pythia-1B due to the compute budget. We perform the evaluation ten times using different random seeds and report the mean performance for each of our four financial tasks.\n' +
+      '\n' +
+      'The evaluation results are presented in Table 3. While TACP shows significant improvement in model performance compared to the original Pythia-1B, ETS-DACP stands out as the top-performing approach among DACP, TACP, and efficient DACP methods in terms of average task performance. This enhanced performance cannot be solely attributed to the increased number of tokens, as DACP with the same amount of tokens yields inferior results. The results underscore the\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{p{284.5pt}} \\hline\n' +
+      '**Question:** What is a SPAC? \\\\\n' +
+      '**Pythia6.9B:** Spac is an acronym for Space. It is defined as either (1) above, just beneath, below, above, or through a port in the body of a planet, Moon, or other heavenly body; or (2) beyond a star’s sphere of influence, usually in interplanetary space or interstellar space; also, (3) outside the limits of the Milky Way Galaxy. \\\\\n' +
+      '**FinPythia-6.9B:** A SPAC is a type of merger and acquisition vehicle that is used to raise money from investors, use that money to identify a company that could be valuable to an interested party, then merge with the company and take it public. The use of the SPAC is to give investors a piece of the upside in the acquired company and allows the company to issue shares that may give investors a piece of the upside of the company as well. \\\\\n' +
+      '**Question:** Who is Cathie Wood? \\\\\n' +
+      '**Pythia-6.9B:** Cathie Wood is the founder of All Things Organic, an organic marketing company that she founded in 2000. In addition to being an organic marketer, Cathie is also a Certified Coach, foodie, cook, a past lover of yoga, a certified teacher, mother and wife to three gorgeous children. \\\\\n' +
+      '**FinPythia-6.9B:** Cathie Wood is an American investor and advisor, the founder and chief executive officer of Ark Investment Management. \\\\\n' +
+      '**Question:** How do you like Fed’s latest policy to fight inflation? \\\\\n' +
+      '**Pythia6.9B:** I like Fed’s latest policy to fight inflation, which was reported by Tyler. Fed’s latest policy was reported in a meeting on September 12 and it was named as SOMO, which stood for Standardized Open Market Operations. According to the policy, the U.S. central bank could buy $40 billion worth of financial instruments if the price of the instruments reach 6 percent. \\\\\n' +
+      '**FinPythia-6.9B:** There is a big confusion about Fed’s new policy to fight inflation. They are following a new policy from September 2022 called the fastest quarter-percentage point rate hikes in two decades to fight the “costly” inflation which is the 8.5 percent rate of increase in food and energy prices that may aggravate inflation and lead to recession in the near future. \\\\\n' +
+      '**Question:** What is the difference between bond and stock in terms of risk profile? \\\\\n' +
+      '**Pythia-6.9B:** Stock is less risky (you can liquidate your shares anytime) but bond is more risky (you can’t liquidate). \\\\\n' +
+      '**FinPythia-6.9B:** When you buy a bond, you receive a set of fixed payments from the issuer at a regular interval over a fixed term. You take on the full risk of the coupon payments not being made, so a bond is always considered to be a lower risk debt instrument than a stock. However, a stock is a more liquid investment than a bond. When buying a stock, you are buying shares in the company that the bond represents and you hold on to the stock until you want to cash out, and it can be used as collateral to borrow money. \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Generation examples from Pythia-6.9B and FinPythia-6.9B. We observe FinPythia’s updated financial events knowledge post 2021, providing factual answers with reasoning as shown in the last example.\n' +
+      '\n' +
+      'efficacy of both task-adaptive and domain continual pre-training LLMs on unlabeled task data, in line with results observed in other model types [1; 8].\n' +
+      '\n' +
+      'We can observe the following: 1) ETS-DACP trained on 10% outperforms DACP with 100% of the data; 2) ETS-DACP has the best performance among all three counterparts and is on par with a combination of three metrics - ETS-DACP-com; 3) ETA-DACP-ent trained on 10% corpus is a close second despite not having any access to task data, handily surpassing DACP trained on 100% of the data; and 4) Efficient DACP methods with hard sampling outperform ones with soft sampling.\n' +
+      '\n' +
+      'These results clearly show that _not all data is equal for continual pre-training_. In fact, all the data used in efficient DACP methods (10%) is a subset of the data in DACP. Since DACP\'s (100%) performance is lower than ETS-DACP/ETA-DACP-ent, adding more data on top of highly similar or high entropy data actually hurts the performance. The difference in results between hard and soft sampling adds more evidence to this observation. While there is variability across tasks, on an average, adding examples from outside the top decile of metrics hurts the performance with the notable exception of ETS-DACP-com which is a combination of all three metrics. Hence, we should carefully curate the data for any domain continual pre-training.\n' +
+      '\n' +
+      'Note, 10% of domain data (2.39B) translates to less than 1% of the 300 billion tokens the original Pythia was trained on. These results demonstrate that being selective during the data curation process for continual pre-training can have large effects on domain performance at a small cost.\n' +
+      '\n' +
+      'These results demonstrate the effectiveness of continual pre-training on domains and task (sub-domains). A natural question that arises from this exercise is _whether the LLM is losing its generality by being further tuned on a narrow domain?_ In short, is the LLM becoming a specialist at the expense of being a generalist? We answer this question by measuring the performance of continually pre-trained LLM variants on out-of-domain tasks which Pythia was evaluated on. Table 4 shows the performance on the standard four non-finance tasks. We do not observe any significant change in the performance on the four out-of-domain tasks except for DACP with 100% data. Hence, _by being selective about the data to use for continual pre-training, we can keep the LLM\'s original capability intact while improving their domain performance._\n' +
+      '\n' +
+      '## 5 Related Work\n' +
+      '\n' +
+      'Domain specific large language models.While the majority of released LLMs are general-purpose models, domain-specific LLMs have emerged as valuable counterparts. Google\'s MedPaLM and MedPaLM-2, trained on a medical domain corpus, achieved state-of-the-art results on medical benchmarks [23; 24]. Bloomberg developed the first financial LLM from scratch by training on a financial corpus [31] while Galactica was developed for scientific domains [26]. Continual pre-training presents an alternative approach to building domain-specific LLMs from scratch. Wu et\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c c c c c c c} \\hline \\hline  & **Takes** & **PFB** & \\multicolumn{2}{c}{**FQA SA**} & \\multicolumn{2}{c}{**Headline**} & \\multicolumn{2}{c}{**NLR**} & \\multicolumn{2}{c}{**Average**} & \\multicolumn{1}{c}{**Win Rate (\\%)**} \\\\  & & Acc & F1 & Acc & F1 & F1 & F1 & F1 & F1 \\\\ \\hline\n' +
+      '**Pythia 1B** & 0 & 41.89 (15.8) & 52.84 (15.5) & 59.66 (10.3) & 65.32 (137.4) & 45.61 (10.0) & 48.77 (13.7) & 53.14 (7.5) & 45.5 \\\\ \\hline\n' +
+      '**DACP** & 2.59B (100\\%) & 58.06 (8.6) & 64.77 (10.4) & 53.83 (16.3) & 59.85 (19.0) & 41.41 (6.5) & 51.32 (7.6) & 54.34 (8.9) & 59.1 \\\\\n' +
+      '**DACP** & 25.9B (100\\%) & 50.86 (14.5) & 59.16 (12.1) & 50.17 (17.0) & 52.84 (18.1) & 53.34 (9.4) & **58.20** (5.8) & 55.14 (25.5) & 52.3 \\\\ \\hline\n' +
+      '**TACP** & 0.24M & 56.94 (0.94) & 68.00 (0.65) & 62.43 (2.3) & 22.22 (2.2) & 38.91 (1.5) & 50.55 (11.7) & **57.13** (13.23) & 56.8 \\\\ \\hline\n' +
+      '**Hard Sampling** & & & & & & & & & \\\\ \\hline\n' +
+      '**ETS-DACP** & 2.39B (10\\%) & 59.93 (62.7) & 67.11 (69.6) & 46.26 (19.6) & 50.84 (21.9) & **71.56** (7.14) & 49.52 (8.4) & **59.76** (9.7) & **63.6** \\\\\n' +
+      '**ETA-DACP-ppl** & 2.39B (10\\%) & **42.73** (5.7) & **73.66** (14.9) & 41.22 (22.3) & 45.66 (24.9) & 39.11 (2.0) & 48.69 (5.5) & **51.33** (13.1) & 40.9 \\\\\n' +
+      '**ETA-DACP-ent** & 2.39B (10\\%) & 59.18 (59.8) & 65.39 (14.9) & 54.11 (10.1) & 59.83 (11.1) & 46.38 (15.7) & 58.48 (8.3) & 61.4 \\\\\n' +
+      '**ETS-DACP-com** & 2.39B (10\\%) & 55.41 (11.7) & 62.58 (14.7) & **62.58** (5.6) & **72.83** (18.8) & 53.91 (11.6) & 48.34 (15.9) & 59.41 (9.3) & 61.4 \\\\ \\hline \\multicolumn{7}{c}{**Soft Sampling**} \\\\ \\hline\n' +
+      '**ETS-DACP** & 2.39B (10\\%) & 61.47 (26.7) & 27.45 (3.4) & 43.83 (17.3) & 47.08 (18.1) & 40.82 (7.9) & 46.16 (15.1) & 51.63 (12.9) & 34.1 \\\\\n' +
+      '**ETA-DACP-ppl** & 2.39B (10\\%) & 53.90 (11.4) & 61.44 (16.4) & 46.01 (15.6) & 52.44 (13.0) & 41.00 (5.6) & 43.30 (13.7) & 49.67 (8.0) & 20.5 \\\\\n' +
+      '**ETA-DACP-ent** & 2.39B (10\\%) & 59.49 (92.9) & 68.20 (9.5) & 48.85 (17.5) & 57.00 (26.2) & 60.41 (14.1) & 38.00 (10.6) & 56.01 (11.3) & 52.3 \\\\\n' +
+      '**ETS-DACP-com** & 2.29B (10\\%) & 57.07 (10.5) & 64.41 (11.0) & 59.96 (60.0) & 67.97 (92.9) & 51.22 (12.5) & 47.68 (13.9) & 57.82 (8.6) & 52.3 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: Effect of TACP and efficient DACP measured in 5-shot setting on financial tasks for Pythia-1B model class. The reported are mean and standard deviation (in parenthesis) of 10 runs. ETA-DACP-ppl is ETA-DACP with perplexity and variance, and ETA-DACP-ent is with entropy measure. ETS-DACP-com is task similar DACP with data selection by averaging all three metrics: perplexity, similarity, and entropy. Win rate is percentage of times a model is more accurate than other models in a pair-wise comparison [15]. **Bold** indicates the best results and underline indicates the second best per task.\n' +
+      '\n' +
+      'al [30] build medical LLMs through continual pre-training LLaMA [27] on medical papers. However, they do not evaluate the model\'s quantitative performance in a non-fine tuning setting. In this work, we measure the model\'s performance in an in-context learning setting, showing the clear benefits of continual pre-training.\n' +
+      '\n' +
+      'Task-adaptive pre-training.Continual pre-training of language models on unlabeled data for a given task has been demonstrated to be beneficial for enhancing end-task performance [1; 8; 13]. In scenarios involving domain shift, domain-adaptive pre-training bears similarities to task-adaptive pre-training to some extent. Aharoni et al [1] documented that continual pre-training a model on a similar domain contributes to improved task performance on the target domain. Notably, the work closest to ours is presented in [8], which shows that continual pre-training of language models on both unlabeled task data and augmented unlabeled task data, sampled from the in-domain corpus based on similarity. While these works use task data, we also propose a task agnostic method, ETA-DACP, as task similarity is prohibitively expensive for LLMs.\n' +
+      '\n' +
+      'Data selection.Data selection in continual pre-training plays a critical role in choosing the most valuable data samples for the training process. Various distributed and linguistic features independent of specific domains or tasks have been shown to be beneficial for data selection and the organization of learning curricula [21; 28]. In the context of LLMs, there is limited understanding of how to curate data for pre-training, let alone for continual pre-training. _To best of our knowledge, ours is the first work that attempts to do data selection in the context of LLMs for more effective continual pre-training._\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      'In this paper, we demonstrate the efficacy of domain-adaptive continual pre-training for developing domain-specific LLMs. Our results in the finance domain show that domain-adaptive continual pre-training improves the LLMs\' performance on financial tasks. Domain-adaptive continual pre-training enables the LLMs to acquire new knowledge in the financial domain at a much lower cost.\n' +
+      '\n' +
+      'Furthermore, we propose efficient domain-adaptive continual pre-training methods, ETS-DACP and ETA-DACP to enhance the effectiveness of the continual pre-training. By being selective with the training data curation, our methods refine the continual pre-training, yielding even better results with just 10% of the data and cost of vanilla continual pre-training. ETA-DACP with data selection based on task-agnostic measures like entropy works almost at par with the task-aware data selection strategy. This finding can be used to build data selection for continual pre-training even in the absence of task data. We also observe no degradation in performance on open-domain standard tasks, implying that domain-adaptive continual pre-training does not hurt open-domain capabilities.\n' +
+      '\n' +
+      'Our findings place domain continual pre-training as a strong alternative to building domain-specific LLMs from scratch. By being smarter about data selection for continual pre-training, we can surpass vanilla continual pre-training at a fraction of the cost. Overall, our work paves the way for developing domain-specific LLMs at a reduced cost, with implications for a wide range of applications.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c c c c c c c c c c} \\hline \\hline  & Tokens & \\begin{tabular}{c} **ARC** \\\\ Acc \\\\ \\end{tabular} & \\begin{tabular}{c} **MMLU** \\\\ Acc \\\\ \\end{tabular} & \\begin{tabular}{c} **TruthfulQA** \\\\ Acc \\\\ \\end{tabular} & \\begin{tabular}{c} **HellaWang** \\\\ \\end{tabular} & \n' +
+      '\\begin{tabular}{c} **Average** \\\\ \\end{tabular} \\\\ \\hline \\hline\n' +
+      '**Pythia 1B** & 0 & 25.94 & 29.27 & 26.29 & 26.29 & 26.23 & 26.40 & **47.37** & **76.45** & **47.83** & **28.38** & **35.96** \\\\ \\hline\n' +
+      '**DACP** & 2.39B (10\\%) & 26.28 & 29.44 & 26.43 & 26.43 & 24.48 & 42.26 & 36.83 & 45.34 & 28.50 & 35.87 \\\\\n' +
+      '**DACP** & 23.9B (100\\%) & 24.32 & 27.47 & 26.09 & 26.09 & 24.60 & 42.05 & 35.34 & 42.45 & 27.59 & 34.52 \\\\ \\hline\n' +
+      '**TACP** & 0.24M & 25.34 & 28.41 & 24.93 & 24.93 & 24.48 & 41.95 & 37.03 & 47.27 & 27.95 & 35.64 \\\\ \\hline \\multicolumn{11}{c}{**Hard Sampling**} \\\\ \\hline\n' +
+      '**ETS-DACP** & 2.39B (10\\%) & 24.74 & 28.07 & 25.99 & 25.99 & 23.26 & **43.85** & 36.31 & 44.79 & 27.57 & 35.68 \\\\\n' +
+      '**ETA-DACP-ppl** & 2.39B (10\\%) & **26.71** & 28.41 & 26.31 & 26.31 & 24.97 & 41.42 & 36.70 & 44.89 & **28.67** & 35.26 \\\\\n' +
+      '**ETA-DACP-ent** & 2.39B (10\\%) & 25.34 & 27.99 & 24.60 & 24.60 & 24.11 & 41.38 & 36.92 & 44.98 & 27.75 & 34.74 \\\\\n' +
+      '**ETS-DACP-com** & 2.39B (10\\%) & 26.37 & 29.35 & 26.58 & 26.58 & 24.48 & 41.51 & 36.61 & 44.97 & 28.51 & 35.60 \\\\ \\hline \\multicolumn{11}{c}{**Soft Sampling**} \\\\ \\hline\n' +
+      '**ETS-DACP** & 2.39B (10\\%) & 26.45 & 28.33 & **27.10** & **27.10** & 24.60 & 41.73 & 36.24 & 44.49 & 28.60 & 35.41 \\\\\n' +
+      '**ETA-DACP-ppl** & 2.39B (10\\%) & 25.85 & **29.69** & 26.59 & 26.59 & 24.85 & 42.17 & 36.55 & 44.71 & 28.46 & 35.79 \\\\\n' +
+      '**ETA-DACP-ent** & 2.39B (10\\%) & 25.94 & 29.10 & 25.61 & 25.61 & 24.60 & 41.64 & 36.78 & 45.20 & 28.23 & 35.39 \\\\\n' +
+      '**ETS-DACP-com** & 2.39B (10\\%) & 25.77 & 27.47 & 27.05 & 27.05 & 24.24 & 41.82 & 36.93 & 44.62 & 28.50 & 35.24 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: Evaluation on standard tasks **Bold** indicates the best value for a column We follow the evaluation practice used to create HuggingFace Open LLM leaderboard.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1]R. Aharoni and Y. Goldberg (2020) Unsupervised domain clusters in pretrained language models. In Advances in Neural Information Processing Systems, pp. 7747-7763. Cited by: SS1.\n' +
+      '* [2]S. Ben-David, J. Blitzer, K. Crammer, A. Kulesza, F. Pereira, and J. Wortman Vaughan (2010) A theory of learning from different domains. Machine learning79, pp. 151-175. Cited by: SS1.\n' +
+      '* [3]Y. Bengio, J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [4]S. B., J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [5]S. B., J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [6]S. B., J. Louradour, R. Collobert, and J. Weston (2010) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [7]S. B., J. Louradour, R. Collobert, and J. Weston (2020) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [8]S. B., J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [9]S. B., J. Louradour, R. Collobert, and J. Weston (2020) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.\n' +
+      '* [10]J. B., J. Louradour, and M. L., J. Louradour (2020) A survey on the topicUnited States, July 10-15, 2022_, pages 4764-4780. Association for Computational Linguistics, 2022.\n' +
+      '* [13] Zixuan Ke, Yijia Shao, Haowei Lin, Tatsuya Konishi, Gyuhak Kim, and Bing Liu. Continual pre-training of language models. In _The Twelfth International Conference on Learning Representations_, 2023.\n' +
+      '* [14] Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch, and Nicholas Carlini. Deduplicating training data makes language models better. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 8424-8445, 2022.\n' +
+      '* [15] Percy Liang, Rishi Bommasani, Tony Lee, Dimitris Tsipras, Dilara Soylu, Michihiro Yasunaga, Yian Zhang, Deepak Narayanan, Yuhuai Wu, Ananya Kumar, et al. Holistic evaluation of language models. _arXiv preprint arXiv:2211.09110_, 2022.\n' +
+      '* [16] Hong Liu, Sang Michael Xie, Zhiyuan Li, and Tengyu Ma. Same pre-training loss, better downstream: Implicit bias matters for language models. In _International Conference on Machine Learning_, pages 22188-22214. PMLR, 2023.\n' +
+      '* [17] Lefteris Loukas, Manos Fergadiotis, Ion Androutsopoulos, and Prodromos Malakasiotis. EDGAR-CORPUS: billions of tokens make the world go round. _CoRR_, abs/2109.14394, 2021.\n' +
+      '* [18] Macedo Maia, Siegfried Handschuh, Andre Freitas, Brian Davis, Ross McDermott, Manel Zarrouk, and Alexandra Balahur. Www\'18 open challenge: Financial opinion mining and question answering. In Pierre-Antoine Champin, Fabien Gandon, Mounia Lalmas, and Panagiotis G. Ipeirotis, editors, _Companion of the The Web Conference 2018 on The Web Conference 2018, WWW 2018, Lyon, France, April 23-27, 2018_, pages 1941-1942. ACM, 2018.\n' +
+      '* [19] Pekka Malo, Ankur Sinha, Pekka J. Korhonen, Jyrki Wallenius, and Pyry Takala. Good debt or bad debt: Detecting semantic orientations in economic texts. _J. Assoc. Inf. Sci. Technol._, 65(4):782-796, 2014.\n' +
+      '* [20] Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. Deepspeed: System optimizations enable training deep learning models with over 100 billion parameters. In Rajesh Gupta, Yan Liu, Jiliang Tang, and B. Aditya Prakash, editors, _KDD \'20: The 26th ACM SIGKDD Conference on Knowledge Discovery and Data Mining, Virtual Event, CA, USA, August 23-27, 2020_, pages 3505-3506. ACM, 2020.\n' +
+      '* [21] Sebastian Ruder and Barbara Plank. Learning to select data for transfer learning with bayesian optimization. In Martha Palmer, Rebecca Hwa, and Sebastian Riedel, editors, _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing, EMNLP 2017, Copenhagen, Denmark, September 9-11, 2017_, pages 372-382. Association for Computational Linguistics, 2017.\n' +
+      '* [22] Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, Jonathan Tow, Alexander M. Rush, Stella Biderman, Albert Webson, Pawan Sasanka Ammanamachi, Thomas Wang, Benoit Sagot, Niklas Muenninghoff, Albert Villanova del Moral, Olatunji Ruwase, Rachel Bawden, Stas Eckman, Angelina McMillan-Major, Iz Beltagy, Huu Nguyen, Lucile Saulnier, Samson Tan, Pedro Ortiz Suarez, Victor Sanh, Hugo Laurencon, Yacine Jernite, Julien Launay, Margaret Mitchell, Colin Raffel, Aaron Gokaslan, Adi Simhi, Aitor Soroa, Alham Fikri Aji, Amit Alfassy, Anna Rogers, Ariel Kreisberg Nitzav, Canwen Xu, Chenghao Mou, Chris Emezue, Christopher Klamm, Colin Leong, Daniel van Strien, David Ifeoluwa Adelani, and et al. BLOOM: A 176b-parameter open-access multilingual language model. _CoRR_, abs/2211.05100, 2022.\n' +
+      '* [23] Karan Singhal, Shekoofeh Azizi, Tao Tu, S. Sara Mahdavi, Jason Wei, Hyung Won Chung, Nathan Scales, Ajay Kumar Tanwani, Heather Cole-Lewis, Stephen Pfohl, Perry Payne, Martin Seneviratne, Paul Gamble, Chris Kelly, Nathaneal Scharli, Aakanksha Chowdhery, Philip Andrew Mansfield, Blaise Aguera y Arcas, Dale R. Webster, Gregory S. Corrado, Yossi Matias, Katherine Chou, Juraj Gottweis, Nenad Tomasev, Yun Liu, Alvin Rajkomar, Joelle K. Barral, Christopher Semturs, Alan Karthikesalingam, and Vivek Natarajan. Large language models encode clinical knowledge. _CoRR_, abs/2212.13138, 2022.\n' +
+      '\n' +
+      '* [24] Karan Singhal, Tao Tu, Juraj Gottweis, Rory Sayres, Ellery Wulczyn, Le Hou, Kevin Clark, Stephen Pfohl, Heather Cole-Lewis, Darlene Neal, Mike Schaekermann, Amy Wang, Mohamed Amin, Sami Lachgar, Philip Andrew Mansfield, Sushant Prakash, Bradley Green, Ewa Dominowska, Blaise Aguera y Arcas, Nenad Tomasev, Yun Liu, Renee Wong, Christopher Semturs, S. Sara Mahdavi, Joelle K. Barral, Dale R. Webster, Gregory S. Corrado, Yossi Matias, Shekofeh Azizi, Alan Karthikesalingam, and Vivek Natarajan. Towards expert-level medical question answering with large language models. _CoRR_, abs/2305.09617, 2023.\n' +
+      '* [25] Ankur Sinha and Tanmay Khandait. Impact of news on the commodity market: Dataset and results. _CoRR_, abs/2009.04202, 2020.\n' +
+      '* [26] Ross Taylor, Marcin Kardas, Guillem Cucurull, Thomas Scialom, Anthony Hartshorn, Elvis Saravia, Andrew Poulton, Viktor Kerkez, and Robert Stojnic. Galactica: A large language model for science. _CoRR_, abs/2211.09085, 2022.\n' +
+      '* [27] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models. _CoRR_, abs/2302.13971, 2023.\n' +
+      '* [28] Yulia Tsvetkov, Manaal Faruqui, Wang Ling, Brian MacWhinney, and Chris Dyer. Learning the curriculum with bayesian optimization for task-specific word representation learning. In _Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics, ACL 2016, August 7-12, 2016, Berlin, Germany, Volume 1: Long Papers_. The Association for Computer Linguistics, 2016.\n' +
+      '* [29] Ben Wang and Aran Komatsuzaki. GPT-J-6B: A 6 Billion Parameter Autoregressive Language Model. [https://github.com/kingoflolz/mesh-transformer-jax](https://github.com/kingoflolz/mesh-transformer-jax), May 2021.\n' +
+      '* [30] Chaoyi Wu, Xiaoman Zhang, Ya Zhang, Yanfeng Wang, and Weidi Xie. Pmc-llama: Further finetuning llama on medical papers. _CoRR_, abs/2304.14454, 2023.\n' +
+      '* [31] Shijie Wu, Ozan Irsoy, Steven Lu, Vadim Dabravolski, Mark Dredze, Sebastian Gehrmann, Prabhanjan Kambadur, David S. Rosenberg, and Gideon Mann. Bloomberggpt: A large language model for finance. _CoRR_, abs/2303.17564, 2023.\n' +
+      '* [32] Tongtong Wu, Massimo Caccia, Zhuang Li, Yuan-Fang Li, Guilin Qi, and Gholamreza Haffari. Pretrained language model in continual learning: A comparative study. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.\n' +
+      '* [33] Qianqian Xie, Weiguang Han, Xiao Zhang, Yanzhao Lai, Min Peng, Alejandro Lopez-Lira, and Jimin Huang. PIXIU: A large language model, instruction data and evaluation benchmark for finance. _CoRR_, abs/2306.05443, 2023.\n' +
+      '* [34] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona T. Diab, Xian Li, Xi Victoria Lin, Todor Mihaylov, Myle Ott, Sam Shleifer, Kurt Shuster, Daniel Simig, Punit Singh Koura, Anjali Sridhar, Tianlu Wang, and Luke Zettlemoyer. OPT: open pre-trained transformer language models. _CoRR_, abs/2205.01068, 2022.\n' +
+      '* [35] Mingmin Zhao, Shichao Yue, Dina Katabi, Tommi S Jaakkola, and Matt T Bianchi. Learning sleep stages from radio signals: A conditional adversarial architecture. In _International Conference on Machine Learning_, pages 4100-4109. PMLR, 2017.\n' +
+      '\n' +
+      'Benchmark BloombergGPT\'s Performance\n' +
+      '\n' +
+      'As BloombergGPT is evaluated using an in-house data split, and the calculation details of reported metrics may not be identical, direct comparisons of their results with ours are not feasible. To adequately assess the efficacy of continual pre-training, we benchmark BloombergGPT\'s performance against the FLARE framework. This involves evaluating OPT-66B and GPT-NeoX-20B\'s performance, as obtained from FLARE, and comparing it to the results reported in [31]. This rigorous benchmarking ensures a fair and comprehensive evaluation, providing valuable insights into the effectiveness of our continual pre-training approach in relation to financial LLMs trained from scratch.\n' +
+      '\n' +
+      'Table 5 reports the comparison results. GPT-NeoX reports similar average task performance under two evaluation frameworks, but its performance on individual tasks varies. For example, the F1 score on FiQA SA obtained by FLARE is 46% higher than BloombergGPT\'s evaluation, whereas F1 scores for Headline and NER are lower. Moreover, OPT-66B reports inferior results based on FLARE than BloombergGPT\'s evaluation on all of the 4 tasks, and the average task performance is 20% lower. These results suggest that BloombergGPT\'s evaluation results are inflated compared with FLARE. The comparison is still inconclusive unless BloombergGPT is benchmarked on FLARE or BloombergGPT\'s evaluation configuration is made public.\n' +
+      '\n' +
+      '## Appendix B Perplexity, Similarity and Diversity\n' +
+      '\n' +
+      'In this section, we present an in-depth analysis of the distribution of perplexity, similarity, and diversity within our financial corpus. Our findings reveal that all three metrics display a highly skewed distribution. Specifically, as illustrated in the top row of Figure 3, the similarity metric demonstrates a two-modal pattern, potentially attributable to the presence of two distinct sources within our financial corpus.\n' +
+      '\n' +
+      'Figure 4 shows the Spearman\'s rank correlation of all three metrics. We see that the three metrics exhibit low correlation. This suggests that subsets of data we selected by ranking across these three metrics do not have a high degree of overlap. This inspired us to create the ETS-DACP-com method, which combines the three metrics together to balance the three different dimensions. Figure 5 shows the quantile distribution of three metrics for selected subsets for each of the efficient DACP methods with hard sampling.\n' +
+      '\n' +
+      '## Appendix C ETS-DACP-com vs ETS-DACP\n' +
+      '\n' +
+      'ETS-DACP-com effectively strikes a balance between constructing a domain-specific LLM and a task-specific LLM. To demonstrate its efficacy, we utilize the average quantile of similarity, knowledge novelty, and diversity as the sampling weights. By applying these weights, we perform weighted sampling, selecting 10% and 20% of the financial corpus without replacement to construct the training data.\n' +
+      '\n' +
+      'The average sample quantile for various subsets of the financial corpus is illustrated in Figure 5. We claim that using a simple average of quantiles for the three metrics achieves a good balance among the three dimensions--the average quantile for the three dimensions lies in a similar ballpark for each subset. In contrast, the subset for ETS-DACP exhibits higher perplexity and lower or middle\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{c c|c c|c c} \\hline \\hline  & & \\multicolumn{2}{c|}{FLARE} & \\multicolumn{2}{c}{BloombergGPT} \\\\ \\hline  & & GPT-NeoX & OPT-66B & GPT-NeoX & OPT-66B \\\\ \\hline FPB & F1 & 46.75 & 40.00 & 44.64 & 48.67 \\\\ FiQA SA & F1 & 73.86 & 37.36 & 50.59 & 51.60 \\\\ Headline & F1 & 62.62 & 61.36 & 73.22 & 79.41 \\\\ NER & F1 & 47.03 & 52.24 & 60.98 & 57.49 \\\\ \\hline Average & F1 & 57.57 & 47.74 & 57.36 & 59.29 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: Evaluation results obtained on FLARE benchmark versus BloombergGPT [31] for two public models: GPT-NeoX and OPT-66B.\n' +
+      '\n' +
+      'entropy, suggesting that unlabeled task data contains new knowledge but is less diverse. For ETA-DACP-ppl and ETA-DACP-ent, the samples are uniform across the other two dimensions.\n' +
+      '\n' +
+      '## Appendix D Train and Test Loss of Efficient DACP Methods\n' +
+      '\n' +
+      'We show the plots of Finance domain loss (Fin Test) and open domain loss (Pile Loss) for our efficient DACP methods in Figure 6. ETS-DACP-com (Hard sampling) has the lowest loss for Fin Test loss as it uses both task knowledge and also uses high entropy/perplexity samples in the the larger financial pile. All methods have similar Fin Test loss for Soft sampling as we sample entire financial corpus space for sampling.\n' +
+      '\n' +
+      'ETS-DACP has the highest loss for open domain Pile loss. However, we did not observe any degradation of performance on open domain tasks with ETS-DACP. Surprisingly, there is a tight correlation between losses of ETS-DACP-ent and ETS-DACP-ppl, while ETS-DACP-ppl performs consistently and considerably worse than ETS-DACP-ent on our tasks. These observations suggest that there is no good correlation between actual our task performance and loss curves. Using\n' +
+      '\n' +
+      'Figure 4: Spearman’s rank correlation heatmap between perplexity, similarity, and entropy measures.\n' +
+      '\n' +
+      'Figure 3: Distribution of perplexity, similarity and diversity.\n' +
+      '\n' +
+      'validation/test loss with unlabeled data is not a good proxy for task performance, atleast in this domain. This is supported by [16]\'s observations on low correlation between task performance and pre-training loss.\n' +
+      '\n' +
+      '## Appendix E Financial Dataset Curation\n' +
+      '\n' +
+      'We describe the two data sources for curating our domain corpus: Financial News CommonCrawl and SEC filings.\n' +
+      '\n' +
+      'Figure 5: Average sample quantile of subsets of financial corpus used in ETS-DACP-com and ETS-DACP.\n' +
+      '\n' +
+      'Figure 6: Loss curves: in domain loss (Fin Test loss) on left and general domain loss (Pile loss) on right for our Efficient DACP class of methods.\n' +
+      '\n' +
+      'Financial News CommonCrawl [13.2B words, 83.5%]We create an English financial news dataset by pre-processing the publicly available News CommonCrawl dumps hosted on AWS S34 spanning from 2016 to 2022. To identify financial news articles from the vast collection of News CommonCrawl dumps, we employ two filtering mechanisms: the domain filter and the URL keyword filter. Firstly, we establish a comprehensive portfolio of web domains corresponding to reputable news outlets that predominantly focus on financial, economic, and business news, such as CNBC. We retain news articles specifically sourced from these financial news domains, which constitute a substantial portion of our financial corpus.\n' +
+      '\n' +
+      'Footnote 4: s3://commoncrawl\n' +
+      '\n' +
+      'Secondly, to capture financial articles from general news outlets, we observe that many of them designate dedicated sections or subdomains for business, economy, or finance news, like Fox Business. To effectively identify these financial articles, we implement a simple yet effective keyword-based approach that targets financial sections and subdomains within general news outlets. The filtering processes ensure the selection of a financial corpus appropriate for our continual pre-training in the financial domain.\n' +
+      '\n' +
+      'SEC Filing [3.3B words, 16.5%]Public companies in the United States are legally required to submit their financial statements on a regular basis. The Securities and Exchange Commission (SEC) facilitates public access to these filings through the Electronic Data Gathering, Analysis, and Retrieval (EDGAR) System, which has been available since 1993. On average, this system accommodates approximately 40,000 new files per year. To enrich our financial corpus, we include 10-K filings from the period spanning 1993 to 2022. To ensure data accuracy and consistency, these filings are parsed and pre-processed using the package detailed in [17]. Furthermore, we optimize the quality of our corpus by eliminating report sections containing less than 20 words, to remove spurious examples.\n' +
+      '\n' +
+      'List of Domains used to Filter Financial NewsWe use the following keywords to identify subdomains and urls: economy, market, finance, money, wealth, invest, business, industry.\n' +
+      '\n' +
+      'Figure 7: Financial news size by month\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

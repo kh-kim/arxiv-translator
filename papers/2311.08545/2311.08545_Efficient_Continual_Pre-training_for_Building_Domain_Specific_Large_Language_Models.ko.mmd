@@ -1,0 +1,329 @@
+# 도메인별 대용량 언어 모델 구축을 위한 효율적인 연속 사전 훈련
+
+ 용희
+
+UIUC
+
+yongxie2@illinois.edu
+
+이 일은 아마존에서 용이가 인턴을 하는 동안
+
+&Karan Aggarwal
+
+Amazon
+
+kagg@amazon.com
+
+&Aitzaz Ahmad
+
+Amazon
+
+aitzaza@amazon.com
+
+이 저자들은 이 작업에 동등하게 기여했다.
+
+###### Abstract
+
+대규모 언어 모델(LLM)은 주목할 만한 오픈 도메인 기능을 입증했다. 전통적으로 도메인에 맞게 조정된 LLM은 도메인별 작업을 처리하는 데 있어 처음부터 탁월하도록 훈련됩니다. 이 연구에서는 영역별 LLM을 개발하기 위한 수단으로 지속적인 사전 훈련의 대안 전략을 탐색한다. 금융 도메인에 대한 도메인 적응형 연속 사전 교육을 통해 개발된 _FinPythia-6.9B_를 소개합니다. 지속적으로 사전 훈련된 핀피티아는 원래의 기초 모델보다 재정 과제에 대한 일관된 개선을 보여준다. 지속적인 사전 교육을 위한 단순하지만 효과적인 데이터 선택 전략을 추가로 탐구한다. 데이터 선택 전략은 오픈 도메인 표준 작업에서 성능 저하 없이 말뭉치 크기와 비용의 10%만으로 바닐라 연속 사전 훈련의 성능을 능가한다. 본 연구는 비용 효율적인 방식으로 도메인별 LLM을 처음부터 구축하는 대안 솔루션을 제안한다.
+
+## 1 Introduction
+
+대규모 언어 모델(LLM)은 자연어에 대한 깊은 이해를 보여주었으며, 일련의 작업에서 성능을 향상시켰다[5]. 개방형 웹 데이터를 사용하는 것은 광범위한 기능을 가진 범용 LLM을 만드는 데 도움이 되었다. 그러나 범용 LLM은 "전문가"가 아니다; 예를 들어, LLM은 좋은 뉴스 기사를 작성할 수 있지만 전문 법률 문서를 작성하는 것은 어려울 것이다.
+
+전문가 또는 도메인별 LLM을 만들기 위해서는 도메인 데이터에 대해 훈련해야 한다. 도메인별 LLM을 구축하기 위한 접근법은 처음부터 도메인별 LLM을 훈련하거나 도메인 데이터와 함께 기존 LLM을 지속적으로 사전 훈련하는 두 가지 범주로 분류할 수 있다. 대부분의 연구자들은 처음부터 영역별 LLM을 구축하는 첫 번째 접근법을 취했다. 눈에 띄는 예는 의료 영역의 경우 Med-PaLM 계열[23; 24], 과학 논문의 경우 Galactica[26], 금융의 경우 BloombergGPT[31]이다. 훨씬 저렴한 대안임에도 불구하고 도메인 적응형 연속 사전 훈련을 사용하여 도메인별 LLM을 구축하는 데 거의 관심을 기울이지 않았다. 특히, PMC-LLaMA[30], 의료 LLM은 의료 논문에 대한 LLaMA[27]의 지속적인 사전 훈련을 통해 훈련되었다. 지속적인 사전 훈련은 진화하는 환경에서 최신 지식으로 LLM을 업데이트하는 데에도 사용할 수 있다.
+
+이 연구에서 우리는 다음과 같은 것을 탐구한다: 1) 도메인-적응적 연속 사전 훈련이 도메인-특정 LLMs를 구축하는 데 도움이 되는가? 2) 보다 효과적인 도메인 적응형 연속 사전 훈련을 위해 데이터 선택 전략을 채택할 수 있는가? 그리고 3) 도메인 적응형 지속적인 사전훈련이 LLM의 오픈 도메인 역량에 부정적인 영향을 미치는가? 우리는 피티아 위에 구축된 지속적으로 사전 훈련된 모델인 핀피티아(FinPythia)를 훈련함으로써 금융 영역의 한계에서 이러한 질문에 답한다[4].
+
+우리는 첫 번째 질문에 대한 대답으로 피티아가 훈련받은 것의 8% 크기의 도메인 데이터에 대한 지속적인 사전 훈련 후 재무 벤치마크[33]에 대한 증가를 보고한다. 우리는 또한 질적 분석 동안 핀피티아의 최신 금융 영역 지식 습득의 증거를 관찰한다. 두 번째 질문에 답하기 위해 두 가지 간단한 데이터 선택 기술인 작업 인식 _Efficient Task-Similar Domain-Adaptive Continual Pre-training_ (ETS-DACP) 및 _Efficient Task-Agnostic Domain-Adaptive Continual Pre-training_ (ETA-DACP)을 제안한다. 이러한 방법은 선택된 도메인 데이터의 10% 또는 피티아의 훈련 코퍼스의 0.8%만으로 도메인 적응형 연속 사전 훈련의 성능을 능가한다. 우리는 데이터 선택을 위해 유사성, 복잡성 및 토큰 유형 엔트로피의 세 가지 메트릭을 사용한다. 유사성은 시드로서 태스크 데이터를 필요로 하지만, 후자의 두 메트릭은 태스크-불가지론적이다. 세 번째 질문에 답하기 위해 MMLU 및 TruthfulQA와 같은 4개의 개방형 도메인 표준 작업에 대해 이러한 사전 훈련된 모델을 지속적으로 벤치마킹한다. 우리는 LLM이 도메인에 적응하면서 일반적인 기능을 유지한다는 것을 나타내는 유의미한 성능 변화를 관찰하지 못한다.
+
+이 논문의 주요 기여는 세 가지이다. 먼저, 금융 데이터 세트에서 가져온 160억 개의 단어로 구성된 대규모 금융 코퍼스를 선별한다. 둘째, 우리의 실험은 지속적인 사전 훈련을 통해 도메인별 LLM을 구축하고, 더 작은 언어 모델에서 얻은 결과를 추가로 검증하고 확장하는 가능성을 보여준다[8]. 이 발견은 처음부터 값비싼 사전 훈련의 대안으로 더 저렴한 비용으로 도메인별 LLM을 구축하는 통찰력을 제공한다. 본 연구의 결과는 지속적인 사전학습이 기존 기초모델과 동일한 오픈도메인 성능을 유지함을 보여준다. 마지막으로, 바닐라 연속 사전 훈련에 대한 보다 효율적인 접근 방법으로 두 가지 효율적인 도메인 적응형 연속 사전 훈련 방법을 제안한다. 우리의 새로운 접근법은 도메인 적응형 연속 사전 훈련 비용의 일부를 사용하여 더 나은 성능을 달성할 수 있는 데이터 선택 전략을 전개한다.
+
+## 2 Methodology
+
+이 섹션에서는 연속 사전 훈련에 사용된 재정 코퍼스, 도메인 적응형 연속 사전 훈련, 태스크 적응형 연속 사전 훈련 및 제안된 태스크 인식 도메인 적응형 연속 사전 훈련의 큐레이션에 대해 설명한다.
+
+### Financial Corpus Curation
+
+데이터 소스에 대한 평가에서 우리는 공공 가용성, 라이선스 및 규모의 세 가지 차원을 고려한다. 우리는 금융 코퍼스에 두 가지 데이터 소스를 사용한다: 금융 뉴스 공통 크롤링과 증권거래위원회 파일이다. 금융 뉴스 커먼크롤은 공공 커먼크롤 데이터에서 금융 뉴스를 걸러냄으로써 선별된다. 우리는 중복 학습 데이터를 제거하기 위해 피티아 제품군 [4]의 중복 제거 절차를 따른다. 복제가 성능을 해친다는 상반된 증거가 있는 반면[4;14], 학습 데이터에는 복제의 이익에 대한 증거가 없다. 따라서 보다 효율적인 학습을 위해 [4]에 따른 중복제거를 사용한다. 이 두 소스를 사용하여 239억 토큰(165억 단어)의 결합된 데이터 세트를 만듭니다. 큐레이션 단계에 대한 자세한 내용은 부록 E에서 확인할 수 있다.
+
+### 도메인 적응형 연속 사전 훈련 (DACP)
+
+일반적으로 도메인별 LLM은 방대한 양의 도메인 데이터를 사용하여 모델을 처음부터 학습하여 구축됩니다. 이 절차는 두 가지 단점이 있다: 비용이 많이 들고 훨씬 더 많은 양의 도메인 데이터가 필요하며, 이는 매우 전문화되고 금융과 같은 하위 데이터 도메인에서 실현 가능하지 않다.
+
+그림 1: 매니폴드 공간에 레이블이 지정된 태스크 데이터, 태스크-유사 도메인 데이터 및 도메인 코퍼스.
+
+기밀 데이터. 도메인 적응형 연속 사전 훈련(Domain-adaptive Continual Pre-training, DACP)은 처음부터 구축하는 간단한 대안이며, 도메인별 레이블이 지정되지 않은 데이터의 대규모 코퍼스에서 범용 LLM을 지속적으로 사전 훈련한다. 도메인-적응적 연속 사전-훈련은 언어 모델들을 도메인 내 분포에 더 잘 맞도록 적응시키는 능력을 보여주었다[8; 12; 32; 21]. 그들은 또한 모델을 처음부터 훈련시키는 대신 새로운 데이터가 나타나기 때문에 대규모 언어 모델들이 새로운 지식을 습득할 수 있게 한다. 우리는 DACP의 이점을 벤치마킹하기 위해 실험에서 DACP를 사용한다.
+
+### Task-Adaptive Continual Pre-training (TACP)
+
+TACP(Task-adaptive Continual Pre-training)는 목표된 태스크에 대한 성능 향상을 목표로 하는 지속적인 사전 훈련을 의미한다. TACP는 태스크보다 개선된 것을 보여주는 태스크 [8; 1; 6]로부터의 라벨링된 데이터 및 라벨링되지 않은 데이터에 대해 언어 모델을 사전 트레이닝함으로써 BERT와 같은 더 작은 언어 모델의 맥락에서 연구되었다. 작업 데이터는 일반적으로 상당히 제한적이지만 TACP는 BERT와 같은 더 작은 언어 모델에 상당한 영향을 미친다. 우리는 네 가지 재무 평가 과제에 대해 TACP를 벤치마킹한다.
+
+### 효율적인 도메인 적응형 연속 사전 훈련
+
+TACP의 주요 한계는 훈련을 위해 레이블이 지정되지 않은 작업 데이터를 단독으로 사용하기 때문에 기초 LLM 대신 작업별 LLM을 구성하는 데 중점을 둔다. DACP는 훨씬 더 큰 도메인 코퍼스를 사용하지만 엄청나게 비싸다. 이러한 제한 사항을 해결하기 위해 두 가지 접근 방식을 제안합니다. _Efficient Task-Similar Domain-Adaptive Continual Pre-training_ (ETS-DACP) 및 _Efficient Task-Agnostic Domain-Adaptive Continual Pre-training_ (ETA-DACP)입니다. ETS-DACP는 이러한 작업의 중요성을 강조하기 위해 DACP를 맞춤화하여 일련의 작업에 대한 기반 LLM을 구축하는 것을 목표로 하지만, ETA-DACP는 보다 일반적이며 지속적인 사전 훈련을 위해 도메인 코퍼스에서 가장 유익한 샘플을 선택한다.
+
+제형은 먼저 문제를 공식화한다. 그림 1에서 녹색 영역으로 표시된 레이블이 지정되지 않은 도메인 사전 훈련 말뭉치 \(\mathcal{U}\)가 주어진다. 다음으로 레이블이 지정되지 않은 태스크 말뭉치의 부재 또는 존재라는 두 가지 시나리오를 취할 수 있다. 단일 또는 태스크 그룹일 수 있는 태스크 코퍼스의 존재에 대한 첫 번째 시나리오인 \(\mathcal{T}\)는 그림 1에서 빨간색 영역으로 묘사된다. 일반적으로 태스크 코퍼스는 도메인 코퍼스인 \(\mathcal{T}\subset\mathcal{U}\)의 하위 집합이며, \(|\mathcal{U}|>>|\mathcal{T}|\). 데이터 선택의 목표는 LLM 모델을 사전 훈련하는데 가장 도움이 되는 부분집합 \(\mathcal{D}\subset\mathcal{U}\)을 선택하는 것이다. 또한, 선택된 도메인 코퍼스 서브세트가 일반적인 경우처럼 태스크 코퍼스인 \(|\mathcal{D}|>>|\mathcal{T}|\보다 훨씬 크다고 가정한다. 데이터 선택 문제는 최적의 \(\mathcal{D}^{*}\subset U\)의 선택으로 형식적으로 정의할 수 있다.
+
+\[\mathcal{D}^{*}=\operatorname*{argmin}_{\mathcal{D}^{*}\subset\mathcal{U}}\\mathbb{E}_{x\in\mathcal{T}}[\mathcal{L}_{t}(y|f(\theta^{*};x))] \tag{1}\
+
+여기서, \(f(\theta;\cdot)\)는 매개변수 \(\theta\), \(y\)는 작업 출력, \(x\)는 대상 작업 데이터의 입력 \(\mathcal{T}\), \(\mathcal{L}_{t}\)는 대상 작업 손실 또는 메트릭을 포함하는 LLM입니다. \ (\theta^{*}\)는 사전 훈련 작업에서 계산되며, \(\mathcal{L}_{\mathrm{pre-train}}\)는 사전 훈련 손실이고, \(\mathcal{D}\)에서 \(x_{u}\)는 표지되지 않은 샘플이다:
+
+\[\theta^{*}=\operatorname*{argmin}_{\theta}\ \mathbb{E}_{x_{u}\in\mathcal{D}}[ \mathcal{L}_{\mathrm{pre-train}}(f(\theta;x_{u}))] \tag{2}\
+
+우리의 도메인 적응적 연속 사전 훈련은 감독되지 않은 도메인 적응의 렌즈에서 볼 수 있다[7]. 우리의 소스 데이터는 대규모 비감독 도메인 코퍼스이고, 타겟 데이터는 타겟 태스크 데이터이다. 사전 트레이닝을 통해, 우리는 태스크 트레이닝 데이터 자체와의 정렬을 제어할 수 없다; 우리의 아이디어는 사전 트레이닝 동안 도메인과 정렬함으로써, 우리는 LLM을 태스크와 정렬할 수 있다는 것이다. 이러한 직관은 오픈 도메인 태스크에 대한 수행을 돕는 LLM 사전 훈련의 증거에 의해 뒷받침된다. 우리의 문제는 감독되지 않은 도메인 적응과 유사하기 때문에 [7; 2]의 일반화 한계를 사용한다. 가설 공간 \(\mathcal{H}_{p}\)에 \(f\in\mathcal{H}_{p}\)을 두고, 원본 \(\mathcal{D}\)과 작업 데이터 \(\mathcal{T}\)에 대한 일반화 오류를 각각 \(\epsilon_{\mathcal{D}\)와 \(\epsilon_{\mathcal{T}\)로 간주한다. 일반화 바운드는 주어질 수 있다:
+
+\[\epsilon_{\mathcal{T}}(f)\leq\epsilon_{\mathcal{D}}(f)+\frac{1}{2}d_{\mathcal{ H}_{p}\Delta\mathcal{H}_{p}}(\mathcal{D},\mathcal{T})+\mathcal{C} \tag{3}\]
+
+여기서, \(d_{\mathcal{H}_{p}\Delta\mathcal{H}_{p}}\)는 [7]에 의해 경계가 정해지는 \(\mathcal{D}\)와 \(\mathcal{T}\) 사이의 분포 불일치 거리이다:
+
+\mathcal{D}}[f(x)\neq f^{\prime}\in\mathcal{H}_{p}}|\mathbb{E}_{x\in\mathcal{D}[f(x)\neq f^{\prime}(x)]-\mathbb{E}_{x\in\mathcal{T}}[f(x)\neq f^{\prime}(x)]|\leq 2\sup_{\alpha(h) \in\mathcal{H}_{d}}[\alpha(h)-1] \tag{4}\]
+
+여기서, \(\alpha(h)\)는 최적의 도메인 분류기이고 \(\mathcal{H}_{d}\)는 도메인 분류기의 가설 공간이다. Zhao et al [35]는 도메인 분류기가 가장 높은 엔트로피 상태를 달성할 때 최소 불일치 거리 \(d_{\mathcal{H}_{p}\Delta\mathcal{H}_{p}}(\mathcal{D},\mathcal{T})\)의 최적 상태를 증명한다. 우리는 두 도메인의 샘플에 대한 표현이 가장 유사하여 두 데이터 세트 분포를 구별할 수 없는 무작위 도메인 분류기로 이어질 때 달성된다고 주장한다. 이러한 직관에 의해 동기화된, 우리는 태스크 데이터세트 \(\mathcal{T}\)와 가장 유사한 표현들을 갖는 샘플들을 선택하는 것에 기초한 전략을 사용할 수 있다. 대용량 말뭉치의 경우 최적의 표현을 얻는 것이 비실용적이기 때문에 데이터세트 유사도의 대용치로 임베딩 유사도를 사용한다.
+
+#### 2.4.1 효율적인 작업-유사 도메인 적응형 연속 사전 훈련
+
+우리는 이전에 직관에 기초하여 청색 영역에서 주어진 과제 데이터(적색)에 훨씬 더 가까운 영역 데이터 일부를 선택함으로써 최적의 집합 \(\mathcal{D}^{*}\)을 형성할 수 있다고 규정한다. 이를 ETS-DACP(Efficient Task-Similar Domain-adaptive Continual Pre-training)라고 합니다. 미세 조정 LLM은 많은 양의 지침을 취할 수 있으며, 이는 만드는 데 상당한 비용이 든다. ETS-DACP는 상대적으로 제한된 레이블이 지정되지 않은 작업 데이터를 사용하여 사전 훈련 도메인 코퍼스의 더 큰 풀에서 유사한 샘플을 샘플링함으로써 이러한 상황을 직접 해결한다. 우리는 목표 도메인 및 태스크와 밀접하게 일치하는 토큰에 대한 감독되지 않은 훈련이 향상된 성능으로 이어질 수 있음을 보여주는 선행 연구에 동기 부여된다[8, 1, 6]. 따라서 레이블이 지정되지 않은 태스크 데이터에 대해 LLM을 지속적으로 사전 훈련하는 것이 태스크 토큰의 분포에 모델을 적응시키기 때문에 목표 태스크 수행에 도움이 될 수 있다고 가정한다.
+
+우리는 데이터 선택을 수행하기 위해 태스크 데이터의 임베딩과 도메인 코퍼스 샘플 사이의 유사성을 사용한다. 이를 통해 작업 데이터의 분포와 매우 유사한 도메인 말뭉치에서 하위 집합을 선택할 수 있다. 문서 수준의 작업 유사도를 정량화하기 위해 문서 임베딩과 작업 데이터 임베딩 사이의 코사인 유사도를 사용한다. [13]과 같은 선행 연구는 주어진 라벨이 없는 샘플에 대해 언어 모델(RoBERTa)로부터 임베딩을 두 번 계산하는데, 이는 LLM에 실용적이지 않다. 전체 코퍼스에 대해 LLM을 사용하여 임베딩을 계산하는 데 전진 패스가 필요하거나 전체 코퍼스에 대해 LLM을 사전 훈련하는 데 사용하는 계산의 25%가 필요하다. 우리는 _Spacy_ 모델을 사용하여 임베딩을 계산합니다. [9]. 이 접근법을 통해 작업별 정보와 재무 코퍼스 간의 정렬을 비용 효율적으로 측정할 수 있어 보다 집중되고 목표화된 사전 훈련이 가능하다.
+
+#### 2.4.2 효율적인 Task-Agnostic Domain-adaptive Continual Pre-training
+
+이전 사례에서는 작업 데이터가 제공되는 시나리오를 다루었지만 이 방법에서는 작업 데이터가 없는 시나리오를 탐색합니다. 이 방법은 또한 LLM이 더 넓은 도메인 대신 태스크 데이터에 너무 동조되도록 만드는 ETS-DACP의 한계를 극복한다. 사전 훈련 도메인 데이터의 하위 집합에서 도메인 정보를 얻으려면 **새로움** 및 **다양성** 이라는 두 가지 차원이 중요하다고 규정합니다.
+
+**노벨티** 는 이전에 LLM에서 볼 수 없었던 정보를 참조 합니다. 우리는 LLM이 기록한 **복잡성** 을 기반으로 문서의 새로움 수준을 측정합니다. 더 높은 복잡도를 갖는 문서들은 원래의 트레이닝 코퍼스에서 덜 표현되고, 따라서 모델에 대한 새로운 지식을 포함할 가능성이 더 높다. 이러한 샘플들은 또한 학습하기가 더 어려운 것으로 여겨진다[3]. 따라서 이러한 샘플은 모델이 새로운 정보를 획득하는 데 도움이 되는 지속적인 사전 훈련에 유용할 수 있다.
+
+벤치마크 모델에 대한 복잡성을 직접 평가하면 추론에 훈련 계산의 약 25%가 필요하기 때문에 상당한 비용이 발생한다. 이 비용을 최소화하기 위해, 우리는 문서 복잡도를 계산하기 위한 대리 모델로 피티아-70m를 사용한다. 샘플 데이터 세트를 사용한 예비 실험은 피티아-1B와 피티아-70m에서 얻은 복잡도 사이에 0.97의 강한 상관 관계를 보여준다. 이 높은 상관 관계는 신뢰할 수 있는 대리인으로서 더 작은 모델의 사용을 정당화하여 복잡성을 기반으로 보다 비용 효율적인 샘플링을 가능하게 한다.
+
+**다양성** 은 도메인 말뭉치에서 토큰 유형 분포의 다양성을 캡처합니다. 다양성은 언어 모델링에서 교육과정 학습에 관한 관련 연구에서 효과적인 특징으로 나타났다[28, 21]. 토큰 유형을 얻기 위해 품사 태깅(POS)을 사용한다. 엔트로피는 다양성의 가장 좋은 척도 중 하나인 것으로 나타났기 때문에 우리는 다양성 척도로 POS 태그 [28]의 **엔트로피** 를 사용한다.
+
+#### 2.4.3 데이터 샘플링 전략
+
+우리는 관련 샘플의 적극적인 선택을 통해 사전 훈련 데이터를 정제하여 바닐라 DACP를 향상시키기 위해 ETS-DACP와 ETA-DACP를 제안했다. 우리는 두 가지 방법으로 데이터를 선택할 수 있다:하드 샘플링:선택 척도에 의해 도메인 코퍼스에서 샘플을 순위화한다. 도메트릭(들)을 기반으로 도메인 코퍼스로부터 상위 k개의 샘플들을 선택하는데, 여기서 \(k\)는 연속적인 사전 트레이닝을 위해 미리 결정된 토큰 버짓에 도달하는 데 필요한 샘플들의 수이다.
+
+소프트 샘플링:이 경우 코퍼스에 있는 다른 모든 예를 생략하여 이진 가중치를 부여하는 대신 거리 메트릭에 따라 소프트 가중치를 할당한다. 이를 통해 지속적인 사전 훈련은 그림 1의 파란색 영역 밖의 샘플도 볼 수 있어 사전 훈련 데이터에 약간의 다양성을 추가할 수 있다.
+
+샘플을 선택하기 위해 태스크 데이터와의 유사성(ETS-DACP), 신규성에 대한 프록시로서의 복잡성(ETA-DACP), 토큰 유형 엔트로피(ETA-DACP)로 측정된 다양성(다양성)의 세 가지 차원을 사용한다. 메트릭 값을 샘플링 확률로 변환하기 위해 분위수 범위에 기반한 방법을 제안한다. 이를 위해 먼저 학습 데이터 내의 각 메트릭에 대한 0-100 분위수를 계산한다. 100개의 분위 값을 사용하여 범위를 100개의 구간으로 분할함으로써, 문서들은 그 다음에 그들이 속하는 구간에 대응하는 확률들을 할당받는다. 이 접근 방식은 메트릭을 효과적으로 정규화하여 다양한 메트릭 유형의 집계를 허용합니다.
+
+## 3 실험 설정
+
+### Evaluation tasks
+
+본 논문에서 제안하는 영역 적응형 연속 사전 훈련의 효과를 평가하기 위해 재정 과제에 대한 모델을 평가한다. 우리는 모델을 평가하기 위해 _FLARE_ 프레임워크 [33]을 채택한다. FLARE는 다양한 재무 업무를 포함하여 LLM 평가 프레임워크 _lm-평가-하마스3_를 확장한다. 우리는 비교를 위해 명령 프롬프트, 데이터 분할 및 메트릭 계산을 따릅니다. [31; 33]: (1) **금융 구 은행** 에서 사용 되는 4 가지 작업을 고려 합니다. FPB는 금융 뉴스에 대한 감정 분류 작업이다[19]. 그 심리는 그 뉴스가 투자자들에 의해 긍정적/중립적/부정적으로 여겨지는지를 반영한다. (2) **FiQA SA.** 금융 뉴스 및 헤드라인을 기반으로 하는 측면 기반 감정 분류 작업입니다. [18]. (3) **헤드라인.** 금융 엔터티의 헤드라인에 특정 정보가 포함되어 있는지 여부에 대한 이진 분류 작업 [25]. 각 뉴스 기사는 "가격인지 여부", "가격 인상", "가격 인하", "가격 안정", "과거 가격", "자산"과 같은 9개의 태그와 연관된다. (4) **NER.** 재무 이름 엔터티 추출 작업은 SEC 보고서의 신용 위험 평가 섹션을 기반으로 합니다. 이 작업의 단어에는 PER, LOC, ORG 및 MISC가 주석이 달려 있다.
+
+각주 3: [https://github.com/EleutherAI/Im-evaluation-harmess](https://github.com/EleutherAI/Im-evaluation-harmess)
+
+### Training Setup and Infrastructure
+
+벤치마크 사전 훈련된 LLM 모델의 경우 피티아 제품군 [4]에서 1B 및 6.9B 매개변수 모델을 선택한다. 피티아 모델 제품군은 7천만에서 120억 개의 매개변수에 이르는 다양한 모델 크기를 제공합니다. 지속적인 사전 훈련 구성은 피티아의 훈련 설정[4]으로부터 맞춤화된다. 구체적으로, 핀피티아-6.9B의 경우 1.2e-05, _핀피티아-1B_의 경우 3e-05의 학습률을 설정하였는데, 이는 원래 일정에서 가장 작은 학습률이다. 우리는 재앙적인 망각을 완화하기 위해 작은 학습률을 사용한다. 효율적인 사전 교육을 위해 과정 내내 일정하게 유지합니다. 우리는 피티아에서 사용되는 fp16이 아닌 fb16의 정밀도를 사용한다. 원래 배치 크기의 절반을 512로 줄였습니다.
+
+우리는 AWS SageMaker를 통해 하나의 P4d.24xlarge 인스턴스에 대해 지속적인 사전 훈련 작업을 실행합니다. 모델 크기가 중간이므로 활성화 체크포인팅이 활성화된 DeepSpeed ZeRO Stage 2 [20]을 통한 데이터 병렬성만 사용합니다. 핀피티아-6.9B는 사전 훈련까지 18일, 핀피티아-1B는 240억 토큰으로 사전 훈련까지 3일이 걸린다.
+
+## 4 결과 및 분석
+
+### 도메인 적응형 연속 사전 훈련
+
+사전 훈련 과정을 모니터링하기 위해 재무 코퍼스의 0.1%를 재무 테스트 데이터 세트로 무작위로 샘플링한다. 모델은 파일 테스트 데이터 세트에서도 평가됩니다. FinPythia-6.9B에 대한 손실 궤적은 그림 2에 보고되어 있다. 훈련 손실은 50개의 최적화 단계의 이동 평균을 사용하여 평활화된다. 우리는 지속적인 사전 훈련의 초기 단계에서 파이낸셜 테스트(Fin 테스트) 손실의 급격한 감소를 관찰하며, 점진적인 진행은 처음부터 훈련의 손실 궤적과 유사하게 포화된다[31; 27]. 손실 로그는 도메인 적응적인 지속적인 사전 훈련이 Pile 손실의 경미한 증가를 희생시키면서 금융 도메인에 Pythia를 채택하는 데 성공함을 시사한다.
+
+금융 영역 과제를 평가하기 위해 FinPythia와 Fynthia-1B를 비교하여 과제 FPB, Headline, NER에서 우수한 성능을 보이는 반면 FiQA SA 과제에서는 Pythia에 비해 상대적으로 낮은 결과를 보인다. DACP는 1B 모델의 경우 평균 업무 성과를 2.8%, 6.9B 모델의 경우 8.3% 향상시킨다. 이러한 결과는 도메인 적응적인 지속적인 사전 훈련이 도메인 내 작업 수행 향상에 미치는 영향을 직접적으로 입증한다. 또한 피티아-6.9B는 평균적으로 OPT-7B, BLOOM-7B, GPT-J-GB를 능가한다.
+
+_BloombergGPT_와의 비교: FLARE에 보고된 결과는 사용된 데이터 분할이 공개되지 않기 때문에 동일한 작업에 대해 BloombergGPT [31]에 보고된 결과와 직접 비교할 수 없다. 우리는 4가지 작업 모두에서 [31]에서 보고한 OPT-66B 또는 GPT-NeoX와 같은 공개적으로 사용 가능한 모델의 성능을 일치시킬 수 없었다. 부록 A의 결과 간의 자세한 비교를 참조하십시오.
+
+_정성적 평가_: 피티아-6.9B 및 핀피티아-6.9B에 의해 생성된 정성적 예가 표 2에 제시된다. 검토에서, 핀피티아-6.9B는 금융 관련 질문에 대해 더 적절하고 상세한 응답을 생성한다는 것을 관찰한다. 지속적인 사전 교육을 통해 2021년 이후 금융 이벤트 지식을 습득했습니다. 이러한 결과는 DACP가 핀피티아-6.9B가 도메인 내 지식을 습득하는 데 도움이 된다는 것을 시사한다.
+
+### 효율적인 도메인 적응형 연속 사전 훈련
+
+FLARE는 전체 훈련 데이터, 즉 각 모델을 평가하는 동안 각 테스트 예제에 대해 5-shot 인-컨텍스트 성능을 사용합니다. 이것은 또한 비교하는 것을 더 어렵게 만든다.
+
+\begin{table}
+\begin{tabular}{|c|c|c c c c c c c c|} \hline  & \multicolumn{2}{c|}{**BloombergGPT**} & **OPT 7B** & **BLOOM 7B** & **GPT-J-GB** & **Pythia 1B** & **Pythia 7B** & **FinPythia 1B** & **FinPythia 7B** \\ \hline
+**FPB** & Acc & 57.22 & 52.68 & 50.21 & 42.85 & 54.64 & 47.14 & **59.90** \\ F1 & 51.07\({}^{*}\) & **65.77** & 52.11 & 49.31 & 4.94 & 55.79 & 46.52 & 64.43 \\ \hline
+**FiQA SA** & Acc & - & 40.43 & **70.21** & 60.42 & 54.51 & 60.85 & 46.13 & 52.34 \\ \hline
+**F1** & 75.07\({}^{*}\) & 31.29 & **74.11** & 62.14 & 56.29 & 61.33 & 44.53 & 53.04 \\ \hline
+**Headline** & F1 & 82.20\({}^{*}\) & **62.62** & 42.68 & 45.54 & 47.33 & 43.83 & 53.02 & 54.14 \\ \hline
+**NER** & F1 & 60.82\({}^{*}\) & 41.91 & 18.97 & 35.87 & 49.15 & 41.60 & **55.51** & 48.42 \\ \hline
+**Average** & F1 & 67.29\({}^{*}\) & 50.40 & 46.97 & 48.22 & 48.53 & 50.64 & **49.90** & **54.83** \\ \hline \end{tabular}
+\end{table}
+표 1: 도메인 적응 연속 사전 훈련의 재무 작업에 대한 5샷 결과 \ (*\)는 결과가 BloombergGPT [31]에서 보고되었음을 나타내며, 이는 다른 프롬프트 및 데이터 분할로 평가되었기 때문에 비교할 수 없다. 이 값은 다른 값과 직접 비교할 수 없습니다. **볼드** 는 BloombergGPT를 제외 하 고 평가 된 모든 모델 중 가장 좋은 결과를 나타냅니다. _ Underline_은 동일한 크기의 FinPythia와 Pythia 사이의 더 나은 결과를 나타낸다.
+
+그림 2: FinPythia-6.9B의 훈련 손실. FinPythia-6.9B는 파일 손실을 약간 희생시키면서 재무 코퍼스의 상당한 손실 감소를 달성한다.
+
+각 테스트 예가 모델에 걸쳐 완전히 다른 5개의 훈련 예를 보기 때문에 서로 다른 모델. 이러한 무작위성을 극복하고 비교를 보다 공정하게 하기 위해 "샷 풀"이라고 하는 각 작업에 대한 훈련 데이터 세트에서 50개의 라벨링된 데이터 샘플 풀을 따로 둔다. 나머지 훈련 샘플의 경우 레이블을 제거하고 레이블이 지정되지 않은 태스크 데이터로 활용하며, 이는 태스크 데이터를 활용한 데이터 선택 전략에 사용된다. 이 특정 구성은 TACP의 효능을 평가하기 위해 레이블이 지정되지 않은 작업 데이터에 액세스할 수 없기 때문에 채택된다. 이 설정을 사용하여 레이블이 지정된 데이터가 부족한 제약 조건도 시뮬레이션합니다. 이 접근법은 TACP에 대한 레이블이 지정되지 않은 작업 데이터를 생성하지만 크기가 너무 작아서 4개의 작업에서 0.24만 토큰만 포함한다.
+
+효율적인 DACP 방법을 사용하여 각 방법에 대해 재무 코퍼스의 10% 부분 집합을 선택한다. 또한 순위/가중치를 위해 세 가지 측정값을 모두 평균하여 유사성이 있는 다른 두 측정값을 사용하여 **ETS-DACP-com** 이라는 다른 버전의 ETS-DACP를 만듭니다. 과적합을 완화하기 위해, TACP 및 Efficient DACP 방법은 모두 공정한 비교를 보장하기 위해 DACP와 동일한 사전 트레이닝 구성을 사용하여 단일 에포크에 대해 실행된다. 계산 예산으로 인해 이러한 실험을 피티아-1B로 실행합니다. 우리는 서로 다른 랜덤 시드를 사용하여 평가를 10회 수행하고 4개의 재무 과제 각각에 대한 평균 성능을 보고한다.
+
+평가 결과는 표 3에 제시되어 있다. TACP는 원래 Pythia-1B와 비교하여 모델 성능이 크게 향상되었지만, DACP, TACP, 효율적인 DACP 방법 중 ETS-DACP는 평균 작업 성능 측면에서 가장 우수한 접근법으로 눈에 띈다. 이러한 향상된 성능은 동일한 토큰의 양을 가진 DACP가 열등한 결과를 낳기 때문에 토큰의 수 증가에만 기인할 수 없다. 결과를 강조합니다.
+
+\begin{table}
+\begin{tabular}{p{284.5pt}} \hline
+**질문:** SPAC란? \\
+**Pythia6.9B:** Spac은 Space의 약자입니다. (1) 위, 바로 아래, 위, 또는 행성, 달 또는 다른 천체의 몸 안에 있는 항구를 통해, 또는 (2) 별의 영향권 너머, 일반적으로 행성간 공간 또는 성간 공간, 그리고 (3) 은하계 한계를 벗어난 것으로 정의된다. \\
+**FinPythia-6.9B:** SPAC는 투자자로부터 자금을 조달하고, 그 자금을 사용하여 이해 당사자에게 가치가 있을 수 있는 회사를 식별하고, 그 회사와 합병하여 공개하는 데 사용되는 인수 합병 차량의 유형입니다. SPAC의 활용은 투자자에게 인수기업의 이익 일부를 부여하고, 투자자에게 기업의 이익 일부를 부여할 수 있는 주식을 발행할 수 있도록 하는 것이다. \\
+**질문:** 캐시 우드가 누구입니까? \\
+**Pythia-6.9B:** 캐시 우드는 2000년에 설립한 유기농 마케팅 회사인 All Things Organic의 설립자입니다. 캐시는 유기농 마케터일 뿐만 아니라 인증된 코치, 미식가, 요리사, 요가의 과거 애인, 인증된 교사, 어머니, 아내까지 세 명의 멋진 아이들에게 있습니다. \\
+**FinPythia-6.9B:** Cathie Wood는 미국의 투자자이자 고문이며, Ark Investment Management의 설립자이자 최고 경영자입니다. \\
+**질문:** 인플레이션에 대처하기 위한 Fed의 최신 정책은 어떻습니까? \\
+**Pythia6.9B:** 저는 타일러가 보도한 인플레이션 퇴치를 위한 Fed의 최신 정책을 좋아합니다. Fed의 최근 정책은 9월 12일 회의에서 보고되었으며, 그것은 표준화된 오픈 마켓 운영의 약자인 SOMO로 명명되었다. 이 정책에 따르면 미국 중앙은행은 이 상품의 가격이 6%에 달하면 400억 달러 상당의 금융상품을 살 수 있다. \\
+**FinPythia-6.9B:** 인플레이션 퇴치를 위한 Fed의 새 정책에 대해 큰 혼란이 있습니다. 그들은 인플레이션을 악화시키고 가까운 미래에 불황으로 이어질 수 있는 식품 및 에너지 가격의 8.5% 인상률인 "비용적으로" 인플레이션에 맞서기 위해 2022년 9월부터 20년 동안 가장 빠른 분기 포인트 요금 인상이라고 불리는 새로운 정책을 따르고 있습니다. \\
+**질문:** 위험 프로필 측면에서 채권과 주식의 차이점은 무엇입니까? \\
+**피티아-6.9B:** 주식은 덜 위험하지만(언제든지 주식을 청산할 수 있지만) 채권은 더 위험합니다(청산할 수 없습니다). \\
+**FinPythia-6.9B:** When you buy a bond, you receive a set of fixed payments from the issuer at a regular interval over a fixed term. You take on the full risk of the coupon payments not being made, so a bond is always considered to be a lower risk debt instrument than a stock. However, a stock is a more liquid investment than a bond. When buying a stock, you are buying shares in the company that the bond represents and you hold on to the stock until you want to cash out, and it can be used as collateral to borrow money. \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 피티아-6.9B 및 핀피티아-6.9B로부터의 세대 예. 우리는 핀피티아의 2021년 이후 업데이트된 금융 사건 지식을 관찰하여 마지막 예에서와 같이 추론과 함께 사실적 답변을 제공한다.
+
+다른 모델 유형[1; 8]에서 관찰된 결과와 일치하여 레이블이 지정되지 않은 작업 데이터에 대한 작업 적응형 및 도메인 연속 사전 훈련 LLM의 효능.
+
+1) 10%의 데이터로 훈련된 ETS-DACP가 100%의 데이터로 훈련된 DACP보다 성능이 우수하고, 2) ETS-DACP가 3개의 메트릭의 조합과 동등하며, 3) 10%의 코퍼스로 훈련된 ETA-DACP-ent는 태스크 데이터에 대한 접근이 없음에도 불구하고, 100% 데이터로 훈련된 DACP를 쉽게 능가하고, 4) 하드 샘플링을 사용한 효율적인 DACP 방법이 소프트 샘플링을 사용한 방법보다 성능이 우수하다.
+
+이러한 결과는 _지속적인 사전 훈련에 대해 모든 데이터가 동일한 것은 아님_ 을 분명히 보여줍니다. 사실, 효율적인 DACP 방법들(10%)에서 사용되는 모든 데이터는 DACP에서의 데이터의 서브세트이다. DACP의 (100%) 성능이 ETS-DACP/ETA-DACP-ent보다 낮기 때문에, 매우 유사하거나 높은 엔트로피 데이터 위에 더 많은 데이터를 추가하는 것은 실제로 성능을 해친다. 하드 샘플링과 소프트 샘플링 간의 결과 차이는 이 관찰에 더 많은 증거를 추가한다. 작업에 따라 다양성이 있지만 평균적으로 메트릭의 상위 10분위 외부에서 예를 추가하면 세 가지 메트릭 모두의 조합인 ETS-DACP-com을 제외하고 성능이 손상됩니다. 따라서 모든 도메인 연속 사전 훈련에 대한 데이터를 신중하게 선별해야 한다.
+
+참고, 도메인 데이터(2.39B)의 10%는 원래 피티아가 학습한 3,000억 토큰 중 1% 미만으로 변환됩니다. 이러한 결과는 지속적인 사전 훈련을 위한 데이터 큐레이션 과정에서 선택적이면 적은 비용으로 도메인 성능에 큰 영향을 미칠 수 있음을 보여준다.
+
+이러한 결과는 영역 및 과제(하위 영역)에 대한 지속적인 사전 훈련의 효과를 입증한다. 이 연습에서 발생하는 자연스러운 질문은 _LLM이 좁은 도메인에서 더 조정되어 일반성을 상실하고 있는지 여부_ 입니다. _ 요컨대, LLM은 일반론자가 되는 대신 전문가가 되는 것인가? 우리는 피티아가 평가된 도메인 외 작업에 대해 지속적으로 사전 훈련된 LLM 변이체의 성능을 측정하여 이 질문에 답한다. 표 4는 표준 4개의 비금융 업무에 대한 성과를 보여주고 있다. 100% 데이터를 사용하는 DACP를 제외하고 4개의 도메인 외 태스크에 대한 성능에는 큰 변화가 없다. 따라서 _지속적인 사전 훈련에 사용할 데이터에 대해 선택적이므로 LLM의 원래 기능을 그대로 유지하면서 도메인 성능을 향상시킬 수 있습니다._
+
+## 5 관련 작업
+
+도메인 특화 대용량 언어 모델. 출시된 LLM의 대부분은 범용 모델이지만 도메인 특화 LLM은 가치 있는 대응 모델로 부상했다. 의료 도메인 코퍼스에서 훈련된 구글의 MedPaLM과 MedPaLM-2는 의료 벤치마크에서 최첨단 결과를 달성했다[23; 24]. 블룸버그는 금융 코퍼스에 대한 교육을 통해 최초의 금융 LLM을 처음부터 개발했고[31], 갤럭티카는 과학 영역을 위해 개발되었다[26]. 지속적인 사전 훈련은 처음부터 도메인별 LLM을 구축하는 대안적인 접근법을 제시한다. Wu et
+
+\begin{table}
+\begin{tabular}{l c c c c c c c c c} \hline \hline  & **Takes** & **PFB** & \multicolumn{2}{c}{**FQA SA**} & \multicolumn{2}{c}{**Headline**} & \multicolumn{2}{c}{**NLR**} & \multicolumn{2}{c}{**Average**} & \multicolumn{1}{c}{**Win Rate (\%)**} \\  & & Acc & F1 & Acc & F1 & F1 & F1 & F1 & F1 \\ \hline
+**Pythia 1B** & 0 & 41.89 (15.8) & 52.84 (15.5) & 59.66 (10.3) & 65.32 (137.4) & 45.61 (10.0) & 48.77 (13.7) & 53.14 (7.5) & 45.5 \\ \hline
+**DACP** & 2.59B(100\%) & 58.06(8.6) & 64.77(10.4) & 53.83(16.3) & 59.85(19.0) & 41.41(6.5) & 51.32(7.6) & 54.34(8.9) & 59.1 \\
+**DACP** & 25.9B (100\%) & 50.86 (14.5) & 59.16 (12.1) & 50.17 (17.0) & 52.84 (18.1) & 53.34 (9.4) & **58.20** (5.8) & 55.14 (25.5) & 52.3 \\ \hline
+**TACP** & 0.24M & 56.94 (0.94) & 68.00 (0.65) & 62.43 (2.3) & 22.22 (2.2) & 38.91 (1.5) & 50.55 (11.7) & **57.13** (13.23) & 56.8 \\ \hline
+**Hard Sampling** & & & & & & & & & \\ \hline
+**ETS-DACP** & 2.39B (10\%) & 59.93 (62.7) & 67.11 (69.6) & 46.26 (19.6) & 50.84 (21.9) & **71.56** (7.14) & 49.52 (8.4) & **59.76** (9.7) & **63.6** \\
+**ETA-DACP-ppl** & 2.39B (10\%) & **42.73** (5.7) & **73.66** (14.9) & 41.22 (22.3) & 45.66 (24.9) & 39.11 (2.0) & 48.69 (5.5) & **51.33** (13.1) & 40.9 \\
+**ETA-DACP-ent** & 2.39B (10\%) & 59.18 (59.8) & 65.39 (14.9) & 54.11 (10.1) & 59.83 (11.1) & 46.38 (15.7) & 58.48 (8.3) & 61.4 \\
+**ETS-DACP-com** & 2.39B (10\%) & 55.41 (11.7) & 62.58 (14.7) & **62.58** (5.6) & **72.83** (18.8) & 53.91 (11.6) & 48.34 (15.9) & 59.41 (9.3) & 61.4 \\ \hline \multicolumn{7}{c}{**Soft Sampling**} \\ \hline
+**ETS-DACP** & 2.39B (10\%) & 61.47 (26.7) & 27.45 (3.4) & 43.83 (17.3) & 47.08 (18.1) & 40.82 (7.9) & 46.16 (15.1) & 51.63 (12.9) & 34.1 \\
+**ETA-DACP-ppl** & 2.39B (10\%) & 53.90 (11.4) & 61.44 (16.4) & 46.01 (15.6) & 52.44 (13.0) & 41.00 (5.6) & 43.30 (13.7) & 49.67 (8.0) & 20.5 \\
+**ETA-DACP-ent** & 2.39B (10\%) & 59.49 (92.9) & 68.20 (9.5) & 48.85 (17.5) & 57.00 (26.2) & 60.41 (14.1) & 38.00 (10.6) & 56.01 (11.3) & 52.3 \\
+**ETS-DACP-com** & 2.29B (10\%) & 57.07 (10.5) & 64.41 (11.0) & 59.96 (60.0) & 67.97 (92.9) & 51.22 (12.5) & 47.68 (13.9) & 57.82 (8.6) & 52.3 \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 5샷 설정에서 측정된 TACP와 효율적인 DACP가 피티아-1B 모델 클래스에 대한 재무 업무에 미치는 영향. 보고된 것은 10회 실행의 평균 및 표준 편차(괄호 안의)이다. ETA-DACP-ppl은 복잡도와 분산을 갖는 ETA-DACP이고, ETA-DACP-ent는 엔트로피 측도를 갖는다. ETS-DACP-com은 복잡성, 유사성 및 엔트로피의 세 가지 메트릭 모두를 평균화하여 데이터 선택과 유사한 태스크 DACP이다. 승률은 쌍별 비교에서 모델이 다른 모델보다 더 정확한 경우의 백분율이다[15]. **굵게 표시** 는 최상의 결과를 나타내고 밑줄은 작업당 두 번째로 좋은 결과를 나타냅니다.
+
+[30]은 의학 논문에 대한 지속적인 사전 훈련 LLaMA[27]을 통해 의학 LLMs을 구축한다. 그러나, 그들은 비미세 조정 설정에서 모델의 정량적 성능을 평가하지 않는다. 본 연구에서는 인맥락 학습 환경에서 모델의 성능을 측정하여 지속적인 사전 훈련의 분명한 이점을 보여준다.
+
+주어진 태스크에 대한 라벨링되지 않은 데이터에 대한 언어 모델들의 태스크-적응적 사전-훈련(task-adaptive pre-training.Continual pre-training)은 최종-태스크 성능을 향상시키는데 유익한 것으로 입증되었다[1; 8; 13]. 도메인 이동을 포함하는 시나리오에서, 도메인-적응적 사전-훈련은 태스크-적응적 사전-훈련과 어느 정도 유사성을 갖는다. Aharoni et al [1]은 유사한 도메인에서 모델을 지속적으로 사전 훈련하는 것이 목표 도메인에서 향상된 작업 성능에 기여한다는 것을 문서화했다. 특히, 유사도에 기초하여 도메인 내 코퍼스로부터 샘플링된, 라벨링되지 않은 태스크 데이터 및 증강된 라벨링되지 않은 태스크 데이터 모두에 대한 언어 모델의 지속적인 사전 트레이닝을 보여주는 [8]에 가장 가까운 작업이 제시된다. 이러한 작업들은 태스크 데이터를 사용하지만, 또한 태스크 유사도가 LLMs에 대해 엄청나게 비싸기 때문에 태스크 불가지론적인 방법인 ETA-DACP를 제안한다.
+
+데이터 선택.지속적인 사전 훈련에서 데이터 선택은 훈련 과정에서 가장 가치 있는 데이터 샘플을 선택하는 데 중요한 역할을 한다. 특정 도메인 또는 태스크와 독립적인 다양한 분산 및 언어적 특징은 데이터 선택 및 학습 커리큘럼의 구성에 유익한 것으로 나타났다[21; 28]. LLM의 맥락에서 지속적인 사전 훈련은 고사하고 사전 훈련을 위해 데이터를 큐레이션하는 방법에 대한 이해가 제한적입니다. _ 우리가 아는 한, 우리의 작업은 보다 효과적인 지속적인 사전 훈련을 위해 LLM의 맥락에서 데이터 선택을 시도하는 첫 번째 작업이다._
+
+## 6 Conclusion
+
+본 논문에서는 도메인 특화 LLM 개발을 위한 도메인 적응형 연속 사전 훈련의 효과를 입증한다. 본 연구의 결과는 도메인 적응형 연속 사전 훈련이 재무 업무에 대한 LLMs의 성능을 향상시킨다는 것을 보여준다. 도메인 적응형 연속 사전 훈련을 통해 LLM은 훨씬 저렴한 비용으로 금융 도메인에서 새로운 지식을 습득할 수 있다.
+
+또한, ETS-DACP와 ETA-DACP의 효율적인 도메인 적응형 연속 사전 훈련 방법을 제안하여 연속 사전 훈련의 효율성을 높인다. 훈련 데이터 큐레이션을 선택함으로써, 우리의 방법은 연속 사전 훈련을 개선하며, 바닐라 연속 사전 훈련의 데이터와 비용의 10%만으로 훨씬 더 나은 결과를 산출한다. 엔트로피와 같은 작업 불가지론적 척도에 기초한 데이터 선택을 갖는 ETA-DACP는 작업 인식 데이터 선택 전략과 거의 동등하게 작동한다. 이 발견은 작업 데이터가 없는 경우에도 지속적인 사전 훈련을 위한 데이터 선택을 구축하는 데 사용할 수 있다. 또한 오픈 도메인 표준 작업에서 성능 저하가 관찰되지 않았으며, 이는 도메인 적응형 연속 사전 훈련이 오픈 도메인 기능에 해를 끼치지 않는다는 것을 의미한다.
+
+우리의 연구 결과는 도메인 특정 LLM을 처음부터 구축하는 강력한 대안으로 도메인 연속 사전 훈련을 배치한다. 지속적인 사전 훈련을 위한 데이터 선택에 대해 더 똑똑해짐으로써, 우리는 비용의 일부에서 바닐라 연속 사전 훈련을 능가할 수 있다. 전반적으로, 우리의 작업은 광범위한 응용 프로그램에 대한 의미와 함께 감소된 비용으로 도메인별 LLM을 개발할 수 있는 길을 열어준다.
+
+\begin{table}
+\begin{tabular}{c c c c c c c c c c c} \hline \hline  & Tokens & \begin{tabular}{c} **ARC** \\ Acc \\ \end{tabular} & \begin{tabular}{c} **MMLU** \\ Acc \\ \end{tabular} & \begin{tabular}{c} **TruthfulQA** \\ Acc \\ \end{tabular} & \begin{tabular}{c} **HellaWang** \\ \end{tabular} &
+\begin{tabular}{c} **Average** \\ \end{tabular} \\ \hline \hline
+**Pythia 1B** & 0 & 25.94 & 29.27 & 26.29 & 26.29 & 26.23 & 26.40 & **47.37** & **76.45** & **47.83** & **28.38** & **35.96** \\ \hline
+**DACP** & 2.39B(10\%) & 26.28 & 29.44 & 26.43 & 26.43 & 24.48 & 42.26 & 36.83 & 45.34 & 28.50 & 35.87 \\
+**DACP** & 23.9B (100\%) & 24.32 & 27.47 & 26.09 & 26.09 & 24.60 & 42.05 & 35.34 & 42.45 & 27.59 & 34.52 \\ \hline
+**TACP** & 0.24M & 25.34 & 28.41 & 24.93 & 24.93 & 24.48 & 41.95 & 37.03 & 47.27 & 27.95 & 35.64 \\ \hline \multicolumn{11}{c}{**Hard Sampling**} \\ \hline
+**ETS-DACP** & 2.39B(10\%) & 24.74 & 28.07 & 25.99 & 25.99 & 23.26 & **43.85** & 36.31 & 44.79 & 27.57 & 35.68 \\
+**ETA-DACP-ppl** & 2.39B (10\%) & **26.71** & 28.41 & 26.31 & 26.31 & 24.97 & 41.42 & 36.70 & 44.89 & **28.67** & 35.26 \\
+**ETA-DACP-ent** & 2.39B (10\%) & 25.34 & 27.99 & 24.60 & 24.60 & 24.11 & 41.38 & 36.92 & 44.98 & 27.75 & 34.74 \\
+**ETS-DACP-com** & 2.39B (10\%) & 26.37 & 29.35 & 26.58 & 26.58 & 24.48 & 41.51 & 36.61 & 44.97 & 28.51 & 35.60 \\ \hline \multicolumn{11}{c}{**Soft Sampling**} \\ \hline
+**ETS-DACP** & 2.39B(10\%) & 26.45 & 28.33 & **27.10** & **27.10** & 24.60 & 41.73 & 36.24 & 44.49 & 28.60 & 35.41 \\
+**ETA-DACP-ppl** & 2.39B (10\%) & 25.85 & **29.69** & 26.59 & 26.59 & 24.85 & 26.59 & 26.59 & 42.17 & 36.55 & 44.71 & 28.46 & 35.79 \\
+**ETA-DACP-ent** & 2.39B (10\%) & 25.94 & 29.10 & 25.61 & 25.61 & 24.60 & 41.64 & 36.78 & 45.20 & 28.23 & 35.39 \\
+**ETS-DACP-com** & 2.39B (10\%) & 25.77 & 27.47 & 27.05 & 27.05 & 24.24 & 41.82 & 36.93 & 44.62 & 28.50 & 35.24 \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 표준 작업에 대 한 평가 **굵게** 는 열에 대 한 최상의 값을 나타냅니다. HuggingFace Open LLM 리더보드를 만드는 데 사용 되는 평가 관행을 따릅니다.
+
+## References
+
+*[1]R. 아하로니와 Y. 골드버그(2020) 사전 훈련된 언어 모델에서 비감독 도메인 클러스터. In Advances in Neural Information Processing Systems, pp. 7747-7763. Cited by: SS1.
+*[2]S. 벤 데이비드 제이 블리처 Crammer, A. Kulesza, F. Pereira, and J. Wortman Vaughan (2010) A theory of learning from different domains. Machine learning79, pp. 151-175. 인용: SS1.
+*[3]Y. 벤지오 J. 루라두르 Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [4]S. B., J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [5]S. B., J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [6]S. B., J. Louradour, R. Collobert and J. Weston (2010) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [7]S. B., J. Louradour, R. Collobert and J. Weston (2020) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [8]S. B., J. Louradour, R. Collobert, and J. Weston (2009) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [9]S. B., J. Louradour, R. Collobert and J. Weston (2020) Curriculum learning. In Proceedings of the 26th Annual International Conference on Machine Learning, ICML 2009, Montreal, Quebec, Canada, June 14-18, 2009, pp. 382 of ACM International Conference Proceeding Series, pp. 41-48. Cited by: SS1.
+* [10]J. B., J. Louradour, and M. L., J. Louradour (2020) A survey on the topicUnited States, July 10-15, 2022_, pages 4764-4780. Association for Computational Linguistics, 2022.
+* [13] Zixuan Ke, Yijia Shao, Haowei Lin, Tatsuya Konishi, Gyuhak Kim, and Bing Liu. Continual pre-training of language models. In _The Twelfth International Conference on Learning Representations_, 2023.
+* [14] Katherine Lee, Daphne Ippolito, Andrew Nystrom, Chiyuan Zhang, Douglas Eck, Chris Callison-Burch, and Nicholas Carlini. Deduplicating training data makes language models better. In _Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 8424-8445, 2022.
+* [15] Percy Liang, Rishi Bommasani, Tony Lee, Dimitris Tsipras, Dilara Soylu, Michihiro Yasunaga, Yian Zhang, Deepak Narayanan, Yuhuai Wu, Ananya Kumar, et al. Holistic evaluation of language models. _arXiv preprint arXiv:2211.09110_, 2022.
+* [16] Hong Liu, Sang Michael Xie, Zhiyuan Li, and Tengyu Ma. Same pre-training loss, better downstream: Implicit bias matters for language models. In _International Conference on Machine Learning_, pages 22188-22214. PMLR, 2023.
+* [17] Lefteris Loukas, Manos Fergadiotis, Ion Androutsopoulos, and Prodromos Malakasiotis. EDGAR-CORPUS: billions of tokens make the world go round. _CoRR_, abs/2109.14394, 2021.
+* [18] Macedo Maia, Siegfried Handschuh, Andre Freitas, Brian Davis, Ross McDermott, Manel Zarrouk, and Alexandra Balahur. Www'18 open challenge: Financial opinion mining and question answering. In Pierre-Antoine Champin, Fabien Gandon, Mounia Lalmas, and Panagiotis G. Ipeirotis, editors, _Companion of the The Web Conference 2018 on The Web Conference 2018, WWW 2018, Lyon, France, April 23-27, 2018_, pages 1941-1942. ACM, 2018.
+* [19] Pekka Malo, Ankur Sinha, Pekka J. Korhonen, Jyrki Wallenius, and Pyry Takala. Good debt or bad debt: Detecting semantic orientations in economic texts. _J. Assoc. Inf. Sci. Technol._, 65(4):782-796, 2014.
+* [20] Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. Deepspeed: System optimizations enable training deep learning models with over 100 billion parameters. In Rajesh Gupta, Yan Liu, Jiliang Tang, and B. Aditya Prakash, editors, _KDD '20: The 26th ACM SIGKDD Conference on Knowledge Discovery and Data Mining, Virtual Event, CA, USA, August 23-27, 2020_, pages 3505-3506. ACM, 2020.
+* [21] Sebastian Ruder and Barbara Plank. Learning to select data for transfer learning with bayesian optimization. In Martha Palmer, Rebecca Hwa, and Sebastian Riedel, editors, _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing, EMNLP 2017, Copenhagen, Denmark, September 9-11, 2017_, pages 372-382. Association for Computational Linguistics, 2017.
+* [22] Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, Jonathan Tow, Alexander M. Rush, Stella Biderman, Albert Webson, Pawan Sasanka Ammanamachi, Thomas Wang, Benoit Sagot, Niklas Muenninghoff, Albert Villanova del Moral, Olatunji Ruwase, Rachel Bawden, Stas Eckman, Angelina McMillan-Major, Iz Beltagy, Huu Nguyen, Lucile Saulnier, Samson Tan, Pedro Ortiz Suarez, Victor Sanh, Hugo Laurencon, Yacine Jernite, Julien Launay, Margaret Mitchell, Colin Raffel, Aaron Gokaslan, Adi Simhi, Aitor Soroa, Alham Fikri Aji, Amit Alfassy, Anna Rogers, Ariel Kreisberg Nitzav, Canwen Xu, Chenghao Mou, Chris Emezue, Christopher Klamm, Colin Leong, Daniel van Strien, David Ifeoluwa Adelani, and et al. BLOOM: A 176b-parameter open-access multilingual language model. _CoRR_, abs/2211.05100, 2022.
+* [23] Karan Singhal, Shekoofeh Azizi, Tao Tu, S. Sara Mahdavi, Jason Wei, Hyung Won Chung, Nathan Scales, Ajay Kumar Tanwani, Heather Cole-Lewis, Stephen Pfohl, Perry Payne, Martin Seneviratne, Paul Gamble, Chris Kelly, Nathaneal Scharli, Aakanksha Chowdhery, Philip Andrew Mansfield, Blaise Aguera y Arcas, Dale R. Webster, Gregory S. Corrado, Yossi Matias, Katherine Chou, Juraj Gottweis, Nenad Tomasev, Yun Liu, Alvin Rajkomar, Joelle K. Barral, Christopher Semturs, Alan Karthikesalingam, and Vivek Natarajan. Large language models encode clinical knowledge. _CoRR_, abs/2212.13138, 2022.
+
+* [24] Karan Singhal, Tao Tu, Juraj Gottweis, Rory Sayres, Ellery Wulczyn, Le Hou, Kevin Clark, Stephen Pfohl, Heather Cole-Lewis, Darlene Neal, Mike Schaekermann, Amy Wang, Mohamed Amin, Sami Lachgar, Philip Andrew Mansfield, Sushant Prakash, Bradley Green, Ewa Dominowska, Blaise Aguera y Arcas, Nenad Tomasev, Yun Liu, Renee Wong, Christopher Semturs, S. Sara Mahdavi, Joelle K. Barral, Dale R. Webster, Gregory S. Corrado, Yossi Matias, Shekofeh Azizi, Alan Karthikesalingam, and Vivek Natarajan. Towards expert-level medical question answering with large language models. _CoRR_, abs/2305.09617, 2023.
+* [25] Ankur Sinha and Tanmay Khandait. Impact of news on the commodity market: Dataset and results. _CoRR_, abs/2009.04202, 2020.
+* [26] Ross Taylor, Marcin Kardas, Guillem Cucurull, Thomas Scialom, Anthony Hartshorn, Elvis Saravia, Andrew Poulton, Viktor Kerkez, and Robert Stojnic. Galactica: A large language model for science. _CoRR_, abs/2211.09085, 2022.
+* [27] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave, and Guillaume Lample. Llama: Open and efficient foundation language models. _CoRR_, abs/2302.13971, 2023.
+* [28] Yulia Tsvetkov, Manaal Faruqui, Wang Ling, Brian MacWhinney, and Chris Dyer. Learning the curriculum with bayesian optimization for task-specific word representation learning. In _Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics, ACL 2016, August 7-12, 2016, Berlin, Germany, Volume 1: Long Papers_. The Association for Computer Linguistics, 2016.
+* [29] Ben Wang and Aran Komatsuzaki. GPT-J-6B: A 6 Billion Parameter Autoregressive Language Model. [https://github.com/kingoflolz/mesh-transformer-jax](https://github.com/kingoflolz/mesh-transformer-jax), May 2021.
+* [30] Chaoyi Wu, Xiaoman Zhang, Ya Zhang, Yanfeng Wang, and Weidi Xie. Pmc-llama: Further finetuning llama on medical papers. _CoRR_, abs/2304.14454, 2023.
+* [31] Shijie Wu, Ozan Irsoy, Steven Lu, Vadim Dabravolski, Mark Dredze, Sebastian Gehrmann, Prabhanjan Kambadur, David S. Rosenberg, and Gideon Mann. Bloomberggpt: A large language model for finance. _CoRR_, abs/2303.17564, 2023.
+* [32] Tongtong Wu, Massimo Caccia, Zhuang Li, Yuan-Fang Li, Guilin Qi, and Gholamreza Haffari. Pretrained language model in continual learning: A comparative study. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [33] Qianqian Xie, Weiguang Han, Xiao Zhang, Yanzhao Lai, Min Peng, Alejandro Lopez-Lira, and Jimin Huang. PIXIU: A large language model, instruction data and evaluation benchmark for finance. _CoRR_, abs/2306.05443, 2023.
+* [34] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona T. Diab, Xian Li, Xi Victoria Lin, Todor Mihaylov, Myle Ott, Sam Shleifer, Kurt Shuster, Daniel Simig, Punit Singh Koura, Anjali Sridhar, Tianlu Wang, and Luke Zettlemoyer. OPT: open pre-trained transformer language models. _CoRR_, abs/2205.01068, 2022.
+* [35] Mingmin Zhao, Shichao Yue, Dina Katabi, Tommi S Jaakkola, and Matt T Bianchi. Learning sleep stages from radio signals: A conditional adversarial architecture. In _International Conference on Machine Learning_, pages 4100-4109. PMLR, 2017.
+
+벤치마크 블룸버그GPT의 성과
+
+BloombergGPT는 사내 데이터 분할을 사용하여 평가되고 보고된 메트릭의 계산 세부 정보가 동일하지 않을 수 있으므로 결과를 우리와 직접 비교할 수 없다. 지속적인 사전 훈련의 효과를 적절하게 평가하기 위해 FLARE 프레임워크에 대해 블룸버그GPT의 성능을 벤치마킹한다. 여기에는 FLARE에서 얻은 OPT-66B 및 GPT-NeoX-20B의 성능을 평가하고 [31]에 보고된 결과와 비교하는 작업이 포함된다. 이 엄격한 벤치마킹은 공정하고 포괄적인 평가를 보장하여 처음부터 훈련된 재무 LLM과 관련하여 지속적인 사전 훈련 접근법의 효과에 대한 귀중한 통찰력을 제공한다.
+
+표 5는 비교 결과를 보고한다. GPT-NeoX는 두 가지 평가 프레임워크에서 유사한 평균 작업 성능을 보고하지만 개별 작업에 대한 성능은 다르다. 예를 들어, FLARE에서 얻은 FiQA SA의 F1 점수는 블룸버그GPT의 평가보다 46% 높은 반면 헤드라인 및 NER에 대한 F1 점수는 더 낮다. 더욱이 OPT-66B는 4개 과제 모두에 대해 BloombergGPT의 평가보다 FLARE에 근거한 열등한 결과를 보고하며, 평균 과제 수행률은 20% 낮다. 이러한 결과는 BloombergGPT의 평가 결과가 FLARE와 비교하여 부풀려졌음을 시사한다. 블룸버그GPT가 FLARE에서 벤치마킹되거나 블룸버그GPT의 평가 구성이 공개되지 않는 한 비교는 여전히 결정적이지 않다.
+
+## 부록 B Perplexity, 유사성 및 다양성
+
+이 섹션에서는 재무 말뭉치 내의 복잡성, 유사성 및 다양성의 분포에 대한 심층 분석을 제시한다. 우리의 연구 결과는 세 가지 메트릭 모두 고도로 왜곡된 분포를 나타낸다는 것을 보여준다. 구체적으로, 그림 3의 맨 위 행에 예시된 바와 같이, 유사성 메트릭은 잠재적으로 재무 말뭉치 내에 두 개의 별개의 출처의 존재에 기인하는 두 개의 모달 패턴을 보여준다.
+
+그림 4는 세 가지 메트릭 모두의 스피어먼의 순위 상관 관계를 보여준다. 우리는 세 가지 메트릭이 낮은 상관 관계를 나타냄을 알 수 있다. 이는 이 세 가지 메트릭에 걸쳐 순위를 지정하여 선택한 데이터의 하위 집합이 중복 정도가 높지 않음을 시사한다. 이를 통해 우리는 세 가지 메트릭을 함께 결합하여 세 가지 다른 차원의 균형을 맞추는 ETS-DACP-com 방법을 만들 수 있었다. 그림 5는 하드 샘플링이 있는 효율적인 DACP 방법 각각에 대해 선택된 하위 집합에 대한 세 가지 메트릭의 분위수 분포를 보여준다.
+
+## 부록 C ETS-DACP-com vs ETS-DACP
+
+ETS-DACP-com은 도메인별 LLM과 작업별 LLM 구성 사이의 균형을 효과적으로 달성한다. 그 효능을 입증하기 위해 유사성, 지식 신규성 및 다양성의 평균 분위수를 샘플링 가중치로 활용한다. 이러한 가중치를 적용하여 학습 데이터를 구성하기 위해 교체 없이 재무 코퍼스의 10%와 20%를 선택하는 가중치 샘플링을 수행한다.
+
+금융 코퍼스의 다양한 부분 집합에 대한 평균 표본 분위수는 그림 5에 나와 있다. 우리는 세 가지 메트릭에 대한 분위수의 단순 평균을 사용하면 세 차원 간의 균형이 잘 달성된다고 주장하는데, 세 차원에 대한 평균 분위수는 각 부분 집합에 대해 유사한 대구에 있다. 대조적으로, ETS-DACP의 서브세트는 더 높은 복잡성 및 더 낮거나 중간을 나타낸다.
+
+\begin{table}
+\begin{tabular}{c c|c c|c c} \hline \hline  & & \multicolumn{2}{c|}{FLARE} & \multicolumn{2}{c}{BloombergGPT} \\ \hline  & & GPT-NeoX & OPT-66B & GPT-NeoX & OPT-66B \\ \hline FPB & F1 & 46.75 & 40.00 & 44.64 & 48.67 \\ FiQA SA & F1 & 73.86 & 37.36 & 50.59 & 51.60 \\ Headline & F1 & 62.62 & 61.36 & 73.22 & 79.41 \\ NER & F1 & 47.03 & 52.24 & 60.98 & 57.49 \\ \hline Average & F1 & 57.57 & 47.74 & 57.36 & 59.29 \\ \hline \hline \end{tabular}
+\end{table}
+표 5: GPT-NeoX 및 OPT-66B의 두 가지 공개 모델에 대해 FLARE 벤치마크 대 BloombergGPT [31]에서 얻은 평가 결과.
+
+엔트로피(entropy)는 레이블이 지정되지 않은 태스크 데이터가 새로운 지식을 포함하고 있지만 덜 다양함을 시사한다. ETA-DACP-ppl 및 ETA-DACP-ent의 경우 샘플은 다른 두 차원에 걸쳐 균일하다.
+
+## 부록 D 열차 및 효율적인 DACP 방법 테스트 손실
+
+우리는 그림 6에서 효율적인 DACP 방법을 위해 파이낸스 도메인 손실(Fin Test)과 오픈 도메인 손실(Pile Loss)의 도표를 보여준다. ETS-DACP-com(Hard sampling)은 태스크 지식을 모두 사용하고 더 큰 파이낸스 파일에서 높은 엔트로피/복잡도 샘플을 사용하기 때문에 핀 테스트 손실에 대한 손실이 가장 낮다. 모든 방법은 샘플링을 위해 전체 재무 말뭉치 공간을 샘플링할 때 소프트 샘플링에 대해 유사한 핀 테스트 손실을 갖는다.
+
+ETS-DACP는 오픈 도메인 파일 손실에 대해 가장 높은 손실을 갖는다. 그러나 ETS-DACP를 사용한 오픈 도메인 태스크에서는 성능 저하가 관찰되지 않았다. 놀랍게도, ETS-DACP-ent와 ETS-DACP-ppl의 손실 사이에는 밀접한 상관관계가 있는 반면, ETS-DACP-ppl은 우리의 작업에서 ETS-DACP-ent보다 일관되고 상당히 나쁩니다. 이러한 관찰은 실제 우리의 작업 성능과 손실 곡선 사이에 좋은 상관관계가 없음을 시사한다. Using
+
+그림 4: 복잡성, 유사성 및 엔트로피 측정 사이의 스피어먼의 순위 상관 히트맵.
+
+그림 3: 복잡성, 유사성 및 다양성의 분포.
+
+라벨이 지정되지 않은 데이터를 사용한 검증/테스트 손실은 이 도메인에서 최소한 작업 수행에 대한 좋은 프록시가 아니다. 이는 작업 수행과 사전 훈련 손실 간의 낮은 상관 관계에 대한 [16]의 관찰에 의해 뒷받침된다.
+
+## Appendix E Financial Dataset Curation
+
+우리는 도메인 코퍼스를 선별하기 위한 두 가지 데이터 소스인 파이낸셜 뉴스 커먼크롤과 SEC 파일에 대해 설명한다.
+
+그림 5: ETS-DACP-com 및 ETS-DACP에서 사용되는 금융 코퍼스의 하위 집합의 평균 표본 분위수.
+
+그림 6: 손실 곡선: 효율적인 DACP 등급의 방법을 위해 왼쪽의 도메인 손실(Fin Test loss)과 오른쪽의 일반 도메인 손실(Pile loss)입니다.
+
+금융 뉴스 커먼크롤[13.2B 단어, 83.5%]은 2016년부터 2022년까지 AWS S34에서 호스팅된 공개 뉴스 커먼크롤 덤프를 전처리하여 영어 금융 뉴스 데이터 세트를 생성한다. 방대한 뉴스 커먼크롤 덤프 모음에서 금융 뉴스 기사를 식별하기 위해 도메인 필터와 URL 키워드 필터의 두 가지 필터링 메커니즘을 사용한다. 먼저, CNBC와 같은 금융, 경제 및 비즈니스 뉴스에 주로 초점을 맞춘 평판이 좋은 뉴스에 해당하는 웹 도메인의 포괄적인 포트폴리오를 구축한다. 우리는 금융 코퍼스의 상당 부분을 구성하는 이러한 금융 뉴스 도메인에서 특별히 조달된 뉴스 기사를 보유한다.
+
+발음 4: s3://commoncrawl
+
+둘째, 일반 뉴스 매체의 금융 기사를 캡처하기 위해 폭스 비즈니스와 같이 비즈니스, 경제 또는 금융 뉴스의 전용 섹션 또는 하위 영역을 지정하는 경우가 많다. 이러한 금융 기사를 효과적으로 식별하기 위해 일반 뉴스 매체 내의 금융 섹션 및 하위 영역을 대상으로 하는 단순하지만 효과적인 키워드 기반 접근법을 구현한다. 필터링 프로세스는 금융 도메인에서 지속적인 사전 훈련에 적합한 금융 코퍼스의 선택을 보장한다.
+
+SEC 파일링[3.3B 단어, 16.5%] 미국의 공기업은 법적으로 정기적으로 재무제표를 제출해야 한다. 증권 거래 위원회(SEC)는 1993년부터 이용 가능한 전자 데이터 수집, 분석 및 검색 시스템(EDGAR)을 통해 이러한 파일에 대한 대중의 접근을 용이하게 한다. 이 시스템은 평균적으로 연간 약 40,000개의 새로운 파일을 수용한다. 재무 코퍼스를 강화하기 위해 1993년부터 2022년까지 10K 파일링을 포함합니다. 데이터의 정확성과 일관성을 보장하기 위해 이러한 파일링은 [17]에 자세히 설명된 패키지를 사용하여 구문 분석 및 사전 처리됩니다. 또한 20개 미만의 단어가 포함된 보고서 섹션을 제거하여 가짜 사례를 제거함으로써 말뭉치의 품질을 최적화한다.
+
+파이낸셜 뉴스 필터링에 사용되는 도메인 목록 경제, 시장, 금융, 돈, 부, 투자, 비즈니스, 산업 등 하위 도메인과 URL을 식별하기 위해 다음과 같은 키워드를 사용합니다.
+
+그림 7: 월별 금융 뉴스 규모

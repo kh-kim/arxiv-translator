@@ -65,6 +65,7 @@
 | 2401.01055v2 | LLaMA Beyond English An Empirical Study on Language Capability Transfer | [arXiv](https://arxiv.org/abs/2401.01055v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2401.01055v2) |
 | 2312.05934v3 | Fine-Tuning or Retrieval? Comparing Knowledge Injection in LLMs | [arXiv](https://arxiv.org/abs/2312.05934v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2312.05934v3) |
 | 2311.13647 | Language Model Inversion | [arXiv](https://arxiv.org/abs/2311.13647) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.13647) |
+| 2311.08545 | Efficient Continual Pre-training for Building Domain Specific Large Language Models | [arXiv](https://arxiv.org/abs/2311.08545) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2311.08545) |
 | 2310.11511 | Self-RAG Learning to Retrieve Generate and Critique through Self-Reflection | [arXiv](https://arxiv.org/abs/2310.11511) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.11511) |
 | 2310.08754v4 | Tokenizer Choice For LLM Training Negligible or Crucial? | [arXiv](https://arxiv.org/abs/2310.08754v4) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.08754v4) |
 | 2310.04799v2 | Chat Vector A Simple Approach to Equip LLMs with Instruction Following and Model Alignment in New Languages | [arXiv](https://arxiv.org/abs/2310.04799v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2310.04799v2) |
