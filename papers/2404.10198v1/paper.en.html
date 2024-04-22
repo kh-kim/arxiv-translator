@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs\' internal prior\n' +
+      '\n' +
+      'Kevin Wu\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      'kevinywu@stanford.edu\n' +
+      '\n' +
+      '&Eric Wu\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      'wue@stanford.edu\n' +
+      '\n' +
+      '&James Zou\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      'jamesz@stanford.edu\n' +
+      '\n' +
+      'Denotes equal contribution.\n' +
+      '\n' +
+      'Stanford University\n' +
+      '\n' +
+      'jamesz@stanford.edu\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Retrieval augmented generation (RAG) is often used to fix hallucinations and provide up-to-date knowledge for large language models (LLMs). However, in cases when the LLM alone incorrectly answers a question, does providing the correct retrieved content always fix the error? Conversely, in cases where the retrieved content is incorrect, does the LLM know to ignore the wrong information, or does it recapitulate the error? To answer these questions, we systematically analyze the tug-of-war between a LLM\'s internal knowledge (i.e. its prior) and the retrieved information in settings when they disagree. We test GPT-4 and other LLMs on question-answering abilities across datasets with and without reference documents. As expected, providing the correct retrieved information fixes most model mistakes (94% accuracy). However, when the reference document is perturbed with increasing levels of wrong values, the LLM is more likely to recite the incorrect, modified information when its internal prior is weaker but is more resistant when its prior is stronger. Similarly, we also find that the more the modified information deviates from the model\'s prior, the less likely the model is to prefer it. These results highlight an underlying tension between a model\'s prior knowledge and the information presented in reference documents.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Large language models (LLMs), though powerful, are prone to hallucination (Pal et al., 2023; Sun et al., 2024; Ahmad et al., 2023). Additionally, they are restricted to knowledge contained in their training corpus, and so are unable to answer queries about recent events or publicly restricted information. Retrieval augmented generation (RAG) is a commonly used framework that provides relevant retrieved content in the LLM prompt and can significantly improve model accuracy (Mao et al., 2020; Chen et al., 2024; Lewis et al., 2020).\n' +
+      '\n' +
+      'Most commercial LLMs, like ChatGPT (OpenAI, 2023), Gemini (Gemini Team, 2023), and Perplexity.ai already employ some version of RAG in their Web interfaces. For example, ChatGPT employs a Bing search whereas Gemini accesses Google Search results. Though RAG has quickly become a default feature of user-facing LLM systems, most evaluations of LLM capabilities are still performed on the non-RAG counterparts (Zheng et al., 2023). This is problematic, as a model\'s default and RAG-enabled responses can drastically diverge depending on the quality and accuracy of the retrieved content. This problem is compounded when considering that web results constantly change, and can contain outdated, incorrect, or harmful information (Dash et al., 2023; Daws, 2020; Nastasi et al., 2023). Thus, objective evaluations of RAG-enabled LLM behavior are as important as benchmarking their non-RAG counterparts, especially as RAG systems are increasingly relied upon to provide factual information in a myriad of domains.\n' +
+      '\n' +
+      'In this work, we aim to quantify the tension between LLMs\' internal knowledge and the retrieved information presented in RAG settings. To tease apart these two competing forces, we query LLMs to answer questions and measure the token probabilities while introducing varying perturbations to reference documents. Our analyses reveal two key findings:\n' +
+      '\n' +
+      '* The likelihood of the LLM to adhere to the retrieved information presented in context (RAG preference rate) is inversely correlated with the model\'s confidence in its response without context (its prior probability).\n' +
+      '* Similarly, LLMs will increasingly revert to their priors when the original context is progressively modified with unrealistic values.\n' +
+      '\n' +
+      'We find that these relationships hold under analysis on six different domain datasets across over 1200 questions. We also find that the choice of prompting technique (e.g. strictly adhere, loosely adhere) can influence both the baseline and strength of this relationship. These results highlight the inherent tension in LLMs between the model\'s pre-trained knowledge and the retrieved content provided in context.\n' +
+      '\n' +
+      'The issue of hallucination in LLMs has been explored in multiple contexts and models (Ji et al., 2023; Kaddour et al., 2023). As a response, RAG systems have been shown to reduce hallucination (Shuster et al., 2021; Kang et al., 2023). Previous works have explored automated RAG evaluation frameworks in various settings (Es et al., 2023; Hoshi et al., 2023; Saad-Falcon et al., 2023; Zhang et al., 2024). For example, some studies use LLMs to evaluate the faithfulness, answer relevance, and context relevance of RAG systems by using GPT-3.5 as an evaluator (Es et al., 2023; Saad-Falcon et al., 2023). In another study, the authors propose metrics such as noise robustness, negative rejection, information integration, and counterfactual robustness (Chen et al., 2024). Multiple studies have shown that RAG can mislead LLMs in the presence of complex or misleading search results and that such models can still make mistakes even when given the correct response (Foulds et al., 2024; Shuster et al., 2021). In relation to understanding model priors, other works have used log probabilities to assess the LLM\'s confidence in responses (Mitchell et al., 2023; Zhao et al., 2024). However, so far there has not been a systematic exploration of a model\'s confidence (via logprobs) and the model\'s preference for RAG-provided information.\n' +
+      '\n' +
+      'Figure 1: A schematic of generating modified documents for each dataset. A question is posed to the LLM with and without a reference document containing information relevant to the query. This document is then perturbed to contain modified information and given as context to the LLM. We then observe whether the LLM prefers the modified information or its own prior answer.\n' +
+      '\n' +
+      '## 2 Methods\n' +
+      '\n' +
+      'Our main analysis consists of evaluating the RAG question-answering capabilities of GPT-4 when introducing varying levels of perturbations on the RAG documents. For this study, our dataset consists of 1,294 total questions across 6 different domains. Wherever referenced, the GPT-4 model used is _gpt-4-turbo-preview_, accessed in March 2024. We additionally evaluate our dataset on two other models: GPT3.5 (_gpt-3.5-turbo-0125_) and Mistral-7B, the _Mistral-7B-Instituct-v0.1_. We chose these two LLMs as they are top-performing models that also allow access to the model\'s token probabilities (via the OpenAI and Huggingface APIs). All main figures and tables report results using GPT-4; analyses using GPT-3.5 and Mistral-7B are reported in the Appendix.\n' +
+      '\n' +
+      'Figure 2: Across six QA datasets using GPT-4, we consistently observe an inverse relationship between the RAG preference rate (y-axis) and two characteristics (x-axes): 1. the model’s prior response probability (lefthand plots), and 2. the amount of deviation from the prior (righthand plots). RAG preference rate is defined as the proportion of responses that align with the information presented in the prompt as context. The model’s prior response probability is computed from the average log probability of the response tokens queried without RAG. The left plot in each pair visualizes the prior probability (grouped into 10 bins) against the RAG preference rate, along with the best-fit trend line and slope. The right plot visualizes absolute deviation from the reference information (for numerical datasets (top), up to two log-fold changes (along with the trendline); for categorical datasets (bottom), a total of four modification categories) against RAG preference rate. Additionally, the upper and lower half percentiles are shown in the right plots to illustrate that lower probability prior responses have monotonically lower RAG preference rates than higher probability prior responses.\n' +
+      '\n' +
+      '### Dataset\n' +
+      '\n' +
+      'We generate questions from six subject domains. To generate a large set of question-and-answer pairs, we extract a corpus of content webpages and then query GPT-4 to generate a question based on the text, along with the ground truth answer and the excerpt used to generate the question. For each dataset below, we provide the full prompts used to generate questions in the Appendix.\n' +
+      '\n' +
+      '#### 2.1.1 Drug Dosages\n' +
+      '\n' +
+      'We initially randomly sampled 500 drug information pages from UpToDate.com, a medical reference website widely used by clinicians. To constrain the scope of questions, we specify in the prompt that the answer must be numerical and in milligrams. To filter out generated questions that did not meet the specified criteria (e.g. ambiguous question, incorrect units, etc.), we perform an additional quality control step, where we ask GPT-4 to verify that the generated question fulfills all criteria. After this step, we have 266 question-answer pairs.\n' +
+      '\n' +
+      '#### 2.1.2 Sports Statistics\n' +
+      '\n' +
+      'We pulled Olympics records pages from Wikipedia.org across 9 sports: Athletics, weightlifting, swimming, archery, track cycling, rowing, shooting, short track speed skating, and speed skating. Records are extracted in a table format, from which questions are generated for each record entry. In total, after filtering, we extracted 192 unique questions and answers.\n' +
+      '\n' +
+      '#### 2.1.3 News\n' +
+      '\n' +
+      'Top headlines are pulled from the Associated Press RSS feed for dates ranging from 03/15/24 to 03/25/24. From an initial corpus of 1486 news articles, we use GPT-4 to generate one question per article, instructing it to produce questions for which there is a clear numerical answer. We perform another GPT-4 quality control step and result in 249 unique question-answer pairs.\n' +
+      '\n' +
+      '#### 2.1.4 Dates, Names, and Cities\n' +
+      '\n' +
+      'We begin with a random sample of 1000 articles from Huggingface\'s Wikipedia dataset (20220301.en, (Foundation)). We use GPT-4 to generate questions related to each field (dates, names, and cities) and filter out responses where the excerpt is not exactly found in the context. To reduce ambiguity when matching groundtruth answers, we restrict the answers to fit certain formats. For dates, we require that the answer adheres to a four-digit year (YYYY). For names, we require a first and last name (eg. George Washington). For cities, we remove any other identities (eg. Seattle, not Seattle, WA). For each domain, among the remaining question-answer pairs that fit these criteria, we randomly sample 200 for our evaluation set.\n' +
+      '\n' +
+      '### Concordance\n' +
+      '\n' +
+      'We measure concordance, or the agreement between the reference answer generated based on the article content, and the model\'s answer to the corresponding generated question. This is computed for both the model\'s answer with and without context.\n' +
+      '\n' +
+      '### Modifying the Retrieved Documents\n' +
+      '\n' +
+      'We perform systematic perturbations on each question/answer pair (as visualized in Figure 1. In three datasets with numerical answers (Drug Dosages, Sports Records, Latest News), we produce ten modifications that act as multipliers on the original value: \\(0.1,0.2,0.4,0.8,1.2,1.5,2.0,3.0,5.0,10.0\\). In the Wikipedia Years dataset, we perform ten absolute modifications in increments of 20 years for a range of \\([-100,100]\\). For the Wikipedia Names and Locations, the discrete categories required more hand-crafted levels of variation. For each, we performed three categorical perturbations via prompting: slight, significant,and comical. We provide the full prompts used in our study in the Appendix. For example, for a name like _Bob Green_, a slight modification implies a small tweak to another real name (_Rob Greene_), whereas a significant modification produces a similar but fictitious name (_Bilgorn Grevalle_), and a comical modification is an absurd variant (_Blob Lawnface_). For a city name like _Miami_, a slight modification changes the name of the most similar city (_Fort Lauderdale_), a significant modification produces a fictitious city name (_Marisole_), and a comical modification produces an absurd variant (_Miameme_). Because of differences in how each modified fact might appear in the retrieved text, we utilize GPT-4 to generate the perturbed excerpts for drug dosages and news. Each modified fact is replaced in the original retrieved text. Then, both the question and context are posed to GPT-4, from which the answers, along with the log probabilities of the output tokens, are collected.\n' +
+      '\n' +
+      '### RAG vs Model Prior Analyses\n' +
+      '\n' +
+      'The main analysis we perform in this study is comparing the _RAG preference_ of a model against its _internal prior_. The LLM is first queried with a question without context. This response and the average probability of the tokens (accessed via the log probs) are referred to as the model\'s _prior response_ and the _prior probability_, respectively. The LLM is then queried again, this time with the retrieved content present in the prompt. The resulting response (the response with RAG) is then compared with the prior response: if the response is still the same as the prior response, then the model _prefers its prior_. On the other hand, if the model response aligns with the information present in the retrieved content, then the model _prefers RAG_. For each dataset, the _RAG preference rate_ is computed as the average across all RAG queries.\n' +
+      '\n' +
+      'The RAG preference rate is compared against two measurements: the prior probability and the deviation from the prior value. The former is computed by accessing the log probabilities from the OpenAI API call. As these are provided in log scale, we exponentiate them to produce linear probabilities when presenting the results. The latter is computed in several ways. For the Drug Dosages, Sports Statistics, and Latest News datasets, the absolute log fold change between the prior value and the modified value is computed; for the Wikipedia Dates dataset, the simple absolute year change is used; and for the Wikipedia Names and Locations datasets, each categorical change is presented in order of degree of modification.\n' +
+      '\n' +
+      '#### 2.4.1 Analyzing the Effects of Different Prompting Strategies\n' +
+      '\n' +
+      'Additional analysis is performed on the prompting technique itself: for the examples above, we use a standard prompt template that is based on RAG prompts used on popular LLM open-source libraries, with over 800k downloads as of March 2024 (LangChain and LlamalIndex). In addition to this template (called Standard), we introduce two more prompt modifications: Strict, which strongly enforces literal adherence to the retrieved context, and Loose, which encourages the model to reason over the retrieved context before responding.\n' +
+      '\n' +
+      '## 3 Results\n' +
+      '\n' +
+      '### Concordance\n' +
+      '\n' +
+      'In Table 1, we observe that the model\'s prior response only agreed with the reference answer 34.7% on average. However, the RAG answers elevated the concordance to 94%. This result demonstrates that the RAG pipeline established in this work is highly effective at encouraging the model to adhere to its retrieved content. However, in the minority of cases where providing the retrieved content fails to correct the LLM, we find that the model simply responds with its original prior answer about 20% of the time.\n' +
+      '\n' +
+      '### RAG Preference Rate vs. Prior Probability\n' +
+      '\n' +
+      'In Figure 2 (left side plots), we observe a consistent negative relationship between the token probability of the model\'s prior answer and the associated RAG preference rate for all six QA datasets. To visualize an even distribution across probabilities, we bin the probabilities into ten equidistant bins in the range of \\([0.0,1.0]\\). We additionally present the slope from performing a linear regression on the binned probability values against the RAG preference rate in Table 1. The slope indicates the effect of stronger model confidence on the model\'s preference for the information presented in the retrieved context; we observe different slopes (ranging from -0.1 to -0.45), suggesting that the effectiveness of RAG in different QA domains can be characterized as being relatively susceptible (e.g., with Dates questions) or robust (e.g., with News questions) to the model\'s internal prior knowledge confidence. Specifically, a slope of -0.45, for instance, can be interpreted as expecting a 4.5% decrease in the likelihood of the LLM preferring the contextual information for every 10% increase in the probability of the model\'s prior response.\n' +
+      '\n' +
+      '#### 3.2.1 RAG Preference Rate vs Deviation from Prior\n' +
+      '\n' +
+      'We also consider the degree of deviation between the model\'s prior response and the value contained in the retrieved context (Figure 2, right side plots). A similar pattern emerges in this analysis: as the RAG value diverges from the model\'s prior, the model is less likely to adopt the RAG value over its own initial response. We additionally plot data split into the upper and lower half percentiles and observe that, across all six datasets, the lower probability prior responses are monotonically lower than the higher probability response tokens. Thus, the correlation between deviation and RAG response rate holds across both bands of probabilities.\n' +
+      '\n' +
+      '#### 3.2.2 Effect of prompting technique on RAG adherence\n' +
+      '\n' +
+      'To assess the degree of influence that the specific prompting technique has on RAG adherence, we test two additional prompts ("strict" and "loose") on GPT-4. The strict prompt is intended to coerce the model\'s disregard its own prior response, while the loose prompt is\n' +
+      '\n' +
+      'Figure 3: Examples from three datasets demonstrating differential LLM responses across various types of context modifications. Responses in red indicate wrong responses (different than the answer); responses in green indicate correct responses.\n' +
+      '\n' +
+      'intended for the model to arbitrate between its own prior and the contextual information provided. In Figure 4, the strict prompt has uniformly higher RAG adherence than the standard prompt. The loose prompt, on the other hand, results in much lower RAG adherence rates as prior probability increases. Interestingly, the slope is also steeper, indicating a larger per-unit decrease in RAG preference as the prior probability increases. The choice of prompt is thus an important mechanism for influencing the LLM\'s RAG preferences.\n' +
+      '\n' +
+      '#### 3.2.3 Differences in effects between GPT-4, GPT-3.5, and Mistral-7B\n' +
+      '\n' +
+      'We report the same analyses when using GPT-3.5 and Mistral-7B in Table 2 and Figure 5. We observe significantly lower performance both in concordance of the prior and with RAG. However, as seen in Figure 5, we nonetheless observe the same inverse trends in these two models as seen in the results with GPT-4. Of note, some datasets (like Latest News) perform poorly without RAG (the model refused the vast majority of queries or provided invalid responses), and thus the prior token probabilities could not be analyzed. In the Mistral-7B results, we also observe that some of the responses using RAG could not consistently provide valid responses.\n' +
+      '\n' +
+      '## 4 Discussion\n' +
+      '\n' +
+      'While RAG is becoming standard practice in commercially available LLMs, the reliability of such systems is still understudied. Our experiments uncover several mechanisms that modulate the degree to which LLMs adhere to RAG systems. Specifically, we quantify a tug-of-war between the strength of the model\'s prior and the rate at which the model\n' +
+      '\n' +
+      'Figure 4: Effect of different prompts using GPT-4 on RAG preference rate vs prior probability. The “Strict” prompt strongly enforces literal adherence to the retrieved context, while the “Loose” prompt encourages the model to make a reasonable judgment in light of the provided context. We observe lower and steeper drops in RAG adherence with the loose vs strict prompts, suggesting that prompt wording plays a significant factor in controlling RAG adherence. Full prompts are provided in the Appendix.\n' +
+      '\n' +
+      'adheres to the RAG document\'s facts. This effect is at odds with claims that RAG itself can fix hallucinations alone, and occurs even when the model is prompted to adhere to RAG documents strictly.\n' +
+      '\n' +
+      'RAG systems have a unique appeal over traditional search engines in that they can incorporate prior knowledge to fill in the gaps and extrapolate the retrieved information. We find that this comes with trade-offs - namely, that such priors can override information provided in documents. When perturbing RAG documents over a wide interval of values, the point at which models revert to their prior responses, or "tipping points", are latent and heterogeneous across different models and domains. While strong priors are not inherently problematic (and can often serve to safeguard models), the lack of explicit expectations around how models will mix reference documents with their priors can lead to downstream issues. For example, if RAG systems are used to extract nested financial data to be used in an algorithm, what will happen if there is a typo in the financial documents? Will the model notice the error and if so, what data will it provide in its place? Given that LLMs are soon to be widely deployed in many domains including medicine and law, users and developers alike should be cognizant of their unintended effects, especially if users have preconceptions that RAG-enabled systems are, by nature, always truthful.\n' +
+      '\n' +
+      'There are several key limitations in our analyses. First, RAG systems can be deployed to many more domains than can be covered by our analyses. However, we hope that our study ixix domains paints an initial picture of the nature of RAG systems. Second, to make our experiments tractable, our question-generation process is strictly fact-based and does not require multi-step logic, document synthesis, or other higher-level reasoning. Third, the perturbations we produce are based on our priors for what would constitute a reasonable or unreasonable range of values. In a natural setting, we would imagine more discrete types of errors (eg. typos, ambiguities, missing information, etc.) which are harder to simulate. We also perform evaluations on GPT-3.5 and GPT-4 because the OpenAI API allows for access to token-wise log probabilities along with the responses. As a consequence, we are limited against performing more comprehensive evaluations on models such as Gemini and Claude because the APIs for these models do not provide access to such information.\n' +
+      '\n' +
+      'LLMs are now commonly used as parts of larger, more complex systems. It is crucial to understand how these models interact with information with varying degrees of trustworthiness, accuracy, and uniformity. Our analysis shows that further work is required to characterize the risks of using LLMs to answer questions given contextual information. In particular, we find that model behavior can be erratic and unpredictable when presented with information that exists at the margin of its prior beliefs.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '**GPT-4** & **Concordance (Prior)** & **Concordance (w/ RAG)** & **Slope** \\\\ \\hline Drug Dosage & 0.554 & 0.884 & -0.26 \\\\ Sports Stats & 0.240 & 0.943 & -0.18 \\\\ Latest News & 0.133 & 0.936 & -0.10 \\\\ Wikipedia Dates & 0.433 & 0.995 & -0.45 \\\\ Wikipedia Names & 0.350 & 0.965 & -0.13 \\\\ Wikipedia Locations & 0.375 & 0.920 & -0.28 \\\\ \\hline _Average_ & _0.347_ & _0.940_ & _-0.23_ \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Concordance between the GPT response and the reference values for each dataset. Prior refers to GPT-4 responses without context, and “w/ RAG” refers to responses with the relevant retrieved context included in the prompt. Additionally, we include the slope of the relationship between prior probability and RAG preference rate. For instance, the average slope is -0.23, which means that for every 10% increase in the probability of the prior token, we observe a 2.3% decreased likelihood of RAG preference.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* A. Ahmad, I. Yaramis, and T. Roy (2023-06)Creating trustworthy LLMs: dealing with hallucinations in healthcare AI. Cited by: SS1.\n' +
+      '* J. Chen, H. Lin, X. Han, and L. Sun (2024-04)Benchmarking large language models in retrieval-augmented generation. AAAI38 (16), pp. 17754-17762. External Links: Link, Document Cited by: SS1.\n' +
+      '* J. Chen, H. Lin, X. Han, and L. Sun (2024)Benchmarking large language models in retrieval-augmented generation. In Proceedings of the AAAI Conference on Artificial Intelligence, Vol. 38, pp. 17754-17762. External Links: Link, Document Cited by: SS1.\n' +
+      '* D. Dash, R. Thapa, J. M. Banda, A. Swaminathan, M. Cheatham, M. Kashyap, N. Kotecha, J. H. Chen, S. Gombar, L. Downing, R. Pedreira, E. Goh, A. Armaout, G. K. Morris, H. Magon, M. P. Lungren, E. Horvitz, and N. H. Shah (2023-06)Evaluation of GPT-3.5 and GPT-4 for supporting real-world information needs in healthcare delivery. External Links: Link, Document Cited by: SS1.\n' +
+      '* R. Daws (2020-10)Medical chatbot using openai\'s GPT-3 told a fake patient to kill themselves. External Links: Link, Document Cited by: SS1.\n' +
+      '* S. Es, J. James, L. Espinosa-Anke, and S. Schockaert (2023-10)RAGAS: automated evaluation of retrieval augmented generation. External Links: Link, Document Cited by: SS1.\n' +
+      '* S. Es, J. James, L. Espinosa-Anke, and S. Schockaert (2023-10)RAGAS: automated evaluation of retrieval augmented generation. External Links: Link, Document Cited by: SS1.\n' +
+      '* P. F. Foulds, R. James, and S. Pan (2024)Ragged edges: the double-edged sword of retrieval-augmented chatbots. arXiv preprint arXiv:2403.01193. Cited by: SS1.\n' +
+      '* W. Foundation (2023)Wikimedia downloads. External Links: Link Cited by: SS1.\n' +
+      '* G. Team (2023)Gemini: a family of highly capable multimodal models. External Links: Link Cited by: SS1.\n' +
+      '* Y. Hoshi, D. Miyashita, Y. Ng, K. Tatsuno, Y. Morioka, O. Torii, and J. Deguchi (2023)RaLLe: a framework for developing and evaluating Retrieval-Augmented large language models. External Links: Link, Document Cited by: SS1.\n' +
+      '* Z. Ji, N. Lee, R. Frieske, T. Yu, D. Su, Y. Xu, E. Ishii, Y. Jin Bang, A. Madotto, and P. Fung (2023)Survey of hallucination in natural language generation. ACM Computing Surveys55 (12), pp. 1-38. External Links: Link, Document Cited by: SS1.\n' +
+      '* J. Kaddour, J. Harris, M. Mozes, H. Bradley, R. Raileanu, and R. McHardy (2023)Challenges and applications of large language models. arXiv preprint arXiv:2307.10169. Cited by: SS1.\n' +
+      '* H. Kang, J. Ni, and H. Yao (2023)Ever: mitigating hallucination in large language models through real-time verification and rectification. arXiv preprint arXiv:2311.09114. Cited by: SS1.\n' +
+      '* P. Lewis, E. Perez, A. Piktus, F. Petroni, V. Karpukhin, N. Goyal, H. Kuttler, M. Lewis, W. Yih, T. Rocktaschel, and O. (2020)Retrieval-augmented generation for knowledge-intensive nlp tasks. Adv. Neural Inf. Process. Syst.33, pp. 9459-9474. External Links: Link, Document Cited by: SS1.\n' +
+      '* Y. Mao, P. He, X. Liu, Y. Shen, J. Gao, J. Han, and W. Chen (2020)Generation-augmented retrieval for open-domain question answering. External Links: Link, Document Cited by: SS1.\n' +
+      '* E. Mitchell, Y. Lee, A. Khazatsky, C. D. Manning, and C. Finn (2023)DetectGPT: zero-shot machine-generated text detection using probability curvature. ICML29, pp. 24950-24962. External Links: Link, Document Cited by: SS1.\n' +
+      '\n' +
+      '* Nastasi et al. (2023) Anthony J Nastasi, Katherine R Courtright, Scott D Halpern, and Gary E Weissman. Does ChatGPT provide appropriate and equitable medical advice?: A vignette-based, clinical evaluation across care contexts. March 2023.\n' +
+      '* OpenAI (2023) OpenAI. GPT-4 technical report. March 2023.\n' +
+      '* Pal et al. (2023) Ankit Pal, Logesh Kumar Umapathi, and Malaikannan Sankarasubbu. Med-HALT: Medical domain hallucination test for large language models. July 2023.\n' +
+      '* Saad-Falcon et al. (2023) Jon Saad-Falcon, Omar Khattab, Christopher Potts, and Matei Zaharia. ARES: An automated evaluation framework for Retrieval-Augmented generation systems. November 2023a.\n' +
+      '* Saad-Falcon et al. (2023) Jon Saad-Falcon, Omar Khattab, Christopher Potts, and Matei Zaharia. Ares: An automated evaluation framework for retrieval-augmented generation systems. _arXiv preprint arXiv:2311.09476_, 2023b.\n' +
+      '* Shuster et al. (2021) Kurt Shuster, Spencer Poff, Moya Chen, Douwe Kiela, and Jason Weston. Retrieval augmentation reduces hallucination in conversation. _arXiv preprint arXiv:2104.07567_, 2021.\n' +
+      '* Sun et al. (2021) Lichao Sun, Yue Huang, Haoran Wang, Siyuan Wu, Qihui Zhang, Chujie Gao, Yixin Huang, Wenhan Lyu, Yixuan Zhang, Xiner Li, Zhengliang Liu, Yixin Liu, Yijue Wang, Zhikun Zhang, Bhavya Kailkhura, Caiming Xiong, Chaowei Xiao, Chunyuan Li, Eric Xing, Furong Huang, Hao Liu, Heng Ji, Hongyi Wang, Huan Zhang, Huixui Yao, Manolis Kellis, Marinka Zitnik, Meng Jiang, Mohit Bansal, James Zou, Jian Pei, Jian Liu, Jianfeng Gao, Jiawei Han, Jieyu Zhao, Jiliang Tang, Jindong Wang, John Mitchell, Kai Shu, Kaidi Xu, Kai-Wei Chang, Lifang He, Lifu Huang, Michael Backes, Neil Zhenqiang Gong, Philip S Yu, Pin-Yu Chen, Quanquan Gu, Ran Xu, Rex Ying, Shuiwang Ji, Suman Jana, Tianlong Chen, Tianming Liu, Tianyi Zhou, Willian Wang, Xiang Li, Xiangliang Zhang, Xiao Wang, Xing Xie, Xun Chen, Xuyu Wang, Yan Liu, Yanfang Ye, Yinzhi Cao, Yong Chen, and Yue Zhao. TrustLLM: Trustworthiness in large language models. January 2024.\n' +
+      '* Zhang et al. (2024) Zihan Zhang, Meng Fang, and Ling Chen. RetrievalQA: Assessing adaptive Retrieval-Augmented generation for short-form Open-Domain question answering. February 2024.\n' +
+      '* Zhao et al. (2024) Qinyu Zhao, Ming Xu, Kartik Gupta, Akshay Asthana, Liang Zheng, and Stephen Gould. The first to know: How token distributions reveal hidden knowledge in large Vision-Language models? March 2024.\n' +
+      '* Zheng et al. (2023) Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric P Xing, Hao Zhang, Joseph E Gonzalez, and Ion Stoica. Judging LLM-as-a-Judge with MT-Bench and chatbot arena. June 2023.\n' +
+      '\n' +
+      '## Appendix A Appendix\n' +
+      '\n' +
+      '### Prompts\n' +
+      '\n' +
+      'Due to the length of the prompts, we have stored them in a CSV within open-access and anonymized repository: [https://anonymous.4open.science/r/rag-tug-of-war-1E48/prompts.csv](https://anonymous.4open.science/r/rag-tug-of-war-1E48/prompts.csv)\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '**GPT-3.5** & **Concordance (Prior)** & **Concordance (w/ RAG)** & **Slope** \\\\ \\hline Drug Dosage & 0.052 & 0.509 & -0.20 \\\\ Sports Stats & 0.005 & 0.599 & -0.09 \\\\ Latest News & 0.008 & 0.839 & N/A \\\\ Wikipedia Dates & 0.275 & 0.985 & -0.71 \\\\ Wikipedia Names & 0.285 & 0.965 & -0.11 \\\\ Wikipedia Locations & 0.410 & 0.930 & -0.16 \\\\ \\hline _Average_ & 0.173 & 0.805 & -0.25 \\\\ \\hline \\hline\n' +
+      '**Mistral-7B** & **Concordance (Prior)** & **Concordance (w/ RAG)** & **Slope** \\\\ \\hline Drug Dosage & 0.550 & 0.677 & -0.82 \\\\ Sports Stats & 0.240 & 0.057 & N/A \\\\ Latest News & N/A & N/A & N/A \\\\ Wikipedia Dates & 0.080 & 0.840 & -0.77 \\\\ Wikipedia Names & 0.065 & 0.760 & -0.14 \\\\ Wikipedia Locations & 0.490 & 0.690 & -0.030 \\\\ \\hline _Average_ & _0.285_ & _0.605_ & _-0.44_ \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Concordance and Slope with GPT-3.5 and Mistral-7B. Please see Table 1 for a full table description of analyses performed using GPT-4.\n' +
+      '\n' +
+      'Figure 5: Analyses for RAG preference rate against prior probability and deviation, using GPT-4 (blue), GPT-3.5 (orange), and Mistral-7B (green). Please see Figure 2 for full figure descriptions. Of note, some models did not generate any meaningful prior responses (due to refusal, improper responses, etc.) for certain datasets and thus could not be analyzed.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

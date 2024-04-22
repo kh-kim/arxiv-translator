@@ -1,0 +1,895 @@
+<html lang="en" data-theme="light"><head>
+<meta content="text/html; charset=utf-8" http-equiv="content-type">
+<title>How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior</title>
+<!--Generated on Tue Apr 16 00:57:08 2024 by LaTeXML (version 0.8.7) http://dlmf.nist.gov/LaTeXML/.-->
+<meta content="width=device-width, initial-scale=1, shrink-to-fit=no" name="viewport">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" type="text/css">
+<link href="https://arxiv.org/static/browse/0.3.4/css/ar5iv_0.7.4.min.css" rel="stylesheet" type="text/css">
+<link href="https://arxiv.org/static/browse/0.3.4/css/latexml_styles.css" rel="stylesheet" type="text/css">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.3.3/html2canvas.min.js"></script>
+<script src="https://arxiv.org/static/browse/0.3.4/js/addons.js"></script>
+<script src="https://arxiv.org/static/browse/0.3.4/js/feedbackOverlay.js"></script>
+<base href="https://arxiv.org/html/2404.10198v1/"><link rel="stylesheet" href="https://use.typekit.net/rwr5zpx.css"><link rel="icon" type="image/png" href="https://static.arxiv.org/static/browse/0.3.4/images/icons/favicon-16x16.png" sizes="16x16"><link rel="icon" type="image/png" href="https://static.arxiv.org/static/browse/0.3.4/images/icons/favicon-32x32.png" sizes="32x32"></head>
+<body><header class="mob_header">
+    <div class="html-header-logo">
+      <a href="https://arxiv.org/">
+        <img alt="logo" class="logomark" role="presentation" width="100" src="https://services.dev.arxiv.org/html/static/arxiv-logomark-small-white.svg">
+        <span class="sr-only">Back to arXiv</span>
+      </a>
+    </div>
+
+    <!--TOC, dark mode, links-->
+    <div class="html-header-nav">
+      <!--back to abstract-->
+      
+        <a class="nav-link ar5iv-footer-button hover-effect" aria-label="Back to abstract page" href="https://arxiv.org/abs/2404.10198v1">
+        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" viewBox="0 0 512 512" fill="#ffffff" aria-hidden="true">
+            <path d="M502.6 278.6c12.5-12.5 12.5-32.8 0-45.3l-128-128c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L402.7 224 192 224c-17.7 0-32 14.3-32 32s14.3 32 32 32l210.7 0-73.4 73.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l128-128zM160 96c17.7 0 32-14.3 32-32s-14.3-32-32-32L96 32C43 32 0 75 0 128L0 384c0 53 43 96 96 96l64 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-64 0c-17.7 0-32-14.3-32-32l0-256c0-17.7 14.3-32 32-32l64 0z"></path>
+        </svg>
+        </a>
+      <!--dark mode-->
+      <a class="ar5iv-toggle-color-scheme" href="javascript:toggleColorScheme()" title="Toggle dark/light mode">
+        <span class="color-scheme-icon" aria-label="Light mode"></span>
+      </a>
+      <!--nav-->
+      <button class="navbar-toggler ar5iv-footer-button" type="button" data-bs-theme="dark" data-bs-toggle="collapse" aria-expanded="false" data-bs-target=".ltx_page_main >.ltx_TOC.mobile" aria-controls="navbarSupportedContent" aria-label="Toggle navigation" style="border:none; margin-right: 0em;">
+        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" viewBox="0 0 448 512" aria-hidden="true" role="img" fill="#ffffff"><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"></path></svg>
+      </button>
+    </div>
+    </header><header class="desktop_header">
+    <div class="html-header-logo">
+      <a href="https://arxiv.org/">
+          <img alt="logo" class="logo" role="presentation" width="100" src="https://services.dev.arxiv.org/html/static/arxiv-logo-one-color-white.svg">
+          <span class="sr-only">Back to arXiv</span>
+      </a>
+    </div>
+    <div class="html-header-message" role="banner">
+        <p>This is <strong>experimental HTML</strong> to improve accessibility. We invite you to report rendering errors. <span class="sr-only">Use Alt+Y to toggle on accessible reporting links and Alt+Shift+Y to toggle off.</span> Learn more <a href="https://info.arxiv.org/about/accessible_HTML.html" target="_blank">about this project</a> and <a href="https://info.arxiv.org/help/submit_latex_best_practices.html" target="_blank">help improve conversions</a>.
+        </p>
+    </div>
+    <nav class="html-header-nav">
+      <a class="ar5iv-footer-button hover-effect" href="https://info.arxiv.org/about/accessible_HTML.html" target="_blank">Why HTML?</a>
+      <a class="ar5iv-footer-button hover-effect" target="_blank" href="#myForm" onclick="event.preventDefault(); var modal = document.getElementById('myForm'); modal.style.display = 'block'; bugReportState.setInitiateWay('Header');">Report Issue</a>
+      <a class="ar5iv-footer-button hover-effect" href="https://arxiv.org/abs/2404.10198v1">Back to Abstract</a>
+      <a class="ar5iv-footer-button hover-effect" href="https://arxiv.org/pdf/2404.10198v1" target="_blank">Download PDF</a>
+      <a class="ar5iv-toggle-color-scheme" href="javascript:toggleColorScheme()" title="Toggle dark/light mode">
+          <span class="color-scheme-icon"></span>
+      </a>
+    </nav></header>
+
+<div class="ltx_page_main" id="main">
+<nav class="ltx_TOC mobile collapse" aria-labelledby="toc_header"><h2 id="toc_header" class="sr-only">Table of Contents</h2>
+
+      <div id="listIcon" type="button" class="hide">
+          <svg width="17px" height="17px" viewBox="0 0 512 512" style="pointer-events: none;">
+          <path d="M40 48C26.7 48 16 58.7 16 72v48c0 13.3 10.7 24 24 24H88c13.3 0 24-10.7 24-24V72c0-13.3-10.7-24-24-24H40zM192 64c-17.7 0-32 14.3-32 32s14.3 32 32 32H480c17.7 0 32-14.3 32-32s-14.3-32-32-32H192zm0 160c-17.7 0-32 14.3-32 32s14.3 32 32 32H480c17.7 0 32-14.3 32-32s-14.3-32-32-32H192zm0 160c-17.7 0-32 14.3-32 32s14.3 32 32 32H480c17.7 0 32-14.3 32-32s-14.3-32-32-32H192zM16 232v48c0 13.3 10.7 24 24 24H88c13.3 0 24-10.7 24-24V232c0-13.3-10.7-24-24-24H40c-13.3 0-24 10.7-24 24zM40 368c-13.3 0-24 10.7-24 24v48c0 13.3 10.7 24 24 24H88c13.3 0 24-10.7 24-24V392c0-13.3-10.7-24-24-24H40z"></path>
+          </svg>
+      </div>
+      <div id="arrowIcon" type="button">
+          <svg width="17px" height="17px" viewBox="0 0 448 512" style="pointer-events: none;">
+          <path d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.2 288 416 288c17.7 0 32-14.3 32-32s-14.3-32-32-32l-306.7 0L214.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"></path>
+          </svg>
+      </div><ol class="ltx_toclist">
+<li class="ltx_tocentry ltx_tocentry_section"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S1" title="1 Introduction ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">1 </span>Introduction</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_section">
+<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2" title="2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2 </span>Methods</span></a>
+<ol class="ltx_toclist ltx_toclist_section">
+<li class="ltx_tocentry ltx_tocentry_subsection">
+<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS1" title="2.1 Dataset ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.1 </span>Dataset</span></a>
+<ol class="ltx_toclist ltx_toclist_subsection">
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS1.SSS1" title="2.1.1 Drug Dosages ‣ 2.1 Dataset ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.1.1 </span>Drug Dosages</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS1.SSS2" title="2.1.2 Sports Statistics ‣ 2.1 Dataset ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.1.2 </span>Sports Statistics</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS1.SSS3" title="2.1.3 News ‣ 2.1 Dataset ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.1.3 </span>News</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS1.SSS4" title="2.1.4 Dates, Names, and Cities ‣ 2.1 Dataset ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.1.4 </span>Dates, Names, and Cities</span></a></li>
+</ol>
+</li>
+<li class="ltx_tocentry ltx_tocentry_subsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS2" title="2.2 Concordance ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.2 </span>Concordance</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS3" title="2.3 Modifying the Retrieved Documents ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.3 </span>Modifying the Retrieved Documents</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsection">
+<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS4" title="2.4 RAG vs Model Prior Analyses ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.4 </span>RAG vs Model Prior Analyses</span></a>
+<ol class="ltx_toclist ltx_toclist_subsection">
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.SS4.SSS1" title="2.4.1 Analyzing the Effects of Different Prompting Strategies ‣ 2.4 RAG vs Model Prior Analyses ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">2.4.1 </span>Analyzing the Effects of Different Prompting Strategies</span></a></li>
+</ol>
+</li>
+</ol>
+</li>
+<li class="ltx_tocentry ltx_tocentry_section">
+<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3" title="3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">3 </span>Results</span></a>
+<ol class="ltx_toclist ltx_toclist_section">
+<li class="ltx_tocentry ltx_tocentry_subsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.SS1" title="3.1 Concordance ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">3.1 </span>Concordance</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsection">
+<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.SS2" title="3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">3.2 </span>RAG Preference Rate vs. Prior Probability</span></a>
+<ol class="ltx_toclist ltx_toclist_subsection">
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.SS2.SSS1" title="3.2.1 RAG Preference Rate vs Deviation from Prior ‣ 3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">3.2.1 </span>RAG Preference Rate vs Deviation from Prior</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.SS2.SSS2" title="3.2.2 Effect of prompting technique on RAG adherence ‣ 3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">3.2.2 </span>Effect of prompting technique on RAG adherence</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_subsubsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.SS2.SSS3" title="3.2.3 Differences in effects between GPT-4, GPT-3.5, and Mistral-7B ‣ 3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">3.2.3 </span>Differences in effects between GPT-4, GPT-3.5, and Mistral-7B</span></a></li>
+</ol>
+</li>
+</ol>
+</li>
+<li class="ltx_tocentry ltx_tocentry_section"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S4" title="4 Discussion ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">4 </span>Discussion</span></a></li>
+<li class="ltx_tocentry ltx_tocentry_appendix">
+<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#A1" title="Appendix A Appendix ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">A </span>Appendix</span></a>
+<ol class="ltx_toclist ltx_toclist_appendix">
+<li class="ltx_tocentry ltx_tocentry_subsection"><a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#A1.SS1" title="A.1 Prompts ‣ Appendix A Appendix ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_title"><span class="ltx_tag ltx_tag_ref">A.1 </span>Prompts</span></a></li>
+</ol>
+</li>
+</ol></nav>
+
+<div class="ltx_page_content"><div class="section" id="target-section"><div id="license-tr">License: CC BY 4.0</div><div id="watermark-tr">arXiv:2404.10198v1 [cs.CL] 16 Apr 2024</div></div>
+<article class="ltx_document ltx_authors_1line">
+<h1 class="ltx_title ltx_title_document">How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior</h1><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_authors">
+<span class="ltx_creator ltx_role_author">
+<span class="ltx_personname">Kevin Wu
+<br class="ltx_break">Stanford University
+<br class="ltx_break"><span class="ltx_text ltx_font_typewriter" id="id1.1.id1">kevinywu@stanford.edu</span>
+<br class="ltx_break"><span class="ltx_ERROR undefined" id="id2.2.id2">\And</span>Eric Wu*
+<br class="ltx_break">Stanford University
+<br class="ltx_break"><span class="ltx_text ltx_font_typewriter" id="id3.3.id3">wue@stanford.edu</span>
+<br class="ltx_break"><span class="ltx_ERROR undefined" id="id4.4.id4">\And</span>James Zou 
+<br class="ltx_break">Stanford University
+<br class="ltx_break"><span class="ltx_text ltx_font_typewriter" id="id5.5.id5">jamesz@stanford.edu</span>
+<br class="ltx_break">
+</span><span class="ltx_author_notes">Denotes equal contribution.</span></span>
+</div><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_abstract">
+<h6 class="ltx_title ltx_title_abstract">Abstract</h6><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<p class="ltx_p" id="id6.id1">검색 증강 생성(rerieval augmented generation, RAG)은 종종 환각을 고정하고 대용량 언어 모델(LLM)에 대한 최신 지식을 제공하기 위해 사용된다. 그러나 LLM 단독으로 질문에 잘못 답한 경우 올바른 검색된 콘텐츠를 제공하는 것이 항상 오류를 해결합니까? 반대로, 검색된 콘텐츠가 잘못된 경우, LLM은 잘못된 정보를 무시하는 것을 알고 있는가, 아니면 오류를 요약하는가? 이러한 질문에 답하기 위해, 우리는 LLM의 내부 지식(즉, 이전)과 그들이 동의하지 않을 때 설정에서 검색된 정보 사이의 줄다리기를 체계적으로 분석한다. GPT-4 및 기타 LLMs는 참조 문서가 있거나 없는 데이터 세트 전체에서 질문 응답 능력에 대해 테스트한다. 예상대로, 정확한 검색된 정보를 제공하는 것은 대부분의 모델 실수를 수정한다(94% 정확도). 그러나 참조 문서가 잘못된 값의 수준이 증가함에 따라 교란될 때 LLM은 내부 사전이 약할 때 잘못된 수정된 정보를 암송할 가능성이 더 높지만 사전이 강할 때 내성이 더 높다. 유사하게, 우리는 또한 수정된 정보가 모델의 이전으로부터 더 많이 벗어날수록 모델이 그것을 선호할 가능성이 낮다는 것을 발견한다. 이러한 결과는 모델의 사전 지식과 참조 문서에 제시된 정보 사이의 근본적인 긴장을 강조한다.</p>
+</div>
+<section class="ltx_section" id="S1">
+<h2 class="ltx_title ltx_title_section">
+<span class="ltx_tag ltx_tag_section">1 </span>Introduction</h2><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S1.p1">
+<p class="ltx_p" id="S1.p1.1">큰 언어 모델(LLM)은 강력하지만 환각 <cite class="ltx_cite ltx_citemacro_citep">(Pal et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib20" title="">2023</a>; Sun et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib24" title="">2024</a>; Ahmad et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib1" title="">2023</a>)</cite>에 걸리기 쉽다. 또한 훈련 코퍼스에 포함된 지식으로 제한되므로 최근 이벤트 또는 공개적으로 제한된 정보에 대한 쿼리에 응답할 수 없습니다. 검색 증강 생성(RAG)은 LLM 프롬프트에서 관련 검색된 콘텐츠를 제공하는 일반적으로 사용되는 프레임워크이며 모델 정확도 <cite class="ltx_cite ltx_citemacro_citep">(Mao et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib16" title="">2020</a>; Chen et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib2" title="">2024a</a>; Lewis et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib15" title="">2020</a>)</cite>를 크게 향상시킬 수 있다. <br class="ltx_break"/></p>
+</div>
+<div class="ltx_para ltx_noindent" id="S1.p2">
+<p class="ltx_p" id="S1.p2.1">ChatGPT <cite class="ltx_cite ltx_citemacro_citep">(OpenAI, <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib19" title="">2023</a>)</cite>, Gemini <cite class="ltx_cite ltx_citemacro_citep">(Gemini Team, <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib10" title="">2023</a>)</cite>, Perplexity.ai와 같은 대부분의 상용 LLMs은 이미 웹 인터페이스에 일부 버전의 RAG를 사용하고 있다. 예를 들어 ChatGPT는 Bing 검색을 사용하는 반면 Gemini는 Google 검색 결과에 액세스합니다. RAG가 사용자 대면 LLM 시스템의 기본 기능이 되었지만, LLM 기능에 대한 대부분의 평가는 여전히 비 RAG 대응물 <cite class="ltx_cite ltx_citemacro_citep">(Zheng et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib27" title="">2023</a>)</cite>에 대해 수행된다. 이는 모델의 기본 응답과 RAG 지원 응답이 검색된 콘텐츠의 품질과 정확도에 따라 크게 달라질 수 있기 때문에 문제가 된다. 이 문제는 웹 결과가 지속적으로 변경된다는 점을 고려할 때 복잡하며, 구식, 부정확 또는 유해한 정보 <cite class="ltx_cite ltx_citemacro_citep">(Dash et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib4" title="">2023</a>; Daws, <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib5" title="">2020</a>; Nastasi et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib18" title="">2023</a>)</cite>를 포함할 수 있다. 따라서 RAG 지원 LLM 행동에 대한 객관적인 평가는 특히 RAG 시스템이 무수히 많은 도메인에서 사실 정보를 제공하는 데 점점 더 의존하기 때문에 비 RAG 대응물을 벤치마킹하는 것만큼 중요하다.</p>
+</div>
+<div class="ltx_para ltx_noindent" id="S1.p3">
+<p class="ltx_p" id="S1.p3.1">이 작업에서 우리는 LLM의 내부 지식과 RAG 설정에 제시된 검색된 정보 사이의 긴장을 정량화하는 것을 목표로 한다. 이 두 가지 경쟁력을 구별하기 위해 LLM에 쿼리하여 질문에 답하고 참조 문서에 다양한 섭동을 도입하면서 토큰 확률을 측정한다. 우리의 분석에서는 <br class="ltx_break"/>의 두 가지 주요 결과를 보여준다.</p>
+<ul class="ltx_itemize" id="S1.I1">
+<li class="ltx_item" id="S1.I1.i1" style="list-style-type:none;">
+<span class="ltx_tag ltx_tag_item">•</span>
+<div class="ltx_para" id="S1.I1.i1.p1">
+<p class="ltx_p" id="S1.I1.i1.p1.1">LLM이 컨텍스트에서 제시된 검색된 정보를 준수할 가능성(RAG 선호율)은 컨텍스트가 없는 응답에 대한 모델의 확신(사전 확률)과 반비례한다. <br class="ltx_break"/></p>
+</div>
+</li>
+<li class="ltx_item" id="S1.I1.i2" style="list-style-type:none;">
+<span class="ltx_tag ltx_tag_item">•</span>
+<div class="ltx_para ltx_noindent" id="S1.I1.i2.p1">
+<p class="ltx_p" id="S1.I1.i2.p1.1">유사하게, LLM은 원래 컨텍스트가 비현실적인 값으로 점진적으로 수정될 때 점점 더 이전으로 되돌아갈 것이다.</p>
+</div>
+</li>
+</ul>
+</div>
+<div class="ltx_para ltx_noindent" id="S1.p4">
+<p class="ltx_p" id="S1.p4.1">우리는 이러한 관계가 1200개 이상의 질문에 걸쳐 6개의 다른 도메인 데이터 세트에 대한 분석에서 유지된다는 것을 발견했다. 또한 프롬프트 기술(예: 엄격하게 준수, 느슨하게 준수)의 선택이 이 관계의 기준선과 강도 모두에 영향을 미칠 수 있음을 발견했다. 이러한 결과는 모델의 사전 훈련된 지식과 컨텍스트에서 제공된 검색된 콘텐츠 사이의 LLM에 내재된 긴장을 강조한다. <br class="ltx_break"/></p>
+</div>
+<div class="ltx_para ltx_noindent" id="S1.p5">
+<p class="ltx_p" id="S1.p5.1">LLM의 환각 문제는 여러 컨텍스트와 모델 <cite class="ltx_cite ltx_citemacro_citep">(Ji et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib12" title="">2023</a>; Kaddour et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib13" title="">2023</a>)</cite>에서 탐구되었다. 응답으로서, RAG 시스템은 환각 <cite class="ltx_cite ltx_citemacro_citep">(Shuster et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib23" title="">2021</a>; Kang et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib14" title="">2023</a>)</cite>를 감소시키는 것으로 나타났다. 이전 연구에서는 다양한 설정 <cite class="ltx_cite ltx_citemacro_citep">(Es et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib6" title="">2023a</a>; Hoshi et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib11" title="">2023</a>; Saad-Falcon et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib21" title="">2023a</a>; Zhang et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib25" title="">2024</a>)</cite>에서 자동화된 RAG 평가 프레임워크를 탐구했다. 예를 들어, 일부 연구에서는 GPT-3.5를 평가자 <cite class="ltx_cite ltx_citemacro_citep">(Es et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib7" title="">2023b</a>; Saad-Falcon et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib22" title="">2023b</a>)</cite>로 사용하여 RAG 시스템의 충실도, 답변 관련성 및 컨텍스트 관련성을 평가하기 위해 LLMs를 사용한다. 다른 연구에서 저자는 노이즈 견고성, 부정적인 거부, 정보 통합 및 반사실적 견고성 <cite class="ltx_cite ltx_citemacro_citep">(Chen et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib3" title="">2024b</a>)</cite>와 같은 메트릭을 제안한다. 여러 연구에 따르면 RAG는 복잡하거나 오판의 소지가 있는 검색 결과가 있는 경우 LLM을 오도할 수 있으며 이러한 모델은 올바른 응답 <cite class="ltx_cite ltx_citemacro_citep">(Foulds et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib8" title="">2024</a>; Shuster et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib23" title="">2021</a>)</cite>가 주어져도 여전히 실수를 할 수 있다. 모델 전적을 이해하는 것과 관련하여 다른 연구에서는 로그 확률을 사용하여 응답 <cite class="ltx_cite ltx_citemacro_citep">(Mitchell et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib17" title="">2023</a>; Zhao et al., <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib26" title="">2024</a>)</cite>에 대한 LLM의 신뢰도를 평가했다. 그러나 지금까지 (로그프로브를 통한) 모델의 신뢰도와 RAG 제공 정보에 대한 모델의 선호도에 대한 체계적인 탐색은 없었다.</p>
+</div>
+<figure class="ltx_figure" id="S1.F1"><img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="193" id="S1.F1.g1" src="https://arxiv.org/html/2404.10198v1/extracted/5538499/schematic4.png" width="598">
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">그림 1:</span>각 데이터셋에 대해 수정된 문서를 생성하는 개략도이다. 질의와 관련된 정보를 포함하는 참조 문서가 있거나 없는 LLM에 질문이 제기된다. 그런 다음 이 문서는 수정된 정보를 포함하도록 교란되고 LLM에 대한 컨텍스트로 제공된다. 그런 다음 LLM이 수정된 정보를 선호하는지 아니면 자체 사전 답변을 선호하는지 관찰한다.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<figure class="ltx_figure" id="S1.F2"><img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="454" id="S1.F2.g1" src="https://arxiv.org/html/2404.10198v1/extracted/5538499/fig1-2.png" width="598">
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">그림 2:</span>GPT-4를 사용하여 6개의 QA 데이터 세트에서 RAG 선호도 비율(y축)과 두 특성(x축) 사이의 역 관계를 일관되게 관찰합니다. 1. 모델의 사전 응답 확률(lefthand plot), 2. 사전(righthand plot)과의 편차 양입니다. RAG 선호율은 프롬프트에 제시된 정보와 맥락으로 일치하는 응답의 비율로 정의된다. 모델의 사전 응답 확률은 RAG 없이 쿼리된 응답 토큰의 평균 로그 확률로부터 계산된다.</figcaption><figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">Figure 2: </span>Across six QA datasets using GPT-4, we consistently observe an inverse relationship between the RAG preference rate (y-axis) and two characteristics (x-axes): 1. the model’s prior response probability (lefthand plots), and 2. the amount of deviation from the prior (righthand plots). RAG preference rate is defined as the proportion of responses that align with the information presented in the prompt as context. The model’s prior response probability is computed from the average log probability of the response tokens queried without RAG.
+The left plot in each pair visualizes the prior probability (grouped into 10 bins) against the RAG preference rate, along with the best-fit trend line and slope. The right plot visualizes absolute deviation from the reference information (for numerical datasets (top), up to two log-fold changes (along with the trendline); for categorical datasets (bottom), a total of four modification categories) against RAG preference rate. Additionally, the upper and lower half percentiles are shown in the right plots to illustrate that lower probability prior responses have monotonically lower RAG preference rates than higher probability prior responses.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+</section>
+<section class="ltx_section" id="S2">
+<h2 class="ltx_title ltx_title_section">
+<span class="ltx_tag ltx_tag_section">2 </span>Methods</h2><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.p1">
+<p class="ltx_p" id="S2.p1.1">우리의 주요 분석은 RAG 문서에 다양한 수준의 섭동을 도입할 때 GPT-4의 RAG 질문 응답 능력을 평가하는 것으로 구성된다. 이 연구를 위해 데이터 세트는 6개의 다른 도메인에 걸쳐 총 1,294개의 질문으로 구성된다. 참조된 경우 사용된 GPT-4 모델은 2024년 3월에 액세스한 <span class="ltx_text ltx_font_italic" id="S2.p1.1.1">gpt-4-turbo-preview</span>입니다. GPT3.5(<span class="ltx_text ltx_font_italic" id="S2.p1.1.2">gpt-3.5-turbo-0125</span>) 및 Mistral-7B, <span class="ltx_text ltx_font_italic" id="S2.p1.1.3">Mistral-7B-Instruct-v0.1</span>의 두 가지 다른 모델에 대한 데이터 세트를 추가로 평가합니다. 우리는 이 두 LLM이 (OpenAI 및 Huggingface API를 통해) 모델의 토큰 확률에 액세스할 수 있는 최고 성능의 모델이기 때문에 이 두 LLM을 선택했다. 모든 주요 그림과 표는 GPT-4를 사용한 결과를 보고하며, GPT-3.5 및 미스트랄-7B를 사용한 분석에서는 부록에 보고된다.</p>
+</div>
+<section class="ltx_subsection" id="S2.SS1">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">2.1 </span>Dataset</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS1.p1">
+<p class="ltx_p" id="S2.SS1.p1.1">우리는 6개의 주제 영역에서 질문을 생성합니다. 많은 질의응답 쌍을 생성하기 위해 콘텐츠 웹페이지의 코퍼스를 추출한 후 GPT-4에 질의하여 텍스트를 기반으로 질문을 생성하고, 질문 생성에 사용된 진실 답변 및 발췌문을 생성한다. 아래 각 데이터 세트에 대해 부록에서 질문을 생성하는 데 사용되는 전체 프롬프트를 제공합니다.</p>
+</div>
+<section class="ltx_subsubsection" id="S2.SS1.SSS1">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">2.1.1 </span>Drug Dosages</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS1.SSS1.p1">
+<p class="ltx_p" id="S2.SS1.SSS1.p1.1">우리는 처음에 임상의가 널리 사용하는 의료 참조 웹사이트인 UpToDate.com에서 500개의 약물 정보 페이지를 무작위로 샘플링했다. 질문의 범위를 제한하려면 프롬프트에서 답변이 숫자여야 하고 밀리그램으로 지정해야 한다. 지정된 기준(예: 모호한 질문, 잘못된 단위 등)을 충족하지 않는 생성된 질문을 필터링하기 위해 추가 품질 관리 단계를 수행하고 생성된 질문이 모든 기준을 충족하는지 GPT-4에 확인합니다. 이 단계 이후에는 266개의 질문-응답 쌍이 있습니다.</p>
+</div>
+</section>
+<section class="ltx_subsubsection" id="S2.SS1.SSS2">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">2.1.2 </span>Sports Statistics</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS1.SSS2.p1">
+<p class="ltx_p" id="S2.SS1.SSS2.p1.1">우리는 위키피디아.org에서 육상, 역도, 수영, 양궁, 트랙 사이클, 조정, 사격, 쇼트트랙 스피드 스케이팅, 스피드 스케이팅 등 9개 종목에 걸쳐 올림픽 기록 페이지를 뽑았다. 레코드는 테이블 형식으로 추출되며, 이로부터 각 레코드 항목에 대한 질문이 생성된다. 전체적으로 필터링 후 192개의 고유한 질문과 답변을 추출했다.</p>
+</div>
+</section>
+<section class="ltx_subsubsection" id="S2.SS1.SSS3">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">2.1.3 </span>News</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS1.SSS3.p1">
+<p class="ltx_p" id="S2.SS1.SSS3.p1.1">AP통신 RSS 피드에서 03/15/24에서 03/25/24까지의 날짜에 대한 상위 헤드라인을 추출한다. 1486개의 뉴스 기사의 초기 코퍼스로부터 GPT-4를 사용하여 기사당 하나의 질문을 생성하며, 이는 명확한 수치 해답이 있는 질문을 생성하도록 지시한다. 우리는 또 다른 GPT-4 품질 관리 단계를 수행하고 249개의 고유한 질문-응답 쌍을 생성한다.</p>
+</div>
+</section>
+<section class="ltx_subsubsection" id="S2.SS1.SSS4">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">2.1.4 </span>Dates, Names, and Cities</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS1.SSS4.p1">
+<p class="ltx_p" id="S2.SS1.SSS4.p1.1">우리는 Huggingface의 위키피디아 데이터 세트(20220301.en, <cite class="ltx_cite ltx_citemacro_citep">(<a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#bib.bib9" title="">Foundation, </a>)</cite>)에서 1000개의 기사의 무작위 샘플로 시작한다. 우리는 GPT-4를 사용하여 각 분야(날짜, 이름, 도시)와 관련된 질문을 생성하고 발췌문이 문맥에서 정확히 발견되지 않는 응답을 걸러낸다. 진실 답변을 일치시킬 때 모호성을 줄이기 위해 특정 형식에 맞게 답변을 제한한다. 날짜의 경우, 우리는 답변이 네 자릿수 연도(YYYY)를 준수할 것을 요구한다. 이름의 경우, 우리는 이름과 성을 필요로 한다(예를 들어, 조지 워싱턴). 도시들에 대해, 우리는 임의의 다른 신원들(예를 들어, 시애틀이 아닌 시애틀, WA)을 제거한다. 각 도메인에 대해 이러한 기준에 맞는 나머지 질문-응답 쌍 중 평가 세트에 대해 무작위로 200개를 샘플링한다.</p>
+</div>
+</section>
+</section>
+<section class="ltx_subsection" id="S2.SS2">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">2.2 </span>Concordance</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS2.p1">
+<p class="ltx_p" id="S2.SS2.p1.1">우리는 기사 내용을 기반으로 생성된 참조 답변과 해당 생성된 질문에 대한 모델의 답변 간의 일치도 또는 일치도를 측정한다. 이것은 문맥이 있거나 없는 모델의 답변 모두에 대해 계산됩니다.</p>
+</div>
+</section>
+<section class="ltx_subsection" id="S2.SS3">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">2.3 </span>Modifying the Retrieved Documents</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS3.p1">
+<p class="ltx_p" id="S2.SS3.p1.2">우리는 각 질문/응답 쌍에 대해 체계적인 섭동을 수행한다(그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S1.F1" title="Figure 1 ‣ 1 Introduction ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">1</span></a>에서 시각화된 바와 같이). 숫자 답변을 가진 세 개의 데이터 세트(Drug Dosages, Sports Records, Latest News)에서 원본 값에 승수 역할을 하는 10개의 수정(<math alttext="{0.1,0.2,0.4,0.8,1.2,1.5,2.0,3.0,5.0,10.0}" class="ltx_Math" display="inline" id="S2.SS3.p1.1.m1.10"><semantics id="S2.SS3.p1.1.m1.10a"><mrow id="S2.SS3.p1.1.m1.10.11.2" xref="S2.SS3.p1.1.m1.10.11.1.cmml"><mn id="S2.SS3.p1.1.m1.1.1" xref="S2.SS3.p1.1.m1.1.1.cmml">0.1</mn><mo id="S2.SS3.p1.1.m1.10.11.2.1" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.2.2" xref="S2.SS3.p1.1.m1.2.2.cmml">0.2</mn><mo id="S2.SS3.p1.1.m1.10.11.2.2" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.3.3" xref="S2.SS3.p1.1.m1.3.3.cmml">0.4</mn><mo id="S2.SS3.p1.1.m1.10.11.2.3" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.4.4" xref="S2.SS3.p1.1.m1.4.4.cmml">0.8</mn><mo id="S2.SS3.p1.1.m1.10.11.2.4" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.5.5" xref="S2.SS3.p1.1.m1.5.5.cmml">1.2</mn><mo id="S2.SS3.p1.1.m1.10.11.2.5" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.6.6" xref="S2.SS3.p1.1.m1.6.6.cmml">1.5</mn><mo id="S2.SS3.p1.1.m1.10.11.2.6" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.7.7" xref="S2.SS3.p1.1.m1.7.7.cmml">2.0</mn><mo id="S2.SS3.p1.1.m1.10.11.2.7" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.8.8" xref="S2.SS3.p1.1.m1.8.8.cmml">3.0</mn><mo id="S2.SS3.p1.1.m1.10.11.2.8" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.9.9" xref="S2.SS3.p1.1.m1.9.9.cmml">5.0</mn><mo id="S2.SS3.p1.1.m1.10.11.2.9" xref="S2.SS3.p1.1.m1.10.11.1.cmml">,</mo><mn id="S2.SS3.p1.1.m1.10.10" xref="S2.SS3.p1.1.m1.10.10.cmml">10.0</mn></mrow><annotation-xml encoding="MathML-Content" id="S2.SS3.p1.1.m1.10b"><list id="S2.SS3.p1.1.m1.10.11.1.cmml" xref="S2.SS3.p1.1.m1.10.11.2"><cn id="S2.SS3.p1.1.m1.1.1.cmml" type="float" xref="S2.SS3.p1.1.m1.1.1">0.1</cn><cn id="S2.SS3.p1.1.m1.2.2.cmml" type="float" xref="S2.SS3.p1.1.m1.2.2">0.2</cn><cn id="S2.SS3.p1.1.m1.3.3.cmml" type="float" xref="S2.SS3.p1.1.m1.3.3">0.4</cn><cn id="S2.SS3.p1.1.m1.4.4.cmml" type="float" xref="S2.SS3.p1.1.m1.4.4">0.8</cn><cn id="S2.SS3.p1.1.m1.5.5.cmml" type="float" xref="S2.SS3.p1.1.m1.5.5">1.2</cn><cn id="S2.SS3.p1.1.m1.6.6.cmml" type="float" xref="S2.SS3.p1.1.m1.6.6">1.5</cn><cn id="S2.SS3.p1.1.m1.7.7.cmml" type="float" xref="S2.SS3.p1.1.m1.7.7">2.0</cn><cn id="S2.SS3.p1.1.m1.8.8.cmml" type="float" xref="S2.SS3.p1.1.m1.8.8">3.0</cn><cn id="S2.SS3.p1.1.m1.9.9.cmml" type="float" xref="S2.SS3.p1.1.m1.9.9">5.0</cn><cn id="S2.SS3.p1.1.m1.10.10.cmml" type="float" xref="S2.SS3.p1.1.m1.10.10">10.0</cn></list></annotation-xml><annotation encoding="application/x-tex" id="S2.SS3.p1.1.m1.10c">{0.1,0.2,0.4,0.8,1.2,1.5,2.0,3.0,5.0,10.0}</annotation><annotation encoding="application/x-llamapun" id="S2.SS3.p1.1.m1.10d">0.1 , 0.2 , 0.4 , 0.8 , 1.2 , 1.5 , 2.0 , 3.0 , 5.0 , 10.0</annotation></semantics></math>)을 생성한다. 위키피디아 년 데이터 세트에서 <math alttext="[-100,100]" class="ltx_Math" display="inline" id="S2.SS3.p1.2.m2.2"><semantics id="S2.SS3.p1.2.m2.2a"><mrow id="S2.SS3.p1.2.m2.2.2.1" xref="S2.SS3.p1.2.m2.2.2.2.cmml"><mo id="S2.SS3.p1.2.m2.2.2.1.2" stretchy="false" xref="S2.SS3.p1.2.m2.2.2.2.cmml">[</mo><mrow id="S2.SS3.p1.2.m2.2.2.1.1" xref="S2.SS3.p1.2.m2.2.2.1.1.cmml"><mo id="S2.SS3.p1.2.m2.2.2.1.1a" xref="S2.SS3.p1.2.m2.2.2.1.1.cmml">−</mo><mn id="S2.SS3.p1.2.m2.2.2.1.1.2" xref="S2.SS3.p1.2.m2.2.2.1.1.2.cmml">100</mn></mrow><mo id="S2.SS3.p1.2.m2.2.2.1.3" xref="S2.SS3.p1.2.m2.2.2.2.cmml">,</mo><mn id="S2.SS3.p1.2.m2.1.1" xref="S2.SS3.p1.2.m2.1.1.cmml">100</mn><mo id="S2.SS3.p1.2.m2.2.2.1.4" stretchy="false" xref="S2.SS3.p1.2.m2.2.2.2.cmml">]</mo></mrow><annotation-xml encoding="MathML-Content" id="S2.SS3.p1.2.m2.2b"><interval closure="closed" id="S2.SS3.p1.2.m2.2.2.2.cmml" xref="S2.SS3.p1.2.m2.2.2.1"><apply id="S2.SS3.p1.2.m2.2.2.1.1.cmml" xref="S2.SS3.p1.2.m2.2.2.1.1"><minus id="S2.SS3.p1.2.m2.2.2.1.1.1.cmml" xref="S2.SS3.p1.2.m2.2.2.1.1"></minus><cn id="S2.SS3.p1.2.m2.2.2.1.1.2.cmml" type="integer" xref="S2.SS3.p1.2.m2.2.2.1.1.2">100</cn></apply><cn id="S2.SS3.p1.2.m2.1.1.cmml" type="integer" xref="S2.SS3.p1.2.m2.1.1">100</cn></interval></annotation-xml><annotation encoding="application/x-tex" id="S2.SS3.p1.2.m2.2c">[-100,100]</annotation><annotation encoding="application/x-llamapun" id="S2.SS3.p1.2.m2.2d">[ - 100 , 100 ]</annotation></semantics></math> 범위에 대해 20년 단위로 10개의 절대 수정을 수행합니다. 위키피디아 이름 및 위치의 경우 개별 범주에는 더 많은 수공예 수준의 변형이 필요했다. 각각에 대해 약간의, 상당한, 코믹의 프롬프트를 통해 세 가지 범주적 섭동을 수행했다. 부록의 연구에 사용된 전체 프롬프트를 제공합니다. 예를 들어, <span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.1">Bob Green</span>과 같은 이름의 경우 약간의 수정은 다른 실제 이름에 대한 작은 수정을 암시하는 반면(<span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.2">Rob Greene</span>), 상당한 수정은 유사하지만 허구적인 이름을 생성합니다(<span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.3">Bilgorn Grevalle</span>), 코믹한 수정은 불합리한 변형입니다(<span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.4">Blob Lawnface</span>). <span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.5">Miami</span>과 같은 도시 이름에 대해 약간의 수정은 가장 유사한 도시의 이름을 변경합니다(<span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.6">Fort Lauderdale</span>), 상당한 수정은 가짜 도시 이름을 생성합니다(<span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.7">Marisole</span>), 코믹 수정은 불합리한 변형을 생성합니다(<span class="ltx_text ltx_font_italic" id="S2.SS3.p1.2.8">Miameme</span>). 검색된 텍스트에 각 수정된 사실이 어떻게 나타날 수 있는지에 대한 차이 때문에 GPT-4를 사용하여 약물 투여량과 뉴스에 대한 교란된 발췌문을 생성한다. 수정된 각 팩트는 원래 검색된 텍스트에서 대체됩니다. 그런 다음 질문과 컨텍스트가 모두 GPT-4에 제기되며, 여기서 출력 토큰의 로그 확률과 함께 답변이 수집된다.</p>
+</div>
+</section>
+<section class="ltx_subsection" id="S2.SS4">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">2.4 </span>RAG vs Model Prior Analyses</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS4.p1">
+<p class="ltx_p" id="S2.SS4.p1.1">이 연구에서 수행한 주요 분석에서는 모델의 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.1">RAG preference</span>과 해당 모델의 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.2">internal prior</span>을 비교하는 것이다. LLM은 먼저 문맥이 없는 질문으로 질의된다. 이 응답과 토큰의 평균 확률(로그 프로브를 통해 액세스됨)은 각각 모델의 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.3">prior response</span> 및 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.4">prior probability</span>이라고 합니다. 그런 다음 LLM이 다시 쿼리되며, 이번에는 프롬프트에 검색된 콘텐츠가 표시됩니다. 결과 응답(RAG를 사용한 응답)은 이전 응답과 비교됩니다. 응답이 이전 응답과 여전히 동일한 경우 모델 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.5">prefers its prior</span>. 한편, 모델 응답이 검색된 콘텐츠에 존재하는 정보와 일치하면 모델 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.6">prefers RAG</span>이 된다. 각 데이터 세트에 대해 <span class="ltx_text ltx_font_italic" id="S2.SS4.p1.1.7">RAG 선호도 비율</span>은 모든 RAG 쿼리에 대한 평균으로 계산됩니다. <br class="ltx_break"/></p>
+</div>
+<div class="ltx_para ltx_noindent" id="S2.SS4.p2">
+<p class="ltx_p" id="S2.SS4.p2.1">RAG 선호율은 사전 확률과 사전 값으로부터의 편차의 두 측정치와 비교된다. 전자는 OpenAI API 호출에서 로그 확률에 액세스하여 계산됩니다. 이는 로그 척도로 제공되므로 결과를 제시할 때 선형 확률을 생성하기 위해 지수화한다. 후자는 여러 가지 방법으로 계산된다. 약물 투여량, 스포츠 통계 및 최신 뉴스 데이터 세트의 경우 이전 값과 수정된 값 사이의 절대 로그 배수 변화가 계산되고, 위키피디아 날짜 데이터 세트의 경우 단순 절대 연도 변화가 사용되며, 위키피디아 이름 및 위치 데이터 세트의 경우 각 범주 변화가 수정 정도 순서로 표시된다. <br class="ltx_break"/></p>
+</div>
+<section class="ltx_subsubsection" id="S2.SS4.SSS1">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">2.4.1 </span>Analyzing the Effects of Different Prompting Strategies</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S2.SS4.SSS1.p1">
+<p class="ltx_p" id="S2.SS4.SSS1.p1.1">프롬핑 기술 자체에 대해 추가 분석이 수행되며, 위의 예에서는 2024년 3월 현재 800k 이상의 다운로드가 있는 인기 있는 LLM 오픈 소스 라이브러리에서 사용되는 RAG 프롬프트를 기반으로 하는 표준 프롬프트 템플릿을 사용한다(<a class="ltx_ref ltx_href" href="https://python.langchain.com/docs/expression_language/cookbook/retrieval" title="">LangChain</a> 및 <a class="ltx_ref ltx_href" href="https://docs.llamaindex.ai/en/stable/examples/prompts/prompts_rag/" title="">LlamaIndex</a>). 이 템플릿(표준이라고 함) 외에도 검색된 컨텍스트에 대한 문자 그대로의 준수를 강력하게 강제하는 엄격함과 응답하기 전에 모델이 검색된 컨텍스트를 추론하도록 권장하는 느슨함이라는 두 가지 신속한 수정을 추가로 도입한다.</p>
+</div>
+<figure class="ltx_figure" id="S2.F3"><img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="352" id="S2.F3.g1" src="https://arxiv.org/html/2404.10198v1/extracted/5538499/examples4.png" width="598">
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">그림 3:</span>다양한 유형의 컨텍스트 수정에 걸쳐 차등 LLM 응답을 보여주는 세 데이터 세트의 예. 빨간색 응답은 잘못된 응답(답변과 다름)을 나타내고 녹색 응답은 올바른 응답을 나타냅니다.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<figure class="ltx_figure" id="S2.F4"><img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="428" id="S2.F4.g1" src="https://arxiv.org/html/2404.10198v1/extracted/5538499/adherence-prompts6.png" width="598">
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">그림 4:</span>RAG 선호도 비율 대 사전 확률에 대한 GPT-4를 사용하는 서로 다른 프롬프트의 효과. "엄격한" 프롬프트는 검색된 컨텍스트에 대한 문자적 준수를 강력하게 강제하고, "느슨한" 프롬프트는 모델이 제공된 컨텍스트에 비추어 합리적인 판단을 하도록 권장한다. 느슨한 프롬프트와 엄격한 프롬프트로 RAG 준수의 더 낮고 가파른 감소를 관찰하며, 이는 신속한 표현이 RAG 준수를 제어하는 데 중요한 역할을 함을 시사한다. 전체 프롬프트는 부록에 제공됩니다.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+</section>
+</section>
+</section>
+<section class="ltx_section" id="S3">
+<h2 class="ltx_title ltx_title_section">
+<span class="ltx_tag ltx_tag_section">3 </span>Results</h2><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<section class="ltx_subsection" id="S3.SS1">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">3.1 </span>Concordance</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S3.SS1.p1">
+<p class="ltx_p" id="S3.SS1.p1.1">표 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.T1" title="Table 1 ‣ 3.2.3 Differences in effects between GPT-4, GPT-3.5, and Mistral-7B ‣ 3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">1</span></a>에서 모델의 사전 응답이 평균 34.7%의 참조 응답에만 동의하는 것을 관찰한다. 그러나 RAG 답변은 일치도를 94%로 높였다. 이 결과는 이 작업에서 확립된 RAG 파이프라인이 모델이 검색된 콘텐츠를 준수하도록 장려하는 데 매우 효과적임을 보여준다. 그러나, 검색된 콘텐츠를 제공하는 것이 LLM을 수정하지 못하는 소수의 경우, 우리는 모델이 약 20%의 시간 동안 원래의 사전 답변으로 단순히 응답한다는 것을 발견한다.</p>
+</div>
+</section>
+<section class="ltx_subsection" id="S3.SS2">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">3.2 </span>RAG Preference Rate vs. Prior Probability</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S3.SS2.p1">
+<p class="ltx_p" id="S3.SS2.p1.1">그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S1.F2" title="Figure 2 ‣ 1 Introduction ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">2</span></a> (왼쪽 그림)에서 우리는 모델의 사전 답변의 토큰 확률과 6개의 모든 QA 데이터 세트에 대한 관련 RAG 선호도 비율 사이의 일관된 부정적인 관계를 관찰한다. 확률에 걸쳐 균등한 분포를 시각화하기 위해 확률을 <math alttext="[0.0,1.0]" class="ltx_Math" display="inline" id="S3.SS2.p1.1.m1.2"><semantics id="S3.SS2.p1.1.m1.2a"><mrow id="S3.SS2.p1.1.m1.2.3.2" xref="S3.SS2.p1.1.m1.2.3.1.cmml"><mo id="S3.SS2.p1.1.m1.2.3.2.1" stretchy="false" xref="S3.SS2.p1.1.m1.2.3.1.cmml">[</mo><mn id="S3.SS2.p1.1.m1.1.1" xref="S3.SS2.p1.1.m1.1.1.cmml">0.0</mn><mo id="S3.SS2.p1.1.m1.2.3.2.2" xref="S3.SS2.p1.1.m1.2.3.1.cmml">,</mo><mn id="S3.SS2.p1.1.m1.2.2" xref="S3.SS2.p1.1.m1.2.2.cmml">1.0</mn><mo id="S3.SS2.p1.1.m1.2.3.2.3" stretchy="false" xref="S3.SS2.p1.1.m1.2.3.1.cmml">]</mo></mrow><annotation-xml encoding="MathML-Content" id="S3.SS2.p1.1.m1.2b"><interval closure="closed" id="S3.SS2.p1.1.m1.2.3.1.cmml" xref="S3.SS2.p1.1.m1.2.3.2"><cn id="S3.SS2.p1.1.m1.1.1.cmml" type="float" xref="S3.SS2.p1.1.m1.1.1">0.0</cn><cn id="S3.SS2.p1.1.m1.2.2.cmml" type="float" xref="S3.SS2.p1.1.m1.2.2">1.0</cn></interval></annotation-xml><annotation encoding="application/x-tex" id="S3.SS2.p1.1.m1.2c">[0.0,1.0]</annotation><annotation encoding="application/x-llamapun" id="S3.SS2.p1.1.m1.2d">[ 0.0 , 1.0 ]</annotation></semantics></math> 범위의 10개의 등거리 빈으로 비닝한다. 우리는 또한 표 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.T1" title="Table 1 ‣ 3.2.3 Differences in effects between GPT-4, GPT-3.5, and Mistral-7B ‣ 3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">1</span></a>의 RAG 선호율에 대한 비닝된 확률 값에 대한 선형 회귀를 수행한 기울기를 제시한다. 기울기는 검색된 컨텍스트에서 제시된 정보에 대한 모델의 선호도에 대한 더 강한 모델 신뢰도의 영향을 나타내며, 서로 다른 기울기( -0.1에서 -0.45 범위)를 관찰하여 서로 다른 QA 도메인에서 RAG의 효과가 모델의 내부 사전 지식 신뢰도에 상대적으로 민감하거나(예: 날짜 질문으로) 강건하거나(예: 뉴스 질문으로) 특징지어질 수 있음을 시사한다. 구체적으로 -0.45의 기울기는 예를 들어 모델의 사전 반응 확률이 10% 증가할 때마다 LLM이 상황 정보를 선호할 가능성이 4.5% 감소할 것으로 예상하는 것으로 해석할 수 있다.</p>
+</div>
+<section class="ltx_subsubsection" id="S3.SS2.SSS1">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">3.2.1 </span>RAG Preference Rate vs Deviation from Prior</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S3.SS2.SSS1.p1">
+<p class="ltx_p" id="S3.SS2.SSS1.p1.1">우리는 또한 모델의 이전 반응과 검색된 컨텍스트에 포함된 값 사이의 편차 정도를 고려한다(그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S1.F2" title="Figure 2 ‣ 1 Introduction ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">2</span></a>, 오른쪽 그림). 이 분석에서 유사한 패턴이 나타나는데, RAG 값이 모델의 이전과 다르기 때문에 모델은 자체 초기 응답보다 RAG 값을 채택할 가능성이 적다. 우리는 또한 상위 및 하위 절반 백분위수로 분할된 데이터를 플로팅하고 6개의 데이터 세트 모두에 걸쳐 낮은 확률 사전 응답이 높은 확률 응답 토큰보다 단조롭게 낮다는 것을 관찰한다. 따라서 편차와 RAG 응답 속도 사이의 상관 관계는 두 확률 밴드에 걸쳐 유지된다.</p>
+</div>
+</section>
+<section class="ltx_subsubsection" id="S3.SS2.SSS2">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">3.2.2 </span>Effect of prompting technique on RAG adherence</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S3.SS2.SSS2.p1">
+<p class="ltx_p" id="S3.SS2.SSS2.p1.1">특정 프롬프트 기법이 RAG 준수에 미치는 영향 정도를 평가하기 위해 GPT-4에서 두 개의 추가 프롬프트("엄격한"과 "느슨한")를 테스트한다. 엄격한 프롬프트는 모델이 자신의 사전 응답을 무시하도록 강요하기 위한 것이고, 느슨한 프롬프트는 모델이 자신의 사전 정보와 제공된 상황 정보 사이에서 중재하기 위한 것이다. 그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S2.F4" title="Figure 4 ‣ 2.4.1 Analyzing the Effects of Different Prompting Strategies ‣ 2.4 RAG vs Model Prior Analyses ‣ 2 Methods ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">4</span></a>에서 엄격한 프롬프트는 표준 프롬프트보다 균일하게 더 높은 RAG 준수를 갖는다. 반면에 느슨한 프롬프트는 사전 확률이 증가함에 따라 훨씬 낮은 RAG 준수율을 초래한다. 흥미롭게도 기울기도 더 가파르며, 이는 사전 확률이 증가함에 따라 RAG 선호도가 단위당 더 크게 감소함을 나타낸다. 따라서 프롬프트의 선택은 LLM의 RAG 선호도에 영향을 미치는 중요한 메커니즘이다.</p>
+</div>
+</section>
+<section class="ltx_subsubsection" id="S3.SS2.SSS3">
+<h4 class="ltx_title ltx_title_subsubsection">
+<span class="ltx_tag ltx_tag_subsubsection">3.2.3 </span>Differences in effects between GPT-4, GPT-3.5, and Mistral-7B</h4><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S3.SS2.SSS3.p1">
+<p class="ltx_p" id="S3.SS2.SSS3.p1.1">표 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#A1.T2" title="Table 2 ‣ Appendix A Appendix ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">2</span></a> 및 그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#A1.F5" title="Figure 5 ‣ Appendix A Appendix ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">5</span></a>에서 GPT-3.5 및 미스트랄-7B를 사용할 때 동일한 분석을 보고한다. 우리는 이전과 RAG의 일치성 모두에서 상당히 낮은 성능을 관찰한다. 그러나 그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#A1.F5" title="Figure 5 ‣ Appendix A Appendix ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">5</span></a>에서 볼 수 있듯이 GPT-4를 사용한 결과에서 볼 수 있듯이 이 두 모델에서 동일한 역 경향을 관찰한다. 참고로, 일부 데이터 세트(최신 뉴스)는 RAG 없이 성능이 좋지 않다(모델이 대다수의 쿼리를 거부하거나 잘못된 응답을 제공함). 따라서 이전 토큰 확률을 분석할 수 없다. 미스트랄-7B 결과에서 우리는 또한 RAG를 사용한 응답 중 일부가 일관되게 유효한 응답을 제공할 수 없음을 관찰했다.</p>
+</div>
+<figure class="ltx_table" id="S3.T1">
+<table class="ltx_tabular ltx_centering ltx_guessed_headers ltx_align_middle" id="S3.T1.1">
+<thead class="ltx_thead">
+<tr class="ltx_tr" id="S3.T1.1.1.1">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_column ltx_th_row ltx_border_tt" id="S3.T1.1.1.1.1"><span class="ltx_text ltx_font_bold" id="S3.T1.1.1.1.1.1">GPT-4</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="S3.T1.1.1.1.2"><span class="ltx_text ltx_font_bold" id="S3.T1.1.1.1.2.1">Concordance (Prior)</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="S3.T1.1.1.1.3"><span class="ltx_text ltx_font_bold" id="S3.T1.1.1.1.3.1">Concordance (w/ RAG)</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="S3.T1.1.1.1.4"><span class="ltx_text ltx_font_bold" id="S3.T1.1.1.1.4.1">Slope</span></th>
+</tr>
+</thead>
+<tbody class="ltx_tbody">
+<tr class="ltx_tr" id="S3.T1.1.2.1">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row ltx_border_t" id="S3.T1.1.2.1.1">Drug Dosage</th>
+<td class="ltx_td ltx_align_center ltx_border_t" id="S3.T1.1.2.1.2">0.554</td>
+<td class="ltx_td ltx_align_center ltx_border_t" id="S3.T1.1.2.1.3">0.884</td>
+<td class="ltx_td ltx_align_center ltx_border_t" id="S3.T1.1.2.1.4">-0.26</td>
+</tr>
+<tr class="ltx_tr" id="S3.T1.1.3.2">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="S3.T1.1.3.2.1">Sports Stats</th>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.3.2.2">0.240</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.3.2.3">0.943</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.3.2.4">-0.18</td>
+</tr>
+<tr class="ltx_tr" id="S3.T1.1.4.3">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="S3.T1.1.4.3.1">Latest News</th>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.4.3.2">0.133</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.4.3.3">0.936</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.4.3.4">-0.10</td>
+</tr>
+<tr class="ltx_tr" id="S3.T1.1.5.4">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="S3.T1.1.5.4.1">Wikipedia Dates</th>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.5.4.2">0.433</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.5.4.3">0.995</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.5.4.4">-0.45</td>
+</tr>
+<tr class="ltx_tr" id="S3.T1.1.6.5">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="S3.T1.1.6.5.1">Wikipedia Names</th>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.6.5.2">0.350</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.6.5.3">0.965</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.6.5.4">-0.13</td>
+</tr>
+<tr class="ltx_tr" id="S3.T1.1.7.6">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="S3.T1.1.7.6.1">Wikipedia Locations</th>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.7.6.2">0.375</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.7.6.3">0.920</td>
+<td class="ltx_td ltx_align_center" id="S3.T1.1.7.6.4">-0.28</td>
+</tr>
+<tr class="ltx_tr" id="S3.T1.1.8.7">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row ltx_border_bb ltx_border_t" id="S3.T1.1.8.7.1"><span class="ltx_text ltx_font_italic" id="S3.T1.1.8.7.1.1">Average</span></th>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="S3.T1.1.8.7.2"><span class="ltx_text ltx_font_italic" id="S3.T1.1.8.7.2.1">0.347</span></td>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="S3.T1.1.8.7.3"><span class="ltx_text ltx_font_italic" id="S3.T1.1.8.7.3.1">0.940</span></td>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="S3.T1.1.8.7.4"><span class="ltx_text ltx_font_italic" id="S3.T1.1.8.7.4.1">-0.23</span></td>
+</tr>
+</tbody>
+</table>
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_table">표 1:</span>GPT 응답과 각 데이터 세트에 대한 기준 값 사이의 일치성. Prior는 컨텍스트가 없는 GPT-4 응답을 지칭하고, "w/RAG"는 프롬프트에 포함된 관련 검색된 컨텍스트를 갖는 응답을 지칭한다. 또한 사전 확률과 RAG 선호도 사이의 관계의 기울기를 포함한다. 예를 들어, 평균 기울기는 -0.23이며, 이는 이전 토큰의 확률이 10% 증가할 때마다 RAG 선호 가능성이 2.3% 감소한다는 것을 의미한다.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+</section>
+</section>
+</section>
+<section class="ltx_section" id="S4">
+<h2 class="ltx_title ltx_title_section">
+<span class="ltx_tag ltx_tag_section">4 </span>Discussion</h2><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="S4.p1">
+<p class="ltx_p" id="S4.p1.1">RAG는 상업적으로 이용 가능한 LLM에서 표준 관행이 되고 있지만 이러한 시스템의 신뢰성은 아직 연구되지 않았다. 우리의 실험은 LLM이 RAG 시스템에 부착되는 정도를 조절하는 여러 메커니즘을 밝혀낸다. 구체적으로, 우리는 모델의 이전 강도와 모델이 RAG 문서의 사실을 준수하는 속도 사이의 줄다리기를 정량화한다. 이 효과는 RAG 자체가 환각을 단독으로 고칠 수 있다는 주장과 상충되며 모델이 RAG 문서를 엄격하게 준수하도록 촉구되는 경우에도 발생한다. <br class="ltx_break"/></p>
+</div>
+<div class="ltx_para ltx_noindent" id="S4.p2">
+<p class="ltx_p" id="S4.p2.1">RAG 시스템은 사전 지식을 통합하여 빈틈을 메우고 검색된 정보를 추론할 수 있다는 점에서 전통적인 검색 엔진에 비해 독특한 매력을 가지고 있다. 우리는 이것이 절충점과 함께 제공된다는 것, 즉 그러한 전과가 문서에 제공된 정보를 무시할 수 있다는 것을 발견한다. 광범위한 값의 간격에 걸쳐 RAG 문서를 교란할 때 모델이 이전 응답으로 되돌아가는 지점 또는 "팁핑 포인트"는 다른 모델과 도메인에 걸쳐 잠재되고 이질적이다. 강력한 전과가 본질적으로 문제가 되지 않지만(그리고 종종 모델을 보호하는 역할을 할 수 있지만), 모델이 참조 문서를 전과와 혼합하는 방법에 대한 명시적인 기대의 부족은 다운스트림 문제로 이어질 수 있다. 예를 들어, RAG 시스템이 알고리즘에 사용될 중첩된 재무 데이터를 추출하기 위해 사용된다면, 재무 문서에 오타가 있는 경우 어떤 일이 일어날 것인가? 모델이 오류를 알아차릴까요? 그렇다면 그 자리에 어떤 데이터를 제공할까요? LLM이 곧 의학 및 법을 포함한 많은 영역에 널리 배포될 것이라는 점을 감안할 때 사용자와 개발자 모두 의도하지 않은 영향을 인식해야 하며, 특히 사용자가 RAG 지원 시스템이 본질적으로 항상 진실하다는 선입견을 가지고 있는 경우 더욱 그렇다. <br class="ltx_break"/></p>
+</div>
+<div class="ltx_para ltx_noindent" id="S4.p3">
+<p class="ltx_p" id="S4.p3.1">우리의 분석에는 몇 가지 주요 제한 사항이 있다. 첫째, RAG 시스템은 분석에서 다룰 수 있는 것보다 더 많은 도메인에 배포될 수 있다. 그러나 우리의 연구 ixix 도메인이 RAG 시스템의 특성에 대한 초기 그림을 그리기를 바란다. 둘째, 실험을 다루기 쉽게 만들기 위해 질문 생성 프로세스는 엄격하게 사실 기반이며 다단계 논리, 문서 합성 또는 기타 상위 수준 추론이 필요하지 않다. 셋째, 우리가 생성하는 섭동은 합리적이거나 불합리한 가치 범위를 구성하는 것에 대한 이전 기록을 기반으로 한다. 자연적인 설정에서, 우리는 더 이산적인 유형의 오류(예를 들어, 오타, 모호성, 누락된 정보 등)를 상상할 것이다. 시뮬레이션하기가 더 어렵습니다. 또한 OpenAI API가 응답과 함께 토큰별 로그 확률에 액세스할 수 있기 때문에 GPT-3.5 및 GPT-4에 대한 평가를 수행한다. 결과적으로 이러한 모델에 대한 API는 이러한 정보에 대한 액세스를 제공하지 않기 때문에 제미니 및 클로드와 같은 모델에 대해 보다 포괄적인 평가를 수행하는 데 한계가 있다. <br class="ltx_break"/></p>
+</div>
+<div class="ltx_para ltx_noindent" id="S4.p4">
+<p class="ltx_p" id="S4.p4.1">LLM은 이제 일반적으로 더 크고 복잡한 시스템의 일부로 사용된다. 이러한 모델이 다양한 정도의 신뢰성, 정확성 및 균일성을 가진 정보와 상호 작용하는 방법을 이해하는 것이 중요하다. 우리의 분석에서는 LLM을 사용하여 상황 정보가 주어진 질문에 답하는 위험을 특성화하기 위해 추가 작업이 필요함을 보여준다. 특히, 우리는 모델 행동이 사전 신념의 한계에 존재하는 정보와 함께 제시될 때 불규칙하고 예측할 수 없다는 것을 발견한다.</p>
+</div>
+</section>
+<section class="ltx_bibliography" id="bib">
+<h2 class="ltx_title ltx_title_bibliography">References</h2><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<ul class="ltx_biblist">
+<li class="ltx_bibitem" id="bib.bib1">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Ahmad et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Muhammad&nbsp;Aurangzeb Ahmad, Ilker Yaramis, and Taposh&nbsp;Dutta Roy.
+
+</span>
+<span class="ltx_bibblock">Creating trustworthy LLMs: Dealing with hallucinations in healthcare AI.
+
+</span>
+<span class="ltx_bibblock">September 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib2">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Chen et&nbsp;al. (2024a)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Jiawei Chen, Hongyu Lin, Xianpei Han, and Le&nbsp;Sun.
+
+</span>
+<span class="ltx_bibblock">Benchmarking large language models in Retrieval-Augmented generation.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib2.1.1">AAAI</em>, 38(16):17754–17762, March 2024a.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib3">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Chen et&nbsp;al. (2024b)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Jiawei Chen, Hongyu Lin, Xianpei Han, and Le&nbsp;Sun.
+
+</span>
+<span class="ltx_bibblock">Benchmarking large language models in retrieval-augmented generation.
+
+</span>
+<span class="ltx_bibblock">In <em class="ltx_emph ltx_font_italic" id="bib.bib3.1.1">Proceedings of the AAAI Conference on Artificial Intelligence</em>, volume&nbsp;38, pp.&nbsp; 17754–17762, 2024b.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib4">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Dash et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Debadutta Dash, Rahul Thapa, Juan&nbsp;M Banda, Akshay Swaminathan, Morgan Cheatham, Mehr Kashyap, Nikesh Kotecha, Jonathan&nbsp;H Chen, Saurabh Gombar, Lance Downing, Rachel Pedreira, Ethan Goh, Angel Arnaout, Garret&nbsp;Kenn Morris, Honor Magon, Matthew&nbsp;P Lungren, Eric Horvitz, and Nigam&nbsp;H Shah.
+
+</span>
+<span class="ltx_bibblock">Evaluation of GPT-3.5 and GPT-4 for supporting real-world information needs in healthcare delivery.
+
+</span>
+<span class="ltx_bibblock">April 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib5">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Daws (2020)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Ryan Daws.
+
+</span>
+<span class="ltx_bibblock">Medical chatbot using OpenAI’s GPT-3 told a fake patient to kill themselves.
+
+</span>
+<span class="ltx_bibblock"><a class="ltx_ref ltx_url ltx_font_typewriter" href="https://www.artificialintelligence-news.com/2020/10/28/medical-chatbot-openai-gpt3-patient-kill-themselves/" title="">https://www.artificialintelligence-news.com/2020/10/28/medical-chatbot-openai-gpt3-patient-kill-themselves/</a>, October 2020.
+
+</span>
+<span class="ltx_bibblock">Accessed: 2024-1-19.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib6">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Es et&nbsp;al. (2023a)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Shahul Es, Jithin James, Luis Espinosa-Anke, and Steven Schockaert.
+
+</span>
+<span class="ltx_bibblock">RAGAS: Automated evaluation of retrieval augmented generation.
+
+</span>
+<span class="ltx_bibblock">September 2023a.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib7">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Es et&nbsp;al. (2023b)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Shahul Es, Jithin James, Luis Espinosa-Anke, and Steven Schockaert.
+
+</span>
+<span class="ltx_bibblock">Ragas: Automated evaluation of retrieval augmented generation.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib7.1.1">arXiv preprint arXiv:2309.15217</em>, 2023b.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib8">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Foulds et&nbsp;al. (2024)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Philip&nbsp;Feldman Foulds, R&nbsp;James, and Shimei Pan.
+
+</span>
+<span class="ltx_bibblock">Ragged edges: The double-edged sword of retrieval-augmented chatbots.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib8.1.1">arXiv preprint arXiv:2403.01193</em>, 2024.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib9">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">(9)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Wikimedia Foundation.
+
+</span>
+<span class="ltx_bibblock">Wikimedia downloads.
+
+</span>
+<span class="ltx_bibblock">URL <a class="ltx_ref ltx_url ltx_font_typewriter" href="https://dumps.wikimedia.org" title="">https://dumps.wikimedia.org</a>.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib10">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Gemini Team (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Gemini Team.
+
+</span>
+<span class="ltx_bibblock">Gemini: A family of highly capable multimodal models.
+
+</span>
+<span class="ltx_bibblock">December 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib11">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Hoshi et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Yasuto Hoshi, Daisuke Miyashita, Youyang Ng, Kento Tatsuno, Yasuhiro Morioka, Osamu Torii, and Jun Deguchi.
+
+</span>
+<span class="ltx_bibblock">RaLLe: A framework for developing and evaluating Retrieval-Augmented large language models.
+
+</span>
+<span class="ltx_bibblock">August 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib12">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Ji et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu, Dan Su, Yan Xu, Etsuko Ishii, Ye&nbsp;Jin Bang, Andrea Madotto, and Pascale Fung.
+
+</span>
+<span class="ltx_bibblock">Survey of hallucination in natural language generation.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib12.1.1">ACM Computing Surveys</em>, 55(12):1–38, 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib13">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Kaddour et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Jean Kaddour, Joshua Harris, Maximilian Mozes, Herbie Bradley, Roberta Raileanu, and Robert McHardy.
+
+</span>
+<span class="ltx_bibblock">Challenges and applications of large language models.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib13.1.1">arXiv preprint arXiv:2307.10169</em>, 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib14">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Kang et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Haoqiang Kang, Juntong Ni, and Huaxiu Yao.
+
+</span>
+<span class="ltx_bibblock">Ever: Mitigating hallucination in large language models through real-time verification and rectification.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib14.1.1">arXiv preprint arXiv:2311.09114</em>, 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib15">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Lewis et&nbsp;al. (2020)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich Küttler, Mike Lewis, Wen-Tau Yih, Tim Rocktäschel, and Others.
+
+</span>
+<span class="ltx_bibblock">Retrieval-augmented generation for knowledge-intensive nlp tasks.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib15.1.1">Adv. Neural Inf. Process. Syst.</em>, 33:9459–9474, 2020.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib16">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Mao et&nbsp;al. (2020)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Yuning Mao, Pengcheng He, Xiaodong Liu, Yelong Shen, Jianfeng Gao, Jiawei Han, and Weizhu Chen.
+
+</span>
+<span class="ltx_bibblock">Generation-Augmented retrieval for open-domain question answering.
+
+</span>
+<span class="ltx_bibblock">September 2020.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib17">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Mitchell et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+E&nbsp;Mitchell, Yoonho Lee, Alexander Khazatsky, Christopher&nbsp;D Manning, and Chelsea Finn.
+
+</span>
+<span class="ltx_bibblock">DetectGPT: Zero-shot machine-generated text detection using probability curvature.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib17.1.1">ICML</em>, pp.&nbsp; 24950–24962, January 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib18">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Nastasi et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Anthony&nbsp;J Nastasi, Katherine&nbsp;R Courtright, Scott&nbsp;D Halpern, and Gary&nbsp;E Weissman.
+
+</span>
+<span class="ltx_bibblock">Does ChatGPT provide appropriate and equitable medical advice?: A vignette-based, clinical evaluation across care contexts.
+
+</span>
+<span class="ltx_bibblock">March 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib19">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">OpenAI (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+OpenAI.
+
+</span>
+<span class="ltx_bibblock">GPT-4 technical report.
+
+</span>
+<span class="ltx_bibblock">March 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib20">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Pal et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Ankit Pal, Logesh&nbsp;Kumar Umapathi, and Malaikannan Sankarasubbu.
+
+</span>
+<span class="ltx_bibblock">Med-HALT: Medical domain hallucination test for large language models.
+
+</span>
+<span class="ltx_bibblock">July 2023.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib21">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Saad-Falcon et&nbsp;al. (2023a)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Jon Saad-Falcon, Omar Khattab, Christopher Potts, and Matei Zaharia.
+
+</span>
+<span class="ltx_bibblock">ARES: An automated evaluation framework for Retrieval-Augmented generation systems.
+
+</span>
+<span class="ltx_bibblock">November 2023a.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib22">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Saad-Falcon et&nbsp;al. (2023b)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Jon Saad-Falcon, Omar Khattab, Christopher Potts, and Matei Zaharia.
+
+</span>
+<span class="ltx_bibblock">Ares: An automated evaluation framework for retrieval-augmented generation systems.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib22.1.1">arXiv preprint arXiv:2311.09476</em>, 2023b.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib23">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Shuster et&nbsp;al. (2021)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Kurt Shuster, Spencer Poff, Moya Chen, Douwe Kiela, and Jason Weston.
+
+</span>
+<span class="ltx_bibblock">Retrieval augmentation reduces hallucination in conversation.
+
+</span>
+<span class="ltx_bibblock"><em class="ltx_emph ltx_font_italic" id="bib.bib23.1.1">arXiv preprint arXiv:2104.07567</em>, 2021.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib24">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Sun et&nbsp;al. (2024)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Lichao Sun, Yue Huang, Haoran Wang, Siyuan Wu, Qihui Zhang, Chujie Gao, Yixin Huang, Wenhan Lyu, Yixuan Zhang, Xiner Li, Zhengliang Liu, Yixin Liu, Yijue Wang, Zhikun Zhang, Bhavya Kailkhura, Caiming Xiong, Chaowei Xiao, Chunyuan Li, Eric Xing, Furong Huang, Hao Liu, Heng Ji, Hongyi Wang, Huan Zhang, Huaxiu Yao, Manolis Kellis, Marinka Zitnik, Meng Jiang, Mohit Bansal, James Zou, Jian Pei, Jian Liu, Jianfeng Gao, Jiawei Han, Jieyu Zhao, Jiliang Tang, Jindong Wang, John Mitchell, Kai Shu, Kaidi Xu, Kai-Wei Chang, Lifang He, Lifu Huang, Michael Backes, Neil&nbsp;Zhenqiang Gong, Philip&nbsp;S Yu, Pin-Yu Chen, Quanquan Gu, Ran Xu, Rex Ying, Shuiwang Ji, Suman Jana, Tianlong Chen, Tianming Liu, Tianyi Zhou, Willian Wang, Xiang Li, Xiangliang Zhang, Xiao Wang, Xing Xie, Xun Chen, Xuyu Wang, Yan Liu, Yanfang Ye, Yinzhi Cao, Yong Chen, and Yue Zhao.
+
+</span>
+<span class="ltx_bibblock">TrustLLM: Trustworthiness in large language models.
+
+</span>
+<span class="ltx_bibblock">January 2024.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib25">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Zhang et&nbsp;al. (2024)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Zihan Zhang, Meng Fang, and Ling Chen.
+
+</span>
+<span class="ltx_bibblock">RetrievalQA: Assessing adaptive Retrieval-Augmented generation for short-form Open-Domain question answering.
+
+</span>
+<span class="ltx_bibblock">February 2024.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib26">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Zhao et&nbsp;al. (2024)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Qinyu Zhao, Ming Xu, Kartik Gupta, Akshay Asthana, Liang Zheng, and Stephen Gould.
+
+</span>
+<span class="ltx_bibblock">The first to know: How token distributions reveal hidden knowledge in large Vision-Language models?
+
+</span>
+<span class="ltx_bibblock">March 2024.
+
+</span>
+</li>
+<li class="ltx_bibitem" id="bib.bib27">
+<span class="ltx_tag ltx_role_refnum ltx_tag_bibitem">Zheng et&nbsp;al. (2023)<button class="back-to-reference-btn" aria-label="Back to the article">↑</button></span>
+<span class="ltx_bibblock">
+Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi&nbsp;Lin, Zhuohan Li, Dacheng Li, Eric&nbsp;P Xing, Hao Zhang, Joseph&nbsp;E Gonzalez, and Ion Stoica.
+
+</span>
+<span class="ltx_bibblock">Judging LLM-as-a-Judge with MT-Bench and chatbot arena.
+
+</span>
+<span class="ltx_bibblock">June 2023.
+
+</span>
+</li>
+</ul>
+</section>
+<section class="ltx_appendix" id="A1">
+<h2 class="ltx_title ltx_title_appendix">
+<span class="ltx_tag ltx_tag_appendix">Appendix A </span>Appendix</h2><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<figure class="ltx_figure" id="A1.F5"><img alt="Refer to caption" class="ltx_graphics ltx_centering ltx_img_landscape" height="415" id="A1.F5.g1" src="https://arxiv.org/html/2404.10198v1/extracted/5538499/fig1combined2.png" width="548">
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_figure">그림 5:</span>Analyses for RAG preference rate against prior probability and deviation, using GPT-4(blue), GPT-3.5(orange), and Mistral-7B(green). 전체 그림 설명은 그림 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S1.F2" title="Figure 2 ‣ 1 Introduction ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">2</span></a>를 참조하십시오. 참고로 일부 모델은 특정 데이터 세트에 대해 의미 있는 사전 응답(거부, 부적절한 응답 등)을 생성하지 않았으므로 분석할 수 없었다.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<figure class="ltx_table" id="A1.T2">
+<div class="ltx_flex_figure ltx_flex_table">
+<div class="ltx_flex_cell ltx_flex_size_1">
+<table class="ltx_tabular ltx_centering ltx_guessed_headers ltx_flex_size_1 ltx_align_middle" id="A1.T2.1">
+<thead class="ltx_thead">
+<tr class="ltx_tr" id="A1.T2.1.1.1">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_column ltx_th_row ltx_border_tt" id="A1.T2.1.1.1.1"><span class="ltx_text ltx_font_bold" id="A1.T2.1.1.1.1.1">GPT-3.5</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="A1.T2.1.1.1.2"><span class="ltx_text ltx_font_bold" id="A1.T2.1.1.1.2.1">Concordance (Prior)</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="A1.T2.1.1.1.3"><span class="ltx_text ltx_font_bold" id="A1.T2.1.1.1.3.1">Concordance (w/ RAG)</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="A1.T2.1.1.1.4"><span class="ltx_text ltx_font_bold" id="A1.T2.1.1.1.4.1">Slope</span></th>
+</tr>
+</thead>
+<tbody class="ltx_tbody">
+<tr class="ltx_tr" id="A1.T2.1.2.1">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row ltx_border_t" id="A1.T2.1.2.1.1">Drug Dosage</th>
+<td class="ltx_td ltx_align_center ltx_border_t" id="A1.T2.1.2.1.2">0.052</td>
+<td class="ltx_td ltx_align_center ltx_border_t" id="A1.T2.1.2.1.3">0.509</td>
+<td class="ltx_td ltx_align_center ltx_border_t" id="A1.T2.1.2.1.4">-0.20</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.1.3.2">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.1.3.2.1">Sports Stats</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.3.2.2">0.005</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.3.2.3">0.599</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.3.2.4">-0.09</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.1.4.3">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.1.4.3.1">Latest News</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.4.3.2">0.008</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.4.3.3">0.839</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.4.3.4">N/A</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.1.5.4">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.1.5.4.1">Wikipedia Dates</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.5.4.2">0.275</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.5.4.3">0.985</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.5.4.4">-0.71</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.1.6.5">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.1.6.5.1">Wikipedia Names</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.6.5.2">0.285</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.6.5.3">0.965</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.6.5.4">-0.11</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.1.7.6">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.1.7.6.1">Wikipedia Locations</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.7.6.2">0.410</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.7.6.3">0.930</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.1.7.6.4">-0.16</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.1.8.7">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row ltx_border_bb ltx_border_t" id="A1.T2.1.8.7.1"><span class="ltx_text ltx_font_italic" id="A1.T2.1.8.7.1.1">Average</span></th>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="A1.T2.1.8.7.2">0.173</td>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="A1.T2.1.8.7.3">0.805</td>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="A1.T2.1.8.7.4">-0.25</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="ltx_flex_break"></div>
+<div class="ltx_flex_cell ltx_flex_size_1">
+<table class="ltx_tabular ltx_centering ltx_guessed_headers ltx_flex_size_1 ltx_align_middle" id="A1.T2.2">
+<thead class="ltx_thead">
+<tr class="ltx_tr" id="A1.T2.2.1.1">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_column ltx_th_row ltx_border_tt" id="A1.T2.2.1.1.1"><span class="ltx_text ltx_font_bold" id="A1.T2.2.1.1.1.1">Mistral-7B</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="A1.T2.2.1.1.2"><span class="ltx_text ltx_font_bold" id="A1.T2.2.1.1.2.1">Concordance (Prior)</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="A1.T2.2.1.1.3"><span class="ltx_text ltx_font_bold" id="A1.T2.2.1.1.3.1">Concordance (w/ RAG)</span></th>
+<th class="ltx_td ltx_align_center ltx_th ltx_th_column ltx_border_tt" id="A1.T2.2.1.1.4"><span class="ltx_text ltx_font_bold" id="A1.T2.2.1.1.4.1">Slope</span></th>
+</tr>
+</thead>
+<tbody class="ltx_tbody">
+<tr class="ltx_tr" id="A1.T2.2.2.1">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row ltx_border_t" id="A1.T2.2.2.1.1">Drug Dosage</th>
+<td class="ltx_td ltx_align_center ltx_border_t" id="A1.T2.2.2.1.2">0.550</td>
+<td class="ltx_td ltx_align_center ltx_border_t" id="A1.T2.2.2.1.3">0.677</td>
+<td class="ltx_td ltx_align_center ltx_border_t" id="A1.T2.2.2.1.4">-0.82</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.2.3.2">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.2.3.2.1">Sports Stats</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.3.2.2">0.240</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.3.2.3">0.057</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.3.2.4">N/A</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.2.4.3">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.2.4.3.1">Latest News</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.4.3.2">N/A</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.4.3.3">N/A</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.4.3.4">N/A</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.2.5.4">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.2.5.4.1">Wikipedia Dates</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.5.4.2">0.080</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.5.4.3">0.840</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.5.4.4">-0.77</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.2.6.5">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.2.6.5.1">Wikipedia Names</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.6.5.2">0.065</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.6.5.3">0.760</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.6.5.4">-0.14</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.2.7.6">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row" id="A1.T2.2.7.6.1">Wikipedia Locations</th>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.7.6.2">0.490</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.7.6.3">0.690</td>
+<td class="ltx_td ltx_align_center" id="A1.T2.2.7.6.4">-0.030</td>
+</tr>
+<tr class="ltx_tr" id="A1.T2.2.8.7">
+<th class="ltx_td ltx_align_left ltx_th ltx_th_row ltx_border_bb ltx_border_t" id="A1.T2.2.8.7.1"><span class="ltx_text ltx_font_italic" id="A1.T2.2.8.7.1.1">Average</span></th>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="A1.T2.2.8.7.2"><span class="ltx_text ltx_font_italic" id="A1.T2.2.8.7.2.1">0.285</span></td>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="A1.T2.2.8.7.3"><span class="ltx_text ltx_font_italic" id="A1.T2.2.8.7.3.1">0.605</span></td>
+<td class="ltx_td ltx_align_center ltx_border_bb ltx_border_t" id="A1.T2.2.8.7.4"><span class="ltx_text ltx_font_italic" id="A1.T2.2.8.7.4.1">-0.44</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<figcaption class="ltx_caption ltx_centering"><span class="ltx_tag ltx_tag_table">표 2:</span>Concordance and Slope with GPT-3.5 and Mistral-7B. GPT-4를 사용하여 수행된 분석의 전체 테이블 설명은 표 <a class="ltx_ref" href="https://arxiv.org/html/2404.10198v1#S3.T1" title="Table 1 ‣ 3.2.3 Differences in effects between GPT-4, GPT-3.5, and Mistral-7B ‣ 3.2 RAG Preference Rate vs. Prior Probability ‣ 3 Results ‣ How faithful are RAG models? Quantifying the tug-of-war between RAG and LLMs’ internal prior"><span class="ltx_text ltx_ref_tag">1</span></a>를 참조하십시오.</figcaption>
+</figure><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<section class="ltx_subsection" id="A1.SS1">
+<h3 class="ltx_title ltx_title_subsection">
+<span class="ltx_tag ltx_tag_subsection">A.1 </span>Prompts</h3><button class="sr-only button" style="display: none;">Report issue for preceding element</button>
+<div class="ltx_para ltx_noindent" id="A1.SS1.p1">
+<p class="ltx_p" id="A1.SS1.p1.1">프롬프트의 길이로 인해 오픈 액세스 및 익명화된 리포지토리 내의 CSV에 저장했습니다. https://anonymous.4open.science/r/rag-tug-of-war-1E48/prompts.csv</p>
+</div>
+</section>
+</section>
+</article>
+</div>
+
+</div>
+
+
+<div class="ltx_page_footer">
+        <div class="ltx_page_logo">
+            Generated on Wed Dec 14 18:01:44 2022 by
+            <a href="https://math.nist.gov/~BMiller/LaTeXML/" class="ltx_LaTeXML_logo">
+                <span style="letter-spacing: -0.2em; margin-right: 0.1em;">
+                    L
+                    <span style="font-size: 70%; position: relative; bottom: 2.2pt;">A</span>
+                    T
+                    <span style="position: relative; bottom: -0.4ex;">E</span>
+                </span>
+                <span class="ltx_font_smallcaps">xml</span>
+                <img alt="[LOGO]" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAsAAAAOCAYAAAD5YeaVAAAAAXNSR0IArs4c6QAAAAZiS0dEAP8A/wD/oL2nkwAAAAlwSFlzAAALEwAACxMBAJqcGAAAAAd0SU1FB9wKExQZLWTEaOUAAAAddEVYdENvbW1lbnQAQ3JlYXRlZCB3aXRoIFRoZSBHSU1Q72QlbgAAAdpJREFUKM9tkL+L2nAARz9fPZNCKFapUn8kyI0e4iRHSR1Kb8ng0lJw6FYHFwv2LwhOpcWxTjeUunYqOmqd6hEoRDhtDWdA8ApRYsSUCDHNt5ul13vz4w0vWCgUnnEc975arX6ORqN3VqtVZbfbTQC4uEHANM3jSqXymFI6yWazP2KxWAXAL9zCUa1Wy2tXVxheKA9YNoR8Pt+aTqe4FVVVvz05O6MBhqUIBGk8Hn8HAOVy+T+XLJfLS4ZhTiRJgqIoVBRFIoric47jPnmeB1mW/9rr9ZpSSn3Lsmir1fJZlqWlUonKsvwWwD8ymc/nXwVBeLjf7xEKhdBut9Hr9WgmkyGEkJwsy5eHG5vN5g0AKIoCAEgkEkin0wQAfN9/cXPdheu6P33fBwB4ngcAcByHJpPJl+fn54mD3Gg0NrquXxeLRQAAwzAYj8cwTZPwPH9/sVg8PXweDAauqqr2cDjEer1GJBLBZDJBs9mE4zjwfZ85lAGg2+06hmGgXq+j3+/DsixYlgVN03a9Xu8jgCNCyIegIAgx13Vfd7vdu+FweG8YRkjXdWy329+dTgeSJD3ieZ7RNO0VAXAPwDEAO5VKndi2fWrb9jWl9Esul6PZbDY9Go1OZ7PZ9z/lyuD3OozU2wAAAABJRU5ErkJggg==">
+            </a>
+        </div></div><footer id="footer" class="ltx_document">
+        <div class="keyboard-glossary">
+            <h2>Instructions for reporting errors</h2>
+            <p>We are continuing to improve HTML versions of papers, and your feedback helps enhance accessibility and mobile support. To report errors in the HTML that will help us improve conversion and rendering, choose any of the methods listed below:</p>
+            <ul>
+                <li>Click the "Report Issue" button.</li>
+                <li>Open a report feedback form via keyboard, use "<strong>Ctrl + ?</strong>".</li>
+                <li>Make a text selection and click the "Report Issue for Selection" button near your cursor.</li>
+                <li class="sr-only">You can use Alt+Y to toggle on and Alt+Shift+Y to toggle off accessible reporting links at each section.</li>
+            </ul>
+            <p>Our team has already identified <a class="ltx_ref" href="https://github.com/arXiv/html_feedback/issues" target="_blank">the following issues</a>. We appreciate your time reviewing and reporting rendering errors we may not have found yet. Your efforts will help us improve the HTML versions for all readers, because disability should not be a barrier to accessing research. Thank you for your continued support in championing open access for all.</p>
+            <p>Have a free development cycle? Help support accessibility at arXiv! Our collaborators at LaTeXML maintain a <a class="ltx_ref" href="https://github.com/brucemiller/LaTeXML/wiki/Porting-LaTeX-packages-for-LaTeXML" target="_blank">list of packages that need conversion</a>, and welcome <a class="ltx_ref" href="https://github.com/brucemiller/LaTeXML/issues" target="_blank">developer contributions</a>.</p>
+        </div>
+    </footer><button type="button" class="btn btn-primary hover-rp-button" id="openForm">Report Issue</button><div class="modal" id="myForm" role="dialog" aria-labelledby="modal-title"><div class="modal-dialog"><form class="modal-content" id="myFormContent" enctype="multipart/form-data"><div class="modal-header" id="modal-header"><h5 class="modal-title">Report Github Issue</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><label for="form_title" id="modalTitle">Title:</label><input class="form-control" id="form_title" name="form_title" required="required" placeholder="Enter title"><label for="description" id="selectedTextModalDescription" style="display: none;">Content selection saved. Describe the issue below:</label><label for="description" id="nomralModalDescription">Description:</label><textarea class="form-control" id="description" name="description" required="required" style="height: 80px;" maxlength="500" placeholder="500 characters maximum"></textarea></div><div class="modal-footer d-flex justify-content-end"><button type="submit" class="sr-only button" id="modal-submit-sr">Submit without Github</button><button type="submit" class="btn btn-primary" id="modal-submit">Submit in Github</button></div></form></div></div><button id="small-report-button" type="button" class="btn btn-secondary btn-sm" style="background-color: rgb(179, 27, 27); position: fixed;">Report Issue for Selection</button></body></html>
