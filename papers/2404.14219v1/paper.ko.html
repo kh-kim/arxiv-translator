@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Phi-3 Technical Report:\n' +
+      '\n' +
+      '휴대전화에서 로컬로 사용할 수 있는 고성능 언어 모델\n' +
+      '\n' +
+      'Microsoft\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      '3.3조 토큰에서 훈련된 38억 개의 매개 변수 언어 모델인 **phi-3-mini** 를 소개합니다. 이 모델은 학문적 벤치마크와 내부 테스트로 측정한 전체 성능이 Miktral 8x7B 및 GPT-3.5와 같은 모델(예: **phi-3-mini**)과 비교할 때 휴대폰에 배포할 수 있을 만큼 작음에도 불구하고 MMLU에서 69%, MT-bench에서 8.38을 달성합니다. 혁신은 전적으로 교육을 위한 데이터 세트에 있으며, 이는 크게 필터링된 웹 데이터와 합성 데이터로 구성된 **phi-2** 에 사용되는 데이터 세트의 확장 버전입니다. 이 모델은 또한 견고성, 안전성 및 채팅 형식을 위해 추가로 정렬됩니다. 또한 **phi-3-small** 및 **phi-3-medium** 이라고 하는 4.8T 토큰에 대해 훈련 된 7B 및 14B 모델을 사용 하 여 일부 초기 매개 변수 크기 조정 결과를 제공 합니다. 둘 다 **phi-3-mini** (예: MMLU에서 각각 75% 및 78%, MT-bench에서 8.7 및 8.9)보다 훨씬 더 뛰어납니다.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      '지난 몇 년 동안 AI의 놀라운 발전은 주로 점점 더 큰 모델 및 데이터 세트로 _확장_하려는 전 세계의 주요 노력에 기인할 수 있다. 대형 언어 모델(Large Language Models, LLM)은 불과 5년 전에 불과 10억 개의 매개변수(GPT-2는 15억 개의 매개변수[RWC\\({}^{+}\\)19])에서 오늘날 조개의 매개변수로 크기가 꾸준히 증가했다. 이러한 노력의 원동력은 큰 모델들, 소위 _스케일링 법칙_[KMH\\({}^{+}\\)20, HBM\\({}^{+}\\)22, MRB\\({}^{+}\\)23을 훈련함으로써 얻을 수 있는 예측 가능한 개선에서 비롯된다. 그러나 이러한 법률은 "고정" 데이터 소스를 가정한다. 이 가정은 이제 새로운 방식으로 데이터와 상호 작용할 수 있는 프런티어 LLM 자체의 존재로 인해 크게 방해를 받는다. Pi 모델 [GZA\\({}^{+}\\)23, LBE\\({}^{+}\\)23, JBA\\({}^{+}\\)23]에 대한 이전 연구에서 웹 데이터의 LLM 기반 필터링과 LLM 생성 합성 데이터의 조합이 일반적으로 훨씬 더 큰 모델에서만 볼 수 있는 더 작은 언어 모델에서 성능을 가능하게 하는 것으로 나타났다. 예를 들어 이 데이터 레시피에서 훈련된 이전 모델인 **phi-2**(2.7B 매개 변수)는 일반 데이터에서 훈련된 모델의 25배 더 큰 성능과 일치했다. 이 보고서에서는 **phi-2** 에 사용되는 데이터 세트의 더 크고 고급 버전에서 3.3T 토큰에 대해 학습된 새 모델인 **phi-3-mini** (3.8B 매개 변수)를 제공합니다. 작은 크기로 **phi-3-mini** 는 최신 전화기에서 로컬로 쉽게 추론할 수 있지만(그림 1 참조), Miktral 8x7B [JSR\\({}^{+}\\)24] 및 GPT-3.5와 같은 모델에서는 온파처럼 보이는 품질을 달성합니다.\n' +
+      '\n' +
+      '``` User:Explainwhyitissurprisingthatonecanbuildalanguagemodelsmallenoughto fitonapphone,yetalmostaspowerfulaschatGPT.Justusenefunnysentence. Pi-3-mini:그것은 마치 Fittingasupercomputerinaflipphone,butinsteadofbreakingthephone,itjustbreaktheinternetwithitstiny,yetmighty,linguisticprowess와 같다! 사용자:Okaynowmoreseriousanswer,andnotethatthiswasachievedsolelychangingthetrainingdata. phi-3-mini:ThedevelopmentofacompactlanguagemodelthatrivalstabilitiesofChatGPT,whilefittingonaphene,isastestamenttothepowerofdata-drivenmachinelearning.Bymeticulouslycurating andoptimizingthetrainingdataset,researcherscansignificantlyreducethemodel\'ssizewithoutcompromisingitsperformance.[...]Technical Specifications\n' +
+      '\n' +
+      '**phi-3-mini** 모델은 기본 컨텍스트 길이 \\(4K \\)가 있는 변압기 디코더 아키텍처 [VSP\\({}^{+}\\)17]입니다. 또한 컨텍스트 길이를 **phi-3-mini-128K** 라고 하는 \\(128K\\)로 확장 하는 LongRope [DZZ\\({}^{+}\\)24]를 통해 긴 컨텍스트 버전을 도입 합니다.\n' +
+      '\n' +
+      '오픈 소스 커뮤니티에 가장 좋은 이점을 제공하기 위해 **phi-3-mini** 는 Llama-2 [TLI\\({}^{+}\\)23]과 유사한 블록 구조를 기반으로 하며 어휘 크기가 320641인 동일한 토큰화기를 사용합니다. 이는 Llama-2 모델 패밀리에 대해 개발된 모든 패키지를 **phi-3-mini** 에 직접 적용할 수 있음을 의미합니다. 이 모델은 3072개의 숨겨진 치수, 32개의 헤드 및 32개의 레이어를 사용합니다. 우리는 총 3.3T 토큰에 대해 bfloat16을 사용하여 훈련했다. 모델은 이미 채팅-핀튜닝되어 있으며, 채팅 템플릿은 다음과 같다:\n' +
+      '\n' +
+      '각주 1: BoS 토큰을 제거하고 채팅 템플릿에 대한 몇 가지 추가 토큰을 추가합니다.\n' +
+      '\n' +
+      '\\(<\\)|user|\\(>\\)\\(n\\)Question\\(<\\)|end|\\(>\\)\\(n\\)\\(<\\)|assistant|\\(>\\)\n' +
+      '\n' +
+      '**phi-3-small** 모델(7B 매개 변수)은 어휘 크기가 100352이고 기본 컨텍스트 길이가 \\(8K\\)인 틱토큰 토큰화기를 활용합니다. 이 모델은 7B 모델 클래스의 표준 디코더 구조를 따르며, 32개의 레이어와 4096의 숨겨진 크기를 갖는다. 또한 KV 캐시 공간을 최소화하기 위해, 4개의 쿼리가 1개의 키를 공유하는 그룹화된 쿼리 어텐션을 활용한다. 또한 **phi-3-small** 은 긴 컨텍스트 검색 성능을 유지하면서 KV 캐시 절감에 더 최적화하기 위해 밀집 주의와 새로운 블록parse 주의의 대체 계층을 사용합니다. 이 모델에는 추가로 10%의 다국어 데이터도 사용되었다.\n' +
+      '\n' +
+      '휴대전화에서 로컬로 실행되는 고성능 언어 모델.작은 크기 덕분에 **phi-3-mini** 를 4비트로 양자화하여 1.8GB의 메모리만 차지할 수 있습니다. 우리는 기본적으로 온-디바이스를 실행하고 초당 12개 이상의 토큰을 달성하는 A16 바이오닉 칩을 사용하여 아이폰 14에 **phi-3-mini** 를 배포하여 양자화된 모델을 테스트했습니다.\n' +
+      '\n' +
+      '훈련 방법론.고품질 훈련 데이터를 활용하여 작은 언어 모델의 성능을 향상시키고 표준 _스케일링-법칙_에서 벗어나는 "교과서는 모두 필요하다" [GZA\\({}^{+}\\)23]에서 시작된 작업 순서를 따른다. 이 연구에서 우리는 이러한 방법이 3.8B 총 매개변수만으로 GPT-3.5 또는 미스트랄과 같은 매우 유능한 모델의 수준에 도달할 수 있음을 보여준다(예를 들어 미스트랄은 45B 총 매개변수를 가지고 있다). 우리의 학습 데이터는 다양한 오픈 인터넷 소스의 "교육 수준"에 따라 크게 필터링된 웹 데이터와 합성 LLM 생성 데이터로 구성된다. 사전 훈련은 두 개의 서로 다른 단계와 순차적인 단계로 수행되며, 단계-1은 대부분 모델 일반 지식과 언어 이해를 가르치는 것을 목표로 하는 웹 소스들로 구성된다. Phase-2는 모델 논리적 추론과 다양한 틈새 기술을 가르치는 일부 합성 데이터와 훨씬 더 심하게 필터링된 웹 데이터(Phase-1에서 사용된 하위 집합)를 병합한다.\n' +
+      '\n' +
+      '데이터 최적 체제(Data Optimal Regime). "compute optimal regime" [HBM\\({}^{+}\\)22] 또는 "over-train regime"에서 언어 모델을 훈련하는 이전 작업과 달리, 우리는 주로 _given scale_ 에 대한 데이터의 품질에 중점을 둡니다. 2 작은 모델에 대해 "data optimal" 레짐에 더 가깝도록 훈련 데이터를 보정하려고 합니다. 특히, 웹 데이터를 필터링하여 올바른 수준의 "지식"을 포함하고 모델에 대한 "추론 능력"을 잠재적으로 향상시킬 수 있는 더 많은 웹 페이지를 유지한다. 예를 들어, 특정일의 프리미어 리그에서의 경기 결과는 프론티어 모델에 대한 좋은 훈련 데이터일 수 있지만, 미니 사이즈 모델에 대한 "추론"을 위해 더 많은 모델 용량을 남기기 위해서는 그러한 정보를 제거해야 한다. 우리는 그림 2에서 우리의 접근법을 라마-2와 비교한다.\n' +
+      '\n' +
+      '각주 2: "최적 레짐 계산"과 마찬가지로 "데이터 최적 레짐"에 대한 열망적인 의미에서 "최적"이라는 용어를 사용한다. 우리는 주어진 척도에 대해 증명할 수 있는 "최적의" 데이터 혼합물을 실제로 발견했다는 것을 암시하지 않는다.\n' +
+      '\n' +
+      '그림 1: A16 바이오닉 칩이 있는 아이폰에서 기본적으로 실행되는 4비트 양자화된 **phi-3-mini** 로 초당 12개 이상의 토큰을 생성합니다.\n' +
+      '\n' +
+      '그림 2: 동일한 고정 데이터에 대해 훈련된 모델(7B, 13B, 34B, 70B)의 라마-2 계열에 대한 "데이터 최적 체제"(왼쪽에서 오른쪽으로: phi-1.5, phi-2, phi-3-mini, phi-3-small)에 가까운 스케일링 법칙. MLU 오류의 로그 대 모델 크기의 로그를 표시합니다.\n' +
+      '\n' +
+      '더 큰 크기의 모델에 대한 데이터를 테스트하기 위해 동일한 토큰화기와 **phi-3-mini** 아키텍처를 사용하여 14B 매개 변수가 있는 모델인 **phi-3-medium** 을 학습하고 약간 더 많은 epoch(**phi-3-small** 의 경우 총 4.8T 토큰)에 대해 동일한 데이터에 대해 학습했습니다. 이 모델은 40개의 헤드와 40개의 레이어를 가지고 있으며 임베딩 차원은 5120이다. 우리는 일부 벤치마크가 3.8B에서 7B보다 7B에서 14B로 훨씬 덜 개선된다는 것을 관찰하며, 이는 아마도 우리의 데이터 혼합이 14B 매개변수 모델에 대한 "데이터 최적 체제"에 들어가기 위해 더 많은 작업이 필요함을 나타낸다. 우리는 여전히 이러한 벤치마크 중 일부(HumanEval에 대한 회귀를 포함)를 적극적으로 조사하고 있으므로 **phi-3-medium** 수를 "미리 보기"로 고려해야 한다.\n' +
+      '\n' +
+      '사후 훈련.우리 모델은 감독된 지침 미세 조정과 DPO를 사용한 선호도 조정을 모두 통해 사후 훈련을 거쳤다. 다양한 명령어 및 선호도 데이터를 생성하고 큐레이션하는 작업을 수행했습니다. 이는 모델 채팅 기능, 견고성 및 안전성을 향상시켰습니다.\n' +
+      '\n' +
+      '## 3 학술 벤치마크\n' +
+      '\n' +
+      '다음 페이지에서 모델의 추론 능력(상식 추론과 논리적 추론 모두)을 측정하는 표준 오픈 소스 벤치마크에 대한 **phi-3-mini** 결과를 보고합니다. 우리는 phi-2 [JBA\\({}^{+}\\)23], Mistral-7b-v0.1 [JSM\\({}^{+}\\)23], Mistral-8x7b [JSR\\({}^{+}\\)24], Gemma 7B [TMH\\({}^{+}\\)24], Llama-3-instruct-8b [AI23], GPT-3.5와 비교한다. 보고된 모든 숫자는 숫자가 비슷하도록 정확히 동일한 파이프라인으로 생성된다. 이러한 숫자는 평가에서 약간 다른 선택으로 인해 게시된 다른 숫자와 다를 수 있다. 현재 표준과 같이 온도 0에서 모델을 평가하기 위해 몇 개의 샷 프롬프트를 사용합니다. 프롬프트와 샷 수는 언어 모델을 평가하기 위한 Microsoft 내부 도구의 일부이며, 특히 **phi-3** 모델에 대한 파이프라인에 대한 최적화를 수행하지 않았습니다.3 \\(k\\)-샷 예제의 수는 벤치마크당 나열됩니다. 2-샷 프롬프트의 예는 부록 A에 설명되어 있다.\n' +
+      '\n' +
+      '각주 3: 예를 들어 질문 전에 ##를 사용하면 많은 벤치마크에서 **phi-3-mini** 결과를 눈에 띄게 개선할 수 있지만 프롬프트에서 이러한 변경을 수행하지 않았습니다.\n' +
+      '\n' +
+      '## 4 Safety\n' +
+      '\n' +
+      '**Phi-3-mini** 는 Microsoft의 책임 있는 AI 원칙에 따라 개발 되었습니다. 전반적인 접근 방식은 수십 개의 RAI 피해 범주에 걸쳐 사후 훈련, 레드 팀, 자동화된 테스트 및 평가의 안전 정렬로 구성되었다. 도움 및 무해 선호 데이터 세트 [BJN\\({}^{+}\\)22, JLD\\({}^{+}\\)23]은 [BSA\\({}^{+}\\)24]에서 영감을 받은 수정 및 여러 사내 생성 데이터 세트를 활용하여 안전 사후 훈련에서 RAI 피해 범주를 해결했다. Microsoft의 독립적인 레드 팀은 교육 후 프로세스 동안 개선 영역을 추가로 식별하기 위해 **phi-3-mini** 를 반복적으로 검사했습니다. 피드백을 기반으로 인사이트에 맞게 조정된 추가 데이터 세트를 선별하여 훈련 후 데이터 세트를 정제했다. 이 과정은 그림 3과 같이 유해 반응률이 크게 감소했다.\n' +
+      '\n' +
+      '표 1은 phi-2 [JBA\\({}^{+}\\)23], 미스트랄-7b-v0.1 [JSM\\({}^{+}\\)23], Gemma 7b [TMH\\({}^{+}\\)24]와 비교하여 **phi-3-mini-4k** 및 **phi-3-mini-128k** 에 대한 사내 RAI 벤치마크 결과를 보여준다. 이 벤치마크는 GPT-4를 사용하여 5가지 범주에서 다중 회전 대화를 시뮬레이션하고 모델 응답을 평가했다. 응답의 정보가 지정된 프롬프트를 기반으로 하는 경우 0(완전히 접지됨)과 4(접지되지 않음) 사이의 접지되지 않은 정도를 측정합니다. 다른 범주에서는 0(무해)에서 7(극한해)까지 유해성의 심각도로 반응을 평가하고 심각도 점수가 \\(x\\) 이상인 샘플의 백분율로 결함률(DR-\\(x\\))을 계산했다.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{r||c c c c c c}  & Phi-3-Mini-4k & Phi-3-Mini-128k & Phi-2 & Mistral & Gemma & Llama-3-In \\\\  & 3.8b & 3.8b & 2.7b & 7b & 7b & 8b \\\\ \\hline Ungroundedness & 0.603 & 0.637 & 1.481 & 0.935 & 0.679 & 0.328 \\\\ Intellectual Property (DR-1) & 23.95\\% & 21.50\\% & 24.00\\% & 56.20\\% & 38.33\\% & 37.30\\% \\\\ Harmful Content Continuation (DR-3) & 0.75\\% & 1.08\\% & 2.93\\% & 2.58\\% & 1.28\\% & 1.30\\% \\\\ Harmful Content Summarization (DR-3) & 10.00\\% & 10.20\\% & 14.35\\% & 22.33\\% & 10.33\\% & 8.20\\% \\\\ Jailbreak (DR-1) & 12.29\\% & 12.57\\% & 15.00\\% & 15.57\\% & 11.43\\% & 13.00\\% \\\\ \\end{tabular}\n' +
+      '\\end{table}\n' +
+      '표 1: **phi-3-mini** 및 기타 모델의 Microsoft 내부 다중 회전 대화 RAI 벤치마크 결과 비교. 낮은 값은 테이블의 모든 메트릭에 대해 더 나은 성능을 나타냅니다.\n' +
+      '\n' +
+      '그림 3: 안전 정렬 전후의 **phi-3-mini** 간 Microsoft AI Red Team의 유해 응답 백분율 비교입니다. 빨간색 팀이 다중 회전 대화를 통해 유해한 응답을 생성하기 위해 적대적인 방식으로 **파이-3-미니** 를 유도하려고 시도했기 때문에 이 차트의 유해한 응답 비율은 부풀려진 숫자입니다.\n' +
+      '\n' +
+      '## 5 Weakness\n' +
+      '\n' +
+      'LLM 기능 측면에서 **phi-3-mini** 모델은 훨씬 더 큰 모델만큼 유사한 수준의 언어 이해 및 추론 능력을 달성하지만 특정 작업에 대한 크기에 의해 근본적으로 제한됩니다. 이 모델은 단순히 "사실적 지식"을 너무 많이 저장할 수 있는 능력이 없으며, 이는 예를 들어 트리비아QA에서 낮은 성능으로 볼 수 있다. 그러나 이러한 약점은 검색 엔진을 통한 증강을 통해 해결할 수 있다고 생각한다. 그림 4에서 **phi-3-mini** 를 사용 하 여 HuggingFace 기본 Chat-UI를 사용 하는 예를 보여 줍니다. 모델의 용량과 관련 된 또 다른 약점은 언어를 대부분 영어로 제한 했다는 것입니다. 작은 언어 모델에 대한 다국어 기능을 탐색하는 것은 더 많은 다국어 데이터를 포함하여 **phi-3-small** 에 대한 초기 유망한 결과와 함께 중요한 다음 단계입니다.\n' +
+      '\n' +
+      '우리의 부지런한 RAI 노력에도 불구하고 대부분의 LLM과 마찬가지로 사실상의 부정확성(또는 환각), 편향의 복제 또는 증폭, 부적절한 콘텐츠 생성 및 안전 문제에 대한 과제가 남아 있다. 신중하게 선별된 훈련 데이터와 표적화된 사후 훈련 및 레드 티밍 통찰력의 개선은 모든 차원에 걸쳐 이러한 문제를 크게 완화한다. 그러나 이러한 문제를 완전히 해결하기 위한 중요한 작업이 앞으로 있다.\n' +
+      '\n' +
+      '그림 4: 왼쪽: 검색 없이 **phi-3-mini 완료** 입니다. 오른쪽: 기본 HuggingFace Chat-UI 검색 기능을 사용하여 **phi-3-mini의 검색 완료** 입니다.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [AI23] 메타 AI. 메타 라마 3: 현재까지 가장 공개적으로 사용할 수 있는 llm, 2023을 소개합니다.\n' +
+      '* [AON\\({}^{+}\\)21] Jacob Austin, Augustus Odena, Maxwell Nye, Maarten Bosma, Henryk Michalewski, David Dohan, Ellen Jiang, Carrie Cai, Michael Terry, Quoc Le, and Charles Sutton. 대용량 언어 모델을 사용한 프로그램 합성 _ arXiv preprint arXiv:2108.07732_, 2021.\n' +
+      '* [BJN\\({}^{+}\\)22] Yuntao Bai, Andy Jones, Kamal Ndousse, Amanda Askell, Anna Chen, Nova DasSarma, Dawn Drain, Stanislav Fort, Deep Ganguli, Tom Henighan, Nicholas Joseph, Saurav Kadavath, Jackson Kernion, Tom Conerly, Sheer El-Showk, Nelson Elhage, Zac Hatfield-Dodds, Danny Hernandez, Tristan Hume, Scott Johnston, Shauna Kravec, Liane Lovitt, Neel Nanda, Catherine Olsson, Dario Amodei, Tom Brown, Jack Clark, Sam McCandlish, Chris Olah, Ben Mann, and Jared Kaplan. 2022년 인간 피드백에서 강화 학습으로 유용하고 무해한 조수를 훈련합니다.\n' +
+      '* [BSA\\({}^{+}\\)24] Federico Bianchi, Mirac Suzgun, Giuseppe Attanasio, Paul Rottger, Dan Jurafsky, Tatsunori Hashimoto, and James Zou. 안전하게 조정된 라마: 지침을 따르는 대형 언어 모델의 안전성을 향상시키는 교훈, 2024.\n' +
+      '* [BZGC19] 요나탄 비스크, 로완 젤러스, 지안펑 가오, 예진 최. Piqa: 자연어로 물리적 상식에 대해 추론합니다. _ arXiv preprint arXiv:1911.11641_, 2019.\n' +
+      '* [CCE\\({}^{+}\\)18] Peter Clark, Isaac Cowhey, Oren Etzioni, Tushar Khot, Ashish Sabharwal, Carissa Schoenick, and Oyvind Tafjord. 질문을 풀었다고 생각해? try arc, the ai2 reasoning challenge, 2018.\n' +
+      '* [CKB\\({}^{+}\\)21] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John Schulman. 수학 단어 문제를 해결하기 위한 검증자 훈련. _ arXiv preprint arXiv:2110.14168_, 2021.\n' +
+      '* [CLC\\({}^{+}\\)19] Christopher Clark, Kenton Lee, Ming-Wei Chang, Tom Kwiatkowski, Michael Collins, and Kristina Toutanova. 불크: 자연스러운 예/아니오 질문의 놀라운 난이도를 탐구합니다. <프로시빙스 of the 2019 Conference of North American Chapter of the Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)_, pages 2924-2936, 2019.\n' +
+      '* [CTJ\\({}^{+}\\)21] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu J Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Miles Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Illya Sutskever, and Wojciech Zaremba. 코드로 훈련된 대형 언어 모델 평가, 2021.\n' +
+      '\n' +
+      '* [DZZ\\({}^{+}\\)24] Yiran Ding, Li Lyna Zhang, Chengruidong Zhang, Yuanyuan Xu, Ning Shang, Jiahang Xu, Fan Yang, and Mao Yang. 롱로프: 2024년 2백만 토큰 이상의 컨텍스트 창을 확장합니다.\n' +
+      '* [GZA\\({}^{+}\\)23] Suriya Gunasekar, Yi Zhang, Jyoti Aneja, Caio Cesar Teodoro Mendes, Allie Del Giorno, Sivakanth Gopi, Mojan Javaheripi, Gustavo de Rosa Piero Kauffmann, Olli Saarikivia, Adil Salim, Shital Shah, Harkirat Singh Behl, Xin Wang, Sebastien Bubeck, Ronen Eldan, Adam Tauman Kalai, Yin Tat Lee, and Yuanzhi Li. 교과서만 있으면 돼 arXiv preprint arXiv:2306.11644_, 2023.\n' +
+      '* [HBK\\({}^{+}\\)21] Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. MATH 데이터 세트를 사용하여 수학적 문제 해결을 측정하는 2021.\n' +
+      '* [HBM\\({}^{+}\\)22] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Eliza Rutherford Trevor Cai, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Jack W. 래, 오리올 빈일스, 로랑 시프르 컴퓨팅 최적화 대용량 언어 모델 교육 _ arXiv preprint arXiv:2203.15556_, 2022.\n' +
+      '* [JBA\\({}^{+}\\)23] Mojan Javaheripi, Sebastien Bubeck, Marah Abdin, Jyoti Aneja, Caio Cesar Teodoro Mendes, Weizhu Chen, Allie Del Giorno, Ronen Eldan, Sivakanth Gopi, Suriya Gunasekar, Piero Kauffmann, Yin Tat Lee, Yuanzhi Li, Anh Nguyen, Gustavo de Rosa, Olli Saarikivi, Adil Salim, Shital Shah, Michael Santacroce, Harkirat Singh Behl, Adam Taumann Kalai, Xin Wang, Rachel Ward, Philipp Witte, Cyril Zhang, and Yi Zhang. Phi-2: 작은 언어 모델의 놀라운 힘. _ Microsoft Research Blog_, 2023.\n' +
+      '* [JCWZ17] Mandar Joshi, Eunsol Choi, Daniel S. 웰드와 루크 제틀모이어 트리비아카: 읽기 이해, 2017을 위해 멀리 감독된 대규모 챌린지 데이터 세트.\n' +
+      '* [JLD\\({}^{+}\\)23] Jiaming Ji, Mickel Liu, Juntao Dai, Xuehai Pan, Chi Zhang, Ce Bian, Chi Zhang, Ruiyang Sun, Yizhou Wang, and Yaodong Yang. 비버테일: 인간 선호 데이터 세트, 2023을 통해 llm의 향상된 안전 정렬을 위해.\n' +
+      '* [JPO\\({}^{+}\\)20] Di Jin, Eileen Pan, Nassim Oufattole, Wei-Hung Weng, Hanyi Fang, and Peter Szolovits. 이 환자는 어떤 질병을 가지고 있나요? 2020년 의료 시험의 대규모 오픈 도메인 질문 답변 데이터 세트.\n' +
+      '* [JSM\\({}^{+}\\)23] Albert Q. 장, 알렉산드르 사블레이롤, 아서 멘쉬, 크리스 뱀포드, 데벤드라 싱 채플롯, 디에고 드 라스 카사스, 플로리안 브레산드, 지안나 랭길, 기욤 랑글, 루실라 사울니에, 렐리오 레나르 라부드, 마리 앤 라쇼, 피에르 스톡, 테벤 르 스카오, 티보 라브릴, 토마스 왕, 티모티 라크루아, 윌리엄 엘 세이드. 2023년 미스트랄 7b\n' +
+      '* [JSR\\({}^{+}\\)24] Albert Q. 장, 알렉산드르 사블라롤레스, 앙투안 루, 아서 멘쉬, 블랑슈 사바리, 크리스 뱀포드, 데벤드라 싱 채플롯, 디에고 드 라스 카사스, 엠마 부 한나, 플로리안 브레산드, 지아나 렝야엘, 기욤 부르, 기욤 람플, 엘리오 레나르 라부드, 루실레 사울니에, 마리안 라쇼, 피에르 스톡, 산딥 수브라만안, 소피아 양, 시몬 안토니악, 테벤 르 스카오, 테오필레 거베트, 티보 라브릴, 토마스 왕, 티모티 라크루아, 윌리엄 엘 세이드. 전문가 부족 2024년\n' +
+      '\n' +
+      '* [KMH\\({}^{+}\\)20] Jared Kaplan, Sam McCandlish, Tom Henighan, Tom B Brown, Benjamin Chess, Rewon Child, Scott Gray, Alec Radford, Jeffrey Wu, and Dario Amodei. 신경 언어 모델의 법칙을 조정합니다. _ arXiv preprint arXiv:2001.08361_, 2020.\n' +
+      '* [LBE\\({}^{+}\\)23] Yuanzhi Li, Sebastien Bubeck, Ronen Eldan, Allie Del Giorno, Suriya Gunasekar, and Yin Tat Lee. ii: phi-1.5 기술 보고서만 있으면 됩니다. _ arXiv preprint arXiv:2309.05463_, 2023.\n' +
+      '스테파니 린, 제이콥 힐튼, 오언 에반스 진실성: 모델들이 어떻게 인간의 거짓을 모방하는지 측정하는 것, 2022년.\n' +
+      '* [MCKS18] Todor Mihaylov, Peter Clark, Tushar Khot 및 Ashish Sabharwal. 갑옷이 전기를 통할 수 있나요? 2018년 오픈 북 질문 응답을 위한 새로운 데이터 세트.\n' +
+      '* [MRB\\({}^{+}\\)23] Niklas Muennighoff, Alexander M Rush, Boaz Barak, Teven Le Scao, Aleksandra Piktus, Nouamane Tazi, Sampo Pyysalo, Thomas Wolf, and Colin Raffel. 데이터 제한 언어 모델의 크기 조정 _ arXiv preprint arXiv:2305.16264_, 2023.\n' +
+      '* [NWD\\({}^{+}\\)20] Yixin Nie, Adina Williams, Emily Dinan, Mohit Bansal, Jason Weston, and Douwe Kiela. 적대적 nli: 자연 언어 이해의 새로운 벤치마크, 2020.\n' +
+      '* [RHS\\({}^{+}\\)23] David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani, Julian Michael, and Samuel R. 보우먼 Gpqa: 대학원 수준의 구글 인증 q&a 벤치마크, 2023.\n' +
+      '* [RWC\\({}^{+}\\)19] Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, and Ilya Sutskever. 언어 모델은 감독되지 않은 다중 작업 학습자입니다. _ OpenAI blog_, 1(8):9, 2019.\n' +
+      '* [SLBBC19] Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhagavatula and Yejin Choi. 위노그란데: 규모의 적대적인 위노그라드 스키마 도전입니다. _ arXiv preprint arXiv:1907.10641_, 2019.\n' +
+      '* [SRR\\({}^{+}\\)22] Aarohi Srivastava, Abhinav Rastogi, Abhishek Rao, Abu Awal Md Shoeb, Abubakar Abid, Adam Fisch, Adam R Brown, Adam Santoro, Aditya Gupta, Adria Garriga-Alonso, et al. Beyond the imitation game: Quantifying and extrapating the capabilities of language models. _ arXiv preprint arXiv:2206.04615_, 2022.\n' +
+      '* [SSS\\({}^{+}\\)22] Mirac Suzgun, Nathan Scales, Nathanael Scharli, Sebastian Gehrmann, Yi Tay, Hyung Won Chung, Aakanksha Chowdhery, Quoc V. 레, 에드 치, 데니 저우, 제이슨 웨이 큰 벤치 과제들과 고민의 사슬이 그것들을 해결할 수 있는지 2022년.\n' +
+      '* [THLB19] Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. 상식 지식: 상식 지식을 대상으로 하는 질문 응답 도전, 2019.\n' +
+      '* [TLI\\({}^{+}\\)23] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, Aurelien Rodriguez, Armand Joulin, Edouard Grave 및 Guillaume Lample. 라마: 개방적이고 효율적인 기초 언어 모델입니다. _ arXiv preprint arXiv:2302.13971_, 2023.\n' +
+      '* [TMH\\({}^{+}\\)24] Gemma Team, Thomas Mesnard, Cassidy Hardin, Robert Dadashi, Surya Bhupatiraju, Shreya Pathak, Laurent Sifre, Morgane Riviere, Mihir Sanjay Kale, Juliette Love, et al. Gemma: Open models based on gemini research and technology, 2024.\n' +
+      '\n' +
+      '* [VSP\\({}^{+}\\)17] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. 주목만 하시면 됩니다. 《신경 정보 처리 시스템의 발전》에서 2017년 30권입니다.\n' +
+      '* [ZCG\\({}^{+}\\)23] 완준 Zhong, Ruixiang Cui, Yiduo Guo, Yaobo Liang, Shuai Lu, Yanlin Wang, Amin Saied, Weizhu Chen, and Nan Duan. 애기벌: 2023년, 기초 모델을 평가하기 위한 인간 중심 벤치마크.\n' +
+      '* [ZCS\\({}^{+}\\)23] Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. Judging llm-as-a-judge with mt-bench and chatbot arenna. _ arXiv preprint arXiv:2306.05685_, 2023.\n' +
+      '* [ZHB\\({}^{+}\\)19] Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali Farhadi, and Yejin Choi. 헬라스와그: 기계가 정말로 당신의 문장을 끝낼 수 있을까요? <계산 언어학 협회의 제57차 연례 회의>에서 2019년 4791-4800쪽입니다.\n' +
+      '\n' +
+      '## 부록 벤치마크에 대 한 예제 프롬프트\n' +
+      '\n' +
+      '``` Question: Solveforx:(-\\(\\frac{1}{3}\\)(-4-3x)=\\frac{1}{2}\\) Options: A.-\\(\\frac{5}{6}\\) B.\\(\\frac{7}{6}\\) C.\\(\\frac{3}{6}\\) D.\\(\\frac{1}{6}\\) Answer: A Question: Whichofthefollowingisthebodycavitythatcontainsthepituitarygland? Options: A.Abdominal B.Cranial C.Pleural D.Spinal Answer: B Question: WherewasthemostfamoussiteofthemysterycultsinGreece? 옵션: A.Ephesus B.Cornth C.Athens D.Eleusis Answer:\n' +
+      '\n' +
+      '## Appendix B Authors\n' +
+      '\n' +
+      '\\begin{tabular}{l l l} Marah Abdin & Russell J. Hewett & Corby Rosset \\\\ Sam Ade Jacobs & Jamie Huynh & Olatunji Ruwase \\\\ Ammar Ahmad Awan & Mojan Javaheripi & Olli Saarikivi \\\\ Jyoti Aneja & Xin Jin & Amin Saied \\\\ Ahmed Awadallah & Piero Kauffmann & Adil Salim \\\\ Hany Awadalla & Nikos Karampatziakis & Michael Santacroce \\\\ Nguyen Bach & Dongwoo Kim & Shital Shah \\\\ Amit Bahree & Mahoud Khademi & Ning Shang \\\\ Arash Bakhtiari & Lev Kurilenko & Hiteshi Sharma \\\\ Harkirat Behl & James R. Lee & Xia Song \\\\ Alon Benhaim & Yin Tat Lee & Xin Wang \\\\ Misha Bilenko & Yuanzhi Li & Rachel Ward \\\\ Johan Bjorck & Chen Liang & Guanhua Wang \\\\ Sebastien Bubeck & Weishung Liu & Philipp Witte \\\\ Martin Cai & Eric Lin & Michael Wyatt \\\\ Caio Cesar Teodoro Mendes & Zeqi Lin & Jiahang Xu \\\\ Weizhu Chen & Piyush Madan & Can Xu \\\\ Vishrav Chaudhary & Arindam Mitra & Sonali Yadav \\\\ Parul Chopra & Hardik Modi & Fan Yang \\\\ Allie Del Giorno & Brandon Norick & Ziyi Yang \\\\ Gustavo de Rosa & Anh Nguyen & Donghan Yu \\\\ Matthew Dixon & Barun Patra & Chengruidong Zhang \\\\ Ronen Eldan & Daniel Perez-Becker & Cyril Zhang \\\\ Dan Iter & Heyang Qin & Jianwen Zhang \\\\ Abhishek Goswami & Thomas Portet & Li Lyna Zhang \\\\ Suriya Gunasekar & Reid Przyant & Yi Zhang \\\\ Emman Haider & Sambudha Roy & Yunan Zhang \\\\ Junheng Hao & Marko Radmilac & Xiren Zhou \\\\ \\end{tabular}\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
