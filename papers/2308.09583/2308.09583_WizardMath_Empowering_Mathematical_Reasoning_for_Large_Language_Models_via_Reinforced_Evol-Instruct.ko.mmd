@@ -1,0 +1,679 @@
+# _WizardMath_: 대규모 언어 모델에 대한 수학적 추론 능력 강화
+
+_Reinforced Evol-Instruct_
+
+ 해풍루오\({}^{2}\)   칭풍선\({}^{1}\)   캔 Xu\({}^{1}\)   Pu Zhao\({}^{1}\)   장강루오\({}^{1}\)
+
+**청양도\({}^{1}\)   주보겅\({}^{1}\)   칭웨이린\({}^{1}\)   시펑첸\({}^{2}\)   동메이장\({}^{1}\)**
+
+\({}^{1}\)Microsoft
+
+중국과학원 선전종합기술원
+
+{caxu,qins,puzhao,jlou,chotao,xigeng,qlin,dongmeiz}@microsoft.com
+
+{hp.luo,shifeng.chen}@siat.ac.cn
+
+ 동등한 기여. Microsoft Research.Corresponding author : caxu@microsoft.com and shifeng.chen@siat.ac.cn
+
+###### Abstract
+
+GPT-4와 같은 큰 언어 모델(LLM)은 도전적인 수학적 추론을 포함한 자연어 처리(NLP) 작업에서 놀라운 성능을 보여주었다. 그러나, 대부분의 기존 오픈 소스 모델은 대규모 인터넷 데이터에 대해서만 사전 훈련되고 수학 관련 최적화는 수행되지 않는다. 본 논문에서는 Evol-Instruct Feedback(**_RLEIF_**) 방법을 수학 영역에 적용하여 Llama-2의 수학적 추론 능력을 향상시키는 _WizardMath_를 제안한다. GSM8k와 MATH의 두 가지 수학적 추론 벤치마크에 대한 광범위한 실험을 통해 모델의 놀라운 성능을 보여줍니다. _ WizardMath_는 다른 모든 오픈 소스 LLM을 상당한 차이로 능가한다. 또한, GSM8k에서 ChatGPT-3.5, Claude Instant-1, PaLM-2 및 Minerva를 능가하며 MATH에서 Text-davinci-002, PaLM-1 및 GPT-3을 동시에 능가한다. 자세한 내용 및 모델 가중치는 [https://github.com/nlpxucan/WizardLM](https://github.com/nlpxucan/WizardLM) 3 및 [https://huggingface.co/WizardLM](https://huggingface.co/WizardLM)에서 공개됩니다.
+
+각주 3:  법률팀과 협력하여 정책에 따라 코드와 데이터를 검토하고 공개하고 있습니다.
+
+## 1 Introduction
+
+최근 대규모 언어 모델(LLM)은 오픈 도메인 대화[1; 2; 3; 4], 코딩[5; 6; 7; 8; 9; 10; 11; 12; 13] 및 수학[14; 15; 16; 17; 18; 19]을 포함하는 수많은 자연 언어 처리(NLP) 작업에 대해 상당한 관심을 받고 이동 접근법이 되었다. 눈에 띄는 예는 OpenAI에서 개발한 ChatGPT이다. 이 모델은 대규모 인터넷 데이터에 대한 광범위한 사전 훈련과 특정 명령 데이터와 방법으로 추가 미세 조정을 사용한다. 그 결과 다양한 벤치마크에서 최첨단 제로샷 성능을 달성합니다. 이어 인류, 구글, 메타 등도 경쟁력 있는 제품을 잇달아 출시했다. 특히, 메타의 일련의 라마[4;20] 모델은 오픈 소스 혁명을 촉발시켰고 폐쇄 소스 LLM과의 격차를 빠르게 좁혔다. 이러한 경향은 MPT4, Falcon[21], StarCoder[12], Alpaca[22], Vicuna[23], WizardLM[24] 등의 출시도 점차 자극하고 있다. 그러나 이러한 개방형 모델은 여전히 수학적 및 과학 문제를 해결하는 것과 같은 복잡한 다단계 정량적 추론을 필요로 하는 시나리오와 씨름한다[25; 26; 27; 28; 29; 30; 31; 32; 33; 34; 35].
+
+CoT(Chain-of-thought) [31]은 단계적 해결책을 생성하기 위해 더 나은 프롬프트를 설계하는 것을 제안하며, 이는 개선된 성능으로 이어질 수 있다. 자기일관성[34]은 또한 많은 추론 벤치마크에서 현저한 성능을 달성하는데, 이는 모델로부터 몇 가지 가능한 답변을 생성하고 다수결에 기초하여 올바른 답변을 선택한다[35]. 최근, [36]은 강화 학습을 사용한 프로세스 감독이 도전적인 MATH 문제를 해결하는 데 있어 결과 감독보다 훨씬 우수하다는 것을 발견했다.
+
+이 작업은 _Evol-Instruct_ 및 프로세스 감독 강화 학습에서 영감을 받아 SOTA 오픈 소스 LLM, Llama-2 [20]의 수학적 추론 능력을 향상시키는 것을 목표로 한다. 그림 1에서 볼 수 있듯이 먼저 수학별 _Evol-Instruct_에 의해 다양한 수학 명령 데이터를 생성할 수 있는 _Reinforcement Learning from Evol-Instruct Feedback_(_**RLEIF**_)이라는 새로운 방법을 제안하고, 명령어 보상 모델(IRM)과 프로세스 감독 보상 모델(PRM)[36, 37, 38, 39, 40, 41]을 학습합니다. 전자는 진화된 명령의 품질을 나타내고 나중에 솔루션의 각 단계에 대한 피드백을 받습니다. 새로운 _Evol-Instruct_ 방법은 초등학교 수학과 도전 수학을 각각 생성하기 위한 하향 진화와 상향 진화의 두 가지 진화를 포함한다. 처음에, 우리는 GSM8k[42] 및 MATH[43]로부터 원래의 수학 지시 데이터를 다시 생성, 필터링 및 미세조정한다. 즉시 Llama-2 모델을 교육하여 보상 모델과 _WizardMath_ 를 얻습니다.
+
+GSM8k [42]와 MATH [43]의 두 가지 수학적 추론 벤치마크에 대해 실험을 수행했으며, 그 결과는 우리의 _WizardMath_가 다른 모든 오픈 소스 LLMs보다 우수하여 최첨단 성능을 달성했음을 보여준다. 특히 _WizardMath_는 +24.8 (81.6 vs. 56.8)의 증가로 pass@1의 실질적인 개선을 관찰합니다. on GSM8k, and +9.2 (22.7 vs. 13.5) MATH. 특히, 우리의 모델은 GSM8k에서 패스@1 측면에서 OpenAI의 ChatGPT-3.5[5], Anthropic의 Claude Instant-1[39], Google의 PaLM-2[44]를 훨씬 능가합니다.
+
+이 작업의 주요 기여는 다음과 같다.
+
+그림 1: _Reinforcement Learning from Evol-Instruct Feedback_ (_**RLEIF**_)의 세 단계를 설명하는 다이어그램: (1) 감독 미세 조정 (SFT), (2) 명령 보상 모델 (IRM) 훈련 및 프로세스 감독 보상 모델 (PRM) 훈련, (3) 근접 정책 최적화 (PPO)를 통한 능동적 Evol-Instruct 및 강화 학습.
+
+* 오픈 소스 사전 학습된 대용량 언어 모델 Llama-2 [20]에 대한 수학적 추론 능력을 향상시키는 _WizardMath_ 모델을 소개합니다.
+* LLM 추론 성능을 향상시키기 위해 _Evol-Instruct feedback_ (_**RLEIF**_)_와 함께 새로운 방법인 _Evol-Instruct feedback_ (_**RLEIF**_)_를 제안합니다.
+* _WizardMath_ 는 GSM8k [42] 및 MATH [43] 모두에서 Llama-2 70B [20], Llama-1 65B [4], Falcon-40B [21], MPT-30B [8], 바이촨-13B Chat [9] 및 ChatGLM2 12B [45]를 포함하여 수학적 추론 측면에서 상당한 차이로 다른 모든 오픈 소스 LLM을 능가합니다.
+* _WizardMath_ 는 GSM8k의 ChatGPT [5], GPT-3.5, Claude Instant [39], PaLM-2 [44], PaLM-1 [7] 및 Minerva[15]와 같은 다양한 주요 폐쇄 소스 LLM을 크게 능가합니다.
+
+## 2 Method
+
+이 섹션에서는 _위저드수학_ 에 대한 세부 정보를 자세히 설명합니다. WizardLM 및 PRMs[36]에 이어 _Evol-Instruct 피드백_(_**RLEIF**_)_에서 강화 학습을 제안합니다. 이 방법은 _Evol-Instruct_ 및 강화 프로세스 감독 방법을 통합하여 GSM8k 및 MATH를 진화시키고 사전 학습된 Llama-2를 진화된 데이터 및 보상 모델로 미세 조정합니다.
+
+그림 1에서 볼 수 있듯이 우리의 방법은 세 가지 단계를 적용한다.
+
+1. 감독 미세 조정.
+2. 훈련 지도 보상 모델, 및 프로세스-감독 보상 모델.
+3. Active Evol-Instruct, PPO training.
+
+### Supervised fine-tuning
+
+InstructGPT[2] 다음에, 우리는 또한 먼저 감독된 명령-응답 쌍으로 베이스를 미세 조정하며, 이는 다음을 포함한다:
+
+1. 각 단계의 구문 분석을 더 쉽게 하기 위해 GSM8k 및 MATH에 대해 Alpha 버전의 WizardLM 70B 모델을 사용하여 15k 답변을 거의 샷 재생성하여 단계별 형식으로 솔루션을 생성한 다음 정답을 찾은 다음 이 데이터를 사용하여 라마 모델을 미세 조정한다.
+2. 모델의 신경 및 다양한 지침을 준수하는 능력을 향상시키기 위해 위저드롬의 훈련 데이터에서 1.5k 오픈 도메인 대화를 샘플링한 다음 최종 SFT 훈련 데이터로 위의 수학 말뭉치와 병합한다.
+
+### _Evol-Instruct_ 수학 원리
+
+WiazrdLM이 제안한 Evol-Instruct [24] 방법과 WizardCoder [13]에 대한 효과적인 응용을 통해 이 연구는 사전 훈련된 LLMs를 향상시키기 위해 다양한 복잡성과 다양성을 가진 수학 지도를 만들려고 시도한다. 특히, 우리는 두 개의 진화선을 포함하는 새로운 패러다임에 진화 명령어를 적용한다:
+
+1. 하향 진화: 질문을 더 쉽게 만들어 지시를 강화한다. 예를 들어 i): 난이도가 높은 문항을 수정하여 난이도를 낮추거나, ii) 다른 주제를 가지고 새롭고 쉬운 문항을 제작하는 것이다.
+2. 상향 진화: 원래의 진화-명령 방법에서 파생된, i) 더 많은 제약을 추가하고, ii) 구체화하고, iii) 추론을 증가시킴으로써 새롭고 더 어려운 질문을 심화 및 생성한다.
+
+### _Evol-Instruct 피드백에서 강화 학습 (_**RLEIF**_)_
+
+InstructGPT[2]와 PRMs[36]에서 영감을 받아 두 개의 보상 모델을 훈련하여 각 단계의 정답과 지시의 품질을 각각 예측한다. 1. 지시 보상 모델(IRM): 이 모델은 i) 정의, ii) 정밀도, iii) 무결성의 세 가지 측면에서 진화된 지시의 품질을 판단하는 것을 목표로 한다. IRM의 랭킹 리스트 학습 데이터를 생성하기 위해 각 명령어에 대해 먼저 ChatGPT와 Wizard-E 4를 사용하여 각각 2-4개의 진화된 명령어를 생성한다. 그런 다음 위저드-E를 활용하여 4-8 지침의 품질을 순위를 매깁니다. 각주 4: Api 없이 _Evol-Instruct_ 를 실행 하는 데 특별히 사용 되는 알파 버전 미세 조정 라마 모델인 Wizard-E-Generator 라고 명명 된 Wizard-E입니다.
+2. 프로세스-감독 보상 모델(PRM): 이 작업 이전에 강력한 오픈 소스 수학 추론 LLM이 없기 때문에, 전문 인간-라벨러 및 근접 소스 ChatGPT 없이 고도로 정밀한 프로세스 감독을 지원하는 간단한 방법이 없다. 따라서 우리는 ChatGPT에 의존하여 프로세스 감독을 제공하고 모델에 의해 생성된 솔루션에서 각 단계의 정확성을 평가하도록 요청한다.
+3. PPO 트레이닝. 우리는 원래 수학(GSM8k + MATH) 지침을 8회전으로 진화시켜 데이터 크기를 15k에서 96k로 늘린다. IRM과 PRM을 이용하여 지시 보상(\(r^{I}\))과 답안 보상(\(r^{A}\))을 생성한다. 그런 다음 최종 보상 \(r=r^{I}\cdot r^{A}\)으로 제품을 적용합니다.
+
+## 3 Experiment
+
+이 섹션에서는 실험에서 기본 모델에 대한 포괄적인 개요를 제공한다. 그 후, 우리는 GSM8k [42]와 MATH [43]의 두 가지 일반적인 수학적 벤치마크에 대한 모델의 성능 메트릭을 주로 설명한다.
+
+### Baselines
+
+근접 소스 모델.수많은 기술 회사가 유난히 능숙한 대형 언어 모델(LLM)[3; 4; 7; 20; 44; 45; 47; 51; 52; 53]을 효과적으로 만들었지만, 이에 반대했다.
+
+그림 2: GSM8k 벤치마크에서 주요 LLM 모델의 패스@1 성능은 현재 상위 5위 안에 있으며 ChatGPT-3.5\({}^{5}\), Claude Instant-1\({}^{6}\), PaLM 2 [44]와 같은 일부 근접 소스 모델을 약간 능가하고 모든 오픈 소스 모델을 실질적으로 능가한다.
+
+\begin{table}
+\begin{tabular}{l c c c} \hline \hline
+**Model** & **Params** & **GSM8k** & **MATH** \\ \hline \multicolumn{4}{c}{Closed-source models} \\ \hline GPT-4 [3] & - & 92.0 & 42.5 \\ Claude 2\({}^{7}\) & - & 88.0 & - \\ Claude 1.3\({}^{7}\) & - & 85.2 & - \\ Flan-PaLM 2 [44] & 540B & 84.7 & 33.2 \\ Claude Instant\({}^{7}\) & - & 80.9 & - \\ ChatGPT [46] & - & 80.8 & 34.1 \\ PaLM 2 [44] & 540B & 80.7 & 34.3 \\ \hline \multirow{3}{*}{Minerva [15]} & 8B & 16.2 & 14.1 \\  & 62B & 52.4 & 27.6 \\  & 540B & 58.8 & 33.6 \\ \hline GPT-3.5 [3] & - & 57.1 & - \\ \hline \multirow{3}{*}{PaLM [7]} & 8B & 4.1 & 1.5 \\  & 62B & 33.0 & 4.4 \\  & 540B & 56.5 & 8.8 \\ \hline \multicolumn{4}{c}{Open-source models} \\ \hline GAL [14] & 30B & - & 12.7 \\  & 120B & - & 20.4 \\ \hline \multirow{3}{*}{LLaMA 2 [20]} & 7B & 14.6 & 2.5 \\  & 13B & 28.7 & 3.9 \\  & 34B & 42.2 & 6.24 \\  & 70B & 56.8 & 13.5 \\ \hline \multicolumn{4}{c}{Qwen \({}^{10}\)} & 7B & 51.6 & - \\ \hline \multirow{3}{*}{LLaMA 1 [4]} & 7B & 11.0 & 2.9 \\  & 13B & 17.8 & 3.9 \\  & 33B & 35.6 & 7.1 \\  & 65B & 50.9 & 10.6 \\ \hline \multicolumn{4}{c}{RFT-7B [16]} & 7B & 50.3 & - \\ GPT-J-6B [48] & 6B & 34.9 & - \\ ChatGLM 2 [45] & 6B & 32.4 & - \\ InternLM-7B [49] & 7B & 31.2 & - \\ Vicuna v1.3 [23] & 13B & 27.6 & - \\ Baichuan-chat \({}^{9}\) & 13B & 23.9 & - \\ \hline \multirow{3}{*}{Falcon [21]} & 7B & 6.8 & 2.3 \\  & 40B & 19.6 & 2.5 \\ \hline \multicolumn{4}{c}{GPT-Neo-2.7B [50]} & 2.7B & 19.5 & - \\ \hline \multicolumn{4}{c}{MPT\({}^{8}\)} & 7B & 6.8 & 3.0 \\  & 30B & 15.2 & 3.1 \\ \hline \multicolumn{4}{c}{_WizardMath_} & 7B & **54.9** (+3.3) & **10.7** (+7.7) \\ \multicolumn{4}{c}{_WizardMath_} & 13B & **63.9** (+35.2) & **14.0** (+10.1) \\ \multicolumn{4}{c}{_WizardMath_} & 70B & **81.6** (+24.8) & **22.7** (+9.2) \\ \hline \hline \end{tabular}
+\end{table}
+표 1: GSM8k 및 MATH에 대한 pass@1(%)의 결과. 이 연구에서는 공평하고 응집력 있는 평가를 보장하기 위해 탐욕적 디코딩 및 CoT 설정 내의 모든 모델의 점수를 보고한다[31]. 우리는 유사한 매개변수 크기를 가진 WizardMath와 기준 모델 사이의 개선을 보고한다.
+
+공개적으로 사용할 수 있도록 하기 때문에 근접 소스 모델이라고 합니다. 우리의 연구에서 우리는 기초 벤치마크로 상당한 수의 근접 소스 모델을 광범위하게 통합한다. 특히, OpenAI의 GPT-3[51], GPT-3.5, ChatGPT5, GPT-4[3], 구글의 PaLM2[44], PaLM[7], 미네르바[15], (iii) Anthropic의 Claude Instant[39], Claude 1.3\({}^{\circ}\), Claude 2\({}^{\prime}\), DeepMind의 Chinchilla[47].
+
+각주 5: [https://openai.com/](https://openai.com/)
+
+각주 6: [https://www.anthropic.com/index/introducing-claude](https://www.anthropic.com/index/introducing-claude)
+
+각주 7: [https://www.anthropic.com/index/claude-2](https://www.anthropic.com/index/claude-2)
+
+각주 8: [https://github.com/mosaicml/llm-foundry/](https://github.com/mosaicml/llm-foundry/)
+
+각주 9: [https://github.com/baichuan-inc/Baichuan-13B](https://github.com/baichuan-inc/Baichuan-13B)
+
+각주 10: [https://github.com/QwenLM/Qwen-7B/](https://github.com/QwenLM/Qwen-7B/)
+
+오픈 소스 모델.대규모 오픈 소스 LLM[4, 20, 21, 22, 23, 45, 52, 53]은 AI 커뮤니티에 액세스할 수 있었다. 그럼에도 불구하고, 그들의 성능은 지속적으로 근접 소스 모델에 크게 뒤처지는 경향이 있다. 연구의 일환으로, 우리는 이러한 오픈 소스 모델의 상당수를 기준선으로 통합하며, 주로 Llama 1 [4] & Llama 2 [20], GAL [14], GPT-J [48], GPT-Neo [50], Vicuna [23], MPI\({}^{\circledR}\), Falcon[21], Baichuan\({}^{\circledR}\), ChatGLM [45], Qwen10 및 RFT [16]을 포함한다.
+
+각주 10: [https://github.com/QwenLM/Qwen-7B/](https://github.com/QwenLM/Qwen-7B/)
+
+### Evaluate Benchmarks
+
+우리는 주로 두 벤치마크(GSM8k [42]와 MATH [43])에서 WizardMath를 평가한다. GSM8k [42] 데이터세트는 주로 초등학교 수준의 수학 문제를 중심으로 약 7500개의 훈련 데이터와 1319개의 테스트 데이터를 포함하고 있으며, 각각은 기본적인 산술 연산(덧셈, 뺄셈, 곱셈, 나눗셈)으로 구성되며, 일반적으로 풀기 위해서는 2~8단계가 필요하다. MATH [43] 데이터 세트는 AMC 10, AMC 12 및 AIME과 같은 권위 있는 수학 대회에서 수학 문제를 수집한다. 사전 대수, 대수, 수이론, 계수 및 확률, 기하, 중간 대수, 프레미컬러스 등 7개 학문 영역의 7500개의 훈련 데이터와 5,000개의 도전 시험 데이터를 포함하고 있다. 나아가 이러한 문제들은 5단계의 난이도로 구분되는데, '1'은 상대적으로 낮은 난이도를 나타내고 '5'는 가장 높은 난이도를 나타낸다.
+
+### Train and Evaluation prompt
+
+라마 2[20] 베이스는 우리의 기초 모델 역할을 한다.
+
+우리는 Alpaca [22]로부터의 프롬프트를 채용함으로써 우리의 _WizardMath_ 의 훈련을 착수한다:
+
+아래는 작업을 설명하는 명령어입니다. 요청을 적절하게 완료하는 응답을 작성합니다.\ n\n\n;
+
+Instruction:\n{instruction}\n\n### Response:
+
+다음 CoT [31] 프롬프트를 사용하여 GSM8k [42] 및 MATH 벤치마크 [43]을 평가합니다.
+
+\begin{table}
+\begin{tabular}{l r} \hline \hline
+**MATH subtopics** & **WizardMath 70B** \\ \hline Intermediate Algebra & 7.1 \\ Precalculus & 12.6 \\ Geometry & 15.7 \\ Number Theory & 16.3 \\ Counting \& Probability & 17.3 \\ Prealgebra & 41.7 \\ Algebra & 33.3 \\ \hline Overall & **22.7** \\ \hline \hline \end{tabular}
+\end{table}
+표 2: WizardMath 70B 모델을 사용한 MATH 하위 토픽에 대한 pass@1(%)의 결과.
+
+아래는 작업을 설명하는 명령어입니다. 요청을 적절하게 완료하는 응답을 작성합니다.\ n\n### 명령:\n{instruction}\n\n### 응답: 단계별로 생각해 봅시다.
+
+### GSM8k 및 MATH 평가
+
+특히, 그림 2와 표 1에서 [3]의 GPT-4 및 GPT-3.5 메트릭을 인용한다. ChatGPT 모델의 점수에 대한 평가는 [46]부터이다. Claude Instant, Claude 1.3, Claude 2의 평가를 위해 [7]에서 점수를 추출한다. PaLM 1, PaLM 2, Minerva의 점수는 [7, 15, 44]에서 나왔다. 마지막으로, Text-davinci-002, GPT-3 및 GPT-2와 연관된 스코어들은 [15, 43]으로부터 획득된다. 오픈 소스 모델에서는 대부분의 점수가 라마 2[20]의 논문이나 자체 보고서에서 검색된다. 또한 바이촨-챗, 비쿠나 v1.3을 자체적으로 평가한다. 표 2에서는 WizardMath 70B 모델을 사용하여 MATH 하위 주제의 자세한 결과를 보여준다.
+
+Close-Source 모델과 비교.표 1에서 _WizardMath 70B_ 는 ChatGPT, Claude Instant 및 PaLM 2 540B를 포함하여 GSM8k에서 일부 근접 소스 LLM을 약간 능가합니다. 그리고 그림 2와 같이 현재 저희 모델은 모든 모델에서 상위 5위에 랭크되어 있습니다. 동시에_WizardMath 70B_도 MATH에서 Text-davinci-002를 능가합니다. 구체적인 결과는 다음과 같다.
+
+1. _WizardMath 13B_는 GSM8k에서 PaLM 1 540B(63.9 대 56.5), 미네르바 540B(63.9 대 58.8), GPT-3.5(63.9 대 57.1)보다 우수합니다. 한편, 그것은 MATH에서 PaLM 1 540B (14.0 대 8.8), GPT-3 175B (14.0 대 5.2)를 능가한다.
+2. 가장 큰 모델인 _WizardMath 70B_는 GSM8k에서 Claude Instant(81.6 vs 80.9), ChatGPT(81.6 vs 80.8) 및 PaLM 2(81.6 vs 80.7)와 비교할 수 있는 우수한 성능을 달성한다. 동시에, WizardMath 70B는 또한 Text-davinci-002(22.7 대 19.1)를 초과한다. MATH 벤치마크에서 3.6%의 차이로
+
+오픈 소스 모델과 비교 표 1에 설명된 결과는 _WizardMath 70B_가 GSM8k 및 MATH 벤치마크 모두에서 모든 오픈 소스 모델에 비해 상당한 성능 이점을 분명히 나타냄을 명시적으로 보여줍니다. 구체적인 결과는 다음과 같다.
+
+1. _WizardMath 7B_ 는 GSM8k 및 MATH 벤치마크에서 MPT, 팔콘, 바이촨-챗, 비쿠나 v1.3, ChatGLM 2, Qwen, Llama 1 및 Llama 2를 포함하여 약 7B에서 40B 범위의 매개변수 수를 가진 대부분의 오픈 소스 모델을 능가합니다. 매개 변수 수가 현저히 낮음에도 불구하고.
+2. _WizardMath 13B_ 는 Llama 1 65B (63.9 대 50.9) 보다 상당히 우수하다. 및 Llama 2 70B (63.9 vs. 56.8) on GSM8k. 또한, 그것은 Llama 1 65B (14.0 대 10.6) 모두를 상당히 능가한다. 및 Llama 2 70B (14.0 vs. 13.5) MATH.
+3. 가장 광범위한 모델인 _WizardMath 70B_는 Llama 2 70B(81.6 대 56.8)를 능가하는 상당한 성능 향상을 보여줍니다. GSM8k에서 24.8%의 상당한 마진으로. 동시에, 그것은 또한 Llama 2 70B (22.7 대 13.5)를 능가한다. MATH에서 9.2%의 차이로.
+
+### Case Study
+
+부록 A는 우리의 _WizardMath_ 에 의해 생성된 몇 가지 예를 보여준다. 예제는 우리의 모델이 명확한 설명과 함께 일관된 정확한 응답 답변을 생성한다는 것을 보여준다.
+
+## 4 관련 작업
+
+대규모 언어 모델.LLM은 자연어 처리(Natural Language Processing, NLP) 영역 내에서 상당한 발전을 이루어 광범위한 응용을 위한 가치 있고 작업 불가의 기반을 제공했다. 이러한 모델은 일반적으로 텍스트 데이터의 광범위한 대규모 코퍼스에 대해 훈련되는 수천억에 이르는 매개변수 카운트를 포함한다. 그 유명한 사례들은 OpenAI의 GPT3&4[3, 51], Anthropic의 Claude7, Google의 PaLM[7, 44], Bard11, DeepMind의 친칠라[47], 그리고 Gopher[52]이다. 그러나 그 중 어느 것도 지금까지 공개되지 않았으며 일부는 API를 통해만 독점적으로 액세스할 수 있다.
+
+각주 11: [https://bard.google.com/](https://bard.google.com/)
+
+최근 AI 경관은 공개적으로 액세스할 수 있는 모델 코드와 가중치 매개변수로 특징지어지는 수많은 오픈 소스 LLM이 출현하는 것을 목격했다. EleutherAI는 GPT-NeoX-20B[54]와 GPT-J-6B[48]에 기여했다. 빅사이언스는 BLOOM[55]을 도입했다. 유사하게, 메타는 OPT[53], Llama 1[4], Llama 2[20], 및 GAL[14]을 방출함으로써 진보를 이루었다. 칭화대는 GLM-130B와 ChatGLM[45]를 공개했다. TII는 팔콘의 방출을 촉진했다[21]. 또 바이촨9, 큐웬10 등 LLM도 수면 위로 떠올랐다. 현재 Llama는 감독 미세 조정을 위한 기본 모델로 중추적인 역할을 하며 Alpaca[22], Vicuna[23], Guanaco[56], WizardLM[24], Orca[57], RFT[16] 등을 포함한 몇 가지 매우 놀라운 모델의 출현을 예고한다.
+
+발음 12: [https://www.bord.google.com/](https://www.bord.google.com/)
+
+수학적 추론을 위한 큰 언어 모델 복잡한 추론 문제는 수학적 추론[25, 26, 27, 28, 29, 30], 상식 추론[58, 59], 논리적 추론[31]을 포함하는 NLP 모델에 대해 어려운 것으로 잘 알려져 있다. 수학적 문장제(MWP)의 복잡한 과제추론[30, 60, 61, 62, 63, 64]은 수학적 개념, 계산 및 다단계 추론[16, 17, 18, 19, 36, 40, 46]을 이해하는 능력을 요구한다. 덧붙여, 모델들은 AddSub[65], MultiArith[66], SingleEQ[67], SVAMP[60], GSM8K[42], AQuA[29] 및 MATH[43]과 같은 일부 수학적 추론 데이터세트들에 대해 상이한 레벨들의 MWP 벤치마크들에 걸쳐 평가된다.
+
+LLM의 추론 능력을 향상시키기 위해 [31]은 질문에 대한 답을 얻기 전에 여러 추론 단계를 부착하는 연쇄 사고 촉진을 제안했다. 단순한 소샷 추론 전략을 사용함으로써 LLMs은 복잡한 추론 문제에서 더 나은 성능을 발휘할 수 있다. 최소 대 최대 [68] 프롬프트는 문제를 하위 문제로 분해한 다음 점진적으로 해결합니다. 또한 각 단계에는 더 자세한 추론 과정이 있습니다. 유사하게, Complex CoT [35]는 프롬프트로서 기능하기 위해 가장 복잡한 문제와 그에 대응하는 솔루션을 전략적으로 선택함으로써 프롬프트 복잡성의 중추적인 역할을 강조한다. 수작업의 부담을 덜어주기 위해 [33]은 제공된 데이터셋에 클러스터링 기법을 적용하여 k개의 샘플을 획득하는 과정을 자동화하는 접근법인 Auto-CoT를 도입하였다. 수동 개입을 완화하기 위한 목적으로 [32]는 0-shot-CoT를 제안했는데, 이는 "차근차근 생각하자"라는 구절을 각 답변에 덧붙여 예 없이 추론 단계를 이끌어내는 간단한 연습을 수반한다. 더욱이 [34]는 추론 과정 전반에 걸쳐 다양한 추론 경로의 탐색을 제안함으로써 이 개념을 확장했다. 결과적으로, 최종 결과는 [69]에 의해 가정된 바와 같이 다수결 투표를 이용한 답변의 집계 또는 검증 메커니즘을 활용하여 결정된다. [16] LLM들과 수학 추론 능력 사이의 상관관계를 조사하는 것에 초점을 맞추어, 증강된 샘플들을 생성하기 위한 간단한 접근법을 예시한다.
+
+강화 학습을 위한 대규모 언어 모델.그럼에도 불구하고, 심지어 최첨단 모델도 논리적 오류와 다양한 환상을 자주 드러낸다[70, 71]. 이러한 이상 현상은 다단계 추론을 필요로 하는 영역 내에서 특히 어려워지며, 여기서 단수의 논리적 오류는 전체 솔루션의 풀림을 촉발할 수 있다. 효과적인 전략은 유리한 산출물과 불리한 산출물을 구별하는 것을 목표로 하는 보상 모델의 훈련을 포함한다[36]. 초기 결과 기반 접근법은 주로 알고리즘 작업에 대해 수행되었다[72, 73, 74, 75]. [42] demonstrated of significant benefits of reward models or validators, and [76] proposed a heuristic-based step-size-aware RM. [77, 78, 2, 79] proposed the use of reward models for a reinforcement learning pipeline. [20, 37, 38, 39, 42, 80, 81, 82] LLM과 인간의 선호도의 정렬을 달성하기 위해 검색을 위한 거부 샘플링을 사용했다.
+
+결과 기반 보상 모델링과 프로세스 기반 보상 모델링의 차이는 [40]에 의해 추가로 논의된다. 결과 감독 보상 모델(ORM)은 모델의 연쇄적 사고 과정에서 도출된 최종 결과를 배타적으로 활용하는 훈련을 거치게 된다. 반대로, 프로세스 감독 보상 모델(PRM)은 사고 연쇄 진행 내의 각 개별 단계에 대한 피드백을 요청하도록 설계된다. 논리 추론의 영역에서 ORM은 종종 잘못된 추론 경로를 사용하지만 정확한 최종 답을 산출한다[83, 41]. 특히, PRMs는 일관성 없는 행동의 이러한 현상을 효과적으로 완화시키는 것으로 입증되었다[40]. [36, 84, 85] 꼼꼼한 수동 주석을 통해 프로세스 기반 감독 신호의 광범위한 코퍼스를 축적했으며, 이는 수동 주석을 사용한 PRM 및 감독이 ORM에 비해 LLM에 대해 더 뚜렷한 이점을 산출했음을 확인했다.
+
+대용량 언어모델(Large Language Models for Instruction Fine-Tuning. The initial efforts in the instruction-following training work)은 주로 다양한 작업에 걸쳐 일반화를 위한 언어모델의 능력을 향상시키는데 초점을 맞추고 있다. 이것은 종종 실질적으로 이용가능한 자연 언어 처리 데이터 세트에 걸쳐 미세 조정되는 프로세스를 수반하고, 상이한 NLP 태스크들에 대해 평가한다. T5 [86]은 모든 데이터에 일관된 프롬프트 형식을 사용하여 질문 및 답변, 문서 요약 및 감정 분류를 포함한 다양한 NLP 작업을 훈련하려는 초기 시도를 수행한다. 이어서 FLAN[87], ExT5[88], T0[89], UnifiedQA[90], ZeroPrompt[91], FLAN-T5[92] 등의 명령어 미세 조정 작업이 등장하여 많은 수의 다운스트림 작업에 적응하였다. 모델 출력과 인간 요구사항 간의 오정렬 문제를 해결하기 위해 OpenAI는 다양한 태스크를 구성하기 위해 명령어 라이브러리에 수동으로 주석을 달았다. 동시에, 인간 피드백 기술을 이용한 강화 학습(Reinforcement Learning)을 사용하여 InstructGPT[2], ChatGPT\({}^{\ast}\), GPT-4[3]와 같은 LLM의 빠른 개발을 촉진한다. 수동 개입을 줄이기 위해, 자기-지시 [93]은 자기-생성 지시를 통해 지시에 따르는 것을 개선한다. 알파카[22]는 수동으로 작성된 명령어들의 제한된(예를 들어, 175개의 샘플들) 시드 세트로부터 생성된 50k개의 명령어들의 데이터세트를 사용하였다. Vicuna[23]는 ShareGPT.com에서 수집한 ChatGPT와 70k의 사용자 공유 대화를 사용하였으며, WizardLM[24]는 evol-instruct 접근 방식을 도입하여 복잡성과 다양성을 모두 향상시킴으로써 기존의 명령어 데이터를 정제하고자 한다.
+
+## 5 결론 및 향후 작업
+
+본 논문에서는 RLEIF로 미세 조정된 수학 모델인 WizardMath를 소개한다. 실험 결과는 _WizardMath_가 GSM8k와 MATH 두 가지 널리 알려진 수학적 추론 벤치마크에서 기존의 모든 오픈 소스 LLMs를 능가하는 SOTA 성능을 달성함을 보여준다. 또한 _WizardMath_는 GSM8k 벤치마크에서 ChatGPT, GPT-3.5, Claude Instant, PaLM-2, PaLM-1 및 미네르바를 포함한 가장 큰 근접 소스 LLM 중 일부와 비교하여 우수한 성능을 나타낸다.
+
+미래의 작업.우리의 _WizardMath_는 그림 2와 같이 인상적인 수학 성능을 달성하지만, 우리의 모델은 여전히 SOTA LLM, GPT-4 및 Claude-2에 크게 뒤처진다. 따라서 미래의 작업은 우리의 모델의 성능을 더욱 높이기 위해 _RLEIF_ 또는 더 나은 방법의 향상을 우선시할 것이다.
+
+브로드너 임팩트. 다른 LLM과 유사하게 _위저드수학_ 은 때때로 비윤리적이거나 유해하거나 오판의 소지가 있는 정보를 생성할 수도 있습니다. 따라서 윤리적, 사회적 함의를 해결하기 위한 향후 연구가 필요하다.
+
+## References
+
+* [1] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.
+* [2] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike, and Ryan Lowe. Training language models to follow instructions with human feedback. In _NeurIPS_, 2022.
+* [3] OpenAI. Gpt-4 technical report, 2023.
+* [4] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.
+* [5] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Helidy Khlaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotos Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code, 2021.
+* [6] Microsoft. Azure openai service models. [https://learn.microsoft.com/en-us/azure/cognitive-services/openai/concepts/models](https://learn.microsoft.com/en-us/azure/cognitive-services/openai/concepts/models), 2023.
+* [7] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsuyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunjing Dev, Henry Michalewski, Xavier Garcia, Yedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Hyeontaek Lim, Barret Zoph, Alexander Spiridonov, Ryan Sepassi, David Dohan, Shivani Agrawal, Mark Omernick, Andrew M. Dai, Thanumalayan Sankaranarayana Pillai, Marie Pellat, Aitor Lewkowycz, Eric Moreira, Rewon Child, Oleksandr Polozov, Katherine Lee, Zongwei Zhou, Xuezhi Wang, Brennan Saeta, Mark Diaz, Orhan Firat, Michele Catasta, Jason Wei, Kathy Meier-Hellstern, Douglas Eck, Jeff Dean, Slav Petrov, and Noah Fiedel. Palm: Scaling language modeling with pathways, 2022.
+* [8] Erik Nijkamp, Bo Pang, Hiroaki Hayashi, Lifu Tu, Huan Wang, Yingbo Zhou, Silvio Savarese, and Caiming Xiong. Codegen: An open large language model for code with multi-turn program synthesis. In _The Eleventh International Conference on Learning Representations_, 2023.
+* [9] Yue Wang, Weishi Wang, Shafiq R. Joty, and Steven C. H. Hoi. Coded5: Identifier-aware unified pre-trained encoder-decoder models for code understanding and generation. In Marie-Francine Moens, Xuaning Huang, Lucia Specia, and Scott Wen-tau Yin, editors, _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, EMNLP 2021, Virtual Event / Punta Cana, Dominican Republic, 7-11 November, 2021_, pages 8696-8708. Association for Computational Linguistics, 2021.
+* [10] Yue Wang, Hung Le, Akhilesh Deepak Gotmare, Nghi D. Q. Bui, Junnan Li, and Steven C. H. Hoi. Coded5+: Open code large language models for code understanding and generation, 2023.
+* [11] Qinkai Zheng, Xiao Xia, Xu Zou, Yuxiao Dong, Shan Wang, Yufei Xue, Zihan Wang, Lei Shen, Andi Wang, Yang Li, Teng Su, Zhilin Yang, and Jie Tang. Codegee: A pre-trained model for code generation with multilingual evaluations on humaneval-x, 2023.
+* [12] Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Koetkov, Chenghao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, et al. Starcode: may the source be with you! _arXiv preprint arXiv:2305.06161_, 2023.
+* [13] Ziyang Luo, Can Xu, Pu Zhao, Qingfeng Sun, Xiubo Geng, Wenxiang Hu, Chongyang Tao, Jing Ma, Qingwei Lin, and Daxin Jiang. Wizardcoder: Empowering code large language models with evol-instruct. _arXiv preprint arXiv:2306.08568_, 2023.
+
+* [14] Ross Taylor, Marcin Kardas, Guillem Cucurull, Thomas Scialom, Anthony Hartshorn, Elvis Saravia, Andrew Poulton, Viktor Kerkez, and Robert Stojnic. Galactica: A large language model for science. _arXiv preprint arXiv:2211.09085_, 2022.
+* [15] Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henry Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, et al. Solving quantitative reasoning problems with language models. _arXiv preprint arXiv:2206.14858_, 2022.
+* [16] Zheng Yuan, Hongyi Yuan, Chenpeng Li, Guanting Dong, Chuanqi Tan, and Chang Zhou. Scaling relationship on learning mathematical reasoning with large language models. _arXiv preprint arXiv:2308.01825_, 2023.
+* [17] Chuanyang Zheng, Zhengying Liu, Enze Xie, Zhenguo Li, and Yu Li. Progressive-hint prompting improves reasoning in large language models. _arXiv preprint arXiv:2304.09797_, 2023.
+* [18] Shima Imani, Liang Du, and Harsh Shrivastava. Mathprompter: Mathematical reasoning using large language models. _arXiv preprint arXiv:2303.05398_, 2023.
+* [19] Lei Wang, Wanyu Xu, Yihuai Lan, Zhiqiang Hu, Yunshi Lan, Roy Ka-Wei Lee, and Ee-Peng Lim. Plan-and-solve prompting: Improving zero-shot chain-of-thought reasoning by large language models. _arXiv preprint arXiv:2305.04091_, 2023.
+* [20] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajiwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023.
+* [21] Guilherme Penedo, Quentin Malartic, Daniel Hesslow, Ruxandra Cojocaru, Alessandro Cappelli, Hamza Alobeidli, Baptiste Pannier, Ebtesam Almazrouei, and Julien Launay. The refinedweb dataset for falcon llm: outperforming curated corpora with web data, and web data only. _arXiv preprint arXiv:2306.01116_, 2023.
+* [22] Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca](https://github.com/tatsu-lab/stanford_alpaca), 2023.
+* [23] Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgrp quality, March 2023.
+* [24] Can Xu, Qingfeng Sun, Kai Zheng, Xiubo Geng, Pu Zhao, Jiazhan Feng, Chongyang Tao, and Daxin Jiang. Wizardlm: Empowering large language models to follow complex instructions. _arXiv preprint arXiv:2304.12244_, 2023.
+* [25] Pan Lu, Liang Qiu, Wenhao Yu, Sean Welleck, and Kai-Wei Chang. A survey of deep learning for mathematical reasoning. _arXiv preprint arXiv:2212.10535_, 2022.
+* [26] Simon Frieder, Luca Pinchetti, Ryan-Rhys Griffiths, Tommaso Salvatori, Thomas Lukasiewicz, Philipp Christian Petersen, Alexis Chevalier, and Julius Berner. Mathematical capabilities of chatgrp. _arXiv preprint arXiv:2301.13867_, 2023.
+* [27] Arindam Bhattacharya. A survey of question answering for math and science problem. _arXiv preprint arXiv:1705.04530_, 2017.
+* [28] Yan Wang, Xiaojiang Liu, and Shuming Shi. Deep neural solver for math word problems. In _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing_, pages 845-854, Copenhagen, Denmark, September 2017. Association for Computational Linguistics.
+* [29] Wang Ling, Dani Yogatama, Chris Dyer, and Phil Blunsom. Program induction by rationale generation: Learning to solve and explain algebraic word problems. _ACL_, 2017.
+* [30] Rik Koncel-Kedziorski, Subhro Roy, Aida Amini, Nate Kushman, and Hannaneh Hajishirzi. MAWPS: A math word problem repository. In _Proceedings of the 2016 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 1152-1157, San Diego, California, June 2016. Association for Computational Linguistics.
+* [31] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Ed Chi, Quoc Le, and Denny Zhou. Chain of thought prompting elicits reasoning in large language models. _arXiv preprint arXiv:2201.11903_, 2022.
+
+* [32] Takeshi Kojima, Shixiang Shane Gu, Michel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. In _Advances in Neural Information Processing Systems_, 2022.
+* [33] Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex Smola. Automatic chain of thought prompting in large language models. _arXiv preprint arXiv:2210.03493_, 2022.
+* [34] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. _arXiv preprint arXiv:2203.11171_, 2022.
+* [35] Yao Fu, Hao Peng, Ashish Sabharwal, Peter Clark, and Tushar Khot. Complexity-based prompting for multi-step reasoning. _arXiv preprint arXiv:2210.00720_, 2022.
+* [36] Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let's verify step by step. _arXiv preprint arXiv:2305.20050_, 2023.
+* [37] Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, Songfang Huang, and Fei Huang. Rrhf: Rank responses to align language models with human feedback without tears. _arXiv preprint arXiv:2304.05302_, 2023.
+* [38] Hanze Dong, Wei Xiong, Deepanshu Goyal, Rui Pan, Shizhe Diao, Jipeng Zhang, Kashun Shum, and Tong Zhang. Raff: Reward ranked finetuning for generative foundation model alignment. _arXiv preprint arXiv:2304.06767_, 2023.
+* [39] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kermion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, et al. Constitutional ai: Harmlessness from ai feedback. _arXiv preprint arXiv:2212.08073_, 2022.
+* [40] Jonathan Uesato, Nate Kushman, Ramana Kumar, Francis Song, Noah Siegel, Lisa Wang, Antonia Creswell, Geoffrey Irving, and Irina Higgins. Solving math word problems with process-and outcome-based feedback. _arXiv preprint arXiv:2211.14275_, 2022.
+* [41] Antonia Creswell, Murray Shanahan, and Irina Higgins. Selection-inference: Exploiting large language models for interpretable logical reasoning. _arXiv preprint arXiv:2205.09712_, 2022.
+* [42] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021.
+* [43] Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math dataset. _arXiv preprint arXiv:2103.03874_, 2021.
+* [44] Rohan Anil, Andrew M Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, et al. Palm 2 technical report. _arXiv preprint arXiv:2305.10403_, 2023.
+* [45] Aohan Zeng, Xiao Liu, Zhengxiao Du, Zihan Wang, Hanyu Lai, Ming Ding, Zhuoyi Yang, Yifan Xu, Wendi Zheng, Xiao Xia, et al. Glm-130b: An open bilingual pre-trained model. _arXiv preprint arXiv:2210.02414_, 2022.
+* [46] Xu Zhao, Yuxi Xie, Kenji Kawaguchi, Junxian He, and Qizhe Xie. Automatic model selection with large language models for reasoning. _arXiv preprint arXiv:2305.14333_, 2023.
+* [47] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Jack W. Rae, Oriol Vinyals, and Laurent Sifre. Training compute-optimal large language models. _CoRR_, abs/2203.15556, 2022.
+* [48] Ben Wang and Aran Komatuszaki. GPT-J-6B: A 6 Billion Parameter Autoregressive Language Model. [https://github.com/kingoflolz/mesh-transformer-jax](https://github.com/kingoflolz/mesh-transformer-jax), May 2021.
+* [49] InternLM Team. Internlm: A multilingual language model with progressively enhanced capabilities. [https://github.com/InternLM/InternLM](https://github.com/InternLM/InternLM), 2023.
+* [50] Sid Black, Leo Gao, Phil Wang, Connor Leahy, and Stella Rose Biderman. Gpt-neo: Large scale autoregressive language modeling with mesh-tensorflow. 2021.
+
+* [51] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In Hugo Larochelle, Marc'Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020.
+* [52] Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susannah Young, et al. Scaling language models: Methods, analysis & insights from training gopher. _arXiv preprint arXiv:2112.11446_, 2021.
+* [53] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, et al. Opt: Open pre-trained transformer language models. _arXiv preprint arXiv:2205.01068_, 2022.
+* [54] Sid Black, Stella Biderman, Eric Hallahan, Quentin Anthony, Leo Gao, Laurence Golding, Horace He, Connor Leahy, Kyle McDonell, Jason Phang, et al. Gpt-neox-20b: An open-source autoregressive language model. _arXiv preprint arXiv:2204.06745_, 2022.
+* [55] Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, et al. Bloom: A 176b-parameter open-access multilingual language model. _arXiv preprint arXiv:2211.05100_, 2022.
+* [56] Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. Qlora: Efficient finetuning of quantized l lms. _arXiv preprint arXiv:2305.14314_, 2023.
+* [57] Subhabrata Mukherjee, Arindam Mitra, Ganesh Jawahar, Sahaj Agarwal, Hamid Palangi, and Ahmed Awadallah. Orca: Progressive learning from complex explanation traces of gpt-4. _arXiv preprint arXiv:2306.02707_, 2023.
+* [58] Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question answering challenge targeting commonsense knowledge. In _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)_, pages 4149-4158, Minneapolis, Minnesota, June 2019. Association for Computational Linguistics.
+* [59] Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot, Dan Roth, and Jonathan Berant. Did aristotle use a laptop? a question answering benchmark with implicit reasoning strategies. _Transactions of the Association for Computational Linguistics_, 9:346-361, 2021.
+* [60] Arkil Patel, Satwik Bhattacharya, and Navin Goyal. Are nlp models really able to solve simple math word problems? In _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 2080-2094, 2021.
+* [61] Yihuai Lan, Lei Wang, Qiyuan Zhang, Yunshi Lan, Bing Tian Dai, Yan Wang, Dongxiang Zhang, and Ee-Peng Lim. Mwptoolkit: an open-source framework for deep learning-based math word problem solvers. In _Proceedings of the AAAI Conference on Artificial Intelligence_, volume 36, pages 13188-13190, 2022.
+* [62] Zhanming Jie, Jierui Li, and Wei Lu. Learning to reason deductively: Math word problem solving as complex relation extraction. _arXiv preprint arXiv:2203.10316_, 2022.
+* [63] Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, and Songfang Huang. How well do large language models perform in arithmetic tasks? _arXiv preprint arXiv:2304.02015_, 2023.
+* [64] Yao Fu, Litu Ou, Mingyu Chen, Yuhao Wan, Hao Peng, and Tushar Khot. Chain-of-thought hub: A continuous effort to measure large language models' reasoning performance. _arXiv preprint arXiv:2305.17306_, 2023.
+* [65] Mohammad Javad Hosseini, Hannaneh Hajishirzi, Oren Etzioni, and Nate Kushman. Learning to solve arithmetic word problems with verb categorization. In _Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pages 523-533, Doha, Qatar, October 2014. Association for Computational Linguistics.
+* [66] Subhro Roy and Dan Roth. Solving general arithmetic word problems. In _Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing_, pages 1743-1752, Lisbon, Portugal, September 2015. Association for Computational Linguistics.
+
+* [67] Rik Koncel-Kedziorski, Hannaneh Hajishirzi, Ashish Sabharwal, Oren Etzioni, and Siena Dumas Ang. Parsing algebraic word problems into equations. _Transactions of the Association for Computational Linguistics_, 3:585-597, 2015.
+* [68] Denny Zhou, Nathanael Scharli, Le Hou, Jason Wei, Nathan Scales, Xuezhi Wang, Dale Schuurmans, Olivier Bousquet, Quoc Le, and Ed Huai hsin Chi. Least-to-most prompting enables complex reasoning in large language models. _ArXiv_, abs/2205.10625, 2022.
+* [69] Yifei Li, Zeqi Lin, Shizhuo Zhang, Qiang Fu, Bei Chen, Jian-Guang Lou, and Weizhu Chen. Making language models better reasoners with step-aware verifier. In _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 5315-5333, Toronto, Canada, July 2023. Association for Computational Linguistics.
+* [70] Sebastien Bubeck, Varun Chandrasekaran, Ronen Eldan, Johannes Gehrke, Eric Horvitz, Ece Kamar, Peter Lee, Yin Tat Lee, Yuanzhi Li, Scott Lundberg, et al. Sparks of artificial general intelligence: Early experiments with gpt-4. _arXiv preprint arXiv:2303.12712_, 2023.
+* [71] Joshua Maynez, Shashi Narayan, Bernd Bohnet, and Ryan McDonald. On faithfulness and factuality in abstractive summarization. _arXiv preprint arXiv:2005.00661_, 2020.
+* [72] Alex Graves, Greg Wayne, and Ivo Danihelka. Neural turing machines. _arXiv preprint arXiv:1410.5401_, 2014.
+* [73] Scott Reed and Nando De Freitas. Neural programmer-interpreters. _arXiv preprint arXiv:1511.06279_, 2015.
+* [74] Chengtao Li, Daniel Tarlow, Alexander L. Gaunt, Marc Brockschmidt, and Nate Kushman. Neural program lattices. In _International Conference on Learning Representations_, 2016.
+* [75] Jonathon Cai, Richard Shin, and Dawn Song. Making neural programming architectures generalize via recursion. _arXiv preprint arXiv:1704.06611_, 2017.
+* [76] Yifei Li, Zeqi Lin, Shizhuo Zhang, Qiang Fu, Bei Chen, Jian-Guang Lou, and Weizhu Chen. On the advance of making language models better reasoners. _arXiv preprint arXiv:2206.02336_, 2022.
+* [77] Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. Fine-tuning language models from human preferences. _arXiv preprint arXiv:1909.08593_, 2019.
+* [78] Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. Learning to summarize with human feedback. _Advances in Neural Information Processing Systems_, 33:3008-3021, 2020.
+* [79] Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, et al. Webgpt: Browser-assisted question-answering with human feedback. _arXiv preprint arXiv:2112.09332_, 2021.
+* [80] Eric Nichols, Leo Gao, and Randy Gomez. Collaborative storytelling with large-scale neural language models. In _Proceedings of the 13th ACM SIGGRAPH Conference on Motion, Interaction and Games_, pages 1-10, 2020.
+* [81] Jianhao Shen, Yichun Yin, Lin Li, Lifeng Shang, Xin Jiang, Ming Zhang, and Qun Liu. Generate & rank: A multi-task framework for math word problems. _arXiv preprint arXiv:2109.03034_, 2021.
+* [82] Feifan Song, Bowen Yu, Minghao Li, Haiyang Yu, Fei Huang, Yongbin Li, and Houfeng Wang. Preference ranking optimization for human alignment. _arXiv preprint arXiv:2306.17492_, 2023.
+* [83] Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Goodman. Star: Bootstrapping reasoning with reasoning. _Advances in Neural Information Processing Systems_, 35:15476-15488, 2022.
+* [84] Xinyu Zhu, Junjie Wang, Lin Zhang, Yuxiang Zhang, Yongfeng Huang, Ruyi Gan, Jiaxing Zhang, and Yujiu Yang. Solving math word problems via cooperative reasoning induced language models. In _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_. Association for Computational Linguistics, 2023.
+* [85] Ansong Ni, Jeevana Priya Inala, Chenglong Wang, Alex Polozov, Christopher Meek, Dragomir Radev, and Jianfeng Gao. Learning math reasoning from self-sampled correct and partially-correct solutions. In _The Eleventh International Conference on Learning Representations_, 2022.
+
+* [86] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _J. Mach. Learn. Res._, 21:140:1-140:67, 2020.
+* [87] Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V Le, Barret Zoph, Jason Wei, et al. The flan collection: Designing data and methods for effective instruction tuning. _arXiv preprint arXiv:2301.13688_, 2023.
+* [88] Vamsi Aribandi, Yi Tay, Tal Schuster, Jinfeng Rao, Huaixiu Steven Zheng, Sanket Vaibhav Mehta, Honglei Zhuang, Vinh Q. Tran, Dara Bahri, Jianmo Ni, Jai Prakash Gupta, Kai Hui, Sebastian Ruder, and Donald Metzler. Ext5: Towards extreme multi-task scaling for transfer learning. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [89] Victor Sanh, Albert Webson, Colin Raffel, Stephen H. Bach, Lintang Sutawika, Zaid Alyafeai, Antoine Chaffin, Arnaud Stiegler, Arun Raja, Manan Dey, M Saiful Bari, Canwen Xu, Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechla, Taewoon Kim, Gunjan Chhabhani, Nihal Nayak, Debajyoti Datta, Jonathan Chang, Mike Tian Jian Jiang, Han Wang, Matteo Manica, Sheng Shen, Zheng Xin Yong, Harshit Pandey, Rachel Bawden, Thomas Wang, Trishala Neeraj, Jos Rozen, Abheesht Sharma, Andrea Santilli, Thibault Fevry, Jason Alan Fries, Ryan Teehan, Teven Le Scao, Stella Biderman, Leo Gao, Thomas Wolf, and Alexander M. Rush. Multitask prompted training enables zero-shot task generalization. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.
+* [90] Daniel Khashabi, Sewon Min, Tushar Khot, Ashish Sabharwal, Oyvind Tafjord, Peter Clark, and Hannaneh Hajishirzi. Unifiedqa: Crossing format boundaries with a single QA system. In Trevor Cohn, Yulan He, and Yang Liu, editors, _Findings of the Association for Computational Linguistics: EMNLP 2020, Online Event, 16-20 November 2020_, volume EMNLP 2020 of _Findings of ACL_, pages 1896-1907. Association for Computational Linguistics, 2020.
+* [91] Hanwei Xu, Yujun Chen, Yulun Du, Nan Shao, Yanggang Wang, Haiyu Li, and Zhilin Yang. Zeroprompt: Scaling prompt-based pretraining to 1, 000 tasks improves zero-shot generalization. In Yoav Goldberg, Zomitsa Kozareva, and Yue Zhang, editors, _Findings of the Association for Computational Linguistics: EMNLP 2022, Abu Dhabi, United Arab Emirates, December 7-11, 2022_, pages 4235-4252. Association for Computational Linguistics, 2022.
+* [92] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. _arXiv preprint arXiv:2210.11416_, 2022.
+* [93] Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A Smith, Daniel Khashabi, and Hannaneh Hajishirzi. Self-instruct: Aligning language model with self generated instructions. _arXiv preprint arXiv:2212.10560_, 2022.
+
+[MISSING_PAGE_EMPTY:16]
+
+따라서 메러디스는 3일 동안 총 104시간 동안 기사를 썼다.
+
+답은 104입니다.
+
+\begin{tabular}{l|l} \hline
+**WizardMath-70B** & 1. 월요일에 메러디스는 5개의 기사를 작성했습니다. \\
+2. 화요일에 그녀는 월요일보다 2/5배 더 많은 기사를 썼다. 그녀가 화요일에 얼마나 많은 기사를 썼는지 알아내려면 월요일에 쓴 기사 수에 2/5를 곱해야 한다. 그래서 5개의 기사 * 2/5 = 2개의 기사이다. 그러므로 그녀는 화요일에 7개의 기사를 썼다 (5개의 기사 + 2개의 기사). \\
+3. On Wednesday, she wrote twice the number of articles she wrote on Tuesday. To find out how many articles she wrote on Wednesday, we need to multiply the number of articles she wrote on Tuesday by 2. So, 7 articles * 2 = 14 articles. \\ Now, let's calculate the total number of articles she wrote in the three days: \\ Total articles = Monday's articles + Tuesday's articles + Wednesday's articles \\ Total articles = 5 articles + 7 articles + 14 articles = 26 articles \\ Since each article takes an average of 4 hours to research and write about, we can \\ calculate the total number of hours she spent writing articles in the three days: \\ Total hours = Total articles * Time per article \\ Total hours = 26 articles * 4 hours/article = 104 hours \\ So, Meredith spent a total of 104 hours writing articles in the three days. \\ The answer is: 104. \\ \hline \end{tabular}
+
+**설명:** 정비사는 트럭과 자동차의 타이어를 수리하는 데 다른 요금을 부과합니다. 수리하는 트럭 타이어마다 정비사는 60달러를, 수리하는 자동차 타이어마다 정비사는 40달러를 청구할 것이다. 목요일에 정비사는 트럭 타이어 6개와 자동차 타이어 4개를 수리한다. 금요일에 정비사는 자동차 타이어 12개를 수리하고 트럭 타이어는 수리하지 않습니다. 정비사는 더 높은 수익으로 그날 얼마나 더 많은 수익을 얻었나요?
+
+**Ground Truth Answer: 40**
+
+**참고:** 마법사 수학 7B는 잘못 답한 반면 13B와 70B는 올바르게 답합니다.
+
+**WizardMath-7B**
+
+목요일에 정비사는 트럭 타이어 6개와 자동차 타이어 4개를 수리했다. 따라서 목요일에 트럭 타이어를 수리한 수입은 6*60=360달러, 목요일에 자동차 타이어를 수리한 수입은 4*40=160달러였다. 금요일에 정비사는 자동차 타이어 12개를 수리했지만 트럭 타이어는 수리하지 않았다. 따라서 금요일 자동차 타이어 수리 수익은 12*40=480달러였습니다.
+
+목요일과 금요일에 트럭 타이어와 자동차 타이어를 수리하여 얻은 총 수익을 계산하려면 매일 수익을 합산해야 합니다. 따라서 목요일과 금요일에 트럭 타이어와 자동차 타이어를 수리하여 얻은 총수입은 $360 + $160 + $480 = $900이었다.
+
+금요일에 트럭 타이어를 수리한 수익을 계산하려면 정비사가 금요일에 얼마나 많은 트럭 타이어를 수리했는지 알아야 합니다. 그러나, 이 정보는 질문에 주어지지 않는다. 따라서 금요일 트럭 타이어 수리로 인한 수익을 계산할 수 없습니다.
+
+목요일과 금요일에 자동차 타이어 수리 수익을 계산하려면 매일 수익을 합산해야 합니다. 따라서 목요일과 금요일 자동차 타이어 수리로 인한 총 수익은 160달러 + 480달러 = 640달러였습니다.
+
+목요일과 금요일의 트럭 타이어 및 자동차 타이어 수리 수익의 차이를 계산하려면 목요일과 금요일의 트럭 타이어 및 자동차 타이어 수리 수익 총액에서 목요일과 금요일의 자동차 타이어 수리 수익을 차감해야 합니다. 따라서 목요일과 금요일에 트럭 타이어와 자동차 타이어를 수리하는 데 따른 수익의 차이는 $900 - $640 = $260이었다.
+
+따라서 정비사는 더 높은 수익으로 당일에 260달러를 더 벌었습니다. 답은 260입니다.
+
+**WizardMath-13B**
+
+1단계: 목요일에 벌어들인 수익을 계산하세요.
+
+목요일에 정비사는 트럭 타이어 6개와 자동차 타이어 4개를 수리했다. 정비사는 트럭 타이어 하나에 60달러, 자동차 타이어 하나에 40달러를 청구합니다. 따라서 목요일에 벌어들인 수익은 다음과 같이 계산될 수 있다:
+
+목요일 수익 = (트럭 타이어 수) * (트럭 타이어 당 가격) + (자동차 타이어 수) * (자동차 타이어 당 가격)
+
+목요일 수익 = 6*60 + 4*40
+
+목요일 수익 = 360달러 + 160달러
+
+목요일의 수익 = 520달러
+
+2단계: 금요일에 벌어들인 수익을 계산하세요.
+
+금요일에 정비사는 자동차 타이어 12개를 수리했고 트럭 타이어는 수리하지 않았다. 따라서 금요일에 벌어들인 수익은 다음과 같이 계산될 수 있다:
+
+금요일의 수익 = (자동차 타이어 수) * (자동차 타이어 당 가격)
+
+금요일의 수익 = 12 * $40
+
+금요일의 수익 = 480달러
+
+3단계: 양일에 벌어들인 수익을 비교하라.
+
+이제 목요일과 금요일에 벌어들인 수익을 비교해서 어느 날에 더 많은 수익을 얻었는지 알아봐야 합니다.
+
+수입의 차이 = 목요일의 수입 - 금요일의 수입
+
+수입의 차이 = $520 - $480
+
+수입의 차이 = $40
+
+\begin{table}
+\begin{tabular}{l|l} \hline
+**WizardMath-13B** & 1단계: 목요일에 얻은 수익을 계산합니다.
+
+목요일에 정비사는 트럭 타이어 6개와 자동차 타이어 4개를 수리했다. 정비사는 트럭 타이어 하나에 60달러, 자동차 타이어 하나에 40달러를 청구합니다. 따라서 목요일에 벌어들인 수익은 다음과 같이 계산될 수 있다:
+
+\begin{tabular}{l} Revenue on Thursday = (Number of truck tires) * (Price per truck tire) + (Number of car tires) * (Price per car tire) \\ Revenue on Thursday = 6 * $60 + 4 * $40 \\ Revenue on Thursday = $360 + $160 \\ Revenue on Thursday = $520 \\ Step 2: Calculate the revenue earned on Friday.
+
+금요일에, 그 정비사는 12개의 자동차 타이어를 수리했고 어떤 트럭 타이어도 수리하지 않았다. 따라서 금요일에 벌어들인 수익은 다음과 같이 계산될 수 있다:
+
+\begin{tabular}{l} Revenue on Friday = (Number of car tires) * (Price per car tire) \\ Revenue on Friday = 12 * $40 \\ Revenue on Friday = $480 \\ Step 3: Compare the revenue earned on both days.
+
+이제 목요일과 금요일에 벌어들인 수익을 비교해서 어느 날에 더 많은 수익을 얻었는지 알아봐야 합니다.
+
+수입의 차이 = 목요일의 수입 - 금요일의 수입
+
+Difference in revenue = $520 - $480 \\ Difference in revenue = $40 \\ \hline \end{tabular}
+\end{table}
+표 4: 다른 규모 모델에 대한 비교 사례이므로 정비사는 목요일인 더 높은 수익으로 당일 40달러의 수익을 더 얻었다. 최종 답은 40달러입니다.
+
+정답은 40입니다.
+
+**WizardMath-70B**
+
+1단계: 4년 전 라일라의 급여를 결정하라.
+
+아드리엔의 총 급여가 라일라의 급여보다 30% 더 높았고, 4년 전 아드리엔이 40000달러를 벌었기 때문에 우리는 아드리엔의 급여에서 40000달러의 30%를 빼서 라일라의 급여를 구할 수 있다.
+
+라일라 월급 = $40000 - (30/100)*$40000 = $40000 - $12000 = $28000
+
+2단계: 4년 후 에이드리언의 급여를 계산하세요.
+
+\begin{table}
+\begin{tabular}{l|l} \hline
+**Ground Truth Answer: 95200** \\ \hline
+**Note:** & WizardMath 7B and 13B answer incorrectly, while 70B answers correctly. \\ \hline
+**WizardMath-7B** & Step 1: Calculate Adrien’s salary four years ago. \\  & Since Adrien earned $40000 four years ago, his total salary four years ago was \\  & $400000. \\  & Step 2: Calculate the increase in Adrien’s salary four years later. \\  & Four years later, Adrien’s salary had increased by 40\% of his salary four years ago. \\  & Therefore, the increase in Adrien’s salary was 40/100*$40000 = $16000. \\  & Step 3: Calculate Adrien’s total salary four years later. \\  & Adrien’s total salary four years later was the sum of his salary four years ago and \\  & the increase in his salary. Therefore, Adrien’s total salary four years later was \\  & $40000+$16000 = $56000. \\  & Step 4: Calculate the increase in Lylah’s salary four years later. \\  & Since Adrien’s total salary was 30\% higher than Lylah’s, the increase in Lylah’s salary four years later was 30/100*$56000 = $16800. \\  & Step 5: Calculate Lylah’s total salary four years later. \\  & Lylab’s total salary four years later was the sum of her salary four years ago and \\  & the increase in her salary. Therefore, Lylah’s total salary four years later was \$56000+$16800 = $72800. \\  & Step 6: Calculate the total salary the two were receiving four years later. \\  & The total salary the two were receiving four years later was the sum of Adrien’s \\  & and Lylab’s total salary four years later. \\  & Therefore, the total salary the two were receiving four years later was \$72800+\$56000 = $128800. \\  & Therefore, the total salary the two were receiving four years later was \$128800. \\  & The answer is: 128800. \\ \hline
+**WizardMath-13B** & Step 1: Calculate Adrien’s total salary four years ago. \\  & We know that Adrien’s total salary was 30 percent higher than Lylah’s. If Adrien was \\  & earning $40000 four years ago, then Lylah was earning $40000/30/100 = $12000. \\  & Step 2: Calculate Adrien’s total salary four years later. \\  & Four years later, Adrien’s salary had increased, and he was earning 40\% more than \\  & what he was making four years ago. Therefore, Adrien’s total salary four years later is \$40000 + $40000*40/100 = $56000. \\  & Step 3: Calculate Lylab’s total salary four years later. \\  & If Adrien’s salary increased by 40\%, then Lylah’s salary also increased by 40\%. \\  & Therefore, Lylab’s total salary four years later is \$12000 + $12000*40/100 = $16800. \\  & Step 4: Calculate the total salary the two were receiving four years later. \\  & The total salary the two were receiving four years later. \\  & The total salary the two were receiving four years later is the sum of Adrien’s and \\  & Lylab’s total salary. Therefore, the total salary the two were receiving four years later is \$56000 + $16800 = $72800. \\  & Therefore, the total salary the two were receiving four years later is \$72800. \\ \hline
+**WizardMath-70B** & Step 1: Determine Lylah’s salary four years ago. \\  & Since Adrien’s total salary was 30 percent higher than Lylah’s, and Adrien earned \$40000 four years ago, we can find Lylab’s salary by subtracting 30\% of \$40000 from Adrien’s salary. \\  & Lylab’s salary = $40000 - (30/100)*$40000 = $40000 - $12000 = $28000 \\  & Step 2: Calculate Adrien’s salary four years later. \\ \hline \end{tabular}
+\end{table}
+표 5: 4년 후 다른 규모 모델에 대한 비교 사례: Adrien의 급여는 4년 전에 버는 것의 40% 증가했습니다. 4년 전 급여에 4,000달러의 40%를 더해야 해요
+
+ 아드리엔의 4년 후 급여 = $40000 + (40/100)*$40000 = $40000 + $16000 = $56000
+
+ 3단계: 4년 후 라일라의 급여를 계산하세요.
+
+ 그들의 급여가 동시에 증가했기 때문에 라일라의 급여도 4년 전에 버는 것의 40% 증가했습니다. 4년 전 급여에 28000달러의 40%를 더해야 해요
+
+ 라일라의 급여 4년 후 = 28000달러 + (40/100)*28000달러 = 28000달러 + 11200달러 = 39200달러
+
+ 4단계: 두 사람이 4년 후에 받은 총 급여를 계산합니다.
+
+ 이제 4년 후의 에이드리언과 라일라의 급여를 더하면 총 급여를 찾을 수 있어요
+
+ 총 급여 = 아드리엔 4년 후 급여 + 라일라 4년 후 급여 = $56000 + $39200 = $95200
+
+ 그래서, 두 사람이 4년 후에 받은 총 급여는 95200달러였다.
+
+ 정답은 95200입니다
+
+[MISSING_PAGE_EMPTY:22]
+
+\[y=-10-1\]
+
+\[x=15\]
+
+\[y=-11\]
+
+따라서, \((x,y)\)의 좌표는 \(\boxed{(15,-11)}\)
+
+답은 다음과 같다. (15,-11).
+
+**WizardMath-13B**:
+
+1단계: 문제 이해
+
+우리는 \((x,y)\)와 \((-9,1)\) 사이의 선분의 중간점이 \((3,-5)\)라고 주어진다. 우리는 점 \((x,y)\)의 좌표를 찾아야 한다.
+
+2단계: 중간점 공식을 되살리기
+
+종점이 \((x_{1},y_{1})\) 및 \((x_{2},y_{2})\)인 선분의 중간점은 중간점 공식을 사용하여 찾을 수 있다:
+
+중간점 = \(\left(\frac{x_{1}+x_{2}}{2},\frac{y_{1}+y_{2}}{2}\right)\)
+
+3단계: 중간점 수식 적용
+
+우리의 경우 끝점은 \((x,y)\) 및 \((-9,1)\입니다. 따라서 이러한 값을 중간점 공식에 연결할 수 있습니다.
+
+Midpoint = \(\left(\frac{x+(-9)}{2},\frac{y+1}{2}\right)\)
+
+4단계: 중간점 단순화
+
+이제, 우리는 산술 연산을 수행함으로써 중간점을 단순화할 수 있다:
+
+Midpoint = \(\left(\frac{x-9}{2},\frac{y+1}{2}\right)\)
+
+단계 5: 방정식 설정
+
+중간점이 \((3,-5)\)로 주어지기 때문에 우리는 간략화된 중간점 공식을 사용하여 방정식을 세울 수 있다:
+
+\(\frac{x-9}{2}=3\) 및 \(\frac{y+1}{2}=-5\)
+
+제6단계: 방정식을 풀다
+
+이제 우리는 \(x\)와 \(y\)의 값을 찾기 위해 이 두 방정식을 풀어야 한다. 첫 번째 방정식부터 시작하겠습니다.
+
+\(\frac{x-9}{2}=3\)
+
+양변에 2를 곱하여 분율을 제거한다:
+
+\(x-9=6\)
+
+자, 양쪽에 9를 더하면...
+
+\(x=15\)
+
+다음으로, 두 번째 방정식을 풀자:
+
+\(\frac{y+1}{2}=-5\)
+
+양변에 2를 곱하여 분율을 제거한다:
+
+\(y+1=-10\)
+
+이제 양쪽에서 1을 뺍니다.
+
+\(y=-11\)
+
+7단계: 최종 답안 작성
+
+우리는 \(x\)와 \(y\)의 값을 찾았다. 따라서 점의 좌표 \((x,y)\)는 \((15,-11)\)이다. 따라서 최종 답은 다음과 같습니다.
+
+\((x,y)=\boxed{(15,-11)}\)
+
+답은 다음과 같다. (15,-11).
+
+**WizardMath-70B**:
+
+1단계: 문제 이해
+
+우리는 선분의 중간점과 그 끝점 중 하나의 좌표를 받는다. 우리는 \((x,y)\)인 다른 끝점의 좌표를 찾아야 한다.
+
+2단계: 중간점 공식을 되살리기
+
+종점 \((x_{1},y_{1})\) 및 \((x_{2},y_{2})\)를 갖는 선분의 중간점은 다음 식으로 주어진다:
+
+중간점 = \(\left(\frac{x_{1}+x_{2}}{2},\frac{y_{1}+y_{2}}{2}\right)\)
+
+단계 3: 주어진 정보에 플러그인
+
+우리는 중간점이 \((3,-5)\)이고 하나의 끝점이 \((-9,1)\)임을 안다. 따라서 이러한 값을 중간점 공식에 연결할 수 있습니다.
+
+\((3,-5)=\left(\frac{-9+x}{2},\frac{1+y}{2}\right)\)
+
+4단계: \(x\)와 \(y\)에 대해 풀기
+
+이제 우리는 연립방정식을 풀어야 한다.
+
+1) \(\frac{-9+x}{12}=3\)
+
+2) \(\frac{1+y}{2}=-5\)
+
+단계 5: \(x\)에 대한 방정식 1을 풀기
+
+양면에 2를 곱하면:
+
+\(-9+x=6\)
+
+양면에 9를 더한다:
+
+\(x=15\)
+
+6단계: \(y\)에 대한 방정식 2를 풀기
+
+양면에 2를 곱하면:
+
+\(1+y=-10\)
+
+양측으로부터 1을 감산한다:
+
+\(y=-11\)
+
+7단계: 최종 답안 작성
+
+이제 \(x\)와 \(y\)의 값을 찾았으므로 최종 답을 다음과 같이 쓸 수 있다.
+
+\((x,y)=(15,-11)\)
+
+따라서 다른 끝점의 좌표는 \((15,-11)\)입니다.
+
+답은 다음과 같다. (15,-11).
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline
+**Instruction:** Evaluate \(\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ}\tan 60^{ \circ}\tan 70^{\circ}\tan 80^{\circ}\). \\ \hline \hline
+**Ground Truth Answer: 1** \\ \hline \hline
+**Note:** WizardMath 7B answers incorrectly, while 13B and 70B answer correctly. \\ \hline
+**WizardMath-7B** \\ \hline \multirow{2}{*}{First, we can rewrite the given expression using the identity \(\tan(90^{\circ}-x)=\frac{1}{\tan x}\): \\ \[\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ} \tan 60^{\circ}\tan 70^{\circ}\tan 80^{\circ}=\frac{1}{\tan 80^{\circ}}\] \\ \end{tabular} Now, we can use the double-angle formula for tangent, which is \(\tan 2x=\frac{2\tan x}{1-\tan^{2}x}\): \\ \[\frac{1}{\tan 80^{\circ}}=\frac{2}{\tan 160^{\circ}}=\frac{2}{\frac{1-\tan^{2}80 ^{\circ}}{2\tan 80^{\circ}}}=\frac{1-\tan^{2}80^{\circ}}{2\tan 80^{\circ}}\] \\ \end{tabular} Next, we can use the double-angle formula for tangent again: \\ \[\frac{1-\tan^{2}80^{\circ}}{2\tan 80^{\circ}}=\frac{1-\frac{1}{2}\tan^{2}80 ^{\circ}}{2\tan 80^{\circ}}=\frac{1-\frac{1}{2}\tan^{2}80^{\circ}}{2\tan 80^{ \circ}}\cdot\frac{2\tan 80^{\circ}}{1-\tan^{2}80^{\circ}}\] \\ \end{tabular} Now, we can multiply the fractions: \\ \[\frac{1-\frac{1}{2}\tan^{2}80^{\circ}}{2\tan 80^{\circ}}\cdot\frac{2\tan 80^{ \circ}}{1-\tan^{2}80^{\circ}}=\frac{1-\frac{1}{2}\tan^{2}80^{\circ}}{1-\tan^{ 2}80^{\circ}}\] \\ \end{tabular} Finally, we can simplify the expression: \\ \[\frac{1-\frac{1}{2}\tan^{2}80^{\circ}}{1-\tan^{2}80^{\circ}}=1-\frac{1}{2}\tan ^{2}80^{\circ}\] So, the rewritten answer is: \\ \[\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{ \circ}\tan 60^{\circ}\tan 70^{\circ}\tan 80^{\circ}=\boxed{1-\frac{1}{2}\tan^{2}80^{ \circ}}\] \\ \end{tabular} The answer is: \(1-\frac{1}{2}\tan^{2}80^{\circ}\). \\ \hline
+**WizardMath-13B** \\ \hline \multirow{2}{*}{Step 1: Recall the angle addition formula for tangent: \(\tan(A+B)=\frac{\tan A+\tan B}{1-\tan A\tan B}\)} & \multirow{2}{*}{Step 2: Use the formula to find \(\tan 110^{\circ}\): \(\tan 110^{\circ}=\tan(10^{\circ}+100^{\circ})=\frac{\tan 10^{\circ}+\tan 100^{ \circ}}{1-\tan 100^{\circ}}=\frac{1+0}{1-1.0}=1\)} \\ \multirow{2}{*}{Step 3: Observe that \(\tan 110^{\circ}\) is the only term in the given expression that is not equal to 0. \\ \multirow{2}{*}{Step 4: Multiply both sides of the equation by \(\tan 110^{\circ}\): \(\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ}\tan 60^{ \circ}\tan 70^{\circ}\tan 80^{\circ}\tan 110^{\circ}\)} & \multirow{2}{*}{\(=\)} & \multirow{2}{*} \\ \multirow{2}{*}{Step 5: Simplify the equation: \(\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ}\tan 60^{ \circ}\tan 70^{\circ}\tan 80^{\circ}=\tan 110^{\circ}\)} & \multirow{2}{*}{Step 6: Since \(\tan 110^{\circ}=1\), the final answer is: \(\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ}\tan 60^{ \circ}\tan 70^{\circ}\tan 80^{\circ}=\boxed{1}\).} \\ \end{tabular}
+\end{table}
+표 7: 서로 다른 스케일 크기 모델에 대한 비교 사례 \(\tan x=\frac{\sin x}{\cos x}\) 및 \(\cot x=\frac{\cos x}{\sin x}\)를 알고 있다.
+
+2단계: 각 각의 접선과 코탄젠트를 구한다.
+
+우리는 주어진 식에서 각 각의 접선과 코탄젠트를 찾아야 한다:
+
+\(\tan 10^{\circ}=\frac{\sin 10^{\circ}}{\cos 10^{\circ}}\)
+
+\(\tan 20^{\circ}=\frac{\sin 20^{\circ}}{\cos 20^{\circ}}\)
+
+\(\tan 30^{\circ}=\frac{\sin 30^{\circ}}{\cos 30^{\circ}}\)
+
+\(\tan 40^{\circ}=\frac{\sin 40^{\circ}}{\cos 40^{\circ}}\)
+
+\(\tan 50^{\circ}=\frac{\sin 50^{\circ}}{\cos 50^{\circ}}\)
+
+\(\tan 60^{\circ}=\frac{\sin 60^{\circ}}{\cos 60^{\circ}}\)
+
+\(\tan 70^{\circ}=\frac{\sin 70^{\circ}}{\cos 70^{\circ}}\)
+
+\(\tan 80^{\circ}=\frac{\sin 80^{\circ}}{\cos 80^{\circ}}\)
+
+3단계: 각 각의 코탄젠트를 찾는다.
+
+각도의 코탄젠트를 찾아야 해
+
+\(\cot 10^{\circ}=\frac{\cos 10^{\circ}}{\sin 10^{\circ}}\)
+
+\(\cot 20^{\circ}=\frac{\cos 20^{\circ}}{\sin 20^{\circ}}\)
+
+\(\cot 30^{\circ}=\frac{\sin 30^{\circ}}{\cos 40^{\circ}}\)
+
+\(\cot 40^{\circ}=\frac{\cos 40^{\circ}}{\sin 40^{\circ}}\)
+
+\(\cot 50^{\circ}=\frac{\cos 50^{\circ}}{\cos 40^{\circ}}\)
+
+\(\cot 60^{\circ}=\frac{\sin 60^{\circ}}{\sin 60^{\circ}}\)
+
+\(\cot 70^{\circ}=\frac{\cos 70^{\circ}}{\sin 70^{\circ}}\)
+
+\(\cot 80^{\circ}=\frac{\cos 80^{\circ}}{\sin 80^{\circ}}\)
+
+단계 4: 신원 \(\tan x\cot x=1\)을 사용한다.
+
+우리는 \(\tan x\cot x=1\)을 안다. 따라서 주어진 식을 다음과 같이 다시 쓸 수 있습니다.
+
+\(\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ}\tan 60^{\circ}\tan 70^{\circ}\tan 80^{\circ}=\frac{\sin 10^{\circ}}{\cos 10^{ \circ}}\frac{\sin 20^{\circ}}{\cos 20^{\circ}}\).
+
+\(\frac{\sin 30^{\circ}}{\cos 30^{\circ}}\frac{\sin 40^{\circ}}{\cos 40^{\circ}} \frac{\sin 50^{\circ}}{\cos 50^{\circ}}\frac{\sin 60^{\circ}}{\cos 60^{\circ}} \frac{\sin 70^{\circ}}{\cos 70^{\circ}}\frac{\sin 80^{\circ}}{\cos 80^{\circ}}\)
+
+5단계: 식을 단순화한다.
+
+이제 용어를 취소하여 표현을 단순화할 수 있습니다.
+
+\(\frac{\sin 10^{\circ}\sin 20^{\circ}\sin 30^{\circ}\tan 40^{\circ}\sin 50^{ \circ}\sin 60^{\circ}\sin 70^{\circ}\sin 80^{\circ}}{\cos 10^{\circ}\cos 20^{ \circ}\cos 30^{\circ}\cos 40^{\circ}\cos 50^{\circ}\cos 60^{\circ}\cos 70^{ \circ}\cos 80^{\circ}}\)
+
+6단계: 최종 답변을 계산합니다.
+
+이제 최종 답을 계산할 수 있습니다.
+
+\(\tan 10^{\circ}\tan 20^{\circ}\tan 30^{\circ}\tan 40^{\circ}\tan 50^{\circ}\tan 60^{\circ}\tan 70^{\circ}\tan 80^{\circ}=\framebox{1}\)
+
+그래서 최종 답은 1입니다.
+
+정답은 1입니다.
+
+**WizardMath-13B**
+
+1. \(f(x)\)가 홀수 함수임을 알고, 이는 \(f(-x)=-f(x)\)를 의미한다.
+
+2. \(g(x)\)는 짝수 함수라는 것도 알고, 이는 \(g(-x)=g(x)\)를 의미한다.
+
+이제 주어진 식인 \(f(f(g(f(f(x))))\)를 분석해 보자.
+
+3. 식: \(f(f(g(f(-x)))))\에서 \(x\)를 \(-x\)로 바꿉니다. \(f\)는 홀수이므로 우리는 \(f(-x)=-f(x)\를 가지므로 식은 \(-f(f(g(f(-x)))))\가 된다.
+
+4. \(g\)는 짝수이므로 \(g(-x)=g(x)\를 갖는다. 따라서 식을 \(-f(f(g(f(x))))\로 다시 쓸 수 있다.
+
+5. 이제 \(f\)와 \(g\)의 다른 인스턴스가 있습니다. \(f\)는 홀수이고 \(g\)는 짝수이므로 이들의 곱은 홀수 함수이다. 따라서 우리는 식을 \(-[f(g(f(x)))]\로 다시 쓸 수 있다.
+
+6. \(f\) 및 \(g\)의 다른 인스턴스가 있습니다. \(f\)는 홀수이고 \(g\)는 짝수이므로 이들의 곱은 홀수 함수이다. 따라서 우리는 식을 \(-[f(g(f(x)))]\로 다시 쓸 수 있다.
+
+6. \(f\) 및 \(g\)의 다른 인스턴스가 있습니다. \(f\)는 홀수이고 \(g\)는 짝수이므로 이들의 곱은 홀수 함수이다. 따라서 우리는 식을 \(-[f(g(f(x)))]\로 다시 쓸 수 있다.
+
+6. \(f\) 및 \(g\)의 다른 인스턴스가 있습니다. \(f\)는 홀수이고 \(g\)는 짝수이므로 이들의 곱은 홀수 함수이다. 따라서 우리는 식을 \(-[f(g(f(x)))]\로 다시 쓸 수 있다.
+
+7. 이제 \(f\)의 다른 인스턴스가 있습니다. \(f\)가 홀수이므로 우리는 \(f(-x)=-f(x)\를 갖는다. 따라서 우리는 식을 \(-f(f(x))\)로 다시 쓸 수 있다.
+
+8. 마지막으로 \(f\)의 다른 인스턴스가 있습니다. \(f\)가 홀수이므로 우리는 \(f(-x)=-f(x)\를 갖는다. 따라서 우리는 식을 \(-f(f(x))\)로 다시 쓸 수 있다.
+
+이제 우리는 식이 홀수 함수인 \(-f(f(x))\)와 같다는 것을 알 수 있다.
+
+따라서 답은 \(\boxed{\text{odd}}\)이다.
+
+정답은 이상하다.
+
+\begin{table}
+\begin{tabular}{l|l} \hline
+**Instruction:** Let \(f(x)\) be an odd function, and let \(g(x)\) be an even function. Is \(f(f(g(f(g(f(x))))))\) even, \\ odd, or neither? \\ Enter ”odd”, “even”, or ”neither”. \\ \hline \multicolumn{2}{l}{**Ground Truth Answer: even**} \\ \hline
+**Note:** WizardMath 7B and 13B answer incorrectly, while 70B answers correctly. \\ \hline
+**WizardMath-7B** & 1. \(f(x)\)가 홀수 함수임을 알고 있으며, 이는 해당 도메인의 모든 \(x\)에 대해 \(f(-x)=-f(x)\)를 의미합니다. \
+2. \(g(x)\)는 짝수 함수라는 것도 알고 있으며, 이는 \(g(-x)=g(x)\)의 도메인에 있는 모든 \(x\)에 대해 \(g(-x)=g(x)\)임을 의미한다. \
+3. 이제 \(f(g(-x))\)와 \(f(-g(x))\)의 값을 찾아보자. \(g(-x)=g(x)\)와 \(f(g(-x))=f(g(x))\이므로 다음과 같이 결론을 내릴 수 있다. \\
+4. 다음으로 \(f(f(g(-x)))\)와 \(f(f(-g(x)))\의 값을 찾아보자. \(f(-x)=-f(x)\)와 \(f(g(-x))=f(g(x))\)이므로 다음과 같이 결론을 내릴 수 있습니다. \\ \(f(f(g(-x)))=f(f(-g(x))\) \\
+5. 이제 \(f(f(f(g(-x))))\)와 \(f(f(f(-g(x))))\의 값을 찾아보자. \(f(f(-x))=-f(f(x))\) 및 \(f(f(g(-x))))=-f(f(f(-g(x))))\이므로 다음과 같이 결론을 내릴 수 있습니다. \\ \(f(f(f(f(f(g(-x))))))=-f(f(f(-g(x))))\ \\
+6. Finally, let’s find the value of \(f(f(f(f(g(-x)))))\) and \(f(f(f(f(-g(x)))))\). Since \(f(f(-x))=-f(f(x))\) and \(f(f(f(g(-x))))=-f(f(f(-g(x))))\), we can conclude that: \\ \(f(f(f(f(g(-x))))))=-f(f(f(f(-g(x)))))\) \\ Therefore, the final answer is \(\boxed{\text{odd}}\) \\ The answer is: odd. \\ \hline
+**WizardMath-13B** & 1. \(f(x)\)가 홀수 함수임을 알고 있으며, 이는 \(f(-x)=-f(x)\)를 의미합니다.
+
+2. \(g(x)\)는 짝수 함수라는 것도 알고, 이는 \(g(-x)=g(x)\)를 의미한다.
+
+이제 주어진 식인 \(f(f(g(f(f(x))))\)를 분석해 보자.
+
+3. 식에서 \(f(f(g(f(g(f(-x))))))\로 \(x\)를 \(-x\)로 바꿉니다. \(f\)는 홀수이므로 우리는 \(f(-x)=-f(x)\를 가지므로 식은 \(-f(f(g(f(g(-x)))))\가 된다.
+
+4. \(g\)는 짝수이므로 \(g(-x)=g(x)\를 갖는다. 따라서 식을 \(-f(f(g(f(g(x))))\)로 다시 쓸 수 있다.
+
+5. 이제 \(f\)와 \(g\)의 다른 인스턴스가 있습니다. \(f\)는 홀수이고 \(g\)는 짝수이므로 이들의 곱은 홀수 함수이다. 따라서 우리는 식을 \(-[f(g(f(x)))]\로 다시 쓸 수 있다.
+
+6. \(f\) 및 \(g\)의 다른 인스턴스가 있습니다. \(f\)는 홀수이므로 이들의 곱은 홀수 함수이다. 따라서 우리는 식을 \(-[f(g(f(x)))]\로 다시 쓸 수 있다.
+
+7. 이제 \(f\)의 다른 인스턴스가 있습니다. \(f\)가 홀수이므로 우리는 \(f(-x)=-f(x)\를 갖는다. 따라서 우리는 식을 \(-f(f(x))\)로 다시 쓸 수 있다.
+
+8. 마지막으로 \(f\)의 다른 인스턴스가 있습니다. \(f\)가 홀수이므로 우리는 \(f(-x)=-f(x)\를 갖는다. 따라서 우리는 식을 \(-f(f(x))\)로 다시 쓸 수 있다.
+
+이제 우리는 식이 홀수 함수인 \(-f(f(x))\)와 같다는 것을 알 수 있다. 따라서 답은 \(\box- \(h(-x)=f(f(g(f((x))))))\)이다.
+
+6. \(g(x)\)는 짝수이므로 \(g(-x)=g(x)\를 갖는다. 그래서 우리는 식을 다음과 같이 다시 쓸 수 있습니다.
+
+- \(h(-x)=f(f(g(f(g(f(x))))))\).
+
+7. 이제 \(h(-x)=h(x)\)를 볼 수 있다. 이는 함수 \(h(x)\)가 짝수 함수의 정의를 만족한다는 것을 의미한다.
+
+8. 따라서 주어진 함수 \(f(f(g(f(g(f(x))))\)는 짝수이다.
+
+정답은 '짝수'예요

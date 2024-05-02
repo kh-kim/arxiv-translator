@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# _WizardMath_: Empowering Mathematical Reasoning for Large Language Models via\n' +
+      '\n' +
+      '_Reinforced Evol-Instruct_\n' +
+      '\n' +
+      ' Haipeng Luo\\({}^{2}\\)   Qingfeng Sun\\({}^{1}\\)   Can Xu\\({}^{1}\\)   Pu Zhao\\({}^{1}\\)   Jianguang Lou\\({}^{1}\\)\n' +
+      '\n' +
+      '**Chongyang Tao\\({}^{1}\\)   Xiubo Geng\\({}^{1}\\)   Qingwei Lin\\({}^{1}\\)   Shifeng Chen\\({}^{2}\\)   Dongmei Zhang\\({}^{1}\\)**\n' +
+      '\n' +
+      '\\({}^{1}\\)Microsoft\n' +
+      '\n' +
+      '\\({}^{2}\\)Shenzhen Institute of Advanced Technology, Chinese Academy of Sciences\n' +
+      '\n' +
+      '{caxu,qins,puzhao,jlou,chotao,xigeng,qlin,dongmeiz}@microsoft.com\n' +
+      '\n' +
+      '{hp.luo,shifeng.chen}@siat.ac.cn\n' +
+      '\n' +
+      ' Equal contribution. Work done during the internship of Luo at Microsoft Research.Corresponding author: caxu@microsoft.com and shifeng.chen@siat.ac.cn\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Large language models (LLMs), such as GPT-4, have shown remarkable performance in natural language processing (NLP) tasks, including challenging mathematical reasoning. However, most existing open-source models are only pre-trained on large-scale internet data and without math-related optimization. In this paper, we present _WizardMath_, which enhances the mathematical reasoning abilities of Llama-2, by applying our proposed _Reinforcement Learning from Evol-Instruct Feedback_ (**_RLEIF_**) method to the domain of math. Through extensive experiments on two mathematical reasoning benchmarks, namely GSM8k and MATH, we reveal the extraordinary capabilities of our model. _WizardMath_ surpasses all other open-source LLMs by a substantial margin. Furthermore, our model even outperforms ChatGPT-3.5, Claude Instant-1, PaLM-2 and Minerva on GSM8k, simultaneously surpasses Text-davinci-002, PaLM-1 and GPT-3 on MATH. More details and model weights are public at [https://github.com/nlpxucan/WizardLM](https://github.com/nlpxucan/WizardLM) 3 and [https://huggingface.co/WizardLM](https://huggingface.co/WizardLM).\n' +
+      '\n' +
+      'Footnote 3:  We are working with our legal team to review and publicly release the code and data in accordance with our policy.\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'Recently, Large-scale language models (LLMs) have garnered significant attention and become the go-to approach for numerous natural language processing (NLP) tasks, including open domain conversation [1; 2; 3; 4], coding [5; 6; 7; 8; 9; 10; 11; 12; 13] and math [14; 15; 16; 17; 18; 19]. A conspicuous example is ChatGPT, developed by OpenAI. This model uses extensive pre-training on large-scale internet data and further fine-tuning with specific instruction data and methods. As a result, it achieves state-of-the-art zero-shot performance on various benchmarks. Subsequently, Anthropic, Google, and Meta also launched their competitive products one after another. Notably, Meta\'s series of Llama [4; 20] models have sparked an open-source revolution and quickly narrowed the gap with those closed-source LLMs. This trend also gradually stimulates the releases of MPT4, Falcon [21], StarCoder [12], Alpaca [22], Vicuna [23], and WizardLM [24], etc. However, these open models still struggles with the scenarios which require complex multi-step quantitative reasoning, such as solving mathematical and science challenges [25; 26; 27; 28; 29; 30; 31; 32; 33; 34; 35].\n' +
+      '\n' +
+      'Chain-of-thought (CoT) [31] proposes to design better prompts to generate step-by-step solutions, which can lead to improved performance. Self-Consistency [34] also achieves remarkable performance on many reasoning benchmarks, which generates several possible answers from the model and selects the correct one based on majority vote [35]. In recent, [36] finds that process supervision with reinforcement learning significantly outperforms outcome supervision for solving challenging MATH problems.\n' +
+      '\n' +
+      'Inspired by _Evol-Instruct_ and Process-supervised Reinforcement Learning, this work aims to enhance the mathematical reasoning abilities of the SOTA open-source LLM, Llama-2 [20]. As shown in the Figure 1, we propose a new method named _Reinforcement Learning from Evol-Instruct Feedback_ (_**RLEIF**_), which could firstly generate diverse math instructions data by math-specific _Evol-Instruct_, then we train an instruction reward model (IRM) and a process-supervised reward model (PRM) [36, 37, 38, 39, 40, 41], the former indicates the quality of the evolved instruction and the later receives feedback for each step in the solution. The brand-new _Evol-Instruct_ method includes two downward evolution and upward evolution progress to produce the grade school math and challenging math respectively. Initially, we re-generate, filter and finetune the original math instruction data from GSM8k [42] and MATH [43]. Immediately, we train the Llama-2 models to obtain the reward models and our _WizardMath_.\n' +
+      '\n' +
+      'We perform experiments on two mathematical reasoning benchmarks, namely GSM8k [42] and MATH [43], the results demonstrate that our _WizardMath_ outperforms all other open-source LLMs, achieving state-of-the-art performance. Specifically, _WizardMath_ observe a substantial improvement in pass@1 with an increase of +24.8 (81.6. vs. 56.8) on GSM8k, and +9.2 (22.7 vs. 13.5) on MATH. Notably, our model even also significantly surpasses OpenAI\'s ChatGPT-3.5 [5], Anthropic\'s Claude Instant-1 [39], and Google\'s PaLM-2 [44] in terms of pass@1 on GSM8k.\n' +
+      '\n' +
+      'The main contributions of this work are as following:\n' +
+      '\n' +
+      'Figure 1: A diagram illustrating the three steps of our _Reinforcement Learning from Evol-Instruct Feedback_ (_**RLEIF**_): (1) supervised fine-tuning (SFT), (2) Instruction Reward Model (IRM) training and Process-supervised Reward Model (PRM) training, and (3) Active Evol-Instruct and reinforcement learning via proximal policy optimization (PPO).\n' +
+      '\n' +
+      '* We introduce _WizardMath_ model, which enhances the mathematical reasoning abilities for open-source pretrained large language model Llama-2 [20].\n' +
+      '* We propose a new method, _Reinforcement Learning from Evol-Instruct Feedback_ (_**RLEIF**_)_, alongside _Evol-Instruct_ and Reinforcement Learning, for improving LLM reasoning performance.\n' +
+      '* _WizardMath_ surpasses all other open-source LLMs by a substantial margin in terms of mathematical reasoning, including Llama-2 70B [20], Llama-1 65B [4], Falcon-40B [21], MPT-30B [8], Baichuan-13B Chat [9] and ChatGLM2 12B [45] on both GSM8k [42] and MATH [43].\n' +
+      '* _WizardMath_ significantly outperforms various main closed-source LLMs, such as ChatGPT [5], GPT-3.5, Claude Instant [39], PaLM-2 [44], PaLM-1 [7] and Minerva[15] on GSM8k.\n' +
+      '\n' +
+      '## 2 Method\n' +
+      '\n' +
+      'In this section, we elaborate on the details of our _WizardMath_. Following WizardLM and PRMs[36], we propose _Reinforcement Learning from Evol-Instruct Feedback_ (_**RLEIF**_)_, which integrates the _Evol-Instruct_ and reinforced process supervision method to evolve GSM8k and MATH, and fine-tune the pre-trained Llama-2 with the evolved data and reward models.\n' +
+      '\n' +
+      'As shown in the Figure 1, our methods apply three steps:\n' +
+      '\n' +
+      '1. Supervised fine-tuning.\n' +
+      '2. Training instruction reward model, and process-supervised reward model.\n' +
+      '3. Active Evol-Instruct, and PPO training.\n' +
+      '\n' +
+      '### Supervised fine-tuning\n' +
+      '\n' +
+      'Following InstructGPT[2], we also firstly fine tune the base with supervised instruction-response pairs, which contains:\n' +
+      '\n' +
+      '1. To make the parsing of each step easier, we few-shot re-generate 15k answers for GSM8k and MATH with an Alpha version of WizardLM 70B model to produce solutions in a step-by-step format, then find out those with a correct answer, and use this data to finetune base Llama model.\n' +
+      '2. To enhance the model\'s ability to adhere to the neural and diverse instructions, we also sample 1.5k open-domain conversations from WizardLM\'s training data, then merge it with above math corpus as the final SFT training data.\n' +
+      '\n' +
+      '### _Evol-Instruct_ principles for math\n' +
+      '\n' +
+      'Motivated by the Evol-Instruct [24] method proposed by WiazrdLM and its effective application on WizardCoder [13], this work attempts to make math instructions with various complexities and diversity to enhance the pre-trained LLMs. Specifically, we adapt Evol-Instruct to a new paradigm including two evolution lines:\n' +
+      '\n' +
+      '1. Downward evolution: It enhances instructions by making the questions easier. For example i): revising high difficulty questions to lower difficulty, or ii) producing a new and easier question with another different topic.\n' +
+      '2. Upward evolution: Derived from original Evol-Instruct method, it deepens and generates new and harder questions by i) adding more constraints, ii) concretizing, iii) increasing reasoning.\n' +
+      '\n' +
+      '### _Reinforcement Learning from Evol-Instruct Feedback (_**RLEIF**_)_\n' +
+      '\n' +
+      'Inspired by InstructGPT[2] and PRMs[36], we train two reward models to predict the quality of the instructions and the correctness of each step in the answer respectively:1. Instruction Reward Model (IRM): This model aims to judge the quality of the evolved instructions on three aspects: i) Definition, ii) Precision, and iii) Integrity. To produce the ranking list training data of IRM, for each instruction, we firstly use ChatGPT and Wizard-E 4 to generate 2-4 evolved instructions respectively. Then we leverage Wizard-E to rank the quality of those 4-8 instructions. Footnote 4: Wizard-E named Wizard-E-Generator, which is an Alpha version fine-tuned Llama model specifically used to execute _Evol-Instruct_ without APIs.\n' +
+      '2. Process-supervised Reward Model (PRM): As there is no powerful open-source math reasoning LLMs before this work, there is no simple way to support highly precise process supervision without professional human-labelers and close-source ChatGPT. Therefore, we depend on ChatGPT to provide process supervision, and ask it to assess the correctness of each step in the solutions generated by our model.\n' +
+      '3. PPO training. We evolve the original math (GSM8k + MATH) instructions by 8 turns, increasing the data size from 15k to 96k. We use IRM and PRM to generate the instruction reward (\\(r^{I}\\)) and the answer reward (\\(r^{A}\\)). Then apply a product as the final reward \\(r=r^{I}\\cdot r^{A}\\).\n' +
+      '\n' +
+      '## 3 Experiment\n' +
+      '\n' +
+      'This section provides a comprehensive overview of the baseline models in our experiments. Subsequently, we mainly elucidate the performance metrics of our models on two prevalent mathematical benchmarks: GSM8k [42] and MATH [43].\n' +
+      '\n' +
+      '### Baselines\n' +
+      '\n' +
+      'Close-Source Models.Numerous technology companies have effectively created exceptionally proficient Large Language Models (LLMs) [3; 4; 7; 20; 44; 45; 47; 51; 52; 53], but have opted against\n' +
+      '\n' +
+      'Figure 2: The pass@1 performance of main LLM models on the GSM8k benchmark, our model is currently ranked in the top five, slightly outperforming some close-source models such as ChatGPT-3.5\\({}^{5}\\), Claude Instant-1\\({}^{6}\\), PaLM 2 [44], and substantially surpassing all open-source models.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c c} \\hline \\hline\n' +
+      '**Model** & **Params** & **GSM8k** & **MATH** \\\\ \\hline \\multicolumn{4}{c}{Closed-source models} \\\\ \\hline GPT-4 [3] & - & 92.0 & 42.5 \\\\ Claude 2\\({}^{7}\\) & - & 88.0 & - \\\\ Claude 1.3\\({}^{7}\\) & - & 85.2 & - \\\\ Flan-PaLM 2 [44] & 540B & 84.7 & 33.2 \\\\ Claude Instant\\({}^{7}\\) & - & 80.9 & - \\\\ ChatGPT [46] & - & 80.8 & 34.1 \\\\ PaLM 2 [44] & 540B & 80.7 & 34.3 \\\\ \\hline \\multirow{3}{*}{Minerva [15]} & 8B & 16.2 & 14.1 \\\\  & 62B & 52.4 & 27.6 \\\\  & 540B & 58.8 & 33.6 \\\\ \\hline GPT-3.5 [3] & - & 57.1 & - \\\\ \\hline \\multirow{3}{*}{PaLM [7]} & 8B & 4.1 & 1.5 \\\\  & 62B & 33.0 & 4.4 \\\\  & 540B & 56.5 & 8.8 \\\\ \\hline \\multicolumn{4}{c}{Open-source models} \\\\ \\hline GAL [14] & 30B & - & 12.7 \\\\  & 120B & - & 20.4 \\\\ \\hline \\multirow{3}{*}{LLaMA 2 [20]} & 7B & 14.6 & 2.5 \\\\  & 13B & 28.7 & 3.9 \\\\  & 34B & 42.2 & 6.24 \\\\  & 70B & 56.8 & 13.5 \\\\ \\hline \\multicolumn{4}{c}{Qwen \\({}^{10}\\)} & 7B & 51.6 & - \\\\ \\hline \\multirow{3}{*}{LLaMA 1 [4]} & 7B & 11.0 & 2.9 \\\\  & 13B & 17.8 & 3.9 \\\\  & 33B & 35.6 & 7.1 \\\\  & 65B & 50.9 & 10.6 \\\\ \\hline \\multicolumn{4}{c}{RFT-7B [16]} & 7B & 50.3 & - \\\\ GPT-J-6B [48] & 6B & 34.9 & - \\\\ ChatGLM 2 [45] & 6B & 32.4 & - \\\\ InternLM-7B [49] & 7B & 31.2 & - \\\\ Vicuna v1.3 [23] & 13B & 27.6 & - \\\\ Baichuan-chat \\({}^{9}\\) & 13B & 23.9 & - \\\\ \\hline \\multirow{3}{*}{Falcon [21]} & 7B & 6.8 & 2.3 \\\\  & 40B & 19.6 & 2.5 \\\\ \\hline \\multicolumn{4}{c}{GPT-Neo-2.7B [50]} & 2.7B & 19.5 & - \\\\ \\hline \\multicolumn{4}{c}{MPT\\({}^{8}\\)} & 7B & 6.8 & 3.0 \\\\  & 30B & 15.2 & 3.1 \\\\ \\hline \\multicolumn{4}{c}{_WizardMath_} & 7B & **54.9** (+3.3) & **10.7** (+7.7) \\\\ \\multicolumn{4}{c}{_WizardMath_} & 13B & **63.9** (+35.2) & **14.0** (+10.1) \\\\ \\multicolumn{4}{c}{_WizardMath_} & 70B & **81.6** (+24.8) & **22.7** (+9.2) \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Results of pass@1 (%) on GSM8k and MATH. In this study, to ensure equitable and cohesive evaluations, we report the scores of all models within the settings of greedy decoding and CoT [31]. We report the improvement between WizardMath and baseline model with similar parameter size.\n' +
+      '\n' +
+      'making them publicly available, so they are referred to as close-source models. In our research, we extensively integrate a significant number of close-source models as the foundational benchmarks. Specifically, our baselines encompass the following models: (i) OpenAI\'s GPT-3 [51], GPT-3.5, ChatGPT5, GPT-4 [3]; (ii) Google\'s PaLM 2 [44], PaLM [7], and Minerva [15]; (iii) Anthropic\'s Claude Instant [39], Claude 1.3\\({}^{\\circ}\\), Claude 2\\({}^{\\prime}\\), DeepMind\'s Chinchilla [47].\n' +
+      '\n' +
+      'Footnote 5: [https://openai.com/](https://openai.com/)\n' +
+      '\n' +
+      'Footnote 6: [https://www.anthropic.com/index/introducing-claude](https://www.anthropic.com/index/introducing-claude)\n' +
+      '\n' +
+      'Footnote 7: [https://www.anthropic.com/index/claude-2](https://www.anthropic.com/index/claude-2)\n' +
+      '\n' +
+      'Footnote 8: [https://github.com/mosaicml/llm-foundry/](https://github.com/mosaicml/llm-foundry/)\n' +
+      '\n' +
+      'Footnote 9: [https://github.com/baichuan-inc/Baichuan-13B](https://github.com/baichuan-inc/Baichuan-13B)\n' +
+      '\n' +
+      'Footnote 10: [https://github.com/QwenLM/Qwen-7B/](https://github.com/QwenLM/Qwen-7B/)\n' +
+      '\n' +
+      'Open-Source Models.Massive open-source LLMs [4, 20, 21, 22, 23, 45, 52, 53] have been accessible to the AI community. Nonetheless, their performance consistently tends to significantly lag behind the close-source models. As part of our research, we incorporate a significant number of these open-source models as our baselines, which mainly contain the following: Llama 1 [4] & Llama 2 [20], GAL [14], GPT-J [48], GPT-Neo [50], Vicuna [23], MPI\\({}^{\\circledR}\\), Falcon[21], Baichuan\\({}^{\\circledR}\\), ChatGLM [45], Qwen10 and RFT [16].\n' +
+      '\n' +
+      'Footnote 10: [https://github.com/QwenLM/Qwen-7B/](https://github.com/QwenLM/Qwen-7B/)\n' +
+      '\n' +
+      '### Evaluate Benchmarks\n' +
+      '\n' +
+      'We mainly evaluate WizardMath on two benchmarks (GSM8k [42] and MATH [43]). The GSM8k [42] dataset contains approximately 7500 training data and 1319 test data, mainly on grade school level math problems, each of which consists of basic arithmetic operations (addition, subtraction, multiplication, and division), and generally requires 2 to 8 steps to solve. The MATH [43] dataset collects math problems from prestigious math competitions such as AMC 10, AMC 12, and AIME. It contains 7500 training data and 5,000 challenging test data in seven academic areas: Prealgebra, Algebra, Number Theory, Counting and Probability, Geometry, Intermediate Algebra, and Precalculus. Furthermore, these problems are divided into five levels of difficulty, with \'1\' denoting the relatively lower difficulty level and \'5\' indicating the highest level.\n' +
+      '\n' +
+      '### Train and Evaluation prompt\n' +
+      '\n' +
+      'The Llama 2 [20] base serves as our foundation model.\n' +
+      '\n' +
+      'We undertake the training of our _WizardMath_ by employing the prompt from Alpaca [22]:\n' +
+      '\n' +
+      'Below is an instruction that describes a task. Write a response that appropriately completes the request.\\n\\n###\n' +
+      '\n' +
+      'Instruction:\\n{instruction}\\n\\n### Response:\n' +
+      '\n' +
+      'We evaluate GSM8k [42] and MATH benchmarks [43] by employing the following CoT [31] prompt:\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l r} \\hline \\hline\n' +
+      '**MATH subtopics** & **WizardMath 70B** \\\\ \\hline Intermediate Algebra & 7.1 \\\\ Precalculus & 12.6 \\\\ Geometry & 15.7 \\\\ Number Theory & 16.3 \\\\ Counting \\& Probability & 17.3 \\\\ Prealgebra & 41.7 \\\\ Algebra & 33.3 \\\\ \\hline Overall & **22.7** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 2: Results of pass@1 (%) on MATH Subtopics with WizardMath 70B model.\n' +
+      '\n' +
+      'Below is an instruction that describes a task. Write a response that appropriately completes the request.\\n\\n### Instruction:\\n{instruction}\\n\\n### Response: Let\'s think step by step.\n' +
+      '\n' +
+      '### Evaluation on GSM8k and MATH\n' +
+      '\n' +
+      'Notably, in the Figure 2 and Table 1, we cite the metrics of GPT-4 and GPT-3.5 from [3]. The evaluation of the ChatGPT model\'s scores are from [46]. For the assessment of Claude Instant, Claude 1.3, and Claude 2, the scores are extracted from [7]. The scores of PaLM 1, PaLM 2, and Minerva are garnered from [7, 15, 44]. Finally, the scores associated with Text-davinci-002, GPT-3 and GPT-2 are garnered from [15, 43]. On the open-source models, most scores are retrieved from the paper of Llama 2 [20] or their self-reports. Additionally, we evaluate the Baichuan-chat, Vicuna v1.3 by ourselves. In the Table 2, we show the detailed results of MATH subtopics with our WizardMath 70B model.\n' +
+      '\n' +
+      'Comparing with the Close-Source Models.In Table 1, our _WizardMath 70B_ slightly outperforms some close-source LLMs on GSM8k, including ChatGPT, Claude Instant and PaLM 2 540B. And as shown in Figure 2, our model is currently ranked in the top five on all models. Simultaneously,_WizardMath 70B_ also surpasses the Text-davinci-002 on MATH. The detailed results are as follows:\n' +
+      '\n' +
+      '1. _WizardMath 13B_ outperforms PaLM 1 540B (63.9 vs 56.5), Minerva 540B (63.9 vs 58.8), and GPT-3.5 (63.9 vs 57.1) on GSM8k. Meanwhile,it surpasses PaLM 1 540B (14.0 vs. 8.8), GPT-3 175B (14.0 vs. 5.2) on MATH.\n' +
+      '2. _WizardMath 70B_, our largest model, achieves the superior or comparable performance with Claude Instant (81.6 vs 80.9), ChatGPT (81.6 vs 80.8) and PaLM 2 (81.6 vs 80.7) on GSM8k. Concurrently, WizardMath 70B also exceeds Text-davinci-002 (22.7 vs. 19.1) by a margin of 3.6% on the MATH benchmarks.\n' +
+      '\n' +
+      'Comparing with the Open-Source Models.The findings illustrated in the table 1 explicitly demonstrate that our _WizardMath 70B_, distinctly manifest a substantial performance advantage over all the open-source models across both the GSM8k and MATH benchmarks. The detailed results are as follows:\n' +
+      '\n' +
+      '1. _WizardMath 7B_ surpasses most open-source models with parameter counts ranging approximately from 7B to 40B, including MPT, Falcon, Baichuan-chat, Vicuna v1.3, ChatGLM 2, Qwen, Llama 1 and Llama 2 on the GSM8k and MATH benchmarks. Even though its parameter counts are significantly lower.\n' +
+      '2. _WizardMath 13B_ is significantly superior to Llama 1 65B (63.9 vs. 50.9) and Llama 2 70B (63.9 vs. 56.8) on GSM8k. Additionally, it substantially outperforms both Llama 1 65B (14.0 vs. 10.6) and Llama 2 70B (14.0 vs. 13.5) on MATH.\n' +
+      '3. _WizardMath 70B_, our most extensive model, exemplifies a substantial advancement in performance, surpassing Llama 2 70B (81.6 vs. 56.8) by a significant margin of 24.8% on GSM8k. Concurrently, it also outperforms Llama 2 70B (22.7 vs. 13.5) by a margin of 9.2% on MATH.\n' +
+      '\n' +
+      '### Case Study\n' +
+      '\n' +
+      'Appendix A shows some examples generated by our _WizardMath_. The examples demonstrate that our model consistently generates accurate response answers accompanied by clear explanations.\n' +
+      '\n' +
+      '## 4 Related Work\n' +
+      '\n' +
+      'Large Language Models.LLMs have achieved substantial advancements within the realm of Natural Language Processing (NLP), providing a valuable and task-agnostic foundation for widespread applications. These models typically encompass parameter counts reaching into the hundreds of billions, which are trained on extensive large-scale corpuses of textual data. The prominent instancesentail OpenAI\'s GPT3&4[3, 51], Anthropic\'s Claude7, Google\'s PaLM [7, 44], Bard11, DeepMind\'s Chinchilla [47], and Gopher [52]. However none of them have been open-sourced so far, and some of them can only be exclusively accessible through APIs.\n' +
+      '\n' +
+      'Footnote 11: [https://bard.google.com/](https://bard.google.com/)\n' +
+      '\n' +
+      'Recently, the AI landscape has borne witness to the emergence of numerous open-source LLMs, characterized by publicly accessible model codes and weight parameters. EleutherAI has contributed GPT-NeoX-20B [54] and GPT-J-6B [48]. BigScience has introduced BLOOM [55]. Similarly, Meta has made strides by releasing OPT [53], Llama 1 [4], Llama 2 [20], and GAL [14]. Tsinghua University has unveiled GLM-130B and ChatGLM [45]. TII has facilitated the release of Falcon [21]. Additionally, LLMs such as Baichuan9 and Qwen10 have also surfaced. Presently, Llama assumes a pivotal role as the foundational model for supervised fine-tuning, ushering in the emergence of several extremely remarkable models, including Alpaca [22], Vicuna [23], Guanaco [56], WizardLM [24], and Orca [57], RFT [16] etc.\n' +
+      '\n' +
+      'Footnote 12: [https://www.bord.google.com/](https://www.bord.google.com/)\n' +
+      '\n' +
+      'Large Language Models For Mathematical reasoning.It\'s well known that complex reasoning problems are challenging for NLP models, which include mathematical reasoning [25, 26, 27, 28, 29, 30], common-sense reasoning [58, 59], and logical reasoning [31]. A substantial body of current research is centered around the intricate task reasoning of the Mathematical Word Problems(MWP) [30, 60, 61, 62, 63, 64], which requires the ability to understand mathematical concepts, computation and multi-step reasoning [16, 17, 18, 19, 36, 40, 46]. Addtitionly, models are evaluated across different levels of MWP benchmarks on some mathematical reasoning datasets such as AddSub [65], MultiArith [66], SingleEQ [67], SVAMP [60], GSM8K [42], AQuA [29] and MATH [43].\n' +
+      '\n' +
+      'To enhance the reasoning ability of LLMs, [31] proposed Chain-of-Thought Prompting, which attaches multiple reasoning steps before obtaining the answer for a question. By employing the simple few-shot reasoning strategy, LLMs are able to perform better in complex reasoning problems. Least-to-Most [68] prompting decomposes the problem into sub-problems that are then solved incrementally. Additionally each step has a more detailed reasoning process. Similarly, the Complex CoT [35] underscores the pivotal role of prompt complexity by strategically choosing the most intricate problems and their corresponding solutions to function as prompts. To alleviate the burden of manual efforts, [33] introduced Auto-CoT, an approach that automates the process of acquiring k samples through the application of clustering techniques on a provided dataset. With the objective of mitigating manual intervention, [32] proposed Zero-shot-CoT, which entails the straightforward practice of appending the phrase "Let\'s think step by step" to each answer, eliciting the inference steps without examples. Moreover, [34] expanded upon this notion by suggesting the exploration of diverse inference paths throughout the reasoning process. Consequently, the ultimate outcome is determined through either the aggregation of answers using majority voting or by leveraging a validation mechanism, as posited by [69]. [16] employs a straightforward approach for generating augmented samples, focusing on probing the correlation between LLMs and math reasoning ability.\n' +
+      '\n' +
+      'Large Language Models For Reinforcement Learning.Nevertheless, even state-of-the-art models frequently manifest logical errors and a range of illusions [70, 71]. These anomalies become especially challenging within domains necessitating multi-step reasoning, where a singular logical misstep maybe precipitate the unraveling of an entire solution. An effective strategy involves the training of reward models aimed at discriminating between favorable and unfavorable outputs [36]. Early outcome-based approaches were mainly performed on algorithmic tasks [72, 73, 74, 75]. [42] demonstrated the significant benefits of reward models or validators, and [76] proposed a heuristic-based step-size-aware RM. [77, 78, 2, 79] proposed the use of reward models for a reinforcement learning pipeline. [20, 37, 38, 39, 42, 80, 81, 82] employed rejection sampling for searching to achieve alignment of LLMs with human preferences.\n' +
+      '\n' +
+      'The differences between outcome-based and process-based reward modelling are further discussed by [40]. Outcome-supervised reward models (ORMs) undergo training exclusively utilizing the ultimate outcomes derived from the model\'s chain-of-thought process. Conversely, process-supervised reward models (PRMs) are designed to solicit feedback for each individual step within the chain-of-thought progression. In the domain of logical reasoning, ORMs frequently employ incorrect reasoning pathways yet yield the correct final answer [83, 41]. Notably, PRMs has been demonstrated to effectively alleviate this phenomenon of inconsistent behavior [40]. [36, 84, 85] amassed an expansive corpus of process-based supervised signals through meticulous manual annotation, which verified that PRMs and supervision with manual annotation yielded more pronounced advantages for LLMs as compared to ORMs.\n' +
+      '\n' +
+      'Large Language Models For Instruction Fine-Tuning.The initial endeavors in instruction-following training work primarily focused on enhancing the language model\'s capacity for generalization across diverse tasks. This often involves the process of fine-tuning across substantially available Natural Language Processing datasets, and evaluates on the different NLP tasks. T5 [86] undertake the earliest attempts to train a range of NLP tasks, including Question and Answer, Document Summarization, and Sentiment Classification, by employing a consistent prompt format across all the data. Subsequently, instruction fine-tuning work such as FLAN [87], ExT5 [88], T0 [89], UnifiedQA [90], ZeroPrompt [91], and FLAN-T5 [92] emerged to adapt for a large number of downstream tasks. To address the challenge of misalignment between model outputs and human requirements, OpenAI manually annotates the instruction library to construct a diverse range of tasks. Simultaneously, Reinforcement Learning from Human Feedback technology is employed, which facilitate the rapid development of LLMs such as InstructGPT [2], ChatGPT\\({}^{\\ast}\\), GPT-4 [3]. To reduce manual involvement, self-instruct [93] improves instruction-following through self-generated instructions. Alpaca [22] used a dataset of 50k instructions generated from a limited (e.g., 175 samples) seed set of manually-written instructions. Vicuna [23] used 70k user-shared conversations with ChatGPT collected from ShareGPT.com. Meanwhile, WizardLM [24] introduces the evol-instruct approach, which seeks to refine the existing instruction data by enhancing both its complexity and diversity.\n' +
+      '\n' +
+      '## 5 Conclusion and Future Work\n' +
+      '\n' +
+      'This paper introduces _WizardMath_, a mathematics model fine-tuned with _RLEIF_. The experimental results demonstrate that _WizardMath_ achieves SOTA performance surpassing all existing open-source LLMs on two widely recognized mathematical reasoning benchmarks: GSM8k and MATH. Furthermore, _WizardMath_ exhibits superior performance compared to some of the largest close-source LLMs, including ChatGPT, GPT-3.5, Claude Instant, PaLM-2, PaLM-1 and Minerva on the GSM8k benchmark.\n' +
+      '\n' +
+      'Future Work.Although our _WizardMath_ achieves impressive mathematics performance, as depicted in Figure 2, our model still falls significantly behind the SOTA LLM, GPT-4 and Claude-2. Therefore, future work will prioritize the enhancement of the _RLEIF_ or better method to further augment the performance of our model.\n' +
+      '\n' +
+      'Broader Impact.Similar to the other LLMs, our _WizardMath_ could also generate unethical, harmful, or misleading information sometimes. Therefore, future research to address the ethical and societal implications is needed.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* [1] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.\n' +
+      '* [2] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll L. Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, John Schulman, Jacob Hilton, Fraser Kelton, Luke Miller, Maddie Simens, Amanda Askell, Peter Welinder, Paul F. Christiano, Jan Leike, and Ryan Lowe. Training language models to follow instructions with human feedback. In _NeurIPS_, 2022.\n' +
+      '* [3] OpenAI. Gpt-4 technical report, 2023.\n' +
+      '* [4] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.\n' +
+      '* [5] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Helidy Khlaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotos Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code, 2021.\n' +
+      '* [6] Microsoft. Azure openai service models. [https://learn.microsoft.com/en-us/azure/cognitive-services/openai/concepts/models](https://learn.microsoft.com/en-us/azure/cognitive-services/openai/concepts/models), 2023.\n' +
+      '* [7] Aakanksha Chowdhery, Sharan Narang, Jacob Devlin, Maarten Bosma, Gaurav Mishra, Adam Roberts, Paul Barham, Hyung Won Chung, Charles Sutton, Sebastian Gehrmann, Parker Schuh, Kensen Shi, Sasha Tsuyashchenko, Joshua Maynez, Abhishek Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vinodkumar Prabhakaran, Emily Reif, Nan Du, Ben Hutchinson, Reiner Pope, James Bradbury, Jacob Austin, Michael Isard, Guy Gur-Ari, Pengcheng Yin, Toju Duke, Anselm Levskaya, Sanjay Ghemawat, Sunjing Dev, Henry Michalewski, Xavier Garcia, Yedant Misra, Kevin Robinson, Liam Fedus, Denny Zhou, Daphne Ippolito, David Luan, Hyeontaek Lim, Barret Zoph, Alexander Spiridonov, Ryan Sepassi, David Dohan, Shivani Agrawal, Mark Omernick, Andrew M. Dai, Thanumalayan Sankaranarayana Pillai, Marie Pellat, Aitor Lewkowycz, Eric Moreira, Rewon Child, Oleksandr Polozov, Katherine Lee, Zongwei Zhou, Xuezhi Wang, Brennan Saeta, Mark Diaz, Orhan Firat, Michele Catasta, Jason Wei, Kathy Meier-Hellstern, Douglas Eck, Jeff Dean, Slav Petrov, and Noah Fiedel. Palm: Scaling language modeling with pathways, 2022.\n' +
+      '* [8] Erik Nijkamp, Bo Pang, Hiroaki Hayashi, Lifu Tu, Huan Wang, Yingbo Zhou, Silvio Savarese, and Caiming Xiong. Codegen: An open large language model for code with multi-turn program synthesis. In _The Eleventh International Conference on Learning Representations_, 2023.\n' +
+      '* [9] Yue Wang, Weishi Wang, Shafiq R. Joty, and Steven C. H. Hoi. Coded5: Identifier-aware unified pre-trained encoder-decoder models for code understanding and generation. In Marie-Francine Moens, Xuaning Huang, Lucia Specia, and Scott Wen-tau Yin, editors, _Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing, EMNLP 2021, Virtual Event / Punta Cana, Dominican Republic, 7-11 November, 2021_, pages 8696-8708. Association for Computational Linguistics, 2021.\n' +
+      '* [10] Yue Wang, Hung Le, Akhilesh Deepak Gotmare, Nghi D. Q. Bui, Junnan Li, and Steven C. H. Hoi. Coded5+: Open code large language models for code understanding and generation, 2023.\n' +
+      '* [11] Qinkai Zheng, Xiao Xia, Xu Zou, Yuxiao Dong, Shan Wang, Yufei Xue, Zihan Wang, Lei Shen, Andi Wang, Yang Li, Teng Su, Zhilin Yang, and Jie Tang. Codegee: A pre-trained model for code generation with multilingual evaluations on humaneval-x, 2023.\n' +
+      '* [12] Raymond Li, Loubna Ben Allal, Yangtian Zi, Niklas Muennighoff, Denis Koetkov, Chenghao Mou, Marc Marone, Christopher Akiki, Jia Li, Jenny Chim, et al. Starcode: may the source be with you! _arXiv preprint arXiv:2305.06161_, 2023.\n' +
+      '* [13] Ziyang Luo, Can Xu, Pu Zhao, Qingfeng Sun, Xiubo Geng, Wenxiang Hu, Chongyang Tao, Jing Ma, Qingwei Lin, and Daxin Jiang. Wizardcoder: Empowering code large language models with evol-instruct. _arXiv preprint arXiv:2306.08568_, 2023.\n' +
+      '\n' +
+      '* [14] Ross Taylor, Marcin Kardas, Guillem Cucurull, Thomas Scialom, Anthony Hartshorn, Elvis Saravia, Andrew Poulton, Viktor Kerkez, and Robert Stojnic. Galactica: A large language model for science. _arXiv preprint arXiv:2211.09085_, 2022.\n' +
+      '* [15] Aitor Lewkowycz, Anders Andreassen, David Dohan, Ethan Dyer, Henry Michalewski, Vinay Ramasesh, Ambrose Slone, Cem Anil, Imanol Schlag, Theo Gutman-Solo, et al. Solving quantitative reasoning problems with language models. _arXiv preprint arXiv:2206.14858_, 2022.\n' +
+      '* [16] Zheng Yuan, Hongyi Yuan, Chenpeng Li, Guanting Dong, Chuanqi Tan, and Chang Zhou. Scaling relationship on learning mathematical reasoning with large language models. _arXiv preprint arXiv:2308.01825_, 2023.\n' +
+      '* [17] Chuanyang Zheng, Zhengying Liu, Enze Xie, Zhenguo Li, and Yu Li. Progressive-hint prompting improves reasoning in large language models. _arXiv preprint arXiv:2304.09797_, 2023.\n' +
+      '* [18] Shima Imani, Liang Du, and Harsh Shrivastava. Mathprompter: Mathematical reasoning using large language models. _arXiv preprint arXiv:2303.05398_, 2023.\n' +
+      '* [19] Lei Wang, Wanyu Xu, Yihuai Lan, Zhiqiang Hu, Yunshi Lan, Roy Ka-Wei Lee, and Ee-Peng Lim. Plan-and-solve prompting: Improving zero-shot chain-of-thought reasoning by large language models. _arXiv preprint arXiv:2305.04091_, 2023.\n' +
+      '* [20] Hugo Touvron, Louis Martin, Kevin Stone, Peter Albert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajiwal Bhargava, Shruti Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023.\n' +
+      '* [21] Guilherme Penedo, Quentin Malartic, Daniel Hesslow, Ruxandra Cojocaru, Alessandro Cappelli, Hamza Alobeidli, Baptiste Pannier, Ebtesam Almazrouei, and Julien Launay. The refinedweb dataset for falcon llm: outperforming curated corpora with web data, and web data only. _arXiv preprint arXiv:2306.01116_, 2023.\n' +
+      '* [22] Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca](https://github.com/tatsu-lab/stanford_alpaca), 2023.\n' +
+      '* [23] Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgrp quality, March 2023.\n' +
+      '* [24] Can Xu, Qingfeng Sun, Kai Zheng, Xiubo Geng, Pu Zhao, Jiazhan Feng, Chongyang Tao, and Daxin Jiang. Wizardlm: Empowering large language models to follow complex instructions. _arXiv preprint arXiv:2304.12244_, 2023.\n' +
+      '* [25] Pan Lu, Liang Qiu, Wenhao Yu, Sean Welleck, and Kai-Wei Chang. A survey of deep learning for mathematical reasoning. _arXiv preprint arXiv:2212.10535_, 2022.\n' +
+      '* [26] Simon Frieder, Luca Pinchetti, Ryan-Rhys Griffiths, Tommaso Salvatori, Thomas Lukasiewicz, Philipp Christian Petersen, Alexis Chevalier, and Julius Berner. Mathematical capabilities of chatgrp. _arXiv preprint arXiv:2301.13867_, 2023.\n' +
+      '* [27] Arindam Bhattacharya. A survey of question answering for math and science problem. _arXiv preprint arXiv:1705.04530_, 2017.\n' +
+      '* [28] Yan Wang, Xiaojiang Liu, and Shuming Shi. Deep neural solver for math word problems. In _Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing_, pages 845-854, Copenhagen, Denmark, September 2017. Association for Computational Linguistics.\n' +
+      '* [29] Wang Ling, Dani Yogatama, Chris Dyer, and Phil Blunsom. Program induction by rationale generation: Learning to solve and explain algebraic word problems. _ACL_, 2017.\n' +
+      '* [30] Rik Koncel-Kedziorski, Subhro Roy, Aida Amini, Nate Kushman, and Hannaneh Hajishirzi. MAWPS: A math word problem repository. In _Proceedings of the 2016 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 1152-1157, San Diego, California, June 2016. Association for Computational Linguistics.\n' +
+      '* [31] Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten Bosma, Ed Chi, Quoc Le, and Denny Zhou. Chain of thought prompting elicits reasoning in large language models. _arXiv preprint arXiv:2201.11903_, 2022.\n' +
+      '\n' +
+      '* [32] Takeshi Kojima, Shixiang Shane Gu, Michel Reid, Yutaka Matsuo, and Yusuke Iwasawa. Large language models are zero-shot reasoners. In _Advances in Neural Information Processing Systems_, 2022.\n' +
+      '* [33] Zhuosheng Zhang, Aston Zhang, Mu Li, and Alex Smola. Automatic chain of thought prompting in large language models. _arXiv preprint arXiv:2210.03493_, 2022.\n' +
+      '* [34] Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc Le, Ed Chi, Sharan Narang, Aakanksha Chowdhery, and Denny Zhou. Self-consistency improves chain of thought reasoning in language models. _arXiv preprint arXiv:2203.11171_, 2022.\n' +
+      '* [35] Yao Fu, Hao Peng, Ashish Sabharwal, Peter Clark, and Tushar Khot. Complexity-based prompting for multi-step reasoning. _arXiv preprint arXiv:2210.00720_, 2022.\n' +
+      '* [36] Hunter Lightman, Vineet Kosaraju, Yura Burda, Harri Edwards, Bowen Baker, Teddy Lee, Jan Leike, John Schulman, Ilya Sutskever, and Karl Cobbe. Let\'s verify step by step. _arXiv preprint arXiv:2305.20050_, 2023.\n' +
+      '* [37] Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, Songfang Huang, and Fei Huang. Rrhf: Rank responses to align language models with human feedback without tears. _arXiv preprint arXiv:2304.05302_, 2023.\n' +
+      '* [38] Hanze Dong, Wei Xiong, Deepanshu Goyal, Rui Pan, Shizhe Diao, Jipeng Zhang, Kashun Shum, and Tong Zhang. Raff: Reward ranked finetuning for generative foundation model alignment. _arXiv preprint arXiv:2304.06767_, 2023.\n' +
+      '* [39] Yuntao Bai, Saurav Kadavath, Sandipan Kundu, Amanda Askell, Jackson Kermion, Andy Jones, Anna Chen, Anna Goldie, Azalia Mirhoseini, Cameron McKinnon, et al. Constitutional ai: Harmlessness from ai feedback. _arXiv preprint arXiv:2212.08073_, 2022.\n' +
+      '* [40] Jonathan Uesato, Nate Kushman, Ramana Kumar, Francis Song, Noah Siegel, Lisa Wang, Antonia Creswell, Geoffrey Irving, and Irina Higgins. Solving math word problems with process-and outcome-based feedback. _arXiv preprint arXiv:2211.14275_, 2022.\n' +
+      '* [41] Antonia Creswell, Murray Shanahan, and Irina Higgins. Selection-inference: Exploiting large language models for interpretable logical reasoning. _arXiv preprint arXiv:2205.09712_, 2022.\n' +
+      '* [42] Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, et al. Training verifiers to solve math word problems. _arXiv preprint arXiv:2110.14168_, 2021.\n' +
+      '* [43] Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob Steinhardt. Measuring mathematical problem solving with the math dataset. _arXiv preprint arXiv:2103.03874_, 2021.\n' +
+      '* [44] Rohan Anil, Andrew M Dai, Orhan Firat, Melvin Johnson, Dmitry Lepikhin, Alexandre Passos, Siamak Shakeri, Emanuel Taropa, Paige Bailey, Zhifeng Chen, et al. Palm 2 technical report. _arXiv preprint arXiv:2305.10403_, 2023.\n' +
+      '* [45] Aohan Zeng, Xiao Liu, Zhengxiao Du, Zihan Wang, Hanyu Lai, Ming Ding, Zhuoyi Yang, Yifan Xu, Wendi Zheng, Xiao Xia, et al. Glm-130b: An open bilingual pre-trained model. _arXiv preprint arXiv:2210.02414_, 2022.\n' +
+      '* [46] Xu Zhao, Yuxi Xie, Kenji Kawaguchi, Junxian He, and Qizhe Xie. Automatic model selection with large language models for reasoning. _arXiv preprint arXiv:2305.14333_, 2023.\n' +
+      '* [47] Jordan Hoffmann, Sebastian Borgeaud, Arthur Mensch, Elena Buchatskaya, Trevor Cai, Eliza Rutherford, Diego de Las Casas, Lisa Anne Hendricks, Johannes Welbl, Aidan Clark, Tom Hennigan, Eric Noland, Katie Millican, George van den Driessche, Bogdan Damoc, Aurelia Guy, Simon Osindero, Karen Simonyan, Erich Elsen, Jack W. Rae, Oriol Vinyals, and Laurent Sifre. Training compute-optimal large language models. _CoRR_, abs/2203.15556, 2022.\n' +
+      '* [48] Ben Wang and Aran Komatuszaki. GPT-J-6B: A 6 Billion Parameter Autoregressive Language Model. [https://github.com/kingoflolz/mesh-transformer-jax](https://github.com/kingoflolz/mesh-transformer-jax), May 2021.\n' +
+      '* [49] InternLM Team. Internlm: A multilingual language model with progressively enhanced capabilities. [https://github.com/InternLM/InternLM](https://github.com/InternLM/InternLM), 2023.\n' +
+      '* [50] Sid Black, Leo Gao, Phil Wang, Connor Leahy, and Stella Rose Biderman. Gpt-neo: Large scale autoregressive language modeling with mesh-tensorflow. 2021.\n' +
+      '\n' +
+      '* [51] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Winter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCandlish, Alec Radford, Ilya Sutskever, and Dario Amodei. Language models are few-shot learners. In Hugo Larochelle, Marc\'Aurelio Ranzato, Raia Hadsell, Maria-Florina Balcan, and Hsuan-Tien Lin, editors, _Advances in Neural Information Processing Systems 33: Annual Conference on Neural Information Processing Systems 2020, NeurIPS 2020, December 6-12, 2020, virtual_, 2020.\n' +
+      '* [52] Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susannah Young, et al. Scaling language models: Methods, analysis & insights from training gopher. _arXiv preprint arXiv:2112.11446_, 2021.\n' +
+      '* [53] Susan Zhang, Stephen Roller, Naman Goyal, Mikel Artetxe, Moya Chen, Shuohui Chen, Christopher Dewan, Mona Diab, Xian Li, Xi Victoria Lin, et al. Opt: Open pre-trained transformer language models. _arXiv preprint arXiv:2205.01068_, 2022.\n' +
+      '* [54] Sid Black, Stella Biderman, Eric Hallahan, Quentin Anthony, Leo Gao, Laurence Golding, Horace He, Connor Leahy, Kyle McDonell, Jason Phang, et al. Gpt-neox-20b: An open-source autoregressive language model. _arXiv preprint arXiv:2204.06745_, 2022.\n' +
+      '* [55] Teven Le Scao, Angela Fan, Christopher Akiki, Ellie Pavlick, Suzana Ilic, Daniel Hesslow, Roman Castagne, Alexandra Sasha Luccioni, Francois Yvon, Matthias Galle, et al. Bloom: A 176b-parameter open-access multilingual language model. _arXiv preprint arXiv:2211.05100_, 2022.\n' +
+      '* [56] Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. Qlora: Efficient finetuning of quantized l lms. _arXiv preprint arXiv:2305.14314_, 2023.\n' +
+      '* [57] Subhabrata Mukherjee, Arindam Mitra, Ganesh Jawahar, Sahaj Agarwal, Hamid Palangi, and Ahmed Awadallah. Orca: Progressive learning from complex explanation traces of gpt-4. _arXiv preprint arXiv:2306.02707_, 2023.\n' +
+      '* [58] Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question answering challenge targeting commonsense knowledge. In _Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers)_, pages 4149-4158, Minneapolis, Minnesota, June 2019. Association for Computational Linguistics.\n' +
+      '* [59] Mor Geva, Daniel Khashabi, Elad Segal, Tushar Khot, Dan Roth, and Jonathan Berant. Did aristotle use a laptop? a question answering benchmark with implicit reasoning strategies. _Transactions of the Association for Computational Linguistics_, 9:346-361, 2021.\n' +
+      '* [60] Arkil Patel, Satwik Bhattacharya, and Navin Goyal. Are nlp models really able to solve simple math word problems? In _Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies_, pages 2080-2094, 2021.\n' +
+      '* [61] Yihuai Lan, Lei Wang, Qiyuan Zhang, Yunshi Lan, Bing Tian Dai, Yan Wang, Dongxiang Zhang, and Ee-Peng Lim. Mwptoolkit: an open-source framework for deep learning-based math word problem solvers. In _Proceedings of the AAAI Conference on Artificial Intelligence_, volume 36, pages 13188-13190, 2022.\n' +
+      '* [62] Zhanming Jie, Jierui Li, and Wei Lu. Learning to reason deductively: Math word problem solving as complex relation extraction. _arXiv preprint arXiv:2203.10316_, 2022.\n' +
+      '* [63] Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, and Songfang Huang. How well do large language models perform in arithmetic tasks? _arXiv preprint arXiv:2304.02015_, 2023.\n' +
+      '* [64] Yao Fu, Litu Ou, Mingyu Chen, Yuhao Wan, Hao Peng, and Tushar Khot. Chain-of-thought hub: A continuous effort to measure large language models\' reasoning performance. _arXiv preprint arXiv:2305.17306_, 2023.\n' +
+      '* [65] Mohammad Javad Hosseini, Hannaneh Hajishirzi, Oren Etzioni, and Nate Kushman. Learning to solve arithmetic word problems with verb categorization. In _Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)_, pages 523-533, Doha, Qatar, October 2014. Association for Computational Linguistics.\n' +
+      '* [66] Subhro Roy and Dan Roth. Solving general arithmetic word problems. In _Proceedings of the 2015 Conference on Empirical Methods in Natural Language Processing_, pages 1743-1752, Lisbon, Portugal, September 2015. Association for Computational Linguistics.\n' +
+      '\n' +
+      '* [67] Rik Koncel-Kedziorski, Hannaneh Hajishirzi, Ashish Sabharwal, Oren Etzioni, and Siena Dumas Ang. Parsing algebraic word problems into equations. _Transactions of the Association for Computational Linguistics_, 3:585-597, 2015.\n' +
+      '* [68] Denny Zhou, Nathanael Scharli, Le Hou, Jason Wei, Nathan Scales, Xuezhi Wang, Dale Schuurmans, Olivier Bousquet, Quoc Le, and Ed Huai hsin Chi. Least-to-most prompting enables complex reasoning in large language models. _ArXiv_, abs/2205.10625, 2022.\n' +
+      '* [69] Yifei Li, Zeqi Lin, Shizhuo Zhang, Qiang Fu, Bei Chen, Jian-Guang Lou, and Weizhu Chen. Making language models better reasoners with step-aware verifier. In _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_, pages 5315-5333, Toronto, Canada, July 2023. Association for Computational Linguistics.\n' +
+      '* [70] Sebastien Bubeck, Varun Chandrasekaran, Ronen Eldan, Johannes Gehrke, Eric Horvitz, Ece Kamar, Peter Lee, Yin Tat Lee, Yuanzhi Li, Scott Lundberg, et al. Sparks of artificial general intelligence: Early experiments with gpt-4. _arXiv preprint arXiv:2303.12712_, 2023.\n' +
+      '* [71] Joshua Maynez, Shashi Narayan, Bernd Bohnet, and Ryan McDonald. On faithfulness and factuality in abstractive summarization. _arXiv preprint arXiv:2005.00661_, 2020.\n' +
+      '* [72] Alex Graves, Greg Wayne, and Ivo Danihelka. Neural turing machines. _arXiv preprint arXiv:1410.5401_, 2014.\n' +
+      '* [73] Scott Reed and Nando De Freitas. Neural programmer-interpreters. _arXiv preprint arXiv:1511.06279_, 2015.\n' +
+      '* [74] Chengtao Li, Daniel Tarlow, Alexander L. Gaunt, Marc Brockschmidt, and Nate Kushman. Neural program lattices. In _International Conference on Learning Representations_, 2016.\n' +
+      '* [75] Jonathon Cai, Richard Shin, and Dawn Song. Making neural programming architectures generalize via recursion. _arXiv preprint arXiv:1704.06611_, 2017.\n' +
+      '* [76] Yifei Li, Zeqi Lin, Shizhuo Zhang, Qiang Fu, Bei Chen, Jian-Guang Lou, and Weizhu Chen. On the advance of making language models better reasoners. _arXiv preprint arXiv:2206.02336_, 2022.\n' +
+      '* [77] Daniel M Ziegler, Nisan Stiennon, Jeffrey Wu, Tom B Brown, Alec Radford, Dario Amodei, Paul Christiano, and Geoffrey Irving. Fine-tuning language models from human preferences. _arXiv preprint arXiv:1909.08593_, 2019.\n' +
+      '* [78] Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford, Dario Amodei, and Paul F Christiano. Learning to summarize with human feedback. _Advances in Neural Information Processing Systems_, 33:3008-3021, 2020.\n' +
+      '* [79] Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, et al. Webgpt: Browser-assisted question-answering with human feedback. _arXiv preprint arXiv:2112.09332_, 2021.\n' +
+      '* [80] Eric Nichols, Leo Gao, and Randy Gomez. Collaborative storytelling with large-scale neural language models. In _Proceedings of the 13th ACM SIGGRAPH Conference on Motion, Interaction and Games_, pages 1-10, 2020.\n' +
+      '* [81] Jianhao Shen, Yichun Yin, Lin Li, Lifeng Shang, Xin Jiang, Ming Zhang, and Qun Liu. Generate & rank: A multi-task framework for math word problems. _arXiv preprint arXiv:2109.03034_, 2021.\n' +
+      '* [82] Feifan Song, Bowen Yu, Minghao Li, Haiyang Yu, Fei Huang, Yongbin Li, and Houfeng Wang. Preference ranking optimization for human alignment. _arXiv preprint arXiv:2306.17492_, 2023.\n' +
+      '* [83] Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Goodman. Star: Bootstrapping reasoning with reasoning. _Advances in Neural Information Processing Systems_, 35:15476-15488, 2022.\n' +
+      '* [84] Xinyu Zhu, Junjie Wang, Lin Zhang, Yuxiang Zhang, Yongfeng Huang, Ruyi Gan, Jiaxing Zhang, and Yujiu Yang. Solving math word problems via cooperative reasoning induced language models. In _Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)_. Association for Computational Linguistics, 2023.\n' +
+      '* [85] Ansong Ni, Jeevana Priya Inala, Chenglong Wang, Alex Polozov, Christopher Meek, Dragomir Radev, and Jianfeng Gao. Learning math reasoning from self-sampled correct and partially-correct solutions. In _The Eleventh International Conference on Learning Representations_, 2022.\n' +
+      '\n' +
+      '* [86] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _J. Mach. Learn. Res._, 21:140:1-140:67, 2020.\n' +
+      '* [87] Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V Le, Barret Zoph, Jason Wei, et al. The flan collection: Designing data and methods for effective instruction tuning. _arXiv preprint arXiv:2301.13688_, 2023.\n' +
+      '* [88] Vamsi Aribandi, Yi Tay, Tal Schuster, Jinfeng Rao, Huaixiu Steven Zheng, Sanket Vaibhav Mehta, Honglei Zhuang, Vinh Q. Tran, Dara Bahri, Jianmo Ni, Jai Prakash Gupta, Kai Hui, Sebastian Ruder, and Donald Metzler. Ext5: Towards extreme multi-task scaling for transfer learning. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.\n' +
+      '* [89] Victor Sanh, Albert Webson, Colin Raffel, Stephen H. Bach, Lintang Sutawika, Zaid Alyafeai, Antoine Chaffin, Arnaud Stiegler, Arun Raja, Manan Dey, M Saiful Bari, Canwen Xu, Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechla, Taewoon Kim, Gunjan Chhabhani, Nihal Nayak, Debajyoti Datta, Jonathan Chang, Mike Tian Jian Jiang, Han Wang, Matteo Manica, Sheng Shen, Zheng Xin Yong, Harshit Pandey, Rachel Bawden, Thomas Wang, Trishala Neeraj, Jos Rozen, Abheesht Sharma, Andrea Santilli, Thibault Fevry, Jason Alan Fries, Ryan Teehan, Teven Le Scao, Stella Biderman, Leo Gao, Thomas Wolf, and Alexander M. Rush. Multitask prompted training enables zero-shot task generalization. In _The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022_. OpenReview.net, 2022.\n' +
+      '* [90] Daniel Khashabi, Sewon Min, Tushar Khot, Ashish Sabharwal, Oyvind Tafjord, Peter Clark, and Hannaneh Hajishirzi. Unifiedqa: Crossing format boundaries with a single QA system. In Trevor Cohn, Yulan He, and Yang Liu, editors, _Findings of the Association for Computational Linguistics: EMNLP 2020, Online Event, 16-20 November 2020_, volume EMNLP 2020 of _Findings of ACL_, pages 1896-1907. Association for Computational Linguistics, 2020.\n' +
+      '* [91] Hanwei Xu, Yujun Chen, Yulun Du, Nan Shao, Yanggang Wang, Haiyu Li, and Zhilin Yang. Zeroprompt: Scaling prompt-based pretraining to 1, 000 tasks improves zero-shot generalization. In Yoav Goldberg, Zomitsa Kozareva, and Yue Zhang, editors, _Findings of the Association for Computational Linguistics: EMNLP 2022, Abu Dhabi, United Arab Emirates, December 7-11, 2022_, pages 4235-4252. Association for Computational Linguistics, 2022.\n' +
+      '* [92] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. _arXiv preprint arXiv:2210.11416_, 2022.\n' +
+      '* [93] Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A Smith, Daniel Khashabi, and Hannaneh Hajishirzi. Self-instruct: Aligning language model with self generated instructions. _arXiv preprint arXiv:2212.10560_, 2022.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:16]\n' +
+      '\n' +
+      'Therefore, Meredith spent a total of 104 hours writing articles in the three days.\n' +
+      '\n' +
+      'The answer is: 104.\n' +
+      '\n' +
+      '\\begin{tabular}{l|l} \\hline\n' +
+      '**WizardMath-70B** & 1. On Monday, Meredith wrote 5 articles. \\\\\n' +
+      '2. On Tuesday, she wrote 2/5 times more articles than on Monday. To find out how many articles she wrote on Tuesday, we need to multiply the number of articles she wrote on Monday by 2/5. So, 5 articles * 2/5 = 2 articles. Therefore, she wrote 7 articles on Tuesday (5 articles + 2 articles). \\\\\n' +
+      '3. On Wednesday, she wrote twice the number of articles she wrote on Tuesday. To find out how many articles she wrote on Wednesday, we need to multiply the number of articles she wrote on Tuesday by 2. So, 7 articles * 2 = 14 articles. \\\\ Now, let\'s calculate the total number of articles she wrote in the three days: \\\\ Total articles = Monday\'s articles + Tuesday\'s articles + Wednesday\'s articles \\\\ Total articles = 5 articles + 7 articles + 14 articles = 26 articles \\\\ Since each article takes an average of 4 hours to research and write about, we can \\\\ calculate the total number of hours she spent writing articles in the three days: \\\\ Total hours = Total articles * Time per article \\\\ Total hours = 26 articles * 4 hours/article = 104 hours \\\\ So, Meredith spent a total of 104 hours writing articles in the three days. \\\\ The answer is: 104. \\\\ \\hline \\end{tabular}\n' +
+      '\n' +
+      '**Instructation:** A mechanic charges different rates to repair the tires of trucks and cars. For each truck tire that is repaired, the mechanic will charge $60 and for each car tire that is repaired, the mechanic will charge $40. On Thursday, the mechanic repairs 6 truck tires and 4 car tires. On Friday, the mechanic repairs 12 car tires and doesn\'t repair any truck tires. How much more revenue did the mechanic earn on the day with higher revenue?\n' +
+      '\n' +
+      '**Ground Truth Answer: 40**\n' +
+      '\n' +
+      '**Note:** WizardMath 7B answers incorrectly, while 13B and 70B answer correctly.\n' +
+      '\n' +
+      '**WizardMath-7B**\n' +
+      '\n' +
+      'On Thursday, the mechanic repaired 6 truck tires and 4 car tires. Therefore, the revenue from repairing truck tires on Thursday was 6 * $60 = $360, and the revenue from repairing car tires on Thursday was 4 * $40 = $160. On Friday, the mechanic repaired 12 car tires, but did not repair any truck tires. Therefore, the revenue from repairing car tires on Friday was 12 * $40 = $480.\n' +
+      '\n' +
+      'To calculate the total revenue from repairing truck tires and car tires on Thursday and Friday, we need to add up the revenue from each day. Therefore, the total revenue from repairing truck tires and car tires on Thursday and Friday was $360 + $160 + $480 = $900.\n' +
+      '\n' +
+      'To calculate the revenue from repairing truck tires on Friday, we need to know how many truck tires the mechanic repaired on Friday. However, this information is not given in the question. Therefore, we cannot calculate the revenue from repairing truck tires on Friday.\n' +
+      '\n' +
+      'To calculate the revenue from repairing car tires on Thursday and Friday, we need to add up the revenue from each day. Therefore, the total revenue from repairing car tires on Thursday and Friday was $160 + $480 = $640.\n' +
+      '\n' +
+      'To calculate the difference between the revenue from repairing truck tires and car tires on Thursday and Friday, we need to subtract the revenue from repairing car tires on Thursday and Friday from the total revenue from repairing truck tires and car tires on Thursday and Friday. Therefore, the difference between the revenue from repairing truck tires and car tires on Thursday and Friday was $900 - $640 = $260.\n' +
+      '\n' +
+      'Therefore, the mechanic earned $260 more on the day with higher revenue. The answer is: 260.\n' +
+      '\n' +
+      '**WizardMath-13B**\n' +
+      '\n' +
+      'Step 1: Calculate the revenue earned on Thursday.\n' +
+      '\n' +
+      'On Thursday, the mechanic repaired 6 truck tires and 4 car tires. The mechanic charges $60 for each truck tire and $40 for each car tire. Therefore, the revenue earned on Thursday can be calculated as follows:\n' +
+      '\n' +
+      'Revenue on Thursday = (Number of truck tires) * (Price per truck tire) + (Number of car tires) * (Price per car tire)\n' +
+      '\n' +
+      'Revenue on Thursday = 6 * $60 + 4 * $40\n' +
+      '\n' +
+      'Revenue on Thursday = $360 + $160\n' +
+      '\n' +
+      'Revenue on Thursday = $520\n' +
+      '\n' +
+      'Step 2: Calculate the revenue earned on Friday.\n' +
+      '\n' +
+      'On Friday, the mechanic repaired 12 car tires and didn\'t repair any truck tires. Therefore, the revenue earned on Friday can be calculated as follows:\n' +
+      '\n' +
+      'Revenue on Friday = (Number of car tires) * (Price per car tire)\n' +
+      '\n' +
+      'Revenue on Friday = 12 * $40\n' +
+      '\n' +
+      'Revenue on Friday = $480\n' +
+      '\n' +
+      'Step 3: Compare the revenue earned on both days.\n' +
+      '\n' +
+      'Now, we need to compare the revenue earned on Thursday and Friday to find out which day earned more revenue.\n' +
+      '\n' +
+      'Difference in revenue = Revenue on Thursday - Revenue on Friday\n' +
+      '\n' +
+      'Difference in revenue = $520 - $480\n' +
+      '\n' +
+      'Difference in revenue = $40\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l} \\hline\n' +
+      '**WizardMath-13B** & Step 1: Calculate the revenue earned on Thursday.\n' +
+      '\n' +
+      'On Thursday, the mechanic repaired 6 truck tires and 4 car tires. The mechanic charges $60 for each truck tire and $40 for each car tire. Therefore, the revenue earned on Thursday can be calculated as follows:\n' +
+      '\n' +
+      '\\begin{tabular}{l} Revenue on Thursday = (Number of truck tires) * (Price per truck tire) + (Number of car tires) * (Price per car tire) \\\\ Revenue on Thursday = 6 * $60 + 4 * $40 \\\\ Revenue on Thursday = $360 + $160 \\\\ Revenue on Thursday = $520 \\\\ Step 2: Calculate the revenue earned on Friday.\n' +
+      '\n' +
+      'On Friday, the mechanic repaired 12 car tires and didn’t repair any truck tires. Therefore, the revenue earned on Friday can be calculated as follows:\n' +
+      '\n' +
+      '\\begin{tabular}{l} Revenue on Friday = (Number of car tires) * (Price per car tire) \\\\ Revenue on Friday = 12 * $40 \\\\ Revenue on Friday = $480 \\\\ Step 3: Compare the revenue earned on both days.\n' +
+      '\n' +
+      'Now, we need to compare the revenue earned on Thursday and Friday to find out which day earned more revenue.\n' +
+      '\n' +
+      'Difference in revenue = Revenue on Thursday - Revenue on Friday\n' +
+      '\n' +
+      'Difference in revenue = $520 - $480 \\\\ Difference in revenue = $40 \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 4: A comparison case on different scale size modelsTherefore, the mechanic earned $40 more in revenue on the day with higher revenue, which is Thursday. The final answer is $40.\n' +
+      '\n' +
+      'The answer is: 40.\n' +
+      '\n' +
+      '**WizardMath-70B**\n' +
+      '\n' +
+      'Step 1: Determine Lylah\'s salary four years ago.\n' +
+      '\n' +
+      'Since Adrien\'s total salary was 30 percent higher than Lylah\'s, and Adrien earned $40000 four years ago, we can find Lylah\'s salary by subtracting 30% of $40000 from Adrien\'s salary.\n' +
+      '\n' +
+      'Lylah\'s salary = $40000 - (30/100)*$40000 = $40000 - $12000 = $28000\n' +
+      '\n' +
+      'Step 2: Calculate Adrien\'s salary four years later.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l} \\hline\n' +
+      '**Ground Truth Answer: 95200** \\\\ \\hline\n' +
+      '**Note:** & WizardMath 7B and 13B answer incorrectly, while 70B answers correctly. \\\\ \\hline\n' +
+      '**WizardMath-7B** & Step 1: Calculate Adrien’s salary four years ago. \\\\  & Since Adrien earned $40000 four years ago, his total salary four years ago was \\\\  & $400000. \\\\  & Step 2: Calculate the increase in Adrien’s salary four years later. \\\\  & Four years later, Adrien’s salary had increased by 40\\% of his salary four years ago. \\\\  & Therefore, the increase in Adrien’s salary was 40/100*$40000 = $16000. \\\\  & Step 3: Calculate Adrien’s total salary four years later. \\\\  & Adrien’s total salary four years later was the sum of his salary four years ago and \\\\  & the increase in his salary. Therefore, Adrien’s total salary four years later was \\\\  & $40000+$16000 = $56000. \\\\  & Step 4: Calculate the increase in Lylah’s salary four years later. \\\\  & Since Adrien’s total salary was 30\\% higher than Lylah’s, the increase in Lylah’s salary four years later was 30/100*$56000 = $16800. \\\\  & Step 5: Calculate Lylah’s total salary four years later. \\\\  & Lylab’s total salary four years later was the sum of her salary four years ago and \\\\  & the increase in her salary. Therefore, Lylah’s total salary four years later was \\$56000+$16800 = $72800. \\\\  & Step 6: Calculate the total salary the two were receiving four years later. \\\\  & The total salary the two were receiving four years later was the sum of Adrien’s \\\\  & and Lylab’s total salary four years later. \\\\  & Therefore, the total salary the two were receiving four years later was \\$72800+\\$56000 = $128800. \\\\  & Therefore, the total salary the two were receiving four years later was \\$128800. \\\\  & The answer is: 128800. \\\\ \\hline\n' +
+      '**WizardMath-13B** & Step 1: Calculate Adrien’s total salary four years ago. \\\\  & We know that Adrien’s total salary was 30 percent higher than Lylah’s. If Adrien was \\\\  & earning $40000 four years ago, then Lylah was earning $40000/30/100 = $12000. \\\\  & Step 2: Calculate Adrien’s total salary four years later. \\\\  & Four years later, Adrien’s salary had increased, and he was earning 40\\% more than \\\\  & what he was making four years ago. Therefore, Adrien’s total salary four years later is \\$40000 + $40000*40/100 = $56000. \\\\  & Step 3: Calculate Lylab’s total salary four years later. \\\\  & If Adrien’s salary increased by 40\\%, then Lylah’s salary also increased by 40\\%. \\\\  & Therefore, Lylab’s total salary four years later is \\$12000 + $12000*40/100 = $16800. \\\\  & Step 4: Calculate the total salary the two were receiving four years later. \\\\  & The total salary the two were receiving four years later. \\\\  & The total salary the two were receiving four years later is the sum of Adrien’s and \\\\  & Lylab’s total salary. Therefore, the total salary the two were receiving four years later is \\$56000 + $16800 = $72800. \\\\  & Therefore, the total salary the two were receiving four years later is \\$72800. \\\\ \\hline\n' +
+      '**WizardMath-70B** & Step 1: Determine Lylah’s salary four years ago. \\\\  & Since Adrien’s total salary was 30 percent higher than Lylah’s, and Adrien earned \\$40000 four years ago, we can find Lylab’s salary by subtracting 30\\% of \\$40000 from Adrien’s salary. \\\\  & Lylab’s salary = $40000 - (30/100)*$40000 = $40000 - $12000 = $28000 \\\\  & Step 2: Calculate Adrien’s salary four years later. \\\\ \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 5: A comparison case on different scale size modelsFour years later, Adrien\'s salary had increased by 40% of what he was making four years ago. So, we need to add 40% of $40000 to his salary from four years ago.\n' +
+      '\n' +
+      ' Adrien\'s salary four years later = $40000 + (40/100)*$40000 = $40000 + $16000 = $56000\n' +
+      '\n' +
+      ' Step 3: Calculate Lylah\'s salary four years later.\n' +
+      '\n' +
+      ' Since their salaries increased simultaneously, Lylah\'s salary also increased by 40% of what she was making four years ago. So, we need to add 40% of $28000 to her salary from four years ago.\n' +
+      '\n' +
+      ' Lylah\'s salary four years later = $28000 + (40/100)*$28000 = $28000 + $11200 = $39200\n' +
+      '\n' +
+      ' Step 4: Calculate the total salary the two were receiving four years later.\n' +
+      '\n' +
+      ' Now, we just need to add Adrien\'s and Lylah\'s salaries from four years later to find their total salary.\n' +
+      '\n' +
+      ' Total salary = Adrien\'s salary four years later + Lylah\'s salary four years later = $56000 + $39200 = $95200\n' +
+      '\n' +
+      ' So, the total salary the two were receiving four years later was $95200.\n' +
+      '\n' +
+      ' The answer is: 95200.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:22]\n' +
+      '\n' +
+      '\\[y=-10-1\\]\n' +
+      '\n' +
+      '\\[x=15\\]\n' +
+      '\n' +
+      '\\[y=-11\\]\n' +
+      '\n' +
+      'So, the coordinates of \\((x,y)\\) are \\(\\boxed{(15,-11)}\\)\n' +
+      '\n' +
+      'The answer is: (15,-11).\n' +
+      '\n' +
+      '**WizardMath-13B**:\n' +
+      '\n' +
+      'Step 1: Understand the problem\n' +
+      '\n' +
+      'We are given that the midpoint of the line segment between \\((x,y)\\) and \\((-9,1)\\) is \\((3,-5)\\). We need to find the coordinates of the point \\((x,y)\\).\n' +
+      '\n' +
+      'Step 2: Recall the midpoint formula\n' +
+      '\n' +
+      'The midpoint of a line segment with endpoints \\((x_{1},y_{1})\\) and \\((x_{2},y_{2})\\) can be found using the midpoint formula:\n' +
+      '\n' +
+      'Midpoint = \\(\\left(\\frac{x_{1}+x_{2}}{2},\\frac{y_{1}+y_{2}}{2}\\right)\\)\n' +
+      '\n' +
+      'Step 3: Apply the midpoint formula\n' +
+      '\n' +
+      'In our case, the endpoints are \\((x,y)\\) and \\((-9,1)\\). So, we can plug these values into the midpoint formula:\n' +
+      '\n' +
+      'Midpoint = \\(\\left(\\frac{x+(-9)}{2},\\frac{y+1}{2}\\right)\\)\n' +
+      '\n' +
+      'Step 4: Simplify the midpoint\n' +
+      '\n' +
+      'Now, we can simplify the midpoint by performing the arithmetic operations:\n' +
+      '\n' +
+      'Midpoint = \\(\\left(\\frac{x-9}{2},\\frac{y+1}{2}\\right)\\)\n' +
+      '\n' +
+      'Step 5: Set up an equation\n' +
+      '\n' +
+      'Since the midpoint is given as \\((3,-5)\\), we can set up an equation using the simplified midpoint formula:\n' +
+      '\n' +
+      '\\(\\frac{x-9}{2}=3\\) and \\(\\frac{y+1}{2}=-5\\)\n' +
+      '\n' +
+      'Step 6: Solve the equations\n' +
+      '\n' +
+      'Now, we need to solve these two equations to find the values of \\(x\\) and \\(y\\). Let\'s start with the first equation:\n' +
+      '\n' +
+      '\\(\\frac{x-9}{2}=3\\)\n' +
+      '\n' +
+      'Multiply both sides by 2 to get rid of the fraction:\n' +
+      '\n' +
+      '\\(x-9=6\\)\n' +
+      '\n' +
+      'Now, add 9 to both sides:\n' +
+      '\n' +
+      '\\(x=15\\)\n' +
+      '\n' +
+      'Next, let\'s solve the second equation:\n' +
+      '\n' +
+      '\\(\\frac{y+1}{2}=-5\\)\n' +
+      '\n' +
+      'Multiply both sides by 2 to get rid of the fraction:\n' +
+      '\n' +
+      '\\(y+1=-10\\)\n' +
+      '\n' +
+      'Now, subtract 1 from both sides:\n' +
+      '\n' +
+      '\\(y=-11\\)\n' +
+      '\n' +
+      'Step 7: Write the final answer\n' +
+      '\n' +
+      'We have found the values of \\(x\\) and \\(y\\). So, the coordinates of the point \\((x,y)\\) are \\((15,-11)\\). Therefore, the final answer is:\n' +
+      '\n' +
+      '\\((x,y)=\\boxed{(15,-11)}\\)\n' +
+      '\n' +
+      'The answer is: (15,-11).\n' +
+      '\n' +
+      '**WizardMath-70B**:\n' +
+      '\n' +
+      'Step 1: Understand the problem\n' +
+      '\n' +
+      'We are given the midpoint of a line segment and the coordinates of one of its endpoints. We need to find the coordinates of the other endpoint, which is \\((x,y)\\).\n' +
+      '\n' +
+      'Step 2: Recall the midpoint formula\n' +
+      '\n' +
+      'The midpoint of a line segment with endpoints \\((x_{1},y_{1})\\) and \\((x_{2},y_{2})\\) is given by the formula:\n' +
+      '\n' +
+      'Midpoint = \\(\\left(\\frac{x_{1}+x_{2}}{2},\\frac{y_{1}+y_{2}}{2}\\right)\\)\n' +
+      '\n' +
+      'Step 3: Plug in the given information\n' +
+      '\n' +
+      'We know the midpoint is \\((3,-5)\\) and one endpoint is \\((-9,1)\\). So, we can plug these values into the midpoint formula:\n' +
+      '\n' +
+      '\\((3,-5)=\\left(\\frac{-9+x}{2},\\frac{1+y}{2}\\right)\\)\n' +
+      '\n' +
+      'Step 4: Solve for \\(x\\) and \\(y\\)\n' +
+      '\n' +
+      'Now, we need to solve the system of equations:\n' +
+      '\n' +
+      '1) \\(\\frac{-9+x}{12}=3\\)\n' +
+      '\n' +
+      '2) \\(\\frac{1+y}{2}=-5\\)\n' +
+      '\n' +
+      'Step 5: Solve equation 1 for \\(x\\)\n' +
+      '\n' +
+      'Multiply both sides by 2:\n' +
+      '\n' +
+      '\\(-9+x=6\\)\n' +
+      '\n' +
+      'Add 9 to both sides:\n' +
+      '\n' +
+      '\\(x=15\\)\n' +
+      '\n' +
+      'Step 6: Solve equation 2 for \\(y\\)\n' +
+      '\n' +
+      'Multiply both sides by 2:\n' +
+      '\n' +
+      '\\(1+y=-10\\)\n' +
+      '\n' +
+      'Subtract 1 from both sides:\n' +
+      '\n' +
+      '\\(y=-11\\)\n' +
+      '\n' +
+      'Step 7: Write the final answer\n' +
+      '\n' +
+      'Now that we have found the values of \\(x\\) and \\(y\\), we can write the final answer as:\n' +
+      '\n' +
+      '\\((x,y)=(15,-11)\\)\n' +
+      '\n' +
+      'So, the coordinates of the other endpoint are \\((15,-11)\\).\n' +
+      '\n' +
+      'The answer is: (15,-11).\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l} \\hline \\hline\n' +
+      '**Instruction:** Evaluate \\(\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ}\\tan 60^{ \\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}\\). \\\\ \\hline \\hline\n' +
+      '**Ground Truth Answer: 1** \\\\ \\hline \\hline\n' +
+      '**Note:** WizardMath 7B answers incorrectly, while 13B and 70B answer correctly. \\\\ \\hline\n' +
+      '**WizardMath-7B** \\\\ \\hline \\multirow{2}{*}{First, we can rewrite the given expression using the identity \\(\\tan(90^{\\circ}-x)=\\frac{1}{\\tan x}\\): \\\\ \\[\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ} \\tan 60^{\\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}=\\frac{1}{\\tan 80^{\\circ}}\\] \\\\ \\end{tabular} Now, we can use the double-angle formula for tangent, which is \\(\\tan 2x=\\frac{2\\tan x}{1-\\tan^{2}x}\\): \\\\ \\[\\frac{1}{\\tan 80^{\\circ}}=\\frac{2}{\\tan 160^{\\circ}}=\\frac{2}{\\frac{1-\\tan^{2}80 ^{\\circ}}{2\\tan 80^{\\circ}}}=\\frac{1-\\tan^{2}80^{\\circ}}{2\\tan 80^{\\circ}}\\] \\\\ \\end{tabular} Next, we can use the double-angle formula for tangent again: \\\\ \\[\\frac{1-\\tan^{2}80^{\\circ}}{2\\tan 80^{\\circ}}=\\frac{1-\\frac{1}{2}\\tan^{2}80 ^{\\circ}}{2\\tan 80^{\\circ}}=\\frac{1-\\frac{1}{2}\\tan^{2}80^{\\circ}}{2\\tan 80^{ \\circ}}\\cdot\\frac{2\\tan 80^{\\circ}}{1-\\tan^{2}80^{\\circ}}\\] \\\\ \\end{tabular} Now, we can multiply the fractions: \\\\ \\[\\frac{1-\\frac{1}{2}\\tan^{2}80^{\\circ}}{2\\tan 80^{\\circ}}\\cdot\\frac{2\\tan 80^{ \\circ}}{1-\\tan^{2}80^{\\circ}}=\\frac{1-\\frac{1}{2}\\tan^{2}80^{\\circ}}{1-\\tan^{ 2}80^{\\circ}}\\] \\\\ \\end{tabular} Finally, we can simplify the expression: \\\\ \\[\\frac{1-\\frac{1}{2}\\tan^{2}80^{\\circ}}{1-\\tan^{2}80^{\\circ}}=1-\\frac{1}{2}\\tan ^{2}80^{\\circ}\\] So, the rewritten answer is: \\\\ \\[\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{ \\circ}\\tan 60^{\\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}=\\boxed{1-\\frac{1}{2}\\tan^{2}80^{ \\circ}}\\] \\\\ \\end{tabular} The answer is: \\(1-\\frac{1}{2}\\tan^{2}80^{\\circ}\\). \\\\ \\hline\n' +
+      '**WizardMath-13B** \\\\ \\hline \\multirow{2}{*}{Step 1: Recall the angle addition formula for tangent: \\(\\tan(A+B)=\\frac{\\tan A+\\tan B}{1-\\tan A\\tan B}\\)} & \\multirow{2}{*}{Step 2: Use the formula to find \\(\\tan 110^{\\circ}\\): \\(\\tan 110^{\\circ}=\\tan(10^{\\circ}+100^{\\circ})=\\frac{\\tan 10^{\\circ}+\\tan 100^{ \\circ}}{1-\\tan 100^{\\circ}}=\\frac{1+0}{1-1.0}=1\\)} \\\\ \\multirow{2}{*}{Step 3: Observe that \\(\\tan 110^{\\circ}\\) is the only term in the given expression that is not equal to 0. \\\\ \\multirow{2}{*}{Step 4: Multiply both sides of the equation by \\(\\tan 110^{\\circ}\\): \\(\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ}\\tan 60^{ \\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}\\tan 110^{\\circ}\\)} & \\multirow{2}{*}{\\(=\\)} & \\multirow{2}{*} \\\\ \\multirow{2}{*}{Step 5: Simplify the equation: \\(\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ}\\tan 60^{ \\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}=\\tan 110^{\\circ}\\)} & \\multirow{2}{*}{Step 6: Since \\(\\tan 110^{\\circ}=1\\), the final answer is: \\(\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ}\\tan 60^{ \\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}=\\boxed{1}\\).} \\\\ \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: A comparison case on different scale size modelsWe know that \\(\\tan x=\\frac{\\sin x}{\\cos x}\\) and \\(\\cot x=\\frac{\\cos x}{\\sin x}\\).\n' +
+      '\n' +
+      'Step 2: Find the tangent and cotangent of each angle.\n' +
+      '\n' +
+      'We need to find the tangent and cotangent of each angle in the given expression:\n' +
+      '\n' +
+      '\\(\\tan 10^{\\circ}=\\frac{\\sin 10^{\\circ}}{\\cos 10^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 20^{\\circ}=\\frac{\\sin 20^{\\circ}}{\\cos 20^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 30^{\\circ}=\\frac{\\sin 30^{\\circ}}{\\cos 30^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 40^{\\circ}=\\frac{\\sin 40^{\\circ}}{\\cos 40^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 50^{\\circ}=\\frac{\\sin 50^{\\circ}}{\\cos 50^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 60^{\\circ}=\\frac{\\sin 60^{\\circ}}{\\cos 60^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 70^{\\circ}=\\frac{\\sin 70^{\\circ}}{\\cos 70^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\tan 80^{\\circ}=\\frac{\\sin 80^{\\circ}}{\\cos 80^{\\circ}}\\)\n' +
+      '\n' +
+      'Step 3: Find the cotangent of each angle.\n' +
+      '\n' +
+      'Now, we need to find the cotangent of each angle:\n' +
+      '\n' +
+      '\\(\\cot 10^{\\circ}=\\frac{\\cos 10^{\\circ}}{\\sin 10^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 20^{\\circ}=\\frac{\\cos 20^{\\circ}}{\\sin 20^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 30^{\\circ}=\\frac{\\sin 30^{\\circ}}{\\cos 40^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 40^{\\circ}=\\frac{\\cos 40^{\\circ}}{\\sin 40^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 50^{\\circ}=\\frac{\\cos 50^{\\circ}}{\\cos 40^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 60^{\\circ}=\\frac{\\sin 60^{\\circ}}{\\sin 60^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 70^{\\circ}=\\frac{\\cos 70^{\\circ}}{\\sin 70^{\\circ}}\\)\n' +
+      '\n' +
+      '\\(\\cot 80^{\\circ}=\\frac{\\cos 80^{\\circ}}{\\sin 80^{\\circ}}\\)\n' +
+      '\n' +
+      'Step 4: Use the identity \\(\\tan x\\cot x=1\\).\n' +
+      '\n' +
+      'We know that \\(\\tan x\\cot x=1\\). So, we can rewrite the given expression as:\n' +
+      '\n' +
+      '\\(\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ} \\tan 60^{\\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}=\\frac{\\sin 10^{\\circ}}{\\cos 10^{ \\circ}}\\frac{\\sin 20^{\\circ}}{\\cos 20^{\\circ}}\\).\n' +
+      '\n' +
+      '\\(\\frac{\\sin 30^{\\circ}}{\\cos 30^{\\circ}}\\frac{\\sin 40^{\\circ}}{\\cos 40^{\\circ}} \\frac{\\sin 50^{\\circ}}{\\cos 50^{\\circ}}\\frac{\\sin 60^{\\circ}}{\\cos 60^{\\circ}} \\frac{\\sin 70^{\\circ}}{\\cos 70^{\\circ}}\\frac{\\sin 80^{\\circ}}{\\cos 80^{\\circ}}\\)\n' +
+      '\n' +
+      'Step 5: Simplify the expression.\n' +
+      '\n' +
+      'Now, we can simplify the expression by canceling out the terms:\n' +
+      '\n' +
+      '\\(\\frac{\\sin 10^{\\circ}\\sin 20^{\\circ}\\sin 30^{\\circ}\\tan 40^{\\circ}\\sin 50^{ \\circ}\\sin 60^{\\circ}\\sin 70^{\\circ}\\sin 80^{\\circ}}{\\cos 10^{\\circ}\\cos 20^{ \\circ}\\cos 30^{\\circ}\\cos 40^{\\circ}\\cos 50^{\\circ}\\cos 60^{\\circ}\\cos 70^{ \\circ}\\cos 80^{\\circ}}\\)\n' +
+      '\n' +
+      'Step 6: Calculate the final answer.\n' +
+      '\n' +
+      'Now, we can calculate the final answer:\n' +
+      '\n' +
+      '\\(\\tan 10^{\\circ}\\tan 20^{\\circ}\\tan 30^{\\circ}\\tan 40^{\\circ}\\tan 50^{\\circ} \\tan 60^{\\circ}\\tan 70^{\\circ}\\tan 80^{\\circ}=\\framebox{1}\\)\n' +
+      '\n' +
+      'So, the final answer is 1.\n' +
+      '\n' +
+      'The answer is: 1.\n' +
+      '\n' +
+      '**WizardMath-13B**\n' +
+      '\n' +
+      '1. We know that \\(f(x)\\) is an odd function, which means that \\(f(-x)=-f(x)\\).\n' +
+      '\n' +
+      '2. We also know that \\(g(x)\\) is an even function, which means that \\(g(-x)=g(x)\\).\n' +
+      '\n' +
+      'Now, let\'s analyze the given expression: \\(f(f(g(f(g(f(x))))))\\).\n' +
+      '\n' +
+      '3. Replace \\(x\\) with \\(-x\\) in the expression: \\(f(f(g(f(-x)))))\\). Since \\(f\\) is odd, we have \\(f(-x)=-f(x)\\), so the expression becomes \\(-f(f(g(f(-x)))))\\).\n' +
+      '\n' +
+      '4. Since \\(g\\) is even, we have \\(g(-x)=g(x)\\). So, we can rewrite the expression as \\(-f(f(g(f(x))))\\).\n' +
+      '\n' +
+      '5. Now, we have another instance of \\(f\\) and \\(g\\). Since \\(f\\) is odd and \\(g\\) is even, their product is an odd function. So, we can rewrite the expression as \\(-[f(g(f(x)))]\\).\n' +
+      '\n' +
+      '6. We have another instance of \\(f\\) and \\(g\\). Since \\(f\\) is odd and \\(g\\) is even, their product is an odd function. So, we can rewrite the expression as \\(-[f(g(f(x)))]\\).\n' +
+      '\n' +
+      '6. We have another instance of \\(f\\) and \\(g\\). Since \\(f\\) is odd and \\(g\\) is even, their product is an odd function. So, we can rewrite the expression as \\(-[f(g(f(x)))]\\).\n' +
+      '\n' +
+      '6. We have another instance of \\(f\\) and \\(g\\). Since \\(f\\) is odd and \\(g\\) is even, their product is an odd function. So, we can rewrite the expression as \\(-[f(g(f(x)))]\\).\n' +
+      '\n' +
+      '7. Now, we have another instance of \\(f\\). Since \\(f\\) is odd, we have \\(f(-x)=-f(x)\\). So, we can rewrite the expression as \\(-f(f(x))\\).\n' +
+      '\n' +
+      '8. Finally, we have another instance of \\(f\\). Since \\(f\\) is odd, we have \\(f(-x)=-f(x)\\). So, we can rewrite the expression as \\(-f(f(x))\\).\n' +
+      '\n' +
+      'Now, we can see that the expression is equal to \\(-f(f(x))\\), which is an odd function.\n' +
+      '\n' +
+      'Therefore, the answer is \\(\\boxed{\\text{odd}}\\)\n' +
+      '\n' +
+      'The answer is: odd.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l|l} \\hline\n' +
+      '**Instruction:** Let \\(f(x)\\) be an odd function, and let \\(g(x)\\) be an even function. Is \\(f(f(g(f(g(f(x))))))\\) even, \\\\ odd, or neither? \\\\ Enter ”odd”, “even”, or ”neither”. \\\\ \\hline \\multicolumn{2}{l}{**Ground Truth Answer: even**} \\\\ \\hline\n' +
+      '**Note:** WizardMath 7B and 13B answer incorrectly, while 70B answers correctly. \\\\ \\hline\n' +
+      '**WizardMath-7B** & 1. We know that \\(f(x)\\) is an odd function, which means that \\(f(-x)=-f(x)\\) for all \\(x\\) in its domain. \\\\\n' +
+      '2. We also know that \\(g(x)\\) is an even function, which means that \\(g(-x)=g(x)\\) for all \\(x\\) in its domain. \\\\\n' +
+      '3. Now, let’s find the value of \\(f(g(-x))\\) and \\(f(-g(x))\\). Since \\(g(-x)=g(x)\\) and \\(f(g(-x))=f(g(x))\\), we can conclude that: \\\\\n' +
+      '4. Next, let’s find the value of \\(f(f(g(-x)))\\) and \\(f(f(-g(x)))\\). Since \\(f(-x)=-f(x)\\) and \\(f(g(-x))=f(g(x))\\), we can conclude that: \\\\ \\(f(f(g(-x)))=f(f(-g(x)))\\) \\\\\n' +
+      '5. Now, let’s find the value of \\(f(f(f(g(-x))))\\) and \\(f(f(f(-g(x))))\\). Since \\(f(f(-x))=-f(f(x))\\) and \\(f(f(f(g(-x))))=-f(f(f(-g(x))))\\), we can conclude that: \\\\ \\(f(f(f(f(g(-x))))))=-f(f(f(-g(x))))\\) \\\\\n' +
+      '6. Finally, let’s find the value of \\(f(f(f(f(g(-x)))))\\) and \\(f(f(f(f(-g(x)))))\\). Since \\(f(f(-x))=-f(f(x))\\) and \\(f(f(f(g(-x))))=-f(f(f(-g(x))))\\), we can conclude that: \\\\ \\(f(f(f(f(g(-x))))))=-f(f(f(f(-g(x)))))\\) \\\\ Therefore, the final answer is \\(\\boxed{\\text{odd}}\\) \\\\ The answer is: odd. \\\\ \\hline\n' +
+      '**WizardMath-13B** & 1. We know that \\(f(x)\\) is an odd function, which means that \\(f(-x)=-f(x)\\).\n' +
+      '\n' +
+      '2. We also know that \\(g(x)\\) is an even function, which means that \\(g(-x)=g(x)\\).\n' +
+      '\n' +
+      'Now, let’s analyze the given expression: \\(f(f(g(f(g(f(x))))))\\).\n' +
+      '\n' +
+      '3. Replace \\(x\\) with \\(-x\\) in the expression: \\(f(f(g(f(g(f(-x))))))\\). Since \\(f\\) is odd, we have \\(f(-x)=-f(x)\\), so the expression becomes \\(-f(f(g(f(g(-x)))))\\).\n' +
+      '\n' +
+      '4. Since \\(g\\) is even, we have \\(g(-x)=g(x)\\). So, we can rewrite the expression as \\(-f(f(g(f(g(x)))))\\).\n' +
+      '\n' +
+      '5. Now, we have another instance of \\(f\\) and \\(g\\). Since \\(f\\) is odd and \\(g\\) is even, their product is an odd function. So, we can rewrite the expression as \\(-[f(g(f(x)))]\\).\n' +
+      '\n' +
+      '6. We have another instance of \\(f\\) and \\(g\\). Since \\(f\\) is odd, their product is an odd function. So, we can rewrite the expression as \\(-[f(g(f(x)))]\\).\n' +
+      '\n' +
+      '7. Now, we have another instance of \\(f\\). Since \\(f\\) is odd, we have \\(f(-x)=-f(x)\\). So, we can rewrite the expression as \\(-f(f(x))\\).\n' +
+      '\n' +
+      '8. Finally, we have another instance of \\(f\\). Since \\(f\\) is odd, we have \\(f(-x)=-f(x)\\). So, we can rewrite the expression as \\(-f(f(x))\\).\n' +
+      '\n' +
+      'Now, we can see that the expression is equal to \\(-f(f(x))\\), which is an odd function. Therefore, the answer is \\(\\box- \\(h(-x)=f(f(g(f(g(f((x)))))))\\).\n' +
+      '\n' +
+      '6. Since \\(g(x)\\) is even, we have \\(g(-x)=g(x)\\). So, we can rewrite the expression as:\n' +
+      '\n' +
+      '- \\(h(-x)=f(f(g(f(g(f(x))))))\\).\n' +
+      '\n' +
+      '7. Now, we can see that \\(h(-x)=h(x)\\). This means that the function \\(h(x)\\) satisfies the definition of an even function.\n' +
+      '\n' +
+      '8. Therefore, the given function \\(f(f(g(f(g(f(x))))))\\) is even.\n' +
+      '\n' +
+      'The answer is: even.\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>
