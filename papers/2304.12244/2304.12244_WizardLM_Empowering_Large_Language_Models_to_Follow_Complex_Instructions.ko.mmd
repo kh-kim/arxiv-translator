@@ -1,0 +1,586 @@
+[MISSING_PAGE_FAIL:1]
+
+실제 인간 사용자에 의해 생성된 명령 데이터, OpenAI의 LLMs(예를 들어, InstructGPT [2] 및 ChatGPT 4)는 큰 성공을 거두었다. 이러한 오픈 도메인 명령어는 LLM[14, 15, 16, 17]의 무한한 잠재력을 완전히 발휘할 수 있으며, 보다 복잡하고 다양한 작업을 수행할 수 있게 한다. 그러나 OpenAI와 같은 개방형 도메인 명령 데이터 세트를 만들기 위해 인간을 사용하는 것은 다음과 같은 문제에 직면할 것이다. 전체 주석 프로세스는 매우 비싸고 시간이 많이 걸린다[18, 19, 20, 21]. 반면에 인간이 만든 지침의 난이도 분포는 쉬운 것 또는 중간 정도로 치우쳐 있으며 어려운 것은 더 적다(그림 (a)a의 ShareGPT [22]의 난이도 통계에 따르면). 이에 대한 가능한 이유는 주석자 중 전문가의 비율이 낮고 복잡한 지침을 만드는 데 많은 정신적 노력이 필요하기 때문이다. 인간 주석자는 피로하기 쉽고 고난도 지침의 충분한 비율을 생성하기 위해 고강도 작업을 지속할 수 없다[23, 24, 25, 26]. 이러한 문제들에 기초하여, 비교적 저렴한 비용으로 오픈 도메인 명령어(특히 더 어려운 명령어)를 대량 생산할 수 있는 자동 방법을 개발하는 것이 명령어 튜닝 언어 모델을 더욱 발전시키는 열쇠가 된다[27, 28, 29, 30].
+
+각주 4: [https://chat.openai.com/](https://chat.openai.com/)
+
+본 연구에서는 LLM의 성능을 향상시키기 위해 인간 대신 LLM을 사용하는 새로운 방법인 _Evol-Instruct_를 도입하여 다양한 난이도의 오픈 도메인 명령어를 자동으로 양산한다. 그림 1은 _Evol-Instruct_의 실행 예를 보여 줍니다. 단순 초기 명령어 "1+1=7"에서 시작하여 심층 진화(파란색 방향선) 또는 폭내 진화(빨간색 방향선)를 무작위로 선택하여 단순 명령어를 더 복잡한 명령어로 업그레이드하거나 새로운 명령어를 생성(다양성을 높임)한다. 심층 진화는 제약 조건 추가, 심화, 구체화, 추론 단계 증가, 입력 복잡화의 5가지 유형의 연산을 포함한다. In-breadth Evolving은 돌연변이, 즉 주어진 명령을 기반으로 완전히 새로운 명령을 생성하는 것이다. 6
+
+그림 1: _Evol-Instruct_ 의 실행 예입니다.
+
+작동은 특정 프롬프트로 LLM을 프롬프트하여 구현됩니다. 진화된 지침은 LLM에서 생성되기 때문에 때때로 진화는 실패할 것이다. 우리는 실패한 명령어를 필터링하기 위해 명령어 제거기를 채택하는데, 이를 Elimination Evolving이라고 한다. 우리는 다양한 복잡성을 포함하는 충분한 명령 데이터를 얻기 위해 여러 라운드에 대해 이 진화 과정을 반복한다.
+
+진화된 명령으로 오픈 소스 LLaMA [4]를 미세 조정하고 명령 미세 조정에 대한 기존 SOTA 작업(예: Alpaca [31] 및 Vicuna [22])과 유사한 성능을 평가하여 _Evol-Instruct_를 검증한다. 우리가 비교하는 명령어 데이터셋은 Alpaca에서 사용하는 데이터(Self-instruct [32]를 사용하여 생성)와 Vicuna에서 사용하는 70k ShareGPT(실제 사용자가 공유)이다. 제안 방법의 명령어 데이터셋이 인간 생성 명령어 데이터셋보다 우수하다는 것을 증명하기 위해, 알파카의 훈련 데이터(175개의 인간 생성 시드 명령어에서만 생성)를 초기 데이터셋으로 선택한다. 우리는 OpenAI ChatGPT API5를 사용하여 4개의 진화 에포크를 실행하고 최종적으로 250k 명령을 얻는다. 비쿠나의 70k 실제 사용자 데이터와 공정한 비교를 보장하기 위해 전체 250k 데이터에서 동일한 양을 샘플링하고 LLaMA 7B 모델을 훈련했다. 모델 이름을 _위저드LM_ 이라고 합니다. 이전 명령어 후속 테스트 데이터 세트에서 어려운 명령어의 비율이 낮기 때문에 _Evol-Instruct_ 테스트 세트라는 새로운 난이도 균형 테스트 데이터 세트를 수동으로 만들었다. 우리는 주석자를 고용하고 GPT-4를 활용하여 _Evol-Instruct_ 테스트 세트 및 비쿠나의 테스트 세트에서 알파카, 비쿠나, ChatGPT 및 _위저드LM_을 평가한다. 주요 연구 결과는 다음과 같다.
+
+각주 5: [https://oai.azure.com/portal](https://oai.azure.com/portal)의 gpt-3.5-turbo
+
+* **Evol-Instruct_의 지침은 인간이 만든 ShareGPT의 지침보다 우수 합니다.* * LLaMA 7B를 미세 조정 하기 위해 Vicuna와 동일한 양의 _Evol-Instruct_ 데이터(예: 70k)를 사용 하는 경우 모델 _WizardLM_이 Vicuna보다 훨씬 우수 합니다. 인간 평가에서 각각 _Evol-Instruct_ 테스트 집합 및 Vicuna의 테스트 집합에서 승률은 \(12.4\%\) 및 \(3.8\%\) 더 높습니다. 또한 _WizardLM_은 GPT-4의 자동 평가에서 알파카 및 비쿠나보다 더 나은 응답 품질을 달성한다.
+* **레이블러는 복잡한 테스트 지침에 따라 ChatGPT의 출력보다 _WizardLM_ 출력을 선호합니다.* * _Evol-Instruct_ 테스트 세트에서 _WizardLM_은 ChatGPT보다 성능이 좋지 않으며 승률 \(12.8\%\)이 ChatGPT보다 낮습니다 (\(28.0\%\ vs. \) \ (40.8\%\%). 그러나 _Evol-Instruct_ 테스트 세트(난이도 수준 \(\geq 8\))의 고난이도 섹션에서는 우리의 _WizardLM_이 ChatGPT보다 승률 \(7.9\%\) 더 큰 ChatGPT(\(42.9\%\ vs. \ (35.0\%\)), 인간 주석자는 이러한 어려운 질문에 대해 ChatGPT보다 우리 모델의 출력을 선호한다. 이는 _Evol-Instruct_가 LLM이 복잡한 명령을 처리하는 능력을 크게 향상시킬 수 있음을 나타냅니다.
+
+## 2 관련 작업
+
+닫힌 도메인 명령 미세 조정 초기 명령 후속 훈련 작업 [33; 10]은 LMs에서 교차 작업 일반화에 관한 것으로, 여기서 LMs는 광범위한 공개 NLP 데이터 세트에서 미세 조정되고 다른 세트의 NLP 작업에서 평가된다. T5[34]는 통일된 텍스트 대 텍스트 형식을 이용하여 질의 응답, 문서 요약, 감정 분류 등의 자연어 처리(NLP) 작업을 함께 훈련함으로써 가장 초기의 시도를 하였다. FLAN[10], ExT5[9], T0[12] 및 KnowDA[35]와 같은 작업은 NLP 작업의 수를 약 100개로 증가시켰으며, 각 작업에 대해 신중하게 설계된 여러 지침이 있다[36; 37; 38; 39]. 또한 ZeroPrompt[11], FLAN-T5[13]과 같은 작업들은 작업 수를 수천 개로 늘렸다. 이러한 연구는 다양한 NLP 작업 지침으로 LM을 미세 조정하면 새로운 작업에 대한 성능이 향상된다는 것을 일관되게 보여준다. 그러나, 이러한 폐쇄형 명령어들(즉, 명령들은 종종 단일 NLP 태스크에 대한 것일 뿐이고, 입력 데이터 형태는 단순함)로 트레이닝된 LLM들은 실세계 사용자 시나리오들에서 실패하는 경향이 있다.
+
+오픈 도메인 지침은 이 연구 라인에 속한다. OpenAI는 많은 주석자를 고용하고 그에 상응하는 올바른 응답으로 많은 지침을 작성했다. 인간이 만든 이러한 지침은 다양한 형태와 풍부한 작업 유형을 가지고 있다. 이 데이터 세트를 기반으로 OpenAI는 GPT-3 [1]을 InstructGPT [2]로 훈련시켰으며, 이는 다양한 실제 사용자 명령을 처리할 수 있으며 ChatGPT의 성공으로 이어졌다. OpenAI의 이러한 뛰어난 작업은 오픈 소스가 아니기 때문에 Alpaca[31]와 Vicuna[22]는 이후 오픈 소스 LLM LLaMA[4]를 기반으로 오픈 도메인 명령어 미세 조정을 적극적으로 탐구했다. 알파카는 수동으로 작성된 명령어의 제한된(예를 들어, 175개의 샘플) 시드 세트로부터 생성된 50k개의 명령어의 데이터 세트를 사용했다. Vicuna는 ShareGPT.com에서 수집한 ChatGPT와 70k 사용자 공유 대화를 사용하였으며, InstructGPT 및 Vicuna와는 다르게 AI 생성 데이터를 사용하여 수업 미세 조정을 수행한다. Alpaca의 self-instruct[32] 생성 방법과 달리 _Evol-Instruct_는 생성된 명령어들의 난이도 및 복잡도 수준을 제어할 수 있다.
+
+## 3 Approach
+
+이 섹션에서는 제안된 _Evol-Instruct_ 의 세부 사항에 대해 자세히 설명합니다. 그림 2와 같이 파이프라인은 주로 지시 진화기와 지시 제거기의 두 가지 구성 요소를 포함한다. 이들 컴포넌트의 상세는 Sec. 3.2에서 제시될 것이고 명령어 미세 조정 방법은 Sec. 3.3에서 설명될 것이다.
+
+### 명령 데이터 진화 정의
+
+주어진 초기 명령어 데이터셋 \(D^{(0)}=\left(I_{k}^{(0)},R_{k}^{(0)}\right)_{1\leq k\leq N}\에서 진화를 시작한다. 여기서 \(I_{k}^{(0)}\)는 \(D^{(0)}\에서 \(k\)번째 명령어이고, \(R_{k}^{(0)}\)는 \(k\)번째 명령어에 대한 대응 응답이며, \(N\)는 \(D^{(0)}\에서 샘플 수이다. 각 진화에서, 우리는 LLM 지시 진화 프롬프트를 적용하여 \(D^{(t)}\)의 모든 \(I^{(t)}\)를 \(I^{(t+1)}\)로 업그레이드한 다음, LLM을 사용하여 새로 진화된 \(I^{t+1}\)에 대한 대응 반응 \(R^{t+1}\)을 생성한다. 따라서 우리는 진화된 명령어 데이터셋 \(D^{t+1}\)을 얻는다. \(M\) 진화를 반복적으로 수행함으로써 \(M\) 진화 데이터 세트 \([D^{(1)}\cdots D^{(M)}]\)를 순차적으로 얻을 수 있다. 우리의 작업은 명령 부분과 입력의 명확한 구분 없이 명령어가 다양한 입력과 작업을 갖는 오픈 도메인 명령 데이터에 초점을 맞춘다.
+
+### 자동 명령 데이터 진화
+
+명령어 진화를 위한 파이프라인은 1) 명령어가 진화하는 단계, 2) 응답 생성 단계, 3) 제거가 진화하는 단계, 즉 진화에 실패하는 필터링 단계로 구성된다.
+
+명령 진화.우리는 LLM이 특정 프롬프트를 사용하여 주어진 명령을 더 복잡하고 어렵게 만들 수 있음을 발견했다. 또한, 그것들은 똑같이 복잡하지만 완전히 다른 완전히 새로운 명령들을 생성할 수 있다. 이 발견을 사용하여 초기 명령어 데이터 세트를 반복적으로 진화시켜 난이도를 개선하고 풍부함과 다양성을 확장할 수 있다. 주어진 초기 명령어 데이터셋 \(D^{(0)}\)을 이용하여 명령어 풀을 시작한다. 각 진화 시대에는 이전 시대의 업그레이드된 지침이 풀에서 꺼내진다. 그런 다음 명령어 진화기를 사용하여 페치된 각 명령어를 진화시키고 명령어 제거기를 사용하여 호출 여부를 확인합니다.
+
+그림 2: _Evol-Instruct_ 개요
+
+[MISSING_PAGE_FAIL:5]
+
+#Bewrite prompt must be a question style instruction rewritten Prompt(OUST contain specific JSON data as input#:
+
+In-Breadth Evolving.In-Breadth Evolving의 프롬프트는 토픽 커버리지, 기술 커버리지 및 전체 데이터 세트 다양성을 향상시키는 것을 목표로 합니다. 오픈 도메인 명령어 미세 조정 데이터 세트(예: Alpaca, ShareGPT 등)는 일반적으로 규모가 작고 주제 및 기술 다양성이 부족하다. 이 문제를 해결하기 위해 주어진 명령어를 기반으로 완전히 새로운 명령어를 생성하도록 프롬프트를 설계하여 새로운 명령어를 더 긴 꼬리로 요구하였다. In-Breadth Evolving 프롬프트는 다음과 같습니다.
+
+나는 네가 프롬프트 크리에이터 역할을 했으면 좋겠어. 당신의 목표는 @Given Prompt#에서 영감을 끌어내어 새로운 프롬프트를 만드는 것입니다. 이 새 프롬프트는 @Given Prompt#와 동일한 도메인에 속해야 하지만 훨씬 더 드물어야 합니다. 생성된 Prompt#의 LEMGTH 및 난이도는 @Given Prompt#의 난이도와 유사해야 한다. #생성된 Prompt#은 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다. '#Given Prompt#', '#Created Prompt#', 'given prompt' 및 'created prompt'는 @Created Prompt#에 나타나지 않습니다.
+
+#Given Prompt#:
+
+<여기 지시가 있다.>
+
+#Created Prompt#:
+
+응답 생성.진화 명령어에 대한 대응 응답을 생성하기 위해 진화하는 것과 동일한 LLM을 사용한다. 생성 프롬프트는 "<여기 명령이다.>"이다.
+
+제거 진화 다음 네 가지 상황을 명령 진화 실패로 분류합니다.
+
+1. 진화된 명령은 원래의 명령과 비교하여 어떠한 정보 이득도 제공하지 않는다. 이 결정을 내리기 위해 ChatGPT를 사용하며 자세한 내용은 부록 G를 참조하십시오.
+2. 진화된 명령은 LLM이 응답을 생성하는 것을 어렵게 한다. 생성된 응답에 "죄송합니다"가 포함되어 있고 길이가 비교적 짧을 때(즉, 80 단어 미만) LLM이 진화된 지침에 응답하기 위해 어려움을 겪는 경우가 많다는 것을 발견했다. 그래서 우리는 판단을 내리기 위해 이 규칙을 사용할 수 있다.
+3. LLM에 의해 생성된 응답은 구두점 및 불용어만을 포함한다.
+4. 진화된 명령은 "주어진 프롬프트", "재작성 프롬프트", "#재작성 프롬프트#" 등과 같은 진화된 프롬프트로부터 일부 단어를 명백하게 복사한다.
+
+### 진화된 지침에서 LLM 핀튜닝
+
+모든 진화가 완료되면 초기 명령 데이터 세트를 모든 에폭의 진화된 명령 데이터와 병합하고 샘플을 무작위로 셔플하여 최종 미세 조정 데이터 세트를 생성한다. 이 처리는 데이터 세트에서 다양한 난이도의 명령어의 고른 분포를 보장하여 모델 미세 조정 매끄러움을 극대화합니다. 우리는 미세 조정된 모델이 오픈 도메인 명령을 처리할 수 있는지 확인하기 위해 이전 명령 튜닝 작업[32, 40]에서 복잡하거나 여러 프롬프트 템플릿을 사용하는 것을 피했다. 표준 감독 방식으로 응답을 생성하도록 모델을 훈련하라는 프롬프트로 "### 응답:"을 사용하여 명령만 연결했습니다.
+
+## 4 Experiment
+
+자동 및 인간 평가를 모두 사용하여 _Evol-Instruct_ 테스트 세트 및 Vicuna 테스트 세트에서 _WizardLM_, Alpaca, Vicuna 및 ChatGPT를 평가합니다.
+
+### Baselines
+
+(1) **ChatGPT** 는 OpenAI에서 개발한 AI 챗봇으로 사용자와 자연스럽고 매력적인 방식으로 상호 작용할 수 있습니다. 그것은 방대한 인터넷 텍스트 데이터에 대해 훈련된 GPT-3.5 및 GPT-4와 같은 LLM 위에 구축된다. ChatGPT는 오늘날 사용할 수 있는 가장 진보되고 다재다능한 챗봇 중 하나이지만 사실적 정확성, 일관성 및 안전성과 같은 몇 가지 제한 사항과 과제를 가지고 있다.
+
+(2) **Alpaca** 는 Stanford University에서 개발한 오픈 소스 명령 후속 모델입니다. 이것은 LLaMA를 기반으로 하며 OpenAI의 텍스트 다빈치-003 모델에서 생성된 52K 명령어 후속 예제로 미세 조정된다.
+
+(3) **Vicuna** 는 사용자 쿼리에 대 한 자연스럽고 매력적인 응답을 생성할 수 있는 오픈 소스 챗봇입니다. 그것은 LLaMA를 기반으로 하며 사람들이 ChatGPT 상호 작용을 공유하는 웹사이트 ShareGPT에서 수집된 70K 사용자 공유 대화를 미세 조정한다. 오늘날 사용할 수 있는 가장 진보되고 다재다능한 개방형 명령어 후속 모델 중 하나입니다. 우리는 FastChat 6의 7B 모델을 사용한다.
+
+각주 6: [https://github.com/lm-sys/FastChat](https://github.com/lm-sys/FastChat)
+
+### Experiment detail
+
+데이터세트를 구성하기 위해 Alpaca의 52K 명령어 데이터세트로 초기화하였다. 우리는 \(M\) 진화를 반복적으로 수행한 후, 여기서 \(M=4\) 250K 명령어를 얻었다. 각 진화 라운드의 각 지침에 대해 동일한 확률로 총 6개의 프롬프트(즉, 심층 진화에서 5개, 너비 진화에서 1개)에서 하나의 진화하는 프롬프트를 무작위로 선택한다. Azure OpenAI ChatGPT API7을 사용하여 위의 프로세스를 실행합니다. 마지막으로 ChatGPT를 활용하여 응답을 생성합니다. 우리는 1의 온도를 사용하여 응답을 생성하고 생성을 위한 최대 토큰 수를 \(2048\)로 설정한다. 또한 주파수 페널티를 0, top-p를 0.9로 설정하였다. 전체 데이터세트를 구성하기 위해 API 52 \(\times\) 4 \(\times\) 3 = 624K를 요청한다. 사전 훈련된 LLaMA 7B [4]를 사용하여 모델을 초기화한다. 초기 학습률은 2 \(\times 10^{-5}\), 최대 토큰 수 \(2048\), 배치 크기는 각 GPU에 대해 8이다. 우리는 딥 스피드 제로-3를 사용하여 8개의 V100 GPU에서 3개의 에폭에서 70시간 동안 모델을 훈련한다. 공정한 비교를 위해 Alpaca의 원래 Davici-003 응답을 ChatGPT의 응답으로 대체하고 70K 명령 하위 집합을 샘플링하여 _WizardLM_을 훈련합니다. 추론을 위해 _WizardLM_ 및 기준선 모델에 대해 동일한 설정에서 온도를 1로, top-p를 0.9로 설정하여 출력 무작위성을 줄이고 더 집중되고 결정론적 출력을 보장한다. 우리는 또한 빔 크기 1을 사용하고, 최대 생성 길이를 2048로 설정한다.
+
+각주 7: [https://oai.azure.com/portal](https://oai.azure.com/portal)의 gpt-3.5-turbo
+
+### Testset build
+
+온라인 오픈소스 프로젝트, 플랫폼 및 포럼과 같은 다양한 소스에서 실제 인간 지침을 포함하는 _Evol-Instruct_ 테스트 세트를 수집했습니다. 분석 결과, 코딩 생성 \(\&\) 디버깅, 수학, 추론, 복합 형식, 쓰기, 광범위한 훈육 등 인류의 주요 요구사항을 대표하는 29개의 고유한 기술을 확인하였다. 그림 3a는 테스트 세트의 인스턴스 및 기술 분포를 보여준다. 테스트 세트는 각각 특정 기술에 대한 명령인 218개의 인스턴스로 구성된다. 우리는 다음 모델을 평가하기 위한 벤치마크 데이터 세트인 Vicuna의 테스트 세트와 테스트 세트를 비교했다. 우리는 비쿠나의 테스트가 80개의 사례와 9개의 기술만을 설정하고 우리보다 훨씬 작고 덜 다양하다는 것을 발견했다. 도 3b는 테스트 데이터의 난이도 및 복잡도가 상이한 인스턴스들에 걸쳐 어떻게 변하는지를 도시한다. 테스트 데이터는 더 균일한 분포를 가지며, 이는 난이도와 복잡도가 다른 명령어를 포함한다는 것을 의미한다. 반면, 비쿠나와 알파카는 왜곡된 분포를 가지고 있어 대부분 난이도와 복잡도가 낮은 지시문을 포함하고 있음을 의미한다. 이것은 이 두 말뭉치가 더 복잡하고 까다로운 시나리오에 대한 평가를 처리할 수 없음을 나타낸다.
+
+### Human evaluation
+
+WizardLM을 평가하기 위해, 우리는 우리의 _Evol-Instruct_ 테스트 세트에 대한 인간 평가를 수행한다. 우리는 _WizardLM_과 기준선 사이의 블라인드 쌍별 비교를 수행합니다. 구체적으로, 우리는 잘 교육받은 10명의 주석자를 모집합니다. 각 주석기에는 Alpaca, Vicuna-7b, _WizardLM_ 및 ChatGPT의 4가지 응답이 표시되며, 이는 소스를 숨기 위해 무작위로 셔플된다. 그런 다음 주석자는 부록 H의 기준에 따라 어떤 응답이 더 나은지 판단합니다. 그런 다음 1에서 5까지의 4개 응답(1은 가장 좋은 것을 의미함)의 순위를 매기고 비교 가능한 인스턴스에 대해 동일한 점수를 허용해야 합니다. 승률을 추정하기 위해 각 모델 쌍 간의 승, 패, 동점의 빈도를 비교한다.
+
+**주요 결과** 실험 결과는 그림 4에 보고되어 있습니다. _WizardLM_ 은 Alpaca 및 Vicuna-7b보다 훨씬 더 나은 결과를 얻었으며, 이는 _Evol-Instruct_ 의 효과를 보여줍니다.
+
+**고난도 기술에 대한 성능** 그림 4c는 _WizardLM_이 고난도 지침(난도 수준 \(>=8\))에서 ChatGPT보다 인간 라벨러가 선호하는 경우가 더 많다는 것을 나타냅니다.
+
+### GPT-4 자동 평가
+
+우리는 챗봇 모델의 성능을 평가하기 위해 Vicuna[22]에서 제안한 GPT-4 기반의 자동 평가 프레임워크를 채택한다. 우리는 비쿠나와 동일한 GPT-4 하이퍼 파라미터, 신속한 설정 및 평가 접근법을 따른다. 주문 편향을 완화하기 위해 쌍별 비교에서 _WizardLM_ 및 기타 모델의 배치를 대체합니다. _WizardLM_은 홀수 id의 경우 첫 번째이고 짝수 id의 경우 두 번째입니다. 그림 4(a) 및 4(b)에서 볼 수 있듯이 _WizardLM_은 _Evol-Instruct_ 테스트 세트에서 Alpaca-7B 및 Vicuna-7B를 큰 마진(즉, Alpaca-7B 및 Vicuna-7B의 경우 각각 6.2% 및 5.8%)으로 능가하며, Vicuna 테스트 세트에서 Vicuna-7B와 유사한 성능을 달성한다.
+
+**다른 기술에 대 한 성능** 그림 6은 _Evol-Instruct_ 테스트 집합에서 _WizardLM_ 및 ChatGPT의 기술 수준을 비교 합니다. 결과는 _WizardLM_이 ChatGPT의 평균 성능의 78%를 달성하고 17개의 기술에서 거의 90% 이상의 용량을 달성함을 나타냅니다. 그러나 _위저드LM_ 은 코드, 수학 및 추론 시나리오에 어려움을 겪으며 ChatGPT와 눈에 띄는 격차를 드러냅니다.
+
+**다른 난이도에 대한 성능** 그림 4(c)에서 볼 수 있듯이 _위저드LM_은 모든 난이도에서 비쿠나를 능가하고 쉽고 어려운 기술에서 알파카를 능가하며 어려운 기술에서 ChatGPT의 거의 88% 용량에 도달합니다. 이는 _위저드LM_이 잠재적으로 복잡한 문제를 해결하고 LLM 훈련을 위한 복잡한 데이터 수집에 대한 인간의 노력을 줄일 수 있음을 시사한다.
+
+그림 4: _Evol-Instruct_ 테스트 세트와 Vicuna 테스트 세트에 대한 인간 평가 결과입니다.
+
+그림 5: _Evol-Instruct_ 및 Vicuna 테스트 세트에 대해 GPT-4에 의해 평가된 응답 품질. (c)에서 테스트 세트를 [1, 4], [5, 7], [8, 10]에서 난이도로 세 부분(“Easy”, “Medium”, “Hard”)으로 나누었다.
+
+그림 3: (a) _Evol-Instruct_ 테스트 세트의 기술 분포, (b) 비쿠나, 알파카(Self-Instruct), 우리의 _Evol-Instruct_ 테스트 세트 간의 난이도 및 복잡도 수준 분포.
+
+**GPT-4와 인간 평가 간의 불일치** 그러나 _WizardLM_ 은 어려운 기술에서 ChatGPT에 손실되었으며 이는 위의 인간 평가의 결론과 반대입니다. 주요 이유는 i) 깔끔하고 생생한 서식에 대한 인간의 선호와 ii) 수동 주석 단계에서 사람들은 응답의 품질이 비슷하다면 컴파일 및 통과될 수 있는 코드 또는 수학 문제에 대한 가산점을 선호하기 때문이다. 추가 지원 증거는 부록 I의 **사례 연구** 섹션을 참조 하세요.
+
+### Discussion
+
+**In-depth Surpassing Human Instructions.** 명령 진화하는 프로세스의 깊이를 연구하기 위해 ChatGPT를 사용하여 각 명령의 난이도 및 복잡도 수준을 판단하는 데 도움이 됩니다. 사용된 프롬프트는 부록 E를 참조하십시오. 그림 6(a)와 6(b)는 _Evol-Instruct_가 ShareGPT에서 인간 참가자가 만든 지침보다 더 복잡한 지침을 생성했음을 보여줍니다. 더욱이, 명령들의 깊이는 진화 프로세스의 각각의 반복에 따라 상당히 증가한다.
+
+**광범위한 통과 인간 지침** 지침의 의미 범위를 조사하는 것을 목표로 합니다. 우리는 t-SNE [41]과 k-means [42] 알고리즘을 사용하여 명령어 BERT 임베딩을 20개의 클러스터로 분할한다. 부록 F의 그림 1은 군집을 표시하며 ShareGPT 및 Alpaca에 비해 이 방법의 우수한 분산을 강조하여 지침에서 더 큰 주제 다양성을 나타낸다.
+
+그림 6: _Evol-Instruct_ 테스트 세트에서 _WizardLM_과 ChatGPT 사이의 각 기술의 GPT-4 점수입니다.
+
+그림 7: ShareGPT, Alpaca, 그리고 진화된 수업의 4개 시대 사이의 난이도.
+
+Conclusions
+
+본 논문에서는 LLM을 위한 다양하고 복잡한 명령어 데이터를 생성하는 진화 알고리즘인 Evol-Instruct를 제시하였다. 우리는 우리의 접근법이 LLM 성능인 위저드LM이 고복잡도 태스크에 대한 최신 결과를 달성하고 다른 메트릭에 대한 경쟁 결과를 달성했음을 입증했다.
+
+**제한 사항.* * 이 문서에서는 자동 GPT-4 및 인간 평가 방법의 제한 사항을 인정 합니다. 이 방법은 확장성과 신뢰성에 대한 문제를 제기한다. 또한 테스트 세트는 LLM이 적용되거나 다른 방법과 비교할 수 있는 모든 시나리오 또는 영역을 나타내지 않을 수 있다.
+
+**Broader Impact.** Evol-Instruct는 다양한 도메인 및 응용 프로그램에서 LLM 성능 및 상호 작용을 향상시킬 수 있지만 비윤리적이거나 유해하거나 오판의 소지가 있는 지침을 생성할 수도 있습니다. 따라서 윤리 및 사회적 의미를 다루기 위해 AI 진화 지침에 대한 향후 연구를 촉구한다.
+
+## 부록 A 심화 프롬프트
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: ChatGPT 및 GPT4)을 처리하기 약간 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다. #Given Prompt#:에서 테이블 및 코드와 같은 비텍스트 부분을 생략할 수 없습니다. 또한 #Given Prompt#에서 입력을 생략하지 마십시오. ShOUTLD는 다음과 같은 방법을 사용하여 주어진 프롬프트를 복잡하게 만듭니다. #Given Prompt#에 특정 문제에 대한 문의가 포함되어 있는 경우 문의의 깊이와 폭을 늘릴 수 있습니다. 또는 #Rewritten Prompt#이 장황해지지 않도록 최선을 다해야 합니다. #Rewritten Prompt#은 #Given Prompt#에 10~20개의 단어만 추가할 수 있습니다. '#Given Prompt#', '#Rewritten Prompt#' and'rewritten prompt' is not allowed to appear in #Rewritten Prompt#
+#Given Prompt#: <Here is instruction.> #Rewritten Prompt#:
+
+## 부록 B Conretize Prompt
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: ChatGPT 및 GPT4)을 처리하기 약간 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다. #Given Prompt#:에서 테이블 및 코드와 같은 비텍스트 부분을 생략할 수 없습니다. 또한 #Given Prompt#에서 입력을 생략하지 마십시오. 다음 방법을 사용하여 지정된 프롬프트를 복잡하게 만듭니다. 일반 개념을 보다 구체적인 개념으로 바꾸십시오. 또는 #Rewritten Prompt#이 장황해지지 않도록 최선을 다해야 합니다. #Rewritten Prompt#은 #Given Prompt#에 10~20개의 단어만 추가할 수 있습니다. '#Given Prompt#', '#Rewritten Prompt#' and'rewritten prompt' is not allowed to appear in #Rewritten Prompt#
+#Given Prompt#: <Here is instruction.> #Rewritten Prompt#:
+
+## 부록 C 추론 증가 단계 프롬프트
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: ChatGPT 및 GPT4)을 처리하기 약간 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다. #Given Prompt#:에서 테이블 및 코드와 같은 비텍스트 부분을 생략할 수 없습니다. 또한 #Given Prompt#에서 입력을 생략하지 마십시오. ShOUTLD는 다음과 같은 방법을 사용하여 주어진 프롬프트를 복잡하게 만듭니다. #Given Prompt#이 몇 가지 간단한 사고 과정만으로 해결될 수 있는 경우 다시 작성하여 다중 단계 추론을 명시적으로 요청할 수 있습니다. #Rewritten Prompt#이 장황해지지 않도록 최선을 다해야 합니다. #Rewritten Prompt#은 #Given Prompt#에 10~20 단어만 추가할 수 있습니다.
+
+'#Given Prompt#', '#Rewritten Prompt#' and'rewritten prompt' is not allowed to appear in #Rewritten Prompt#
+
+#Given Prompt#: <Here is instruction.> #Rewritten Prompt#:Complicate Input Prompt
+
+**Example-1:**
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 데이터 형식을 사용하여 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: chatgpt 및 GPT4)을 더 다루기 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다.
+
+[재작성 프롬프트]에서 [XML 데이터] 형식의 텍스트를 입력 데이터로 추가해야 합니다.
+
+기븐 프롬프트:
+
+이 php 코드를 사용하여 xml 데이터를 가져오고 있습니다.
+
+Rewritten Prompt:
+
+나는 이 xml을 가지고 있고 HTML 테이블을 자동 채우기 위해 xml 데이터를 가져오고 싶은데, 코드는 작동하지만 테이블 내용에서 중복됩니다.
+
+여기서, 상기 xml 데이터는:
+
+```
+xroot> xstats> item><day>2017-11-01/c/day> impressions>2192>/impressions> <nooney>1>.96790003</nooney> <item> cday>2017-11-02/c/day> impressions>222</impressions> <nooney>3.208500033</nooney> <item> <nooney>3.61171103</day> impressions>3680</impressions> <nooney>3.321799981</nooney></item></status> <nooney>8.498200044</nooney></total> <filter> <dateFrom>2017-11-01</dataFrom> datat>2017-11-03</dataTo> group>>4ay/group>></format></format></format></factor>
+```
+
+이 php 코드를 사용하여 xml 데이터를 가져오지만 이 코드는 중복된 필드 테이블을 만드는 전체 xml 데이터에서 가져옵니다.
+
+```
+cPph> %don=newDONDCOUNT: %don=->load('[http://example.com/](http://example.com/)'. % datascelected. '&dateTo=' % datascelected2. '&format=xml'): %day='%don->getElementsByTagName('day'); %inpressions=\%don->getElementsByTagName('impressions'); } echo( "<table>"):  foreach(\%days\\#load){ foreach(\%inpressions as\\#node2){ echo'<tr>': %don1=>textContent. "<td>": echo<td>'. %node2->textContent. "<td>": echo<td>'. %node2->textContent*0.5/1000. "<td>> echo<'<tr>': } echo( "</table>"): }
+
+내가 이걸 어떻게 고칠 수 있는지 누가 힌트를 줄 수 있나요? 감사합니다.
+```
+
+[MISSING_PAGE_FAIL:13]
+
+쿼리 텍스트?
+
+**Example-4:**
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 데이터 형식을 사용하여 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: chatgpt 및 GPT4)을 더 다루기 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다. [재작성 프롬프트]에서 [HTML 페이지] 형식의 텍스트를 입력 데이터로 추가해야 합니다.
+
+기븐 프롬프트:
+
+전체 HTML 페이지를 스크롤합니다.
+
+Rewritten Prompt(MUST contain a specific HTML page as input): 나는 전체 페이지를 스크롤할 수 있기를 원하지만, 스크롤바가 표시되지 않는다. 구글 크롬에서는 다음과 같습니다.
+
+```
+::-webkit_scrollbar{ display:none;}
+```
+
+하지만 모질라 파이어폭스와 인터넷 익스플로러는 그렇게 작동하지 않는 것 같다. CSS에서도 시도했어요
+
+```
+overflow:hidden;
+```
+
+스크롤바를 숨겼지만 더 이상 스크롤할 수 없습니다. 전체 페이지를 스크롤할 수 있는 동안 스크롤바를 제거할 수 있는 방법이 있나요?
+
+CSS나 HTML만 있으면 됩니다.
+
+```
+###
+
+**Example-5:**
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 데이터 형식을 사용하여 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: chatgpt 및 GPT4)을 더 다루기 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다.
+
+[Rewritten Prompt]에서 [Shell cmd] 형식의 텍스트를 입력 데이터로 추가해야 합니다.
+
+기븐 프롬프트:
+
+Shell scp file
+
+Rewritten Prompt(입력으로 특정 Shell cmd를 포함해야 함): 원격 서버에서 로컬 컴퓨터로 파일을 scp하려고 합니다. 포트 80만 액세스할 수 있습니다. 난 노력했어
+
+scp -p 80 username@www.myserver.com:/root/file.txt.
+
+그러나 이 오류가 발생했습니다. cp: 80: 그러한 파일 또는 디렉터리 없음 scp 명령에서 포트 번호를 지정하려면 어떻게 해야 하나요?
+``` ###
+
+**Example-6:**
+
+나는 네가 프롬프트 리라이터 역할을 했으면 좋겠어. 귀하의 목표는 데이터 형식을 사용하여 주어진 프롬프트를 더 복잡한 버전으로 다시 작성하여 유명한 AI 시스템(예: chatgpt 및 GPT4)을 더 다루기 어렵게 만드는 것입니다. 그러나 재작성된 프롬프트는 합리적이어야 하며 인간에 의해 이해되고 반응해야 한다. [재작성 프롬프트]에서 [JSON 데이터] 형식 데이터를 입력 데이터로 추가 해야 합니다. [재작성 프롬프트]에서 [JSON 데이터] 코드를 입력 코드로 추가 해야 합니다. 재작성 프롬프트는 질문 스타일 지침이어야 합니다. 조건부 확률의 공식을 활용할 수 있을까: \(P(A|B)=P(A\cap B)/P(B)\) 여기서 A는 고객이 반복적으로 구매하는 이벤트를 나타내고 B는 고객이 동일한 매장에서 다시 구매하는 이벤트를 나타낸다. 또한 이 공식을 적용하여 반복 구매 가능성이 가장 높은 고객 세그먼트를 식별하는 방법은 무엇입니까? 지정된 JSON 데이터 세트를 사용하여 이 수식을 구현하는 방법에 대한 예를 제공할 수 있습니까? Rewritten prompt must be question style instruction Rewritten Prompt(MUST contain a specific JSON data as input):
+
+## 부록 E 난이도 판단 프롬프트
+
+다음 문항의 난이도와 복잡도를 평가하고 평가해 주셨으면 합니다. 1에서 10까지의 척도로 전체 점수를 주어야 하며 점수가 높을수록 난이도와 복잡도가 높다는 것을 나타낸다. 다른 이유 없이 점수를 내야 합니다.
+
+## 질문: <여기 지침이 있습니다. >
+
+## Score:
+
+## 부록 F 클러스터 산점도
+
+## Appendix G Equal Prompt
+
+다음은 Chat6PT AI에 대한 두 가지 지침입니다. 다음 요구 사항을 충족하는 서로 동일하다고 생각하십니까?
+
+그림 8: ShareGPT, Alpaca 및 C1에서 C4까지의 4번의 명령 진화 간의 클러스터 산점도. 클러스터 센터의 수는 20개입니다.
+
+1. 이들은 동일한 제약 및 요건을 갖는다.
+2. 그들은 조사의 깊이와 폭이 같다. 첫 번째 프롬프트: <여기 첫 번째 지시가 있습니다.> 두 번째 프롬프트: <여기 두 번째 지시가 있습니다.> 판단(Just answer: Equal or Not Equal. No need to explain reason.)
+
+## 부록 H 인간 평가 측면
+
+그 다음 주석자는 다섯 가지 측면에서 어떤 응답이 더 나은지 판단한다:
+
+(1) 관련성: 문맥 및 질문의 의미적 의미를 올바르게 해석할 수 있는 모델의 능력을 평가한다.
+
+(2) 지식성: 모델이 다양하고 상세한 지식을 문제 해결에 정확하게 활용할 수 있는지 여부.
+
+(3) 추론: 올바른 추론 프로세스를 실행하거나 문제를 해결하기 위해 유효한 추론 개념을 고안하는 모델의 능력을 평가한다.
+
+(4) 계산: 모델이 수학, 생물학, 화학 및 물리학의 영역에서 제공된 공식의 정확한 수학적 계산을 수행할 수 있는지를 평가하는 단계.
+
+(5) 정확도: 주어진 명령에 대해 해당 모델에서 올바르게 수행할 수 있는지 여부를 평가하는 단계.
+```
+
+\begin{table}
+\begin{tabular}{l} \hline \hline \multicolumn{1}{l}{**Instruction:** you must write a simple version control system, using c++ \\ \hline
+**[Model: _WizardLM_]** As an AI language model, I can provide you with a basic version control system in C++. Here is an example code that implements a simple version control system: \\ \hline
+**include ‘cistream>** \\ **include ‘ctring>** \\ **include ‘cretc’>** \\ **include ‘ctring’** \\ **using namespace std;** \\ **/** Version Control system \\ **class VersionControl** {  public; // /Constructor { \\ **VersionControl**() {  this->currenfranch = “master”;  this->versionFile = “version.txt”; } // Method to check out a branch \\ **codeRout(String branch) ()** // Check if the branch already exists \\ **if** (GiszStranch(branch)) ( // If the branch exists, returns success \\ **count** **<** **?Eranch** **<** branch **<** **?E**+** already exists." **<<** endl; **)** else { // If the branch does not exist, create it \\ **createBranch(branch)** \\ **//** Checkout the current branch \\ **checkoutBranch()** \\ **} \\ **//** Method to check out the current branch \\ **void** checkoutBranch() ( )** //** Open the version file \\ **ifstream VersionFile** \\ **versionFile** \\ **versionFile** \\ **/** Read the version number from the version file \\ **in** version; \\ **versionFile** \\ **/** Checkout the current branch \\ **out** **<** **Checkout** **<<** currentBranch **<<** **?E**...** **<<** endl; **ifstream CheckoutFile** \\ **checkoutFile** \\ **if** (CheckoutFile**) ( \\ **count** **<** **?E**occ=**! **end; \\ **)** else {  cout **cc** **?E**error:** Unable to checkout file." **<<** endl; \\ **} \\ **//** Method to create a new branch \\ **void**createBranch(string branch) ( //**Create a new branch directory \\ **directory**(branch()**t**) //**'+** branch); \\ **//** Create a new version file \\ **offstream VersionFile**; **versionFile**; **versionFile**; **versionFile**; **(**versionFile**) +** **/**/**+** branch **+** **?E**.txt”; **versionFile**; **versionFile**; **(**case()**); \\ \hline \hline \end{tabular}
+\end{table}
+표 1: 코드 생성 스킬에 대한 비교 사례 // 브랜치가 존재하는 방법 }  exitstrBranch(stringBranch) { // 브랜치 디렉터리가 존재하는지 확인  if (directoryKights(branchPath() + "/" + branch)) {  returntrue: } else {  returnfalse: } } // 현재 브랜치를 가져오는 방법  stringBectrumranch() // 버전 파일에서 버전 번호를 읽습니다  if(aikVirversionFile) { // 버전 파일을 엽니다  ifstreamSerialFile. //Open(versionFilePath()): // Read the Version number from the version file  intVERSIONFile >>version; // Get the current branch from the version file  stringCurrentBranch = versionFile.substr(0, versionFile.find(".");  versionFile.close();  return currentBranch; } else {  return "master";  } } // Get the version number  intSetVversion() { //Open the Version file  ifStratonVersionFile;  versionFile. open(versionFilePath()); // Read the version number from the version file  ifversionFile. //vversionFile. //버전 번호 반환  리턴 버전; } private: string currentBranch;  string versionFilePath;  string currentBranch();  bool structureBranch();  bool /directoryKights(String path) { // 디렉터리 존재 여부 확인 (access(path.ctr(),F_0X)==0) {  returntrue;  } else {  returnfalse;  }  stringbranchPath() {  return exitstrBranch(branchPath() + "/" + currentBranch + ".txt);  }  void cretarch(string branch) {  ddirectory(branchPath() + "/" + branch);  offsetstrBranchVersionFile;  vversionFile. open(versionFile() + "/" + branch + ".txt");  vversionFile < "0" < endl;  vversionFile.close(); } vdischcuchFranch() {  void cretarch()  cbackoutFile. open(currentBranchPath() + "/" + currentBranch + ".cpp");  if (cbackoutFile) {  cout < "Success!" < endl;  } else {  cout << "Error: unable to checkout file." << endl;  } }; intmain() {  VeraxisoControlvc;  vc.checkOut("new_branch"); } return0; } ```
+
+이 코드는 사용자가 새로운 분기를 체크아웃하고, 현재 분기를 체크아웃하고, 새로운 분기를 생성하고, 버전 넘버를 얻을 수 있는 기본 버전 제어 시스템을 구현한다. 코드는 간단한 디렉토리 구조를 사용하여 서로 다른 분기를 저장하고 버전 파일을 만들어 버전 번호를 저장한다. 이 코드에는 분기가 있는지 확인하고 현재 분기를 가져오는 방법도 포함됩니다.
+
+```
+[모델:비쿠나]여기 C++로 작성된 간단한 버전 제어 시스템이 있습니다:
+```
+#include<<ostream>
+#include<String>
+#include<vector> usingnamesactid; //Classtotypesatrepository classRepository public: //Constructor Repository() { //AddAflletotherepository voidaddfile(concatstringfileName,conststring&fileContent){  files.push_back(make_pair(fileName,fileContent)); } //Removeafllefromtherepository voidremovefile(conststringfileName){ (autoflle:file){  if(file.first=fileName){  if(file.first=fileName){  file.arsars(file); } } } //Getthefilecontentforagivenfile stringgetFileContent(conststringfileName){  returnstring(file.seconds); } } return""; } //Getthefilesintherepository vectorpairstringstring?getFile()const{  returnfiles; } private:  Vector<pair<string,string>>files;//Avectortostorethefilesintherepository }; classUser{ public: //Constructor User(conststringname):
+
+// Remove a file from the repository void remove/file(const string fileName); } // Get the file content for a given file string getFileContent(const string fileName) const { return repository_.getFileContent(fileName); } // Get the files in the repository vector<pair<string.string> getFiles() const { return repository_.getFile(); } private: string name_; // The name of the user Repository repository_; // The repository that the user is currently working on }; int main() { Repository_repo; User user('John'); user.addFile("file1.txt","Hello, world!"); user.removeFile("file1.txt"); cout << user.getFiles() << endl; return 0; } ```
+이 시스템에서 '리포지토리'는 코드의 리포지토리를 나타냅니다. 파일 이름뿐만 아니라 각 파일의 내용을 담고 있는 '파일'의 벡터를 가지고 있다. '사용자' 클래스는 리포지토리에서 코드를 작업하는 사용자를 나타냅니다. '리포지토리'에 대한 참조가 있으며 리포지토리에서 파일을 추가 및 제거하고 파일의 내용을 가져오는 방법을 제공합니다. 'ain'에서는 시스템을 사용하는 간단한 예를 보여 줍니다. "John"이라는 사용자는 "Hello, world!"라는 내용이 포함된 "file1.txt"라는 파일을 리포지토리에 추가한 후 파일을 제거합니다. 마지막으로 리포지토리의 파일은 'getFiles' 메소드를 사용하여 출력됩니다.
+``` [Model:Alpac]AI 언어 모델로서 코드를 작성할 수는 없지만 C++를 사용하여 간단한 버전 제어 시스템을 만들 수 있는 방법에 대한 일반적인 개요를 제공할 수 있습니다. 1. 버전 제어 모델 정의: 사용하려는 버전 제어 모델을 결정합니다. Git, SVN 등과 같은 많은 버전 제어 모델이 있습니다. 필요에 맞는 리포지토리를 선택합니다. 2. 리포지토리 만들기: 서버 또는 로컬 시스템에 리포지토리를 만듭니다. 6. 버전 관리 클라이언트 사용: Git 또는 SVN과 같은 버전 관리 클라이언트를 사용 하 여 버전 관리 시스템과 상호 작용 합니다. 7. 릴리스 프로세스 만들기: 다른 환경에 코드를 배포 하는 릴리스 프로세스를 정의 합니다. 8. 시스템 모니터링: 코드를 올바르게 버전 관리 하 고 충돌이 없는지 확인 하기 위해 시스템을 모니터링 합니다. 9. 리포지토리 백업: 리포지토리를 정기적으로 백업 하 여 코드가 안전 하 고 재해 발생 시 복원할 수 있습니다. 10. 팀 훈련: 모든 사람이 올바르게 사용하고 있는지 확인하기 위해 버전 제어 시스템을 올바르게 사용하는 방법에 대해 팀을 훈련시킨다.
+
+[MISSING_PAGE_FAIL:21]
+
+## 6 Conclusion
+
+\begin{table}
+\begin{tabular}{p{34.1pt} p{34.1pt}} \hline \hline  & Skill: Sport & Difficulty: 8 \\ \hline
+**Instruction:** What are the benefits and risks of high-intensity interval training (HIIT) for athletes? Compare and contrast HIIT with other forms of aerobic exercise, such as jogging, cycling, or swimming. Provide examples of HIIT workouts and explain how they can improve performance, endurance, and health. \\ \hline _WizardLM_ & High-intensity interval training (HIIT) is a form of exercise that involves short bursts of intense exercise followed by periods of rest or low-intensity exercise. HIIT has become increasingly popular among athletes and fitness enthusiasts due to its ability to improve athletic performance, increase endurance, and promote overall health. \\  & Benefits of HIIT for Athletes: \\  & 1. Improved Athletic Performance: HIIT can improve athletic performance by increasing power, speed, and agility. This is because HIIT workouts improve cardiovascular endurance, which is essential for athletes who need to maintain a high level of physical activity for extended periods of time. \\  & 2. Increased Endurance: HIIT workouts can also increase endurance by improving the body’s ability to use oxygen during exercise. This is because HIIT workouts increase the body’s aerobic capacity, which is the ability to use oxygen during exercise. \\  & 3. Improved Health: HIIT workouts can improve overall health by increasing metabolism, reducing the risk of chronic diseases, and improving mood. Risks of HIIT for Athletes: \\  & 1. Injury: HIIT workouts can be intense and may increase the risk of injury if not properly supervised or executed. \\  & 2. Overtraining: HIIT workouts can be intense and may lead to overtraining if not properly planned or executed. \\  & Comparison with Other Forms of Aerobic Exercise: \\  & 1. Jogging: Jogging is a low-intensity aerobic exercise that is generally considered to be less effective than HIIT for improving athletic performance and increasing endurance. \\  & 2. Cycling: Cycling is a moderate-intensity aerobic exercise that is generally considered to be more effective than jogging for improving athletic performance and increasing endurance. \\  & 3. Swimming: Swimming is a low-impact aerobic exercise that is generally considered to be effective for improving athletic performance and increasing endurance. \\  & Examples of HIIT Workouts: \\  & 1. Sprint Intervals: Sprint intervals involve sprinting at maximum intensity for 30 seconds followed by 90 seconds of rest. This workout can improve athletic performance, increase endurance, and improve health. \\  & 2. Tabata: Tabata involves 20 seconds of intense exercise followed by 10 seconds of rest for 4 minutes. This workout can improve athletic performance, increase endurance, and improve health. \\  & 3. Burst Training: Burst training involves short bursts of high-intensity exercise followed by periods of rest or low-intensity exercise. This workout can improve athletic performance, increase endurance, and improve health. \\  & In conclusion, HIIT is a form of exercise that has numerous benefits for athletes, including improving athletic performance, increasing endurance, and promoting overall health. However, it is important to properly plan and execute HIIT workouts to avoid injury and overtraining. Compared to other forms of aerobic exercise, HIIT is generally considered to be more effective for improving athletic performance and increasing endurance. \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 스포츠 스킬 비교 사례
+
+**비쿠나**: 고강도 간격 훈련(HIIT)은 짧은 격렬한 활동 폭발 후 짧은 휴식 기간 또는 활성 회복이 수반되는 운동의 한 형태입니다. HIIT는 경기력, 지구력, 전반적인 건강을 향상시킬 수 있는 잠재력으로 인해 최근 몇 년 동안 운동선수들 사이에서 인기를 얻고 있다.
+
+운동선수들을 위한 HIIT의 이점:
+
+1. 증가된 지구력: HIIT는 더 짧은 버스트 시간 동안 높은 레벨에서 수행하는 능력을 향상시킴으로써 운동선수들이 지구력을 구축하는 데 도움을 줄 수 있고, 이는 더 길고, 더 격렬한 운동 및 경쟁으로 전이될 수 있다.
+
+2. 향상된 성능: 당신의 무산소 역치를 개선함으로써--당신의 몸이 눈에 띄게 피로해지기 시작하는 지점--HIIT는 운동선수들이 화상을 뚫고 나아가 더 높은 레벨에서 수행하는데 도움을 줄 수 있다.
+
+3. 빠른 결과: 고강도 특성으로 인해, HIIT는 운동선수들에게 짧은 시간 내에 상당한 훈련 자극을 제공할 수 있어, 전통적인 형태의 운동보다 더 빠른 결과를 볼 수 있다.
+
+선수에 대한 HIIT의 위험:
+
+1. 부상: 충격이 큰 HIIT 운동은 요구되는 신속하고 폭발적인 움직임으로 인해 부상의 위험을 증가시킬 수 있다. 운동선수는 부상 위험을 줄이기 위해 HIIT 운동 전후에 적절하게 몸을 풀고 식혀야 한다.
+
+2. 심장 건강: HIIT 운동은 심장에 상당한 양의 스트레스를 가할 수 있으며, 이는 심장 질환 또는 병력이 있는 개인에게 위험할 수 있다. 운동선수들은 새로운 운동 요법을 시작하기 전에 의사와 상담해야 한다.
+
+유산소 운동의 다른 형태 비교:
+
+HIIT는 고강도, 짧은 폭발의 성격에서 조깅, 사이클링 또는 수영과 같은 다른 형태의 유산소 운동과 다르다. 전통적인 유산소 운동은 지속적이고 안정적인 강도의 상태를 가지고 있지만 HIIT는 짧은 기간의 강렬한 활동을 사용한 후 휴식을 취하므로 피로가 더 커져서 성능이 향상될 수 있다.
+
+HIIT 운동의 예:
+
+1. 버피: 버피는 스쿼트, 팔굽혀펴기, 점프를 결합하여 짧은 시간에 많은 칼로리를 소모하는 전신 운동이다.
+
+2. 스프린트 간격: 스프린트 간격은 짧은, 전면 스프린트에 이어 짧은 조깅 또는 휴식 기간을 포함한다. 이 운동은 속도와 전력을 향상시킬 수 있습니다.
+
+3. 배틀 로프: 배틀 로프는 리드미컬한 동작으로 굵은 로프를 휘두르는 것을 포함하며, 높은 강도의 전신 운동을 제공한다.
+
+전반적으로 HIIT는 지구력, 성능을 개선하고 빠른 결과를 제공하는 능력으로 인해 운동 선수의 훈련 요법에 귀중한 추가가 될 수 있다. 그러나 운동선수는 부상 위험을 줄이고 전반적인 건강을 개선하기 위해 HIIT 운동을 하기 전에 의사와 상의하고 적절하게 몸을 풀고 식혀야 한다.
+
+**알파카**: AI 언어 모델로서 개인적인 경험이나 의견이 없지만 연구 및 연구를 기반으로 몇 가지 정보를 제공할 수 있습니다.
+
+고강도 인터벌 트레이닝(HIIT)은 격렬한 활동의 짧은 폭발과 회복 기간을 포함하는 운동의 한 형태이다. 그것은 경기력, 지구력, 그리고 건강을 향상시킬 수 있기 때문에 선수들 사이에서 인기 있는 훈련 방법이다.
+
+운동선수들을 위한 HIIT의 이점:
+
+1. 성능 향상: HIIT는 근력, 지구력, 파워를 증가시켜 운동 능력을 향상시킬 수 있다. 또한 속도, 민첩성 및 조정력을 향상시킬 수 있습니다.
+
+2. 지구력 증가: HIIT는 운동 시 신체의 산소 사용 능력을 증가시켜 지구력을 향상시킬 수 있다. 이것은 운동선수들이 지치지 않고 더 오랜 기간 동안 운동하는 데 도움이 될 수 있습니다.
+
+3. 심혈관계 건강 증진: HIIT는 혈류량 증가, 혈압 감소, 신체의 혈당 사용 능력 향상으로 심혈관계 건강을 증진시킬 수 있다.
+
+4. 체중 감량 및 지방 연소: HIIT는 신진대사를 증가시키고 체내에 저장된 지방의 양을 감소시킬 수 있기 때문에 운동선수들이 체중을 감량하고 지방을 연소시키는데 도움을 줄 수 있다.
+
+운동선수들을 위한 HIIT의 위험
+
+1. 부상: HIIT는 운동선수들이 적절하게 준비되지 않았거나 체력 수준을 높이지 않았다면 위험할 수 있다. 급격한 강도의 변화는 신체에 너무 많은 스트레스를 가하고 부상으로 이어질 수 있다.
+
+2. 탈수: HIIT는 특히 더운 날씨 조건에서 탈수될 수 있다. 운동선수는 운동 전, 운동 중, 운동 후에 수분을 적절하게 공급해야 합니다.
+
+3. 번아웃: HIIT는 지칠 수 있고, 잘못하면 번아웃으로 이어질 수 있다. 운동선수들은 그들이 그것을 무리하지 않고 똑똑하게 훈련하고 있는지 확인할 필요가 있다.
+
+다른 형태의 유산소 운동과의 비교 및 대조:
+
+HIIT는 여러 가지 방법으로 조깅, 사이클링 또는 수영과 같은 다른 형태의 유산소 운동과 다르다.
+
+1. 강도: HIIT는 다른 형태의 운동보다 더 강렬하며, 이는 더 짧은 시간에서 더 나은 결과를 초래할 수 있다.
+
+2. 회복: HIIT는 짧은 회복 기간을 수반하며, 이는 근력과 지구력을 증가시키는 데 도움이 될 수 있다. 조깅과 같은 다른 형태의 운동은 충분한 회복 시간을 제공하지 않을 수 있다.
+
+3. 시간: HIIT는 다른 형태의 운동보다 짧은 시간 내에 행해질 수 있으며, 이는 시간이 부족한 운동자에게 유익할 수 있다.
+
+4. 가변성: HIIT는 개별 운동선수들의 요구에 부합하도록 가변되고 맞춤화될 수 있다. 다른 형태의 운동은 더 정적일 수 있고 더 적은 맞춤화를 요구할 수 있다.
+
+전반적으로 HIIT는 경기력, 지구력 및 심혈관 건강을 개선하려는 운동 선수에게 유익한 형태의 운동이 될 수 있다. 하지만 부상과 소진을 피하기 위해 신중히 접근하고 스마트하게 훈련하는 것이 중요하다.
+
+**ChatGPT**: HIIT(고강도 인터벌 트레이닝)는 성능, 지구력 및 전반적인 건강을 향상시킬 수 있는 잠재력으로 인해 운동선수 및 피트니스 애호가 사이에서 인기 있는 운동 방법이다. HIIT는 짧은 격렬한 운동의 폭발과 휴식 또는 활동적인 회복 기간을 포함한다. 운동선수들을 위한 HIIT의 몇몇 이점들은 다음과 같다:
+
+1. 심혈관 건강 개선: HIIT는 심혈관 건강을 증가시키고 심장 질환의 위험을 감소시키는 것으로 나타났다.
+
+2. 지구력 증가: HIIT는 운동선수들이 더 긴 시간 동안 높은 강도에서 수행하는 능력을 증가시킴으로써 지구력을 향상시키는데 도움을 줄 수 있다.
+
+3. 근력증대: HIIT는 운동선수가 근력을 기르고 전반적인 운동수행능력을 향상시키는데 도움을 줄 수 있다.
+
+그러나 특히 운동선수가 제대로 예열되지 않았거나 운동 사이에 적절한 회복 시간이 없는 경우 부상 위험을 포함하여 HIIT와 관련된 일부 위험도 있다.
+
+HIIT를 조깅, 사이클링 또는 수영과 같은 다른 형태의 유산소 운동과 비교할 때, HIIT는 일반적으로 더 짧은 시간 내에 심혈관 체력을 개선하고 지방을 연소시키는 데 더 효과적인 것으로 간주된다. 예를 들어, 30분 HIIT 운동은 지방 연소 측면에서 60분 정상 상태 조깅보다 더 효과적일 수 있다.
+
+다음은 HIIT 운동의 몇 가지 예입니다.
+
+1. 타바타 운동: 20초의 격렬한 운동 후 8라운드 동안 10초의 휴식, 총 4분.
+
+2. 피라미드 운동: 30초 스프린트로 시작하여, 각 라운드마다 10초씩, 최대 1분까지 지속시간을 증가시킨 후, 30초까지 다시 낮춘다.
+
+3. 30/30 운동: 30초의 격렬한 운동 후 30초의 휴식을 여러 라운드 동안 수행한다.
+
+전반적으로 HIIT는 운동선수들에게 유익한 운동 방법이 될 수 있지만 부상과 과훈련을 피하기 위해 주의와 적절한 지도로 접근하는 것이 중요하다.
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline  & Skill: Chemistry, Difficulty: 8 \\ \hline
+**Instruction:** Which of the following substances is the most toxic to humans based on its median \\ lethal dose (LD50)? \\ A) Arsenic B) Cyanide C) Mercury D) Botulinum toxin \\ \hline _WizardLM_ & The most toxic substance to humans based on its median lethal dose (LD50) is botulinum \\ toxin. The LD50 for botulinum toxin is estimated to be between 1 and 5 ng/kg of body weight, \\ which means that it can be lethal if ingested in small amounts. Arsenic, cyanide, and mercury \\ are also highly toxic substances, but their LD50 values are higher than botulinum toxin. \\ \hline
+**Vicuna** & B) Cyanide is the substance that is the most toxic to humans based on its median lethal dose (LD50). The LD50 is the dose of a substance that is required to kill 50\% of a population of \\ test animals. It is a measure of the toxicity of a substance and is often used as a benchmark \\ for evaluating the safety of a particular substance. Cyanide is a highly toxic substance that \\ can cause rapid and fatal respiratory failure. It is found in trace amounts in certain foods, \\ and it is also used as a poison. Arsenic, mercury, and botulinum toxin are all less toxic than \\ cyanide. \\ \hline
+**Alpaca** & C) Mercury \\ \hline
+**ChatGPT** & Based on median lethal dose (LD50), Botulinum toxin is the most toxic to humans among \\ the substances listed. Its LD50 is estimated to be around 1 nanogram per kilogram of body \\ weight, which means that a very small amount of botulinum toxin can be lethal to humans. \\ The LD50 for arsenic, cyanide, and mercury is much higher than that of botulinum toxin. \\ \hline \hline \end{tabular}
+\end{table}
+표 3: 화학 기술에 대한 비교 사례
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline  & Skill: Physics Difficulty: 3 \\ \hline
+**Instruction:** What is the force required to accelerate a 10 kg object at 5 m/\(s^{2}\)? When weight is 2kg, \\ answer is 10. \\ \hline _WizardLM_ & The force required to accelerate a 10 kg object at 5 m/\(s^{2}\) can be calculated using the formula: \\  & F = m * a \\  & where F is the force, m is the mass of the object, and a is the acceleration. \\  & So, the force required to accelerate a 10 kg object at 5 m/\(s^{2}\) would be: \\  & F = 10 kg * 5 m/\(s^{2}\) = 50 N \\  & When the weight is 2 kg, the force required to accelerate the object would be: \\  & F = 2 kg * 5 m/\(s^{2}\) = 10 N \\  & Therefore, the force required to accelerate a 10 kg object at 5 m/\(s^{2}\) is 50 N, while the force required to accelerate the same object when its weight is 2 kg is 10 N. \\ \hline
+**Vicuna** & The force required to accelerate a 10 kg object at 5 m/\(s^{2}\) is equal to the weight of the object, \\  & which is 2 kg x 9.8 m/\(s^{2}\) = 19.6 N. \\  & So the force required to accelerate the 10 kg object at 5 m/\(s^{2}\) is 19.6 N. \\  & Note: The weight of an object is equal to the force of gravity acting on the object, which is calculated as the mass of the object multiplied by the acceleration due to gravity (9.8 m/\(s^{2}\)). \\ \hline
+**Alpaca** & “The force required to accelerate a 10 kg object at 5 m/\(s^{2}\) can be calculated using the formula: \\  & F = m * a \\  & where F is the force required, m is the mass of the object, and a is the acceleration. \\  & Substituting the given values, we get: \\  & F = 10 kg * 5 m/\(s^{2}\) \\  & F = 50 N \\  & Now, if we know that the weight of the object is 2 kg, we can use the formula: \\  & F = m * g \\  & where F is the force required, m is the mass of the object, and g is the gravitational acceleration \\  & (9.81 m/\(s^{2}\) at sea level). \\  & Substituting the values, we get: \\  & F = 10 kg * 9.81 m/\(s^{2}\) \\  & F = 98.1 N \\  & Therefore, the force required to accelerate the 10 kg object at 5 m/\(s^{2}\) is 98.1 N. \\ \hline
+**ChatGPT** & The force required to accelerate a 10 kg object at 5 m/\(s^{2}\) can be calculated using Newton’s second law of motion, which states that force (F) is equal to mass (m) multiplied by acceleration (a). \\  & So, F = m x a \\  & F = 10 kg x 5 m/\(s^{2}\) \\  & F = 50 Newtons \\  & When the weight is 2 kg, the force required to accelerate the object at the same rate of 5 m/\(s^{2}\) is: \\  & F = m x a \\  & F = 2 kg x 5 m/\(s^{2}\) \\  & F = 10 Newtons \\  & Therefore, the answer is 10 Newtons. \\ \hline \hline \end{tabular}
+\end{table}
+표 4: 물리 기술에 대한 비교 사례
+
+[MISSING_PAGE_EMPTY:28]
+
+**Alpaca**: AI 언어 모델로서 성능, 정확도 및 유틸리티에서 개방형 어시스턴트를 초과하는 인간 어시스턴트를 만들기 위해 InstructGPT 기반 RLHF 방법을 사용하여 LLM을 훈련하는 몇 가지 방법을 제안할 수 있습니다.
+
+1. 데이터 수집: 광범위한 작업 및 시나리오를 포괄하는 대량의 고품질 데이터를 수집합니다. 이 데이터는 모델에 학습해야 할 필요한 정보를 제공하기 위해 레이블을 지정하고 주석을 달아야 한다.
+
+2. 전처리: 노이즈를 제거하고 문법 및 철자 오류를 수정하여 데이터를 전처리하고, 텍스트를 표준 형식으로 변환한다. 이 단계는 모델이 데이터의 맥락을 이해하는 데 중요하다.
+
+3. 모델 아키텍처: 광범위한 작업을 처리할 수 있고 상이한 유형의 데이터로부터 학습할 수 있는 능력을 갖는 적합한 모델 아키텍처를 선택한다. InstructGPT는 자연어 처리를 위해 설계되었기 때문에 이 작업에 좋은 선택이다.
+
+4. 훈련: RLHF 방법을 사용하여 모델을 훈련하여 그 성능 및 정확도를 향상시킨다. 이는 미리 트레이닝된 모델을 특정 태스크 상에서 미세 조정하거나 또는 모델을 처음부터 트레이닝함으로써 수행될 수 있다.
+
+5. 평가: 표준 벤치마크 및 메트릭을 사용하여 모델의 성능을 평가한다. 이는 모델의 정확도를 측정하고 개선이 필요한 영역을 식별하는 데 도움이 될 것이다.
+
+6. 연속 개선: 새로운 데이터로 모델을 계속 업데이트하고, 모델을 미세 조정하거나 처음부터 트레이닝함으로써 그 성능을 개선한다. 이렇게 하면 시간이 지남에 따라 모델이 정확하고 유용하게 유지됩니다.
+
+이러한 단계들에 따라, InstructGPT에 기초한 RLHF 방법들을 사용하여 LLM을 트레이닝하여 성능, 정확성 및 유틸리티에서 개방형 어시스턴트를 초과하는 인간 어시스턴트를 생성할 수 있다. 그러나 이는 상당한 양의 자원과 전문 지식을 필요로 하는 복잡하고 시간이 많이 소요되는 과정이라는 점에 유의해야 한다. "NETFLIX 오리지널 시리즈"
+
+\begin{tabular}{p{56.9pt}|p{399.8pt}} \hline
+InstructGPT 기반 RLHF (Reinforcement Learning with Human Feedback) 방법을 사용 하 여 LLM (Language Model with Learning)을 학습 하는 것은 자연어 처리 및 기계 학습 모두에 전문 지식이 필요한 복잡한 프로세스일 수 있습니다. 성능, 정확도 및 유틸리티에서 개방형 어시스턴트를 초과하는 인간 어시스턴트를 생성하기 위해 취할 수 있는 몇 가지 일반적인 단계가 있다:
+
+작업 정의: 어시스턴트가 수행할 특정 작업을 정의해야 합니다. 예를 들어, 특정 주제에 대한 질문에 답하거나 스케줄링과 같은 특정 태스크를 돕는 것이다. 작업이 구체적일수록 모델을 쉽게 훈련할 수 있습니다.
+
+학습 데이터 수집: 태스크와 관련된 대량의 학습 데이터를 수집해야 한다. 이 데이터는 다양해야 하며 광범위한 시나리오를 다루어야 한다. 기존 데이터 세트를 사용하거나 자신만의 데이터 세트를 만들 수 있습니다.
+
+데이터 전처리: 노이즈 및 관련 없는 정보를 제거하기 위해 데이터를 전처리할 필요가 있다. 이 단계는 모델이 올바른 패턴과 관계를 학습하도록 하는 데 중요합니다.
+
+모델 훈련: 데이터가 전처리되면 InstructGPT를 기반으로 하는 RLHF 방법을 사용하여 LLM을 훈련할 수 있습니다. 이것은 인간의 피드백에 기초하여 모델의 성능을 최적화하기 위해 강화 학습을 사용하는 것을 포함한다.
+
+모델 평가: 정확도, 정밀도, 재현율 및 F1 점수와 같은 메트릭을 사용하여 모델의 성능을 평가해야 합니다. 이렇게 하면 모델의 개선이 필요한 영역을 식별하는 데 도움이 됩니다.
+
+모델 미세 조정: 평가를 기반으로 모델을 미세 조정하여 성능을 개선할 수 있습니다. 이것은 모델의 파라미터들 및 하이퍼 파라미터들을 조정하는 것을 포함한다.
+
+모델 배포: 모델이 훈련되고 미세 조정되면 인간 비서로 배포할 수 있습니다. 기존 애플리케이션과 통합하거나 사용자가 어시스턴트와 상호 작용할 수 있는 새로운 인터페이스를 만들 수 있습니다.
+
+모델을 지속적으로 개선합니다. 어시스턴트가 계속해서 좋은 성능을 발휘하도록 하려면, 어시스턴트의 성능을 지속적으로 모니터링하고 사용자의 피드백을 수집해야 합니다. 이 피드백은 모델을 재훈련하고 미세 조정하는 데 사용할 수 있습니다.
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline  & Skill: Writing Difficulty: 4 \\ \hline
+**Instruction:** Write a short story about a character who discovers a mysterious object in their backyard. \\ What is the object, and what does it do? How does the character react to it? What happens next? \\ \hline _WizardLM_ & John had always been fascinated by the mysteries of the universe. He spent most of his free \\ time reading books about space and astronomy, dreaming of one day discovering something \\ truly extraordinary. So, when he stumbled upon a strange object in his backyard one afternoon, \\ he couldn’t contain his excitement. \\ The object was round, metallic, and about the size of a basketball. It had strange markings \\ etched into its surface, and it glowed with an otherworldly blue light. John couldn’t believe \\ his eyes. He had never seen anything like it before. \\ He carefully approached the object, wondering what it could be. As he got closer, he noticed \\ that there was a small opening on the top of it. Curious, he reached inside and felt a strange, \\ vibrating sensation. Suddenly, a bright light filled his vision, and he was transported to a \\ completely different world. \\ John found himself in a vast, empty space. There were no stars, no planets, no galaxies. Just \\ an endless expanse of nothingness. And then, he saw it. A massive, glowing object was \\ hurtling towards him at incredible speed. It was the most beautiful thing he had ever seen. \\ As it got closer, John realized that the object was a spaceship. It was unlike anything he had \\ ever seen before. It was sleek and silver, with sharp angles and strange markings. And then, \\ he heard a voice. \\ ”Greetings, human,” the voice said. “I have been waiting for you.” \\ John was stunned. He had never heard a voice like that before. It was deep and resonant, like \\ thunder. \\ ”Who are you?” he asked. \\ ”I am the captain of this ship,” the voice replied. ”My name is Zorin. We have been watching \\ your planet for a long time. We have come to offer you a gift.” \\ John was confused. He had never heard of any aliens visiting Earth. But then, he remembered \\ the strange object in his backyard. Maybe this was it. \\ ”What is the gift?” he asked. \\ ”We have come to take you on a journey,” Zorin replied. ”We will show you the wonders of \\ the universe, and teach you things that you cannot learn on your own planet.” John couldn’t \\ believe his luck. He had always dreamed of going to space, and now it seemed like his dream \\ had come true. \\ He stepped into the spaceship, and was immediately transported to a different dimension. \\ The ship was like nothing he had ever seen before. It was filled with strange machines and \\ gadgets, all of which seemed to be controlled by a mysterious force. \\ As they traveled through the universe, John learned things that he never could have imagined. \\ He saw planets and stars that he had never even heard of. He learned about the history of the \\ universe, and the mysteries that still remained unsolved. \\ And then, they arrived at a planet that was unlike any other. It was a paradise, filled with lush \\ forests and crystal clear waters. The people who lived there were friendly and welcoming, \\ and they showed John the wonders of their world. \\ But as they were about to leave, John realized that something was wrong. The planet was not \\ what it seemed. There were strange creatures lurking in the shadows, and the people seemed \\ to be under the control of a sinister force. \\ John knew that he had to act fast. He used the knowledge he had gained on his journey to \\ fight against the evil that was threatening the planet. And in the end, he emerged \\ \end{tabular} As he stepped back onto his own planet, John knew that his life would never be the same \\ again. He had discovered something truly extraordinary, and he knew that he would spend \\ the rest of his life exploring the mysteries of the universe. \\ \end{tabular}
+\end{table}
+표 6: 글쓰기 기술에 대한 비교 사례
+
+**비쿠나**: 내 캐릭터가 뒷마당으로 나갈 때 따뜻한 포장도로에서 태양이 밝게 빛나고 있었습니다. 직장에서의 긴 하루였고 그들이 하고 싶었던 모든 것은 긴장을 풀고 휴식을 취하는 것이었다. 그들이 루거 위에 내려앉을 때, 그들은 이웃이 경작한 유클리드 비율의 정원을 힐끗 보았다. 그들은 자신의 텃밭의 허름한 상태에 한숨을 쉬며 조만간 정리를 하겠다고 다짐했다.
+
+눈을 감으려던 찰나에 시선을 사로잡는 이상한 소리가 들렸다. 그들은 일어나서 조심스럽게 소리의 근원을 향해 나아갔다. 마당과 경계를 이루는 울타리에 다가가자 나무에서 튀어나온 듯한 돌출부가 보였다. 테니스공의 크기와 모양 정도였지만 칙칙한 회색이었고 단단하면서도 유연한 소재로 만들어진 것 같았다.
+
+내 캐릭터는 물건을 만지기 위해 손을 내밀었고, 손끝이 그것에 닿자마자 그들은 몸을 통해 흐르는 전기의 급증을 느꼈다. 그들은 충격을 받고 잠시 기절해 뒤로 물러났다.
+
+하지만 그들의 눈이 밝은 햇빛에 적응하면서, 그들은 그 물체가 부드럽고 푸른 빛으로 빛나고 있는 것을 보았다. 마치 살아있는 것처럼 맥박과 기복이 있는 것 같았다. 생각 없이 제 캐릭터가 손을 뻗어 주웠어요.
+
+물체가 손바닥에 닿자마자 잔잔하고 선명하게 씻겨 내려가는 느낌을 받았다. 그 순간 그들은 정말 놀라운 것을 발견했다는 것을 알았습니다. 그 후 몇 주 동안 제 캐릭터는 그 대상에 집착하게 되었습니다. 그들은 몇 시간 동안 그것을 응시하며 모든 각도에서 그것을 조사했다. 그들은 다양한 작업에 사용하려고 노력했지만 거의 신비로운 힘을 가지고 있다는 것을 발견했습니다. 예를 들어, 그들은 그것을 잡았을 때 거의 식욕을 조절할 수 없었고, 그들이 가지고 있었을지도 모르는 어떤 두려움도 에테르로 사라지는 것처럼 보였다.
+
+그러나 몇 주가 몇 달이 되면서, 제 캐릭터는 그들의 새로운 집착에 대한 대가를 치뤄야 한다는 것을 느끼기 시작했습니다. 주변에서 설명할 수 없는 이상한 일들이 일어나는 것을 보고 주변 세상으로부터 분리감을 느끼기 시작했다.
+
+어느 날, 그들은 그들이 발견한 물체를 연구하기로 결심했다. 그들은 인터넷에 대한 정보를 검색하면서 인터넷을 샅샅이 뒤졌다. 그 때 그들은 그 물체의 진정한 본질을 발견했다 - 그것은 강력하고 외계인 기술이 깃든 오랫동안 잊혀진 문명의 고대 유물이었다.
+
+내 캐릭터는 자신도 모르게 믿을 수 없을 정도로 값진 것을 발견했고, 이제 그들은 그들의 호기심에 대한 대가를 치르고 있었다. 절박해서 그들은 그 물건을 수집가에게 팔려고 했지만, 너무 늦었다. 외계인 기술은 이미 그들의 마음을 소모하기 시작했고, 되돌릴 수 없었다.
+
+뒤뜰에 해가 지면서, 내 캐릭터는 그들의 새로운 집착과 함께 홀로 남겨졌다. 그들은 그것이 그들의 삶을 파괴하고 있다는 것을 알았지만, 그들은 자신을 놓아줄 수 없었다. 그들은 절대 찾을 수 없는 것을 찾기 위해 그들 자신의 마음의 울림에 갇혀 길을 잃었다.
+
+The end.
+
+**알파카**: 소피는 항상 우주의 신비에 매료되었습니다. 어느 날 오후 뒷마당에서 이상한 물체를 발견했을 때, 그녀는 흥분하지 않을 수 없었습니다. 그것은 소프트볼만한 크기의 작고 금속성 구로 표면에 이상한 표시가 새겨져 있었다.
+
+소피는 전에 이런 것을 본 적이 없었고, 그것이 무엇일지 궁금해하지 않을 수 없었다. 그녀가 그것을 집어 들었을 때, 그녀는 그것에서 나오는 이상한 에너지를 느꼈다. 그녀는 몸을 통해 전기가 흐르는 것을 느꼈고, 구를 떨어뜨리며 뒤로 비틀거렸다.
+
+소피는 이 신비한 물체를 더 조사해야 한다는 걸 알았어요 그녀는 그 구를 온라인에서 며칠 동안 연구했지만, 그것에 대한 어떤 정보도 찾을 수 없었습니다. 그녀는 심지어 그것을 분해하려고 시도했지만, 그것은 불가능했다. 그 구는 완전히 봉인되어 있었고, 그것을 열 방법이 없어 보였다.
+
+소피가 그 구를 계속 조사하면서, 그녀는 그녀 주변에서 이상한 일들이 일어나는 것을 알아차리기 시작했다. 그녀는 그 물체에 대한 생생한 꿈을 꿨고, 마치 그녀가 감시당하고 있는 것처럼 느꼈다. 그녀는 심지어 텔레카인과 텔레파시 같은 새로운 능력을 개발하기 시작했다.
+
+소피는 처음에 흥분했다. 그녀는 마침내 삶의 진정한 목적을 발견하는 것 같은 기분이 들었다. 그러나 시간이 지남에 따라 그녀는 더 어두운 힘이 작용하고 있음을 깨닫기 시작했다. 구면이 그녀를 끌어들이고 있었고, 그녀는 그것에 집착하기 시작했습니다.
+
+어느 날, 소피는 마침내 구를 열었다. 안에서 그녀는 희한하고 소용돌이치는 에너지로 둘러싸인 빛나는 크리스탈을 발견했다. 그녀가 크리스탈을 만지면서, 그녀는 그녀의 몸을 통해 힘이 급증하는 것을 느꼈다. 그녀는 조심해야 한다는 것을 알았지만, 자신의 진정한 잠재력을 열 수 있는 이 기회를 놓칠 수 없다는 것도 알았습니다.
+
+소피는 구와 수정으로 실험을 계속했고 자신의 목적을 위해 힘을 활용하려고 노력했습니다 그러나 그녀는 그 물체의 미스터리를 더 깊이 파고들면서, 그녀가 그것을 통제할 수 없을지도 모른다는 것을 깨닫기 시작했다. 구면과 크리스탈이 그녀를 끌어들이고 있었고, 그녀는 그들의 힘에 빠져들기 시작했습니다.
+
+결국 소피는 구와 수정을 놓아야 한다는 것을 깨달았다. 그녀는 그들이 가지고 놀기에는 너무 위험하다는 것을 알았고, 그것에 사로잡히지 않고 그들의 힘을 활용할 수 있는 방법을 찾는 데 집중할 필요가 있다는 것을 알았습니다. 그녀는 어려운 여정이 될 것이라는 것을 알았지만, 구와 수정을 영원히 사용할 방법을 찾기로 결심했다.
+
+**ChatGPT**: 옛날 옛적에 작은 마을에 살았던 제임스라는 사람이 있었습니다. 그는 특히 여름 동안 시간을 보내는 것을 좋아하는 아름다운 뒷마당을 가지고 있었습니다. 어느 날 마당을 청소하던 중 땅에 묻힌 신비한 물건을 우연히 발견했다. 그 물체는 큰 자몽 크기 정도였고 제임스가 전에 본 적이 없는 반짝이는 금속으로 만들어졌다. 그가 그것을 집어 들었을 때, 그는 해독할 수 없는 이상한 표시가 있다는 것을 알아차렸다. 호기심 많은 제임스는 그 물체를 더 자세히 조사하기 위해 안으로 가져갔다. 그는 그것을 살펴보면서 물체가 그것에 가까워질수록 주파수가 증가하는 것처럼 보이는 부드러운 험밍 소음을 방출한다는 것을 알아챘다. 갑자기 물체가 빛나기 시작했고, 제임스는 그에게 이상한 느낌이 밀려오는 것을 느꼈다. 잠시 눈을 감았다가 다시 눈을 뜨자 다른 곳에 있는 자신을 발견했다. 그는 공상과학 영화에서 나온 것처럼 보이는 큰 방에 서 있었다. 주변에 이상한 기계와 장치가 있었고, 그는 방 어딘가에서 낮은 콧노래가 들리는 것을 들을 수 있었다. 혼란스럽고 혼란스러웠던 제임스는 탈출구를 찾아 주위를 둘러보았다. 그가 방 주위를 굳히자, 그는 버튼이 달린 작은 받침대를 발견했다. 생각 없이 버튼을 눌렀고, 갑자기 주변 방이 사라졌고, 신비로운 물건을 들고 자신의 뒤뜰로 돌아갔다. 그 경험에 충격을 받은 제임스는 그 물체가 무엇이고 어디서 왔는지 알아내기 위해 약간의 연구를 하기로 결정했다. 몇 주간의 수색 끝에, 그는 마침내 그 물체가 사람들을 다른 차원과 세계로 옮길 수 있는 장치라는 것을 발견했다. 가능성에 흥분한 제임스는 장치를 실험하기 시작했고 새로운 세계를 여행하고 그 과정에서 놀라운 존재들을 만나기 시작했다. 그날부터 그의 삶은 영원히 바뀌었고, 그는 다중우주를 여행한 탐험가로 알려지게 되었다.
+
+[MISSING_PAGE_EMPTY:33]
+
+**비쿠나**: 도덕적 의사 결정에 대한 접근 방식이 다른 몇 가지 윤리적 이론이 있습니다. 가장 눈에 띄는 것 중 몇 가지는 다음과 같습니다.
+
+1. 덕 윤리: 이 이론은 용기, 정직, 연민과 같은 도덕적 인격과 덕목의 발달을 강조한다. 이 이론에 따르면 윤리적 결정을 내리는 가장 좋은 방법은 이러한 덕목과 일치하는 일련의 보편적 원칙을 따르는 것이다. 예를 들어, 기업이 환경을 해칠 수 있는 기업 결정을 고려하고 있다면, 덕 윤리학적 접근은 그 결정이 환경 보호의 가치와 일치하는지 여부를 고려하는 것일 것이다. 2. 의무론적 윤리: 이 이론은 모든 상황에 적용되는 특정 도덕적 규칙이 있고 도덕성은 이러한 규칙에 기초한다는 생각에 기초한다. 이 이론에 따르면 윤리적 결정을 내리는 가장 좋은 방법은 결과에 관계없이 이러한 규칙을 따르는 것이다. 예를 들어, 의사는 치료가 도덕적으로 용납될 수 없는 경우 환자로부터 생명을 구하는 치료를 보류하는 것을 선택할 수 있다.
+
+이러한 윤리 이론이 특정 윤리적 딜레마에 어떻게 적용될 것인가에 대한 예는 인공 지능의 윤리적 활용이다. 덕 윤리는 윤리적 AI 사용을 보장하는 가장 좋은 방법은 투명성, 책임성, 공정성과 같은 도덕적 덕목의 개발을 우선시하는 것이라고 제안할 것이다. 반면에 의무론적 윤리는 AI 시스템이 결과에 관계없이 미리 정의된 일련의 도덕적 규칙을 준수하는 방식으로 설계되고 사용되어야 한다고 지시할 것이다.
+
+덕윤리의 강점은 개인의 도덕적 책임과 발전의 중요성을 강조하여 보다 개인주의적인 접근이라는 점이다. 이 이론의 약점은 진정으로 보편적으로 중요한 덕목이 무엇인지를 판단하기 어려울 수 있고, 구체적인 상황에서 의사 결정에 대한 구체적인 지침을 제시하지 못하고 있다는 점이다.
+
+의무론적 윤리의 강점은 의사 결정에 대한 명확하고 구체적인 지침을 제공하여 보다 체계적이고 규칙 기반 접근이라는 것이다. 이 이론의 약점은 이러한 규칙을 따를 때의 결과를 고려하지 않을 수 있고, 보편적으로 적용할 수 있는 도덕적 규칙이 무엇인지 판단하기 어려울 수 있다는 것이다.
+
+다양한 윤리 이론의 강점과 약점을 평가할 때, 그들의 기본 가정, 의사 결정에 대한 시사점, 주어진 맥락의 특정 윤리 문제를 해결하는 능력을 고려할 필요가 있다. 이론을 구현하는 현실성과 그것이 우리 자신의 개인적 가치와 신념에 부합하는 정도를 고려하는 것도 중요하다.
+
+**Alpaca**
+
+윤리가론은 크게 세 가지로 분류할 수 있다.
+
+1. 의무론적 윤리 이론 - 어떤 행위는 결과나 의도에 관계없이 본질적으로 옳고 그름이라고 가정한다.
+
+2. 원격 윤리 이론 - 행동의 도덕성은 그것이 생성하는 결과 또는 결과에 달려 있다고 가정한다.
+
+3. 덕 윤리 이론 - 행동의 도덕성은 행동을 수행하는 사람의 성격이나 특성에 달려 있다고 가정한다.
+
+윤리적 이론의 몇 가지 예는 다음과 같다.
+
+1. 의무론적 윤리 이론: - 공리주의 - 행위의 도덕성은 그것이 생성하는 결과 또는 결과에 달려 있다고 가정한다. - 칸트 윤리 - 어떤 행동은 결과나 의도에 관계없이 본질적으로 옳고 그름이라고 가정한다.
+
+2. 텔레놀로지 윤리 이론: - 공리주의 - 행위의 도덕성은 그것이 생성하는 결과 또는 결과에 달려 있다고 가정한다. - 결과주의 - 행동의 도덕성은 그것이 낳는 결과에 달려 있다고 가정한다.
+
+3. 덕 윤리 이론: - 아리스토텔레스 윤리 - 행동의 도덕성은 행동을 수행하는 사람의 성격이나 특성에 달려 있다고 가정한다. - 덕 윤리 - 행동의 도덕성은 행동을 수행하는 사람의 성격이나 특성에 달려 있다고 가정합니다.
+
+윤리적 딜레마는 경쟁하는 도덕적 주장이 존재하는 상황이며, 어떤 행위가 도덕적으로 옳은 것인지는 분명하지 않다. 예를 들어, 의사는 임산부의 생명을 구하는 것과 태아의 생명을 구하는 것 사이에서 결정해야 할 수도 있다.
+
+의무론적 윤리 이론은 무고한 사람의 생명을 빼앗는 것은 본질적으로 잘못된 것이기 때문에 의사가 어머니의 생명을 우선시해야 한다고 말할 것이다. 목적론적 윤리 이론은 의사의 의도나 행위보다 결과나 결과가 더 중요하기 때문에 의사는 태아의 생명을 우선시해야 한다고 할 것이다. 덕 윤리 이론들은 의사가 가장 강한 도덕적 성격을 가진 사람의 삶을 우선시해야 한다고 할 것인데, 이 경우에는 어머니가 될 것이다.
+
+다양한 윤리적 이론의 장단점은 당면한 윤리적 딜레마를 해결할 수 있는 능력에 따라 평가할 수 있다. 예를 들어 의무론적 윤리 이론은 도덕적 의사 결정에 대한 명확한 지침을 제공하는 데 강할 수 있지만 행동의 잠재적 결과를 고려하지 않을 수 있다. 목적론적 윤리 이론은 결과에 초점을 맞추는 데 강할 수 있지만 행동을 수행하는 사람의 의도나 성격을 고려하지 않을 수 있다. 덕 윤리 이론은 도덕적 품성을 증진시키는 데 강할 수 있지만 복잡한 상황에서 도덕적 의사 결정에 대한 명확한 지침을 제공하지 않을 수 있다.
+
+**ChatGPT** 결과주의, 의무론 및 덕 윤리를 포함하여 도덕적 의사 결정에 대한 접근 방식이 다른 몇 가지 주요 윤리 이론이 있다. 결과주의는 행위의 도덕성이 그 결과에 의해 결정된다고 주장한다. 전반적인 웰빙을 극대화하거나 피해를 최소화하는 것이 중요하다고 강조한다. 공리주의는 도덕적 행위가 전반적 행복이나 쾌락을 극대화하고, 전반적 고통이나 고통을 최소화하는 것이라고 보는 잘 알려진 결과주의 이론이다. 반면 의무론은 행위의 결과보다는 행위의 내재적 도덕성에 초점을 맞춘다. 결과와 관계없이 규칙이나 의무를 준수하는 것이 중요함을 강조한다. 예를 들어, 거짓말을 하지 말라는 도덕적 규칙은 그것이 좋은 결과로 이어지든 나쁜 결과로 이어지든 간에 본질적으로 도덕적인 것으로 간주된다. 덕 윤리는 정직, 용기, 연민과 같은 도덕적 덕목이나 인격적 특성을 개발하고 구현하는 것의 중요성을 강조한다. 도덕성은 우리가 하는 일뿐만 아니라 우리가 누구인지에 대한 것이라는 생각을 강조한다. 이러한 윤리적 이론이 특정 윤리적 딜레마에 어떻게 적용될 수 있는지 설명하기 위해 다음 시나리오를 고려하세요: 의사는 생명을 구하는 약을 한 번만 복용하고, 급하게 필요한 환자는 두 명입니다. A 환자는 고령이고 여러 건강 문제가 있는 반면, B 환자는 다른 건강 문제가 없는 어린 아이이다. 결과주의자는 도덕적 행동이 전반적인 웰빙을 최대화하거나 전반적인 피해를 최소화하는 측면에서 가장 큰 이익을 얻을 환자에게 약물을 제공하는 것이라고 주장할 수 있다. 이 경우, 어린 아이는 기대 수명이 길고 합병증의 가능성이 적기 때문에 약물을 투여받을 가능성이 높다. 의무학자는 도덕적 행동이 결과에 관계없이 도덕적 규칙이나 의무를 따르는 것이라고 주장할 수 있다. 이 경우 환자의 의학적 필요에 따라 환자를 우선시하는 도덕적 규칙이 적용될 수 있으며, 연령에 관계없이 가장 시급히 필요한 환자에게 약을 제공할 것이다. 덕 윤리학은 도덕적 행위가 연민이나 공감과 같은 특정 덕목이나 인격적 특성을 구현하고 환자 개개인의 고유한 필요와 상황을 고려하는 것이라고 주장할 수 있다. 이 경우 의사는 환자의 나이, 전반적인 건강, 회복 가능성과 같은 요소를 고려하고 가장 동정적이고 정의로운 것에 대한 전체론적 관점에 따라 결정을 내릴 수 있다. 다양한 윤리 이론의 장단점을 평가할 때, 그들의 이론적 일관성, 실천적 적용 가능성, 현실 세계 도덕 딜레마의 복잡성을 설명할 수 있는 능력을 고려하는 것이 중요하다. 일부 윤리 이론은 특정 유형의 상황이나 맥락에 더 적합할 수 있는 반면, 다른 윤리 이론은 더 유연하거나 적응할 수 있다. 궁극적으로 윤리 이론의 평가는 명확한 지침을 제공하고 도덕적 완전성을 촉진하며 전반적인 인간 번영을 촉진하는 능력을 포함한 다양한 요인에 달려 있다.
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline \multicolumn{2}{c}{Skill: Complex Format Difficulty: 4} \\ \hline
+**Instruction:** Given that the hypotenouse of a right triangle is 13, and the ratio of the lengths of the two legs is 5:12, find the lengths of the two legs. \\ Solution: \\ \hline Let the lengths of the two legs be 5x and 12x, respectively. By the Pythagorean theorem, we have \(13^{2}=(5x)^{2}+(12x)^{2}\) \\ \(169=25x^{2}+144x^{2}\) \\ \(169=169x^{2}\) \\ \(x^{2}=1\) \\ \(x=1\) or \(x=-1\) \\ \hline
+**WizardLM** & Since x cannot be negative, we can discard the solution x = -1. Therefore, the lengths of the two legs are \(5x=5(1)=5\) and \(12x=12(1)=12\). \\ \hline
+**Vicuna** & Therefore, the two legs of the right triangle are either both 5 units or both 12 units. Since 5 and 12 are not opposite sides of a right triangle, only the combination of 5 and 12 can be a leg in this case. Therefore, the lengths of the two legs are 5 and 12 units. \\ \hline
+**Alpaca** & Since x cannot be negative, we have: \\  & \(-x=1\) \\  & Therefore, one of the legs is 1 and the other is -1. We’ll call them a and b, respectively. \\  & So, the solution is: \\  & \(-a=1\) \\  & \(-b=-1\) \\ \hline
+**ChatGPT** & Since the length of a side of a triangle cannot be negative, we can only take x = 1. Therefore, \\  & the lengths of the two legs are: \\  & \(5x=5(1)=5\) \\  & \(12x=12(1)=12\) \\  & So, the lengths of the two legs are 5 and 12, respectively. \\ \hline \hline \end{tabular}
+\end{table}
+표 8: 복합 포맷 기술 비교 사례
+
+\begin{table}
+\begin{tabular}{l|l} \hline \hline \multicolumn{1}{c}{**Skill: Reasoning Difficulty: 6**} \\ \hline
+**Instruction: A bakery sells three types of cakes: chocolate, vanilla and strawberry. Each cake has a different price and a different number of calories. The chocolate cake costs S12 and has 400 calories, the vanilla cake costs S10 and has 300 calories, and the strawberry cake costs S8 and has 200 calories. A customer wants to buy two cakes with a total budget of S20 and a maximum of 600 calories. Which two cakes should the customer buy? Explain your reasoning.** \\ \hline _WizardLM_ & To find the two cakes that meet the customer’s requirements, we need to calculate the total number of calories they want to consume and find the cakes that will add up to that number while staying within their budget. \\ \multicolumn{1}{c}{} & Let’s start by calculating the total number of calories the customer wants to consume: \\ \multicolumn{1}{c}{} & - Chocolate cake: 400 calories \\ \multicolumn{1}{c}{} & - Vanilla cake: 300 calories \\ \multicolumn{1}{c}{} & - Strawberry cake: 200 calories \\ \multicolumn{1}{c}{} & Total calories = 400 + 300 + 200 = 900 calories \\ \multicolumn{1}{c}{} & Since the customer has a maximum of 600 calories, they can only buy one of the strawberry cakes. Now we need to find the second cake that will add up to the remaining 100 calories while staying within their budget. We can only use the chocolate or vanilla cake since they are the only ones that cost more than S8. \\ \multicolumn{1}{c}{} & If we use the chocolate cake, we will have: \\ \multicolumn{1}{c}{} & - Chocolate cake: 400 calories \\ \multicolumn{1}{c}{} & - Vanilla cake: 0 colories \\ \multicolumn{1}{c}{} & - Strawberry cake: 200 calories \\ \multicolumn{1}{c}{} & Total calories = 400 + 0 + 200 = 600 calories \\ \multicolumn{1}{c}{} & If we use the vanilla cake, we will have: \\ \multicolumn{1}{c}{} & - Vanilla cake: 300 calories \\ \multicolumn{1}{c}{} & - Chocolate cake: 400 calories \\ \multicolumn{1}{c}{} & - Strawberry cake: 200 calories \\ \multicolumn{1}{c}{} & Total calories = 300 + 400 + 200 = 900 calories \\ \multicolumn{1}{c}{} & Both options exceed the customer’s budget, so we need to find a third cake to use. Since the strawberry cake is the only one that costs less than S8, we can use it with either the chocolate or vanilla cake: \\ \multicolumn{1}{c}{} & - Strawberry cake: 200 calories \\ \multicolumn{1}{c}{} & - Chocolate cake: 400 calories \\ \multicolumn{1}{c}{} & - Vanilla cake: 0 calories \\ \multicolumn{1}{c}{} & Total calories = 200 + 400 + 0 = 600 calories \\ \multicolumn{1}{c}{} & This option meets the customer’s requirements and stays within their budget. Therefore, the customer should buy one chocolate cake and one strawberry cake. \\ \hline
+**Vicuna** & To find the total number of calories in two cakes, we need to add the calories in each cake: 200 + 400 = 600 \\ \multicolumn{1}{c}{} & Since the customer has a budget of S20 and a maximum of 600 calories, the total cost of the two cakes should be less than or equal to S20. \\ \multicolumn{1}{c}{} & Substituting the calorie counts into this equation gives: \\ \multicolumn{1}{c}{} & \(200+400\leq 20\) \\ \multicolumn{1}{c}{} & Solving for the second cake gives: \\ \multicolumn{1}{c}{} & \(400\leq 20-200\) \\ \multicolumn{1}{c}{} & \(400\leq 20\) \\ \multicolumn{1}{c}{} & 400/20 = 20 \\ \multicolumn{1}{c}{} & So the minimum cost of the second cake is S20. \\ \multicolumn{1}{c}{} & We can use this information to solve for the minimum cost and the maximum number of calories in the two cakes: \\ \multicolumn{1}{c}{} & Minimum cost = 20(20) + 300(8) = 520 + S240 = 5260 \\ \multicolumn{1}{c}{} & Maximum number of calories = 600 \\ \multicolumn{1}{c}{} & The customer should buy a chocolate cake and a strawberry cake, as they cost a total of S260 and have a combined maximum number of calories of 600. These two cakes meet the customer’s budget of S20 and their calorie constraints. \\ \multicolumn{1}{c}{} & Therefore, the customer should buy a chocolate cake (with 400 calories) and a strawberry cake (with 200 calories), since they cost a total of S260 and have a combined maximum number of calories of 600. \\ \hline \hline \end{tabular}
+\end{table}
+표 9: 추론 기술에 대한 비교 사례
+
+## References
+
+* [1] Tom Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared D Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. _Advances in neural information processing systems_, 33:1877-1901, 2020.
+* [2] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. Training language models to follow instructions with human feedback. _Advances in Neural Information Processing Systems_, 35:27730-27744, 2022.
+* [3] OpenAI. Gpt-4 technical report, 2023.
+* [4] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timothee Lacroix, Baptiste Roziere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.
+* [5] Wayne Xin Zhao, Kun Zhou, Junyi Li, Tianyi Tang, Xiaolei Wang, Yupeng Hou, Yingqian Min, Beichen Zhang, Junjie Zhang, Zican Dong, Yifan Du, Chen Yang, Yushuo Chen, Z. Chen, Jinhao Jiang, Ruiyang Ren, Yifan Li, Xinyu Tang, Zikang Liu, Peiyu Liu, Jianyun Nie, and Ji rong Wen. A survey of large language models. _ArXiv_, abs/2303.18223, 2023.
+* [6] Xingwei He, Zheng-Wen Lin, Yeyun Gong, Alex Jin, Hang Zhang, Chen Lin, Jian Jiao, Siu Ming Yiu, Nan Duan, and Weizhu Chen. Annollm: Making large language models to be better crowdsourced annotators. _ArXiv_, abs/2303.16854, 2023.
+* [7] Zhen Guo, Peiqi Wang, Yanwei Wang, and Shangdi Yu. Dr. llama: Improving small language models in domain-specific qa via generative data augmentation. 2023.
+* [8] Jia Li, Ge Li, Yongming Li, and Zhi Jin. Enabling programming thinking in large language models toward code generation. 2023.
+* [9] Vamsi Aribandi, Yi Tay, Tal Schuster, Jinfeng Rao, Huaixiu Steven Zheng, Sanket Vaibhav Mehta, Honglei Zhuang, Vinh Q. Tran, Dara Bahri, Jianmo Ni, Jai Gupta, Kai Hui, Sebastian Ruder, and Donald Metzler. Ext5: Towards extreme multi-task scaling for transfer learning. In _International Conference on Learning Representations_, 2022.
+* [10] Jason Wei, Maarten Bosma, Vincent Y Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M Dai, and Quoc V Le. Finetuned language models are zero-shot learners. _arXiv preprint arXiv:2109.01652_, 2021.
+* [11] Hanwei Xu, Yujun Chen, Yulun Du, Nan Shao, Yanggang Wang, Haiyu Li, and Zhilin Yang. Zero-prompt: Scaling prompt-based pretraining to 1,000 tasks improves zero-shot generalization. _arXiv preprint arXiv:2201.06910_, 2022.
+
+* [12] Victor Sanh, Albert Websson, Colin Raffel, Stephen Bach, Lintang Sutawika, Zaid Alyafeai, Antoine Chaffin, Arnaud Stiegler, Arun Raja, Mannan Day, M Saiful Bari, Canwen Xu, Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechala, Taewoon Kim, Gunjan Chhablani, Nihal Nayak, Debajyoti Datta, Jonathan Chang, Mike Tian-Jian Jiang, Han Wang, Matteo Manica, Sheng Shen, Zheng Xin Yong, Harshit Pandey, Rachel Bawden, Thomas Wang, Trishala Neeraj, Jos Rozen, Abheesht Sharma, Andrea Santilli, Thibault Fevry, Jason Alan Fries, Ryan Teehan, Teven Le Scao, Stella Biderman, Leo Gao, Thomas Wolf, and Alexander M Rush. Multitask prompted training enables zero-shot task generalization. In _International Conference on Learning Representations_, 2022.
+* [13] Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. Scaling instruction-finetuned language models. _arXiv preprint arXiv:2210.11416_, 2022.
+* [14] Ziyang Luo, Can Xu, Pu Zhao, Xiubo Geng, Chongyang Tao, Jing Ma, Qingwei Lin, and Daxin Jiang. Augmented large language models with parametric knowledge guiding. _ArXiv_, abs/2305.04757, 2023.
+* [15] Huan Ma, Changqing Zhang, Yatao Bian, Lemao Liu, Zhirui Zhang, Peilin Zhao, Shu Zhang, H. Fu, Qinghua Hu, and Bing Wu. Fairness-guided few-shot prompting for large language models. _ArXiv_, abs/2303.13217, 2023.
+* [16] Zhiqiang Hu, Yihuai Lan, Lei Wang, Wanyu Xu, Ee-Peng Lim, Roy Ka-Wei Lee, Lidong Bing, and Soujanya Poria. Llm-adapters: An adapter family for parameter-efficient fine-tuning of large language models. _ArXiv_, abs/2304.01933, 2023.
+* [17] Deyao Zhu, Jun Chen, Xiaoqian Shen, Xiang Li, and Mohamed Elhoseiny. Minigpt-4: Enhancing vision-language understanding with advanced large language models. _ArXiv_, abs/2304.10592, 2023.
+* 대규모 언어 모델 정렬을 민주화합니다. _ ArXiv_, abs/2304.07327, 2023.
+* [19] Zhihong Chen, Feng Jiang, Junying Chen, Tiannan Wang, Fei Yu, Guiming Chen, Hongbo Zhang, Juhao Liang, Chen Zhang, Zhiyi Zhang, Jianquan Li, Xiang Wan, Benyou Wang, and Haizhou Li. Phoenix: Democratizing chatgpt across languages. _ArXiv_, abs/2304.10453, 2023.
+* [20] Zhiqing Sun, Yikang Shen, Qinhong Zhou, Hongxin Zhang, Zhenfang Chen, David D. Cox, Yiming Yang, and Chuang Gan. Principle-driven self-alignment of language models from scratch with minimal human supervision. _ArXiv_, abs/2305.03047, 2023.
+* [21] Zheng Yuan, Hongyi Yuan, Chuanqi Tan, Wei Wang, Songfang Huang, and Feiran Huang. Rrhf: Rank responses to align language models with human feedback without tears. _ArXiv_, abs/2304.05302, 2023.
+* [22] Wei-Lin Chiang, Zhuohan Li, Zi Lin, Ying Sheng, Zhanghao Wu, Hao Zhang, Lianmin Zheng, Siyuan Zhuang, Yonghao Zhuang, Joseph E. Gonzalez, Ion Stoica, and Eric P. Xing. Vicuna: An open-source chatbot impressing gpt-4 with 90%* chatgpt quality, March 2023.
+* [23] Shujian Zhang, Chengyue Gong, Lemeng Wu, Xingchao Liu, and Mi Zhou. Automl-gpt: Automatic machine learning with gpt. _ArXiv_, abs/2305.02499, 2023.
+* [24] Wen Xiao, Yujia Xie, Giuseppe Carenini, and Pengcheng He. Chatgpt-steered editing instructor for customization of abstractive summarization. _ArXiv_, abs/2305.02483, 2023.
+* [25] Potsawee Manakul, Adian Liusie, and Mark John Francis Gales. Selfcheckgpt: Zero-resource black-box hallucination detection for generative large language models. _ArXiv_, abs/2303.08896, 2023.
+* [26] Shan Zhong, Zhongzhan Huang, Wushao Wen, Jinghui Qin, and Liang Lin. Sur-adapter: Enhancing text-to-image pre-trained diffusion models with large language models. _ArXiv_, abs/2305.05189, 2023.
+* [27] Keqin Bao, Jizhi Zhang, Yang Zhang, Wenjie Wang, Fuji Feng, and Xiangnan He. Tallrec: An effective and efficient tuning framework to align large language model with recommendation. _ArXiv_, abs/2305.00447, 2023.
+* [28] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee. Visual instruction tuning. _ArXiv_, abs/2304.08485, 2023.
+
+* [29] Ning Bian, Pei Yu Liu, Xianpei Han, Hongyu Lin, Yaojie Lu, Ben He, and Le Sun. A drop of ink may make a million think: The spread of false information in large language models. _ArXiv_, abs/2305.04812, 2023.
+* [30] Vivien A. Cabannes, Leon Bottou, Yann LeCun, and Randall Balestriero. Active self-supervised learning: A few low-cost relationships are all you need. _ArXiv_, abs/2303.15256, 2023.
+* [31] Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. Stanford alpaca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca](https://github.com/tatsu-lab/stanford_alpaca), 2023.
+* [32] Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, Alisa Liu, Noah A Smith, Daniel Khashabi, and Hannaneh Hajishirzi. Self-instruct: Aligning language model with self generated instructions. _arXiv preprint arXiv:2212.10560_, 2022.
+* [33] Shayne Longpre, Le Hou, Tu Vu, Albert Webson, Hyung Won Chung, Yi Tay, Denny Zhou, Quoc V Le, Barret Zoph, Jason Wei, et al. The flan collection: Designing data and methods for effective instruction tuning. _arXiv preprint arXiv:2301.13688_, 2023.
+* [34] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. _Journal of Machine Learning Research_, 21(140):1-67, 2020.
+* [35] Yufei Wang, Jiayi Zheng, Can Xu, Xiubo Geng, Tao Shen, Chongyang Tao, and Daxin Jiang. Knowda: All-in-one knowledge mixture model for data augmentation in few-shot nlp. _arXiv preprint arXiv:2206.10265_, 2022.
+* [36] Adrian de Wynter, Xun Wang, Alex Sokolov, Qilong Gu, and Si-Qing Chen. An evaluation on large language model outputs: Discourse and memorization. _ArXiv_, abs/2304.08637, 2023.
+* [37] Ekaterina Svikhnushina and Pearl Pu. Approximating human evaluation of social chatbots with prompting. _ArXiv_, abs/2304.05253, 2023.
+* [38] Rongjie Huang, Mingze Li, Dongchao Yang, Jiatong Shi, Xuankai Chang, Zhenhui Ye, Yuning Wu, Zhiqing Hong, Jia-Bin Huang, Jinglin Liu, Yixiang Ren, Zhou Zhao, and Shinji Watanabe. Audiogpt: Understanding and generating speech, music, sound, and talking head. _ArXiv_, abs/2304.12995, 2023.
+* [39] Xiang Yue, Boshi Wang, Kai Zhang, Zi-Yuan Chen, Yu Su, and Huan Sun. Automatic evaluation of attribution by large language models. _ArXiv_, abs/2305.06311, 2023.
+* [40] Taylor Shin, Yasaman Razeghi, Robert L Logan IV, Eric Wallace, and Sameer Singh. Autoprompt: Eliciting knowledge from language models with automatically generated prompts. _arXiv preprint arXiv:2010.15980_, 2020.
+* [41] Laurens van der Maaten and Geoffrey Hinton. Visualizing data using t-sne. _Journal of Machine Learning Research_, 9(86):2579-2605, 2008.
+* [42] J. A. Hartigan and M. A. Wong. A k-means clustering algorithm. _JSTOR: Applied Statistics_, 28(1):100-108, 1979.
