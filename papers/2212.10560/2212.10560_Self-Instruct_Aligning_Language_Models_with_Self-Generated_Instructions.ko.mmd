@@ -1,0 +1,341 @@
+# Self-Instruct: Aligning Language Models
+
+자체 생성된 지침과 함께
+
+Yizhong Wang\({}^{\spadesuit}\) Yeganeh Kordi\({}^{\diamond}\) Swaroop Mishra\({}^{\heartsuit}\) Alisa Liu\({}^{\spadesuit}\)
+
+Noah A. Smith\({}^{\spadesuit+}\) Daniel Khashabi\({}^{\spadesuit}\) Hannaneh Hajishirzi\({}^{\spadesuit+}\)
+
+미국 워싱턴대학교 테헤란폴리텍대학 애리조나주립대학교
+
+Johns Hopkins University \({}^{\spadesuit}\)Allen Institute of AI
+
+yizhongw@cs.washington.edu
+
+###### Abstract
+
+대규모 "명령 조정" 언어 모델(즉, 명령에 응답하도록 미세 조정됨)은 제로 샷을 새로운 작업에 일반화하는 놀라운 능력을 입증했다. 그럼에도 불구하고, 이는 종종 양, 다양성 및 창의성이 제한되는 인간이 작성한 명령 데이터에 크게 의존하여 조정된 모델의 일반성을 방해한다. 자체 세대를 부트스트래핑하여 사전 훈련된 언어 모델의 명령어 수행 능력을 향상시키기 위한 프레임워크인 Self-Instruct를 소개한다. 당사의 파이프라인은 언어 모델에서 명령, 입력 및 출력 샘플을 생성한 다음 잘못된 샘플 또는 유사한 샘플을 필터링한 후 원래 모델을 미세 조정하기 위해 사용합니다. 제안된 방법을 바닐라 GPT3에 적용한 결과, 개인 사용자 데이터와 인간 주석으로 학습한 InstructGPT\({}_{001}\)1의 성능과 동등하게 Super-NaturalInstructions에서 기존 모델에 비해 33%의 절대적 개선을 보였다. 추가적인 평가를 위해, 우리는 새로운 작업에 대해 전문가가 작성한 명령어 세트를 선별하고, 인간 평가를 통해 Self-Instruct로 GPT3를 튜닝하는 것이 기존의 공개 명령어 데이터 세트를 사용하는 것보다 큰 마진으로 우수하다는 것을 보여주며, 이는 InstructGPT\({}_{001}\)에 5%의 절대 차이만 남긴다. Self-Instruct는 사전 학습된 언어 모델을 명령어와 정렬하기 위한 거의 주석 없는 방법을 제공하며, 명령어 튜닝에 대한 향후 연구를 용이하게 하기 위해 대규모 합성 데이터 세트를 출시한다.2
+
+각주 1: 달리 명시되지 않는 한, 우리의 비교는 텍스트-다빈치-001 엔진과의 비교이다. 우리는 이 엔진이 우리의 실험 설정에 가장 가깝기 때문에 이 엔진에 초점을 맞춥니다: 인간 시연으로 감독된 미세 조정입니다. 최신 엔진은 비교가 어려운 더 많은 데이터(예: 코드 완료 또는 최신 사용자 쿼리) 또는 알고리즘(예: PPO)을 사용하지만 더 강력합니다.
+
+각주 2: 코드 및 데이터는 [https://github.com/yizhongw/self-instruct](https://github.com/yizhongw/self-instruct)에서 사용할 수 있습니다.
+
+## 1 Introduction
+
+최근 NLP 문헌은 자연 언어 지시를 따를 수 있는 모델 구축에서 엄청난 양의 활동을 목격했다(Mishra et al., 2022; Wei et al., 2022; Sanh et al., 2022; Wang et al., 2022; Ouyang et al., 2022; Chung et al., 2022, i.a.). 이러한 개발은 큰 사전 훈련된 언어 모델(LM) 및 인간-작성된 명령 데이터(예를 들어, PromptSource(Bach et al., 2022) 및 SuperNaturalInstructions(Wang et al., 2022, SuperNI for short)). 그러나, 이러한 명령 데이터를 수집하는 것은 비용이 많이 들고 종종 제한된 다양성을 겪는다. 대부분의 인간 세대가 인기 있는 NLP 작업인 경향이 있다는 점을 감안할 때, 커버링에는 미치지 못하며,
+
+그림 1: 바닐라 GPT3를 사용하여 생성된 명령 데이터에서 선택된 작업. 일부 텍스트는 프리젠테이션을 위해 재포맷된다. 자세한 예는 표 10을 참조하십시오.
+
+참으로 다양한 작업과 이를 설명하는 다양한 방법. 명령어 조정 모델의 품질과 적용 범위를 계속 개선하려면 명령어 조정 프로세스를 감독하기 위한 대안적 접근법의 개발이 필요하다.
+
+본 연구에서는 모델 자체의 지시 신호를 사용하여 사전 훈련된 LM을 지시 조정하기 위한 반자동 프로세스인 Self-Instruct를 소개한다. 전체 프로세스는 반복 부트스트래핑 알고리즘(도 2 참조)이며, 이는 전체 생성을 안내하는 데 사용되는 수동 작성 작업의 제한된(예: 우리 연구에서 175개) 시드 세트로 시작한다. 첫 번째 단계에서, 모델은 새로운 태스크들에 대한 명령어들을 생성하도록 프롬프트된다. 이 단계는 명령어들의 기존 컬렉션을 활용하여 (종종 새로운) 태스크들을 정의하는 보다 광범위한 커버리지 명령어들을 생성한다. 새로 생성된 명령어 세트가 주어지면, 프레임워크는 또한 이들에 대한 입력-출력 인스턴스를 생성하며, 이는 나중에 명령어 튜닝을 감독하는 데 사용될 수 있다. 마지막으로, 나머지 유효한 태스크들을 태스크 풀에 추가하기 전에, 저품질 또는 반복된 명령어들을 자동으로 필터링하기 위해 다양한 휴리스틱들이 사용된다. 이러한 프로세스는 많은 수의 태스크들에 도달할 때까지 많은 반복들에 대해 반복될 수 있다.
+
+셀프-인스트럭션을 경험적으로 평가하기 위해, 본 프레임워크는 바닐라 LM(SS3)인 GPT3(Brown et al., 2020)에서 실행된다. 이 모델에 대한 반복적 자기-명령 프로세스는 약 82K 인스턴스 입력들 및 타겟 출력들과 쌍을 이루는 약 52k 명령들로 이어진다. 결과 데이터는 그림 1의 예에서 알 수 있듯이 다양한 범위의 창의적인 작업을 제공한다는 것을 관찰한다. 이러한 생성된 작업은 일반적인 NLP 작업의 분포를 벗어나며 시드 작업(SS3.2)과 상당히 작은 중첩을 갖는다. 이 결과 데이터에 대해 GPT3(즉, 명령어 데이터 생성에 사용된 동일한 모델)을 미세 조정함으로써 GPT3SELF-INST를 구축한다. GPT3SELF-INST는 SuperNI(Wang et al., 2022)에 포함된 일반적인 NLP 태스크와 명령어 후속 모델(SS4)의 새로운 사용을 위해 생성된 새로운 명령어 세트에 대해 다른 모델들과 비교하여 평가한다. 그 결과, GPT3SELF-INST는 기존 모델인 GPT3보다 큰 마진(+33.1%)을 보이며 InstructGPT001의 성능과 거의 일치함을 알 수 있었다. 또한, 새롭게 생성된 명령어 집합에 대한 인간 평가 결과, GPT3SELF-INST는 다양한 명령어 추종 능력을 보여주며, 공개된 다른 명령어 데이터셋에 대해 학습된 모델을 능가하며, InstructGPT001에 비해 5% 차이만 남는다.
+
+요약하면, 우리의 기여는 (1) 인간 레이블이 최소인 데이터를 사용하여 명령어 추종 기능을 유도하는 방법인 Self-Instruct를 소개하고, (2) 광범위한 명령어 동조 실험을 통해 그 효과를 입증하며, (3) 52K 명령어의 대규모 합성 데이터세트와 향후 명령어 추종 모델을 구축하고 평가하기 위해 수동으로 작성된 새로운 태스크 세트를 공개한다.
+
+그림 2: Self-Instruct의 상위 수준 개요입니다. 프로세스는 태스크 풀로서 태스크들의 작은 시드 세트로부터 시작한다. 랜덤 태스크는 태스크 풀에서 샘플링되고, 새로운 명령어 및 대응하는 인스턴스 모두를 생성하기 위해 기성품 LM을 프롬프트하는 데 사용되며, 이어서 저품질 또는 유사한 세대를 필터링한 다음, 태스크의 초기 리포지토리에 다시 추가된다. 결과 데이터는 나중에 명령어를 더 잘 따르기 위해 언어 모델 자체의 명령어 튜닝을 위해 사용될 수 있다. 그림에 표시된 작업은 GPT3에 의해 생성된다.
+
+Method
+
+대규모 수업 데이터를 주석하는 것은 1) 새로운 과제를 도출하기 위한 창의성과 2) 각 과제에 대한 해결책을 작성하기 위한 전문성이 필요하기 때문에 인간에게 어려울 수 있다. 여기서는 _바닐라 사전 훈련된 언어 모델_ 자체로 작업을 생성하고 생성된 데이터를 필터링한 다음 LM이 명령을 더 잘 따르도록 정렬하기 위해 이 생성된 데이터로 명령 튜닝을 수행하는 파이프라인을 참조하는 Self-Instruct에 대한 프로세스를 자세히 설명합니다. 이 파이프라인은 그림 2에 나와 있다.
+
+### 명령 데이터 정의
+
+우리가 생성하고자 하는 명령어 데이터는 자연어에서 태스크를 정의하는 명령어 집합 \(\{I_{t}\}\)을 포함한다. 작업 \(t\)에는 \(n_{t}\geq 1\) 입력 출력 인스턴스 \(\{(X_{t,i},Y_{t,i})\}_{i=1}^{n_{t}}\)가 있습니다. 모델 \(M\)은 작업 명령과 해당 입력이 주어지면 출력을 생성할 것으로 예상되며, \(i\in\{1,\dots,n_{t}\}\)에 대해 \(M(I_{t},X_{t,i})=Y_{t,i}\이다. 명령어 및 인스턴스 입력은 많은 경우에 엄격한 경계를 갖지 않는다는 점에 유의한다. 예를 들어, "학교 안전에 대한 에세이 쓰기"는 모델이 직접 응답할 것으로 기대하는 유효한 지침이 될 수 있으며, "다음 주제에 대한 에세이 쓰기"를 지침으로, "학교 안전"을 인스턴스 입력으로 공식화할 수도 있다. 데이터 포맷의 다양성을 장려하기 위해, 우리는 추가 입력이 필요하지 않은(즉, \(X\)가 비어 있는) 그러한 명령들을 허용한다.
+
+### 자동 명령 데이터 생성
+
+데이터 생성을 위한 파이프라인은 1) 작업 명령어 생성, 2) 명령어가 분류 작업을 나타내는지 판단하는 단계, 3) 입력-우선 또는 출력-우선 접근 방식을 사용하는 인스턴스 생성, 4) 저품질 데이터를 필터링하는 단계로 구성된다.
+
+명령 생성 첫 번째 단계에서 셀프 명령은 부트스트래핑 방식으로 인간이 작성한 작은 명령 세트로부터 새로운 명령을 생성한다. 작업 풀은 175개의 작업(각 작업에 대해 1개의 명령 및 1개의 인스턴스)으로 시작한다. 3 각 단계에 대해 이 풀에서 8개의 작업 명령을 컨텍스트 예제로 샘플링한다. 8개의 명령 중 6개는 인간이 작성한 작업에서, 2개는 다양성을 촉진하기 위해 이전 단계에서 모델이 생성한 작업에서 가져온 것이다. 프롬프트 템플릿은 표 5에 나와 있다.
+
+각주 3: 이러한 작업은 기존 데이터 세트 또는 이 작업에 사용된 테스트 세트를 참조하지 않고 UW의 저자와 랩메이트에 의해 새로 작성되었다. 이러한 작업에 대한 자세한 정보를 제공하고 부록 SSA.1의 테스트 작업과의 유사성을 분석한다.
+
+분류 작업 식별. 분류 작업과 비분류 작업에 대해 두 가지 다른 접근법이 필요하기 때문에 생성된 명령어가 분류 작업을 나타내는지 여부를 식별한다. 4 시드 작업에서 12개의 분류 명령어와 19개의 비분류 명령어를 사용하여 이를 결정하기 위해 LM을 몇 번의 샷 방식으로 프롬프트한다. 프롬프트 템플릿은 표 6에 나와 있습니다.
+
+각주 4: 보다 구체적으로, 우리는 출력 레이블 공간이 작은 태스크를 분류 태스크로 간주한다.
+
+인스턴스 생성.명령어와 태스크 유형을 고려하여 각 명령어에 대한 인스턴스를 독립적으로 생성한다. 이는 모델이 목표 태스크가 무엇인지 이해하고, 명령어를 기반으로 추가 입력 필드가 필요한 것을 파악하여 생성한 후, 최종적으로 출력을 산출함으로써 태스크를 완성해야 하기 때문에 어렵다. 우리는 사전 훈련된 LMs가 다른 태스크의 명령-입력-출력 컨텍스트 예제로 프롬프트될 때 이를 크게 달성할 수 있음을 발견했다. 이렇게 하는 자연스러운 방법은 **입력 우선 접근법** 으로 LM에 명령을 기반으로 먼저 입력 필드를 작성한 다음 해당 출력을 생성하도록 요청할 수 있습니다. 이러한 생성 순서는 명령 및 입력에 응답하기 위해 모델들이 사용되는 방식과 유사하지만, 여기서는 다른 태스크들의 문맥 내 예시들을 갖는다. 프롬프트 템플릿은 표 7에 나와 있다.
+
+그러나, 우리는 이 접근법이 특히 분류 태스크(예를 들어, 문법 오류 검출의 경우, 일반적으로 문법 입력을 생성함)에 대해 하나의 라벨에 편향된 입력을 생성할 수 있다는 것을 발견했다. 따라서 분류 작업에 대해 **출력 우선 접근법** 을 추가로 제안 합니다. 여기서 먼저 가능한 클래스 레이블을 생성한 다음 각 클래스 레이블에서 입력 생성을 조건화 합니다. 프롬프트 템플릿은 표 8.5와 같다. 우리는 이전 단계에서 식별된 분류 작업에 출력 우선 접근법을 적용하고 나머지 비분류 작업에 입력 우선 접근법을 적용한다.
+
+각주 5: 이 작업에서 인스턴스 생성을 프롬프트하기 위해 고정된 시드 태스크 세트를 사용하고, 따라서 한 라운드에서 태스크당 적은 수의 인스턴스만 생성한다. 향후 작업은 무작위로 샘플링된 작업을 사용하여 모델을 프롬프트하여 여러 라운드에서 더 많은 수의 인스턴스를 생성할 수 있다.
+
+필터링 및 후처리.다양성을 장려하기 위해 기존 명령어와의 ROUGE-L 유사도가 0.7 미만인 경우에만 새로운 명령어를 태스크 풀에 추가한다. 또한 LMs에 의해 처리될 수 없는 일부 특정 키워드(예: 이미지, 그림, 그래프)를 포함하는 명령어도 제외한다. 각 명령어에 대해 새로운 인스턴스를 생성할 때, 우리는 정확히 동일한 또는 동일한 입력이지만 상이한 출력을 갖는 인스턴스를 필터링한다. 잘못된 세대가 식별되고 휴리스틱에 기초하여 필터링된다(예를 들어, 명령은 너무 길거나 너무 짧다, 인스턴스 출력은 입력의 반복이다).
+
+### 지침에 따라 LM Finetuning
+
+대규모 명령어 데이터를 생성한 후, 이를 이용하여 원래의 LM(즉, Self-Instruct)을 미세 조정한다. 이를 위해 명령어와 인스턴스 입력을 프롬프트로 연결하고 모델을 훈련하여 표준 감독 방식으로 인스턴스 출력을 생성한다. 모델을 다른 포맷에 강건하게 만들기 위해, 우리는 명령어와 인스턴스 입력을 함께 인코딩하기 위해 여러 템플릿을 사용한다. 예를 들어, 명령어는 "Task:" 또는 "Not"로 접두사가 붙을 수 있고, 입력은 "Input:" 또는 "Not"로 접두사가 붙을 수 있으며, 프롬프트의 끝에 "Output:"이 붙을 수 있고, 중간에 다른 수의 브레이크 라인이 들어갈 수 있다.
+
+## 3 GPT3에서 자체 명령 데이터
+
+본 절에서는 GPT3에 수업 데이터를 유도하는 방법을 사례 연구로 적용한다. OpenAI API를 통해 액세스하는 가장 큰 GPT3 LM("다빈치" 엔진)을 사용합니다. 쿼리를 만드는 매개 변수는 부록 A.2에 설명되어 있습니다. 여기서는 생성된 데이터에 대한 개요를 보여줍니다.
+
+각주 6: [https://openai.com/api/](https://openai.com/api/)
+
+### Statistics
+
+표 1은 생성된 데이터의 기초 통계량을 설명한다. 우리는 필터링 후 총 52K개 이상의 명령어와 이 명령어에 해당하는 82K개 이상의 인스턴스를 생성한다.
+
+### Diversity
+
+어떤 유형의 명령어가 생성되고 얼마나 다양한지 연구하기 위해 생성된 명령어의 동사-명사 구조를 식별한다. 우리는 Berkeley Neural Parser7Kitaev and Klein (2018); Kitaev et al. (2019)을 사용하여 명령어를 구문 분석한 다음, 첫 번째 직접 명사 객체뿐만 아니라 뿌리에 가장 가까운 동사를 추출한다. 52,445개의 지침 중 26,559개는 그러한 구조를 포함하고; 다른 지침은 일반적으로 더 복잡한 조항(예를 들어, "이 트윗이 정치적 내용을 포함하는지 여부를 분류한다.")을 포함하거나 질문(예를 들어, "이러한 진술 중 어느 것이 참인가?")으로 프레임화된다. 전체 집합의 14%를 차지하는 상위 20개의 가장 일반적인 근동사와 상위 4개의 직접 명사 객체를 그림 3에 표시한다. 전반적으로 이 지침에서 상당히 다양한 의도와 텍스트 형식을 볼 수 있습니다.
+
+각주 7: [https://parser.kitaev.io/](https://parser.kitaev.io/)
+
+생성된 지침이 생성을 촉구하는 데 사용되는 시드 지침과 어떻게 다른지 추가로 연구한다. 생성된 각 명령어에 대해 175개의 시드 명령어와 가장 높은 ROUGE-L 중첩을 계산한다. 이러한 ROUGE-L 점수의 분포를 그림 4에 표시했다. 결과는 씨앗과 많이 겹치지 않는 적절한 수의 새로운 지침이 생성되었음을 나타낸다. 또한 그림 5에서 명령, 인스턴스 입력 및 인스턴스 출력 길이의 다양성을 보여준다.
+
+### Quality
+
+지금까지 생성된 데이터의 양과 다양성을 보여주었지만 품질은 여전히 불확실하다. 이를 조사하기 위해 200개의 명령어를 무작위로 샘플링하고 명령어당 1개의 인스턴스를 무작위로 선택한다. 우리는 전문가 주석자(이 작업의 저자)에게 명령, 인스턴스 입력 및 인스턴스 출력 측면에서 각 인스턴스가 올바른지 여부를 레이블링하도록 요청했다. 표 2의 평가 결과는 생성된 명령어들의 대부분이 의미 있는 반면, 생성된 인스턴스들은 (합리적인 정도로) 더 많은 노이즈를 포함할 수 있음을 보여준다. 그러나 우리는 세대가 오류를 포함할 수 있지만 대부분은 여전히 올바른 형식 또는 부분적으로 올바르며 이는 훈련 모델이 지침을 따르는 데 유용한 지침을 제공할 수 있음을 발견했다. 우리는 각각 표 10과 11에 많은 좋은 예와 나쁜 예를 나열했다.
+
+\begin{table}
+\begin{tabular}{l c} \hline \hline statistic & \\ \hline \# of instructions & 52,445 \\ - \# of classification instructions & 11,584 \\ - \# of non-classification instructions & 40,861 \\ \# of instances & 82,439 \\ - \# of instances with empty input & 35,878 \\ ave. instruction length (in words) & 15.9 \\ ave. non-empty input length (in words) & 12.7 \\ ave. output length (in words) & 18.9 \\ \hline \hline \end{tabular}
+\end{table}
+표 1: Self-Instruct를 GPT3에 적용하여 생성된 데이터의 통계.
+
+[MISSING_PAGE_FAIL:5]
+
+11B 매개 변수를 가진 가장 큰 버전입니다.
+
+Instruction-tuned GPT3 모델. 우리는 인간의 지시를 더 잘 따르기 위해 OpenAI에 의해 개발된 InstructGPT(Ouyang et al., 2022)를 평가하며, 커뮤니티에서 인상적인 제로 샷 능력을 발견했다. 최신 엔진은 최신 사용자 데이터로 훈련되고 이미 SuperNI 테스트 세트를 보았을 가능성이 높기 때문에 SS4.3에서 SuperNI 실험을 위해 텍스트 다빈치-001 엔진과 비교만 한다. 새로 작성된 지침에 대한 인간 평가를 위해 우리는 완전성을 위해 001, 002 및 003 엔진을 포함한다.
+
+각주 10: 모델에 대한 OpenAI의 설명서를 참조하십시오.
+
+또한, Self-Instruct 훈련과 공개적으로 사용 가능한 다른 명령어 튜닝 데이터를 비교하기 위해 T0 및 T_k_-Instruct 모델을 훈련하는 데 사용되는 PromptSource 및 SuperNI 데이터로 GPT3 모델을 추가로 미세 조정한다. 우리는 그들을 각각 줄여서 T0 훈련과 SuperNI 훈련이라고 부른다. 훈련 예산을 절약하기 위해 각 데이터 세트에 대해 50K 인스턴스(그러나 모든 명령을 포함함)를 샘플링했으며, 이는 우리가 생성한 명령 데이터와 유사한 크기를 갖는다. Wang et al.(2022)의 결과와 우리의 초기 실험에 따르면, 훈련 작업당 인스턴스 수를 줄이는 것은 모델의 일반화 성능을 보이지 않는 작업으로 저하시키지 않는다.
+
+### 실험 1: SuperNI 벤치마크에서 Zero-Shot 일반화
+
+먼저 제로샷 방식으로 일반적인 NLP 작업에 대한 지침을 따르는 모델의 능력을 평가한다. 우리는 각 태스크에 100개의 인스턴스가 있는 119개의 태스크로 구성된 SuperNI(Wang et al., 2022)의 평가 세트를 사용한다. 이 작업에서는 주로 제로 샷 설정에 중점을 둡니다. 즉, 모델은 컨텍스트 데모 예 없이 태스크의 정의만으로 프롬프트됩니다. GPT3 변이체에 대한 모든 요청에 대해 특정 정지 서열 없이 결정론적 생성 모드(온도가 0이고 핵 샘플링 없음)를 사용한다.
+
+결과.표 3의 결과를 바탕으로 다음과 같은 관찰이 이루어졌다. 자기지시는 GPT3의 교수-학습 능력을 큰 폭으로 향상시킨다. 바닐라 GPT3 모델은 기본적으로 인간의 지시를 전혀 따를 수 없다. 수동 분석 결과, 일반적으로 관련 없는 반복적인 텍스트를 생성하며 언제 생성을 중단해야 하는지 알 수 없다. SuperNI에 대해 특별히 훈련되지 않은 다른 모델과 비교하여 GPT3SEL-INST는 T0 또는 엄청난 인간 라벨링 노력이 필요한 T0 훈련 세트에서 미세 조정된 GPT3보다 더 나은 성능을 달성한다. 특히, GPT3SEL-INST는 또한 개인 사용자 데이터 및 인간 주석이 있는 라벨로 트레이닝되는 InstructGPT001의 성능과 거의 일치한다.
+
+SuperNI 트레이닝 세트에 대해 트레이닝된 모델들은 여전히 그것의 평가 세트에서 더 나은 성능을 달성하는데, 이는 유사한 명령어 스타일 및 포맷팅에 기인한다. 그러나, Self-Instruct는 SuperNI 훈련 집합과 결합될 때 여전히 추가적인 이득을 가져와 보완 데이터로서의 가치를 입증한다는 것을 보여준다.
+
+### 실험 2: 새로운 작업에 대한 사용자 지향 지침으로의 일반화
+
+기존의 NLP 작업을 수집하는 SuperNI의 포괄성에도 불구하고, 이러한 NLP 작업의 대부분은 연구 목적으로 제안되었고 분류에 편향되었다. 명령어 후속 모델의 실용적인 가치에 더 잘 접근하기 위해 저자의 하위 집합은 사용자 지향 애플리케이션에 의해 동기화된 새로운 명령어 세트를 선별한다. 먼저 대규모 LMs가 유용할 수 있는 다양한 도메인(예: 이메일 작성, 소셜 미디어, 생산성 도구, 엔터테인먼트, 프로그래밍)을 브레인스토밍한 다음 입력 출력 인스턴스(다시, 입력은 선택 사항)와 함께 각 도메인과 관련된 지침을 작성한다. 우리는 이러한 작업의 스타일과 형식을 다양화하는 것을 목표로 한다(예: 지침이 길거나 짧을 수 있음).
+
+\begin{table}
+\begin{tabular}{l c c} \hline \hline
+**Model** & **\# Params** & **ROUGE-L** \\ \hline \hline \multicolumn{3}{l}{**Vanilla LMs**} \\ \multicolumn{3}{l}{T-LM} & 11B & 25.7 \\ \multicolumn{3}{l}{GPT3} & 175B & 6.8 \\ \hline \multirow{3}{*}{1} & **Instruction-tuned w/o SuperNI** & \multirow{3}{*}{11B} & 33.1 \\  & \multicolumn{3}{l}{GPT3 + T0 Training} & 175B & 37.9 \\ \cline{1-1}  & \multicolumn{3}{l}{GPT3\({}_{\text{SLP-INST}}\) (Ours)} & 175B & 39.9 \\ \cline{1-1}  & \multicolumn{3}{l}{InstructGPT01} & 175B & **40.8** \\ \hline \multicolumn{3}{l}{**Instruction-tuned w/ SuperNI**} \\ \multicolumn{3}{l}{T-Instruct} & 11B & 46.0 \\ \multicolumn{3}{l}{GPT3 + SuperNI Training} & 175B & 49.5 \\ \multicolumn{3}{l}{GPT3\({}_{\text{SLP-INST}}\) + SuperNI Training (Ours)} & 175B & **51.6** \\ \hline \hline \end{tabular}
+\end{table}
+표 3: SuperNI(§4.3)로부터의 _unseen_ 태스크에 대한 평가 결과. 그 결과, 1개의 Self-Instruct는 GPT3의 성능을 최대 33.1% 향상시켰으며, 2개는 InstructGPT01의 성능과 거의 일치하였다. 또한, 3put/output은 bullet point, table, code, equation 등의 형태를 취할 수 있다. 총 252개의 명령어를 생성하였으며, 명령어당 1개의 인스턴스를 생성하였다. 우리는 이것이 명령 기반 모델이 다양하고 익숙하지 않은 명령을 처리하는 방법을 평가하는 테스트 베드 역할을 할 수 있다고 믿는다. 표 9는 그 중 작은 부분을 보여준다. 전체 세트는 GitHub 리포지토리에서 사용할 수 있습니다. 이 집합 집합과 SSA.1의 시드 지침 간의 중첩을 분석한다.
+
+인간 평가 설정. 이 다양한 작업의 평가 세트에 대한 모델의 성능을 평가하는 것은 서로 다른 전문 지식을 필요로 하기 때문에 매우 어렵다. 실제로 이러한 작업의 대부분은 자동 메트릭으로 측정되거나 일반 크라우드 워커(예: 프로그램 작성 또는 1차 논리를 자연어로 변환)에 의해 판단될 수 없다. 보다 충실한 평가를 얻기 위해 우리는 지침의 작성자에게 모델 예측을 판단하도록 요청했다. 이 인간 평가를 설정하는 방법에 대한 자세한 내용은 부록 B에 설명되어 있다. 평가자는 작업을 정확하고 효과적으로 완료하는지 여부에 따라 출력을 평가하도록 요청받았다. 모델의 출력 품질을 분류하기 위해 4단계 평가 시스템을 구현했다.
+
+* 등급-A: 응답이 유효하고 만족합니다.
+* 등급-B: 응답은 허용되지만 사소한 오류 또는 불완전성이 있습니다.
+* 등급-C: 응답이 적절 하 고 지침에 응답 하지만 내용에 상당한 오류가 있습니다. 예를 들어 GPT3는 먼저 유효한 출력을 생성하지만 관련 없는 다른 항목을 계속 생성할 수 있습니다.
+* 등급-D: 응답은 관련이 없거나 완전히 잘못되었습니다.
+
+결과.그림 6은 새로 작성된 이 명령어 집합(w)에 대한 GPT3 모델과 명령어 조정 대응물의 성능을 보여준다. 4-클래스 범주형 척도의 평가자 간 일치 \(\kappa=0.57\) 자세한 내용은 부록 B를 참조하십시오. 예상대로 바닐라 GPT3 LM은 대부분 명령에 응답할 수 없으며 모든 명령 조정 모델은 비교적 더 높은 성능을 보여준다. 그럼에도 불구하고, GPT3SELF-INST(즉, Self-INstruct로 파인튜닝된 GPT3 모델)는 T0 또는 SuperNI 데이터에 대해 훈련된 대응 데이터보다 큰 마진으로 성능이 향상되어 노이즈에도 불구하고 생성된 데이터의 값을 보여준다. GPT001과 비교하였을 때, GPT3SELF-INST는 매우 유사한 성능을 보였다. 만약 사소한 불완전성(Rating-B)에 대한 수용 가능한 응답을 유효하다고 간주한다면, GPT3SELF-INST는 InstructGPT001보다 5%밖에 뒤지지 않는다. 마지막으로, 우리의 평가는 InstructGPT002와 InstructGPT003의 인상적인 명령어 추종 능력을 확인시켜준다. 이러한 성공의 배경에는 많은 요인들이 있지만, 우리는 향후 작업이 Ouyang et al.(2022)이 사용한 알고리즘과 유사하게 인간 주석기를 사용하거나 더 나은 세대를 선택하기 위해 보상 모델을 훈련함으로써 생성된 데이터의 품질을 개선하는 데 크게 도움이 될 수 있다고 추측한다.
+
+### 데이터 크기 및 품질의 영향
+
+데이터 크기.Self-Instruct는 적은 비용으로 거의 거의 없이 명령 데이터를 확장할 수 있는 방법을 제공합니다.
+
+그림 6: 우리의 252 사용자 지향 명령(§4.4)에 대해 인간 전문가에 의해 평가된 GPT3 모델 및 이의 명령 조정 변형의 성능. 인간 평가자들은 모델의 반응을 네 가지 수준으로 평가하도록 지시받는다. 결과는 GPT3SELF-INST가 공개적으로 사용 가능한 명령 데이터 세트에 대해 훈련된 다른 모든 GPT3 변형보다 우수하다는 것을 나타낸다. 또한, GPT3SELF-INST는 InstructGPT001(cf. 각주 1)만큼 거의 좋은 점수를 받는다.
+
+인간 라벨링 없음; 이 생성된 데이터 중 더 많은 데이터가 더 나은 명령 수행 능력으로 이어질 수 있습니까? 생성된 데이터 세트에서 서로 다른 수의 명령어를 서브샘플링하고, 샘플링된 하위 집합에서 GPT3를 미세조정하고, 252개의 사용자 지향 명령어 세트에 대해 결과 모델이 어떻게 수행되는지를 평가하여 생성된 데이터의 크기를 분석한다. SS4.4와 동일한 인간 평가를 수행한다. 그림 7은 생성된 데이터의 크기를 다르게 미세 조정한 GPT3SELF-INST 모델의 성능을 나타낸다. 전반적으로 데이터 크기를 늘리면 일관된 개선을 볼 수 있습니다. 그러나, 이러한 개선은 16K 이후 거의 안정적이다 이는 Wang 등(2022, Fig. 5)의 데이터 스케일링 실험과 일맥상통한다. 흥미롭게도 SuperNI에서 평가할 때 우리는 약 수백 가지 지침에서 모델의 성능 향상 고원을 더 일찍 발견했다. 이는 새로운 생성 데이터가 SuperNI의 전형적인 NLP 태스크와 구별된다는 사실 때문일 수 있으며, 이는 향후 연구가 다양한 유형의 태스크에 대한 더 나은 성능을 위해 상이한 명령어 데이터의 조합을 사용하는 것으로부터 이익을 얻을 수 있음을 나타낸다.
+
+데이터 품질.모델의 성능을 개선하기 위한 또 다른 방향은 생성된 데이터를 가져가서 더 나은 감독(소음 감소)을 얻는 것입니다. 명령어와 입력이 주어진 모든 인스턴스의 출력 필드를 재생성하기 위해 InstructGPT003(가장 좋은 범용 모델)을 사용하여 이 아이디어를 탐구한다. 그런 다음 이 개선된 버전의 데이터를 사용하여 GPT3를 미세 조정한다. 이는 데이터와 함께 InstructGPT003의 증류로 간주될 수 있다. 그림 7에서 볼 수 있듯이 결과 모델은 원본 데이터로 훈련된 상대 모델보다 10% 더 우수하며, 이는 초기 데이터를 얻은 다음 인간 전문가 또는 더 나은 모델의 증류로 데이터 품질을 개선하기 위해 생성 파이프라인을 사용하는 향후 작업에 큰 여지를 제공한다.
+
+## 5 관련 작업
+
+명령 후속 LMs.A 일련의 작업은 바닐라 LMs가 주석이 달린 "명령" 데이터--언어 명령 명령 및 인간 주석을 기반으로 하는 원하는 결과를 포함하는 데이터 세트로 튜닝되면 일반적인 언어 명령을 따르는 데 효과적일 수 있다는 증거를 발견했다(Weller et al., 2020, Mishra et al., 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2022). 또한, "교육" 데이터의 크기와 다양성과 보이지 않는 작업에 대한 결과 모델의 일반화 가능성 사이에 직접적인 상관 관계를 보여준다(Wang et al., 2022, 2022). 그러나, 이러한 개발들은 주로 기존의 NLP 태스크들에 초점을 맞추고 인간 주석이 달린 명령들에 의존하기 때문에, 이는 보다 일반화될 수 있는 모델들을 향한 진보에 병목 현상을 야기한다(예를 들어, Wang 등의 도면 5a 참조, 2022). 우리의 작업은 고전적인 NLP 작업을 넘어 사전 훈련된 LMs를 사용하여 다양한 수업 데이터를 만드는 문제를 해결하는 것을 목표로 한다. InstructGPT (Ouyang et al., 2022)는 보다 범용적인 LMs를 구축하는 데 있어 우리와 유사한 목표를 공유하며, 다양한 사용자 지시를 따르는 데 있어 놀라운 성능을 보여주었다. 그러나 상업 시스템으로서 그들의 건설 과정은 여전히 상당히 불투명하다. 특히 _data_의 역할은 제한된 투명성과 연구에 사용된 개인 사용자 데이터로 인해 아직 연구되지 않은 상태로 남아 있다. 이러한 문제를 해결하려면 광범위한 작업을 포함하는 대규모 공개 데이터 세트를 만들어야 합니다.
+
+데이터 생성 및 증강을 위한 언어 모델.데이터 생성을 위한 LMs(Schick and Schutze, 2021, 2022, 2022, 2022) 또는 증강(Feng et al., 2021, 2022, 2022)을 사용하는 다양한 작업이 제안되었다. 우리의 작업은 특정 작업(예: QA 또는 NLI)에 국한되지 않는다는 점에서 이 라인과 다릅니다. 대조적으로, Self-Instruct에 대한 뚜렷한 동기는 정의되지 않았을 수 있는 새로운 작업 정의를 부트스트랩하는 것입니다.
+
+그림 7: 다양한 크기의 명령어로 튜닝된 GPT3SELF-INST 모델의 인간 평가 성능 \ (x\)-축은 로그 척도입니다. 가장 작은 크기는 175이며, 여기서 시드 작업만이 명령어 튜닝을 위해 사용된다. 또한 InstructGPT003의 출력을 증류하여 데이터 품질을 향상시키는 것이 성능을 더욱 향상시킬 수 있는지 평가한다. 더 큰 데이터를 더 나은 품질로 사용하는 것이 일관된 개선을 보인다.
+
+이전에 NLP 실무자들에 의해 (잠재적으로 실제 사용자에게는 여전히 중요하지만) 우리의 작업과 병행하여 호노비치 등(2022)은 또한 GPT3 모델을 사용하여 대규모 명령 데이터(이른바 부자연스러운 명령)를 생성할 것을 제안한다. 주요 차이점은 1) SuperNI Wang 등(2022)의 태스크를 시드 태스크로 사용하여 생성된 태스크의 분포가 달라진다는 점, 2) InstructGPT\({}_{002}\)를 사용하여 데이터를 생성한다는 점, 즉 이미 명령어 조정된 모델로부터 지식을 증류하는 반면, 우리는 바닐라 LM에만 의존한다는 점, 3) 상세 생성 파이프라인 및 템플릿이 다르다는 점이다. 그럼에도 불구하고, 우리는 수업 데이터를 확장하는 두 가지 노력이 상호 보완적이며 커뮤니티가 이러한 다양한 데이터 세트로부터 이익을 얻을 것이라고 믿는다.
+
+Instruction generation.A series of recent works Zhou et al. (2022); Ye et al. (2022); Singh et al. (2022); Honovich et al. (2022)는 몇 가지 예들이 주어진 태스크의 명령어들을 생성한다. Self-Instruct는 또한 명령어 생성을 포함하지만, 우리의 경우 주요 차이점은 태스크-불가지론이라는 것이다; 우리는 처음부터 새로운 태스크(인스트럭션과 함께 명령어)를 생성한다.
+
+Model self-training.A typical self-training framework He et al. (2019); Xie et al. (2020); Du et al. (2021); Amini et al. (2022); Huang et al. (2022)는 훈련된 모델을 사용하여 레이블이 없는 데이터에 레이블을 할당한 다음 새로 레이블이 지정된 데이터를 활용하여 모델을 개선한다. 유사한 라인에서, Zhou 등(2022)은 단일 태스크를 특정하기 위해 다수의 프롬프트를 사용하고 프롬프트 일관성을 통해 정규화할 것을 제안하여 프롬프트에 대한 일관된 예측을 장려한다. 이를 통해 추가 레이블이 지정되지 않은 훈련 데이터로 모델을 미세 조정하거나 추론 시간에 직접 적용할 수 있다. Self-Instruct는 자체 훈련 문헌과 유사하지만 대부분의 자체 훈련 방법은 특정 _대상 작업_ 및 그 아래의 _표지되지 않은 예_를 가정하며, 대조적으로 Self-Instruct는 처음부터 다양한 작업을 생성합니다.
+
+지식 증류.지식 증류 Hinton 등(2015); Sanh 등(2019); West 등(2021); Magister 등(2022)은 종종 더 큰 모델에서 더 작은 모델로 지식의 전달을 포함한다. 자기 명령은 또한 "지식 증류"의 형태로 볼 수 있지만, 다음과 같은 방식으로 이 라인과 다르다: (1) 증류의 소스와 대상은 동일하며, 즉 모델의 지식은 스스로 증류되고; (2) 증류의 내용은 지시 작업(즉, 작업을 정의하는 명령 및 이를 인스턴스화하는 일련의 예)의 형태이다.
+
+제한된 리소스를 가진 부트스트래핑 최근 일련의 작업은 언어 모델을 사용하여 특수화된 방법을 사용하여 일부 추론을 부트스트랩한다. NPPPrompt Zhao et al.(2022)는 어떠한 미세조정도 없이 시맨틱 라벨들에 대한 예측들을 생성하는 방법을 제공한다. 모델 자체 임베딩을 사용하여 데이터 샘플의 레이블과 관련된 단어를 자동으로 찾으므로 모델 예측에서 레이블(버벌라이저)로의 수동 매핑에 대한 의존성을 줄입니다. STAR Zelikman 등(2022)은 소수의 근거 예제와 근거 없는 대규모 데이터 세트를 반복적으로 활용하여 모델의 추론 능력을 부트스트랩한다. Self-Correction Welleck et al.(2023)은 불완전한 염기 발생기(모델)를 불완전한 세대를 반복적으로 교정하도록 학습하고 염기 발생기에 대한 개선을 입증하는 별도의 교정기로부터 분리한다. 우리의 작업은 대신 명령 패러다임에서 새로운 작업을 부트스트랩하는 데 중점을 둔다.
+
+Multi-modal instruction-following.Instruction-following 모델도 Multi-modal learning literature Fried et al. (2018); Shridhar et al. (2020); Min et al. (2022); Weir et al. (2022). 데이터 확장에 대한 일반적인 접근 방식인 자체 지침은 잠재적으로 이러한 설정에도 도움이 될 수 있으며, 이는 향후 작업에 맡긴다.
+
+## 6 Conclusion
+
+본 논문에서는 자체적인 명령어 데이터 생성을 통해 LMs의 명령어 추종 능력을 향상시키는 방법인 Self-Instruct를 소개한다. 바닐라 GPT3를 이용하여 다양한 태스크에 대한 52K 명령어의 대규모 데이터세트를 자동으로 구성하고, 이 데이터에 GPT3를 미세 조정함으로써 SuperNI가 기존 GPT3보다 33%의 절대적 성능향상을 달성하였으며, 새로운 태스크에 대한 전문가 작성 명령어 세트를 선별하였다. 이 집합에 대한 인간 평가는 Self-Instruct로 GPT3를 튜닝하는 것이 기존의 공개 명령어 데이터셋을 사용하는 것보다 큰 마진만큼 성능이 뛰어나며 InstructGPT\({}_{001}\)와 밀접하게 수행됨을 보여준다. 우리는 Self-Instruct가 사전 훈련된 LMs를 인간의 지시를 따르도록 정렬하는 첫 번째 단계 역할을 할 수 있고, 향후 작업이 이 데이터 위에 구축되어 지시를 따르는 모델을 개선할 수 있기를 바란다.
+
+Broader Impact
+
+본 논문의 즉각적인 초점을 넘어, 우리는 Self-Instruct가 InstructGPT 또는 ChatGPT와 같이 널리 사용되는 명령어 조정 모델의 "배후"에서 발생하는 일에 더 많은 투명성을 가져오는 데 도움이 될 수 있다고 믿는다. 불행히도 이러한 산업 모델은 데이터 세트가 공개되지 않아 API 벽 뒤에 남아 있으며, 따라서 구성 및 인상적인 기능을 보여주는 이유에 대한 이해가 거의 없다. 이제 학계는 이러한 모델의 성공 원인을 더 잘 이해하고 더 나은-그리고 더 열린-모델을 위해 노력해야 한다. 본 논문의 연구 결과는 다양한 명령어 데이터의 중요성을 보여주며, 대규모 합성 데이터 세트는 더 나은 명령어 후속 모델을 구축하기 위한 고품질 데이터를 향한 첫 번째 단계가 될 수 있다고 믿는다. 이 글에서 이 논문의 중심 아이디어는 이러한 노력을 위한 몇 가지 후속 작업에서 채택되었다(Taori et al., 2023; Xu et al., 2023; Sun et al., 2023, i.a.).
+
+## 8 Limitations
+
+여기서는 이러한 방향으로 향후 연구에 영감을 주기 위해 이 작업의 몇 가지 제한 사항에 대해 논의한다.
+
+테일 현상 자체 지침은 LMs에 따라 달라지며 LMs와 함께 이월되는 모든 제한을 상속한다. 최근 연구에서 나타난 바와 같이(Razeghi et al., 2022; Kandpal et al., 2022), _tail phenomena_은 LMs의 성공에 심각한 도전을 제기한다. 즉, LMs의 최대 이득은 언어의 빈번한 사용(언어 사용 분포의 선두)에 해당하며, 저주파 컨텍스트에서는 최소 이득이 있을 수 있다. 유사하게, 이 작업의 맥락에서 셀프 지시에 의한 이득의 대부분이 사전 훈련 말뭉치에 더 자주 나타나는 작업 또는 지시로 편향된다면 놀라운 일이 아니다. 결과적으로 접근 방식은 흔하지 않고 창의적인 지침에 대해 취성을 보일 수 있다.
+
+LLM에서 추출한 귀납적 편향에 대한 Self-Instruct의 의존성으로 인해 대규모 모델에 가장 잘 작동할 수 있다. 만약 사실이라면, 이것은 큰 컴퓨팅 자원을 가지고 있지 않을 수 있는 사람들에게 접근의 장벽을 만들 수 있다. 향후 연구에서는 모델 크기 또는 다양한 다른 매개변수의 함수로 이득을 신중하게 연구할 수 있기를 바란다. 인간 주석을 사용한 명령 조정도 유사한 제한을 겪는다는 점에 유의할 가치가 있다: 명령 조정의 이득은 더 큰 모델에 대해 더 높다(Wei et al., 2022).
+
+LM 편향을 강화한다. 저자들이 우려하는 점은 이 반복적인 알고리즘의 의도하지 않은 결과, 문제적인 사회적 편향(성별, 인종 등에 대한 고정관념 또는 슬러시)의 증폭이다. 이와 관련하여, 이 과정에서 관찰된 한 가지 과제는 모델의 이전 편향을 반영한 균형 잡힌 라벨을 생성하는 알고리즘의 어려움이다. 향후 작업이 접근법의 장단점에 대한 더 나은 이해로 이어지기를 바랍니다.
+
+## Acknowledgements
+
+저자들은 건설적인 피드백에 대해 익명의 리뷰어들에게 감사를 표하고 싶습니다. 우리는 특히 세원민, 에릭 월리스, 오피어 프레스, 그리고 UWNLP와 AllenNLP의 다른 멤버들이 격려하는 피드백과 지적 지원에 감사한다. 이 작업은 NIWC 퍼시픽(N66001-19-2-4031), ONR N00014-18-1-2826, ONR MURI N00014-18-1-2670을 통한 DARPA MCS 프로그램과 AI2 및 알렌 조사관 상의 선물로 부분적으로 지원되었다.
+
+## References
+
+* Amini et al.(2022) Massih-Reza Amini, Vasilii Feofanov, Loic Pauletto, Emilie Devijver, and Yury Maximov. 2022. Self-training: A survey. _ arXiv preprint arXiv:2202.12040_.
+* _시스템 시연_ 입니다.
+* Brown 등(2020) Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, and et al. 2020. Language models is few-shot learners. NeurIPS(신경 정보 처리 시스템의 발전)에서.
+* Chung et al.(2022) Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. 2022. Scaling instruction-finetuned language models. _ arXiv preprint arXiv:2210.11416_.
+* Du 등(2021) Jingfei Du, Edouard Grave, Beliz Gunel, Vishrav Chaudhary, Onur Celebi, Michael Auli, Veselin Stoyanov, and Alexis Conneau. 2021. 자가 훈련은 자연어 이해를 위한 사전 훈련을 향상시킨다. InConference of the North American Chapter of the Association for Computational Linguistics_ (NAACL): Human Language Technologies, pages 5408-5418.
+* Findings_, pages 968-988.
+* Fried 등(2018) Daniel Fried, Ronghang Hu, Volkan Cirik, Anna Rohrbach, Jacob Andreas, Louis-Philippe Morency, Taylor Berg-Kirkpatrick, Kate Saenko, Dan Klein, and Trevor Darrell. 2018. Speaker-follower models for vision-and-language navigation. NeurIPS(신경 정보 처리 시스템의 발전)에서.
+* He et al.(2019) Junxian He, Jiatao Gu, Jiajun Shen, and Marc'Aurelio Ranzato. 2019. Revisiting self-training for neural sequence generation. International Conference on Learning Representations (ICLR)에서.
+* Hinton 등(2015) Geoffrey Hinton, Oriol Vinyals, Jeff Dean, et al. 2015. Distilling the knowledge in a neural network. 뉴럴 정보 처리 시스템의 발전_(NeurIPS)_딥 러닝 워크샵_.
+* Honovich et al.(2022a) 또는 Honovich, Thomas Scialom, Omer Levy, and Timo Schick. 2022a. 부자연스러운 명령: 인간 노동력이 거의 없는 언어 모델 조정 _ arXiv preprint arXiv:2212.09689_.
+* Honovich et al.(2022b) 또는 Honovich, Uri Shaham, Samuel R Bowman, and Omer Levy. 2022b. 명령 유도: 몇 가지 예제에서 자연어 작업 설명으로 이동합니다. _ arXiv preprint arXiv:2205.10782_.
+* Huang et al.(2022) Jiaxin Huang, Shixiang Shane Gu, Le Hou, Yuexin Wu, Xuezhi Wang, Hongkun Yu, and Jiawei Han. 2022. 대규모 언어 모델은 자체 개선할 수 있습니다. _ arXiv preprint arXiv:2210.11610_.
+* Kandpal et al.(2022) Nikhil Kandpal, Haikang Deng, Adam Roberts, Eric Wallace, and Colin Raffel. 2022. 대규모 언어 모델은 긴 꼬리 지식을 배우기 위해 고군분투합니다. _ arXiv preprint arXiv:2211.08411_.
+* Kitaev et al.(2019) Nikita Kitaev, Steven Cao, and Dan Klein. 2019. 자기 주의와 사전 훈련으로 다국어 선거구 구문 분석. ACL(Computational Linguistics Association)의 연례 회의에서 3499-3505페이지입니다.
+* Kitaev and Klein (2018) Nikita Kitaev and Dan Klein. 2018. Constituency parsing with the self-attentive encoder. ACL(Computational Linguistics Association)의 연례 회의에서 2676-2686 페이지입니다.
+* Lester et al.(2021) Brian Lester, Rami Al-Rfou, and Noah Constant. 2021. The power of scale for parameter-efficient prompt tuning. 자연어 처리의 경험적 방법에 대한 회의(EMNLP)에서.
+* Liu et al.(2022) Alisa Liu, Swabha Swayamdipta, Noah A. Smith, and Yejin Choi. 2022. WANLI: Worker and ai collaboration for natural language inference dataset creation. EMNLP(자연어 처리의 경험적 방법에 대한 회의)에서 _- 발견_.
+* Magister 등(2022) Lucie Charlotte Magister, Jonathan Mallinson, Jakub Adamek, Eric Malmi, and Aliaksei Severyn. 2022. 작은 언어 모델을 추론에 대해 가르칩니다. _ arXiv preprint arXiv:2212.08410_.
+* Mekala 등 (2022) Dheeraj Mekala, Tu Vu, Timo Schick, and Jingbo Shang. 2022. qa 데이터 세트를 활용하여 생성 데이터 증강을 개선합니다. _ arXiv preprint arXiv:2205.12604_.
+* Meng et al. (2023) Yu Meng, Martin Michalski, Jiaxin Huang, Yu Zhang, Tarek Abdelzaher, and Jiawei Han. 2023. 증강 증강 소샷 학습을 위한 학습 데이터 생성기로서 언어 모델을 조정한다. ICML(International Conference on Machine Learning)에서.
+* Min et al.(2022) So Yeon Min, Devendra Singh Chaplot, Pradeep Ravikumar, Yonatan Bisk, and Ruslan Salakhutdinov. 2022. FILM: Following Instructions in Language with Modular Methods. International Conference on Learning Representations (ICLR)에서.
+* Mishra et al.(2022) Swaroop Mishra, Daniel Khashabi, Chitta Baral, and Hannaneh Hajishirzi. 2022. 자연어 크라우드소싱 지침을 통한 교차 작업 일반화. ACL(계산 언어학 협회 연례 회의)에서.
+* Ouyang et al.(2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022. Training Language Models to Follow Instructions with Human Feedback. NeurIPS(신경 정보 처리 시스템의 발전)에서.
+* Raffel 등(2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 2020. 통합 텍스트 대 텍스트 변환기를 사용 하 여 전이 학습의 한계를 탐색 합니다. _ Journal of Machine Learning Research_ (JMLR).
+* Razeghi et al. (2022) Yasaman Razeghi, Robert L Logan IV, Matt Gardner, and Sameer Singh. 2022. Impact of pretraining term frequencies on few-shot reasoning. _ arXiv preprint arXiv:2202.07206_.
+* Sanh et al.(2019) Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. 2019. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. 신경 정보 처리 시스템의 발전_(NeurIPS)_에너지 효율적인 기계 학습 및 인지 컴퓨팅에 대한 워크샵_.
+* Sanh et al.(2020) Victor Sanh, Albert Webson, Colin Raffel, Stephen Bach, Lintang Sutawika, Zaid Allyafeai, Antoine Chaffin, Arnaud Stiegler, Arun Raja, Manan Dey, M Saiful Bari, Canwen Xu, Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechla, Taewoon Kim, Gunjan Chhabalni, Nihal Nayak, Debajyoti Datta, Jonathan Chang, Mike Tian-Jian Jiang, Han Wang, Matteo Manica, Sheng Shen, Zin Yong, Harshit Pandey, Rachel Bawden, Thomas Wang, Trishala Neeraj, Jos Rozen, Abheesht Sharma, Andrea Santilli, Thibault Fevry, Jason Alan Fries, Ryan Teehan, Teven Le Scao, Stella Biderman, Leo Gao, Thomas Wolf, and Alexander M Rush. 2022. Multi-task Prompted Training Enable Zero-Shot Task Generalization. International Conference on Learning Representations (ICLR)에서.
+* Schick and Schutze (2021) Timo Schick and Hinrich Schutze. 2021. 사전 학습된 언어 모델을 사용하여 데이터 세트를 생성합니다. 자연어 처리의 경험적 방법에 대한 회의(EMNLP)에서.
+* Shridhar et al.(2020) Mohit Shridhar, Jesse Thomason, Daniel Gordon, Yoatan Bisk, Winson Han, Roozbeh Mottaghi, Luke Zettlemoyer, and Dieter Fox. 2020. ALFRED: Aenchmark for Interpreting Grounded Instructions for Everyday Tasks. "IEEE Conference on Computer Vision and Pattern Recognition"(CVPR)에서.
+* Singh et al.(2022) Chandan Singh, John X Morris, Jyoti Aneja, Alexander M Rush, and Jianfeng Gao. 2022. 해석 가능한 자동 구매를 통해 언어 모델을 사용하여 데이터의 패턴을 설명합니다. _ arXiv preprint arXiv:2210.01848_.
+* Sun et al. (2023) Zhiqing Sun, Yikang Shen, Qinhong Zhou, Hongxin Zhang, Zhenfang Chen, David Cox, Yiming Yang, and Chuang Gan. 2023. 최소한의 인간 감독으로 처음부터 언어 모델의 원칙 기반 자기 정렬. _ arXiv preprint arXiv:2305.03047_.
+* Taori 등(2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 2023. Stanford apca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca] (https://github.com/tatsu-lab/stanford_alpaca).
+* Wang et al.(2020) Yizhong Wang, Swaroop Mishra, Pegah Alipoormolabashi, Yeganeh Kordi, Amirreza Mirzaei, Anjana Arunkumar, Arjun Ashok, Arut Selvan Dhanasekaran, Atharva Naik, David Stap, Eshaan Pathak, Giannis Karamanolakis, Haizhi Gary Lai, Ishan Purohit, Ishani Mondal, Jacob Anderson, Kirby Kuznia, Krima Doshi, Maitreya Patel, Kuntal Kumar Pal, Mehrad Moradshahi, Mihir Parmar, Mirali Purohit, Neeraj Varshney, Phani Rohitha Kaza, Pulkit Verma, Ravsehaj Singh Puri, Rushang Karia, Shailaja Keyur Sampat, Savan Doshi, Siddhartha Mishra, Sujan Reddy, Sumanta Patro, Tanay Dixit, Xud 2022. 초자연적 지침: 1600개 이상의 작업에 대한 선언적 지침을 통한 일반화. 자연어 처리의 경험적 방법에 대한 회의(EMNLP)에서.
+* Wang et al.(2021) Zirui Wang, Adams Wei Yu, Orhan Firat, and Yuan Cao. 2021. 제로 라벨 언어 학습을 지향합니다. _ arXiv preprint arXiv:2109.09193_.
+* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. 다이, 퀵 브이 레 2022. Finetuned Language Models is Zero-Shot Learners. International Conference on Learning Representations (ICLR)에서.
+* Weir et al. (2022) Nathaniel Weir, Xingdi Yuan, Marc-Alexandre Cote, Matthew Hausknecht, Romain Laroche, Ida Momennejad, Harm Van Seijen, and Benjamin Van Durme. 2022. 위계적 잠재 언어를 사용한 시연에서 원샷 학습입니다. _ arXiv preprint arXiv:2203.04806_.
+* Welleck 등(2023) Sean Welleck, Ximing Lu, Peter West, Faeze Brahman, Tianxiao Shen, Daniel Khashabi, and Yejin Choi. 2023. self-correct하는 것을 학습하여 시퀀스를 생성하는 단계. International Conference on Learning Representations (ICLR)에서.
+* Weller et al.(2020) Orion Weller, Nicholas Lourie, Matt Gardner, and Matthew Peters. 2020. Learning from Task Descriptions. 자연어 처리의 경험적 방법에 대한 회의(EMNLP)에서.
+* West et al.(2021) Peter West, Chandra Bhagavatula, Jack Hessel, Jena D Hwang, Liwei Jiang, Ronan Le Bras, Ximing Lu, Sean Welleck, and Yejin Choi. 2021. 상징적 지식 증류: 일반 언어 모델에서 상식 모델까지. NAACL(Computational Linguistics Association)의 북미 챕터 회의에서.
+*Xie et al.(2020) Qizhe Xie, Minh-Thang Luong, Eduard Hovy, and Quoc V Le. 2020. 시끄러운 학생과의 자가 훈련은 이미즈넷 분류를 개선한다. _IEEE Conference on Computer Vision and Pattern Recognition_ (CVPR)에서, 페이지 10687-10698.
+* Xu 등(2023) Canwen Xu, Daya Guo, Nan Duan, and Julian McAuley. 2023. Baize: 자체 채팅 데이터에 대한 매개변수 효율적인 튜닝을 제공하는 오픈 소스 채팅 모델입니다. _ arXiv preprint arXiv:2304.01196_.
+
+* Ye et al.(2022) 예성현, 김도영, 장조엘, 신중보, 서민준. 2022년입니다, 설명서를 보세요! 언어 모델을 만드는 것은 더 강력한 제로샷 학습자를 만듭니다. _ arXiv preprint arXiv:2210.02969_.
+* Zelikman et al. (2022) Eric Zelikman, Jesse Mu, Noah D Goodman, and Yuhuai Tony Wu. 2022. STar: 독학 추론기 부트스트래핑 추론과 추론. NeurIPS(신경 정보 처리 시스템의 발전)에서.
+* Zhao et al.(2022) Xuandong Zhao, Siqi Ouyang, Zhiguo Yu, Ming Wu, and Lei Li. 2022. 사전 훈련된 언어 모델은 완전히 제로 샷 학습자가 될 수 있습니다. _ arXiv preprint arXiv:2212.06950_.
+
+용차오 주, 안드레이 이오안 무레사누, 지웬 한, 게이란 파스터, 실비우 피티스, 해리스 찬, 지미 바. 2022b. 대형 언어 모델은 인간 수준의 신속한 엔지니어입니다. _ arXiv preprint arXiv:2211.01910_.
+
+**Supplemental Material**
+
+## 부록 A 구현 세부 정보
+
+### 시드 작업 쓰기
+
+우리의 방법은 세대를 부트스트랩하기 위해 일련의 시드 작업에 의존한다. 시드 과제는 과제 다양성을 장려하고 다양한 과제를 해결하기 위한 올바른 방법을 입증하는 데 중요하다. 예를 들어, 모델을 프롬프트하기 위한 코딩 태스크들의 경우, 코딩 관련 태스크들을 생성할 더 큰 기회를 가지며, 또한 새로운 태스크들에 대한 코드를 작성함에 있어서 모델을 안내하기 위한 코딩 출력을 갖는 것이 더 좋다. 따라서, 시드 태스크가 다양할수록 생성된 태스크는 더 다양하고 더 나은 품질을 가질 것이다.
+
+우리의 종자 작업은 이 프로젝트를 시작할 때 작성되었으며 LLM의 다양하고 흥미로운 사용을 목표로 했다. 작업은 기존 데이터 세트 또는 특정 테스트 작업에 대한 명시적 참조 없이 UWNLP의 저자와 연구원이 작성했다. 우리는 또한 태스크가 제한된 출력 레이블 공간을 갖는지 여부에 따라 태스크를 분류 태스크와 비분류 태스크로 분류했다. 총 25개의 분류 작업과 150개의 비분류 작업이 있습니다. 이 데이터를 GitHub 리포지토리에서 릴리스합니다. 11
+
+각주 11: [https://github.com/yizhongw/self-instruct/blob/main/human_eval/user_oriented_instructions.jsonl](https://github.com/yizhongw/self-instruct/blob/main/human_eval/user_oriented_instructions.jsonl)
+
+이러한 시드 작업을 넘어 모델이 얼마나 일반화되고 있는지에 대한 감각을 제공하기 위해 슈퍼NI 태스크 명령(SS4.3)과 인간 평가(SS4.4)에서 사용자 지향 명령(SS4.4)을 포함하여 이러한 시드 작업의 명령과 테스트 세트의 명령 간의 중첩을 추가로 정량화한다. 우리는 테스트 세트에서 각 시드 명령어와 가장 유사한 명령어들 사이의 ROUGE-L 유사성을 계산한다. ROUGE-L 점수의 분포는 그림 8에 표시되어 있으며, 시드 명령어와 SuperNI 사이의 평균 ROUGE-L 유사도는 0.21이고, 시드 명령어와 사용자 지향 명령어의 평균 ROUGE-L 유사도는 0.34이다. 시드 태스크와 두 테스트 세트 사이에는 상당한 차이가 있다. 사용자 중심 수업 테스트 세트에서 정확히 하나의 동일한 시드 수업이 발생하는데, 이는 "다음 질문에 답하기"이고 다음 질문은 실제로 매우 다르다.
+
+### GPT3 API 쿼리
+
+우리는 다른 목적으로 GPT3 API를 쿼리할 때 다른 하이퍼파라미터 세트를 사용한다. 이러한 하이퍼파라미터들은 GPT3 모델("다빈치" 엔진) 및 다른 명령어-튜닝된 GPT3 변형들과 잘 작동하는 것으로 발견된다. 우리는 그것들을 표 4에 나열했습니다. 오픈AI는 2022년 12월 현재 "다빈치" 엔진에 완료 요청을 하는 데 1000 토큰당 0.02달러를 청구합니다. 전체 데이터 세트의 생성 비용은 약 600달러입니다.
+
+### Finetuning GPT3
+
+GPT3\({}_{\text{SELF-INST}}}\)와 일부 기준선은 GPT3 모델("davinci" 엔진에서 175B 파라미터를 사용하여 미세 조정된다. OpenAI의 finetuning API를 통해 이 finetuning을 수행합니다.12 이 API로 모델을 finetuning하는 방법에 대한 세부 정보는 현재 사용할 수 없습니다(예: 업데이트되는 매개 변수 또는 항목).
+
+그림 8: SuperNI(왼쪽) 및 252 사용자 지향 명령(오른쪽)에서 시드 명령과 가장 유사한 명령 사이의 ROUGE-L 점수의 분포.
+
+[MISSING_PAGE_FAIL:15]
+
+[MISSING_PAGE_FAIL:16]
+
+다음 작업에 대한 예를 생각해 보십시오. 가능하면 여러 개의 예를 생성해 보십시오. 작업이 추가 입력을 필요로 하지 않는 경우 출력을 직접 생성할 수 있습니다.
+
+과제: 집에서 뱃살을 줄이는데 어떤 운동이 가장 좋은가요? 출력: - 누운 다리 올리기 - 다리 안팎으로 - 플랭크 - 측면 플랭크 - 시트업
+
+작업: 단락의 모든 국가 이름을 추출하고 쉼표로 구분하여 나열합니다. 예 1 단락: 노 박사는 영국 작가 이안 플레밍이 영국 비밀 경호국 요원 제임스 본드를 소개한 여섯 번째 소설이다. 자메이카의 플레밍의 골데니예 사유지에 쓰여진 이 책은 1958년 영국에서 조나단 케이프에 의해 처음 출판되었다. 소설에서 본드는 의사 No. 본드를 조사하던 두 MI6 동료 요원의 자메이카 실종 사건을 조사하며 No의 카리브해 섬으로 여행하고 껍질을 수집하기 위해 그곳에 있는 허니칠레 라이더를 만난다. 그들은 포획되어 산에 새겨진 호화로운 시설로 옮겨집니다. 독일 선교사의 아들이자 중국 여성인 닥터 노의 캐릭터는 삭스 로너의 푸 만추 이야기에 영향을 받았다. 노 박사는 플레밍의 소설 중 처음으로 영국에서 널리 퍼진 부정적인 평을 받았지만, 미국에서는 더 호평을 받았다. 출력: 영국, 영국, 자메이카, 영국, 독일, 중국, 영국, 미국.
+
+작업: 85F를 섭씨로 전환합니다. 출력: 85*F = 29.44*C
+
+작업: 지정된 목록을 오름차순으로 정렬합니다. 예 1 목록: [10, 92, 2, 5, -4, 92, 5, 101] 출력: [-4, 2, 5, 5, 10, 92, 92, 101] 예 2 입력 2 - 목록: [9.99, 10, -5, -1000, 5e6, 999] 출력: [-1000, -5, 9.99, 10, 999, 5e6]
+
+작업: 다음 문장의 더 좋고 전문적인 개정을 제안합니다. 예제 1 문장: 이 집은 놀랍게도 잘 지어지지 않았고, 아마도 당신이 그것을 산 후에 그것을 고치기 위해 더 많은 돈이 필요할 것입니다. 제 생각에는 다른 후보들을 고려해 보시는 게 좋을 것 같습니다. 출력: 이 집은 잘 지어지지 않은 것 같으니 구매 후 수리하려면 더 많은 돈을 써야 할 수도 있습니다. 다른 부동산을 살펴보는 것이 좋습니다. 예 2 문장: 참고로, 우리는 지난 주에 실험을 했고 정말 놀라운 결과를 발견했습니다 - 언어 모델은 스스로 개선할 수 있습니다! 출력: 지난 주 우리의 실험은 놀라운 결과를 보여주었고, 언어 모델이 스스로 개선할 수 있다는 것을 증명했습니다.
+
+...
+
+과제: 채용 담당자에게 이유를 설명하는 이메일을 보내 채용 제안을 거절하세요. 출력: 안녕하세요[채용자], 당신의 팀에 합류하기 위한 관대한 제안에 정말 감사합니다. 우리가 논의한 바와 같이, 저는 수년 동안 회사를 존경해 왔으며 제품의 자랑스러운 지지자입니다. 그러나 현재 제 직업에 대한 추가 고려 끝에 다른 회사에서 제안을 수락하기로 결정했습니다. 저는 당신과 계속 연락하고 싶고 이미 [소셜 미디어 플랫폼]에서 당신을 팔로우하기 시작했습니다. 다시 한 번 시간과 배려에 감사드립니다. 다시 한번 감사합니다, [당신의 이름]
+
+작업: [대상 작업에 대한 명령]
+
+\begin{table}
+\begin{tabular}{l} \hline \hline \end{tabular}
+\end{table}
+표 7: 인스턴스 생성의 입력-우선 접근법에 사용되는 프롬프트. 모델은 인스턴스를 먼저 생성한 다음 해당 출력을 생성하도록 프롬프트됩니다. 추가 입력이 필요하지 않은 명령의 경우 출력을 직접 생성할 수 있습니다.
+
+분류 작업 정의 및 클래스 레이블이 주어지면 클래스 레이블 각각에 해당하는 입력을 생성합니다. 작업이 입력을 필요로 하지 않는 경우 올바른 클래스 레이블을 생성하십시오.
+
+과제: 문장의 정서를 긍정, 부정 또는 혼합으로 분류한다. 클래스 레이블: 혼합 문장: 레스토랑의 맛을 즐기지만 서비스가 너무 느립니다. 클래스 라벨: 긍정 문장: 나는 오늘 좋은 하루를 보냈어. 날씨는 아름다웠고 나는 친구들과 시간을 보냈다. 클래스 라벨: 부정적인 문장: 나는 최신 슈퍼히어로 영화에 정말 실망했다. 나는 그것을 추천하지 않을 것이다.
+
+작업: 대화가 주어지면, 사용자가 서비스에 만족하는지 여부를 분류한다. "만족" 또는 "불만족"으로 응답해야 합니다. 클래스 레이블: 만족 대화: - 에이전트: 피드백 감사합니다. 앞으로 서비스 개선을 위해 노력하겠습니다. - 고객: 제공해주신 서비스에 만족합니다. 도와주셔서 감사합니다. 클래스 레이블: 불만 대화: - 에이전트: 주문을 취소하게 되어 죄송합니다. 영업일 기준 7일 이내에 환불을 받으실 수 있습니다. - 고객: 오, 너무 오래 걸리네요. 나는 당신이 이것에 대해 더 빠른 조치를 취하기를 바랍니다.
+
+과제: 정치적 의견이 주어지면, 연설자가 민주당이냐 공화당이냐를 분류해라. 계급 라벨: 민주당 의견: 나는 모든 사람들이 소득에 관계없이 양질의 의료 서비스에 접근할 수 있어야 한다고 믿는다. 클래스 라벨: 공화당 의견: 나는 사람들이 힘들게 번 돈을 더 많이 유지할 수 있어야 하고 높은 세율로 세금을 부과해서는 안 된다고 믿는다.
+
+작업: 다음 이메일이 프로모션 이메일인지 알려주십시오. 클래스 라벨: 프로모션 이메일: 우리의 놀라운 새 세일을 보세요! 좋아하는 모든 제품에 대해 할인을 제공합니다. 클래스 레이블: 홍보 이메일 없음: 잘 지내고 있기를 바랍니다. 도움이 필요하면 알려주세요.
+
+작업: 레딧 스레드에 혐오 발언이 포함되어 있는지 검색합니다. 클래스 라벨: 혐오 발언 실: 모든 유색인종들은 어리석고 투표할 수 없어야 한다. 클래스 라벨: 말하기 실을 싫어하지 않음: 그릴에서 스테이크를 요리하는 가장 좋은 방법.
+
+작업: 해당 문서가 클레임을 지원합니까? "지원" 또는 "지원 해제"로 대답합니다. 클래스 라벨: 지지하지 않는 문서: 주택 담보 대출 금리가 사상 최저치로 급락하고 주택 가격이 최고치로 치솟는 기록적인 폭락 이후, 미국 주택 시장은 마침내 둔화되고 있습니다. 수요와 가격 상승은 냉각되고 있지만, 어떤 수정도 완만한 수정일 가능성이 있다고 주택 경제학자들과 분석가들은 말한다. 아무도 대침체 기간 동안 경험한 하락폭의 규모에서 가격 하락을 기대하지 않는다. 청구: 미국 주택 시장은 곧 폭락할 것이다. 클래스 라벨: 지원 문서: 미국 주택 시장은 많은 지역에서 주택 판매와 가격이 둔화되는 등 긴장 조짐을 보이고 있습니다. 최근 몇 달 사이 주택담보대출 금리가 크게 오르면서 매물이 늘고 있다. 이것은 더 큰 침체의 시작일 수 있으며, 일부 경제학자들은 가까운 미래에 잠재적인 주택 붕괴를 예측한다. 청구: 미국 주택 시장은 곧 폭락할 것입니다... 작업: 다음 중 입력 유형이 아닌 것은? (a) 번호 (b) 날짜 (c) 전화 번호 (d) 이메일 주소 (e) 이들 모두는 유효한 입력들이다. Class label: (e) Task: {instruction for the target task} ```
+
+\begin{table}
+\begin{tabular}{l l} \hline \hline Given the classification task definition and the class labels, generate an input that corresponds to each of the class labels. If the task doesn’t require input, just generate the correct class label. \\ \hline Task: Classify the sentiment of the sentence into positive, negative, or mixed. Class label: mixed Sentence: I enjoy the flavor of the restaurant but their service is too slow. Class label: Positive Sentence: I had a great day today. The weather was beautiful and I spent time with friends. Class label: Negative Sentence: I was really disappointed by the latest superhero movie. I would not recommend it. \\ \hline Task: Given a dialogue, classify whether the user is satisfied with the service. You should respond with “Satisfied” or “Unsatisfied”. Class label: Satisfied Dialogue: - Agent: Thank you for your feedback. We will work to improve our service in the future. - Customer: I am happy with the service you provided. Thank you for your help. Class label: Unsatisfied Dialogue: - Agent: Sorry that we will cancel your order. You will get a refund within 7 business days. - Customer: oh that takes too long. I want you to take quicker action on this. \\ \hline Task: Given a political opinion, classify whether the speaker is a Democrat or Republican. Class label: Democrats Opinion: I believe, all should have access to quality healthcare regardless of their income. - Classic label: Republicans Opinion: I believe that people should be able to keep more of their hard-earned money and should not be taxed at high rates. \\ \hline Task: Tell me if the following email is a promotion email or not. Class label: Promotion Email: Check out our amazing new sale! We’ve got discounts on all of your favorite products. Class label: Not Promotion Email: We hope you are doing well. Let us know if you need any help. \\ \hline Task: Detect if the Reddit thread contains hate speech. Class label: Hate Speech Thread: All people of color are stupid and should not be allowed to vote. Class label: Not Hate Speech Thread: The best way to cook a steak on the grill. \\ \hline Task: Does the document supports the claim? Answer with “Support” or “Unsupport”. Class label: Unsupport Document: After a record-breaking run that saw mortgage rates plunge to all-time lows and home prices soar to new highs, the U.S. housing market finally is slowing. While demand and price gains are cooling, any correction is likely to be a modest one, housing economists and analysts say. No one expects price drops on the scale of the declines experienced during the Great Recession. \\ \hline Claim: The US housing market is going to crash soon. Class label: Support Document: The U.S. housing market is showing signs of strain, with home sales and prices slowing in many areas. Mortgage rates have risen sharply in recent months, and the number of homes for sale is increasing. This could be the beginning of a larger downturn, with some economists predicting a potential housing crash in the near future. \\ \hline Claim: The US housing market is going to crash soon. \\ \hline Task: Which of the following is not an input type? (a) number (b) date (c) phone number (d) email address (e) all of these are valid inputs. \\ \hline Class label: (e) Task: {instruction for the target task} \\ \hline \hline \end{tabular}
+\end{table}
+표 8: 인스턴스 생성의 출력 우선 접근법에 사용되는 프롬프트. 클래스 레이블을 먼저 생성한 다음 해당 입력을 생성하도록 모델이 프롬프트됩니다. 이 프롬프트는 분류 작업에 대한 인스턴스를 생성하는 데 사용됩니다.
+
+사용자 중심 지침의 적용을 위한 인체 평가 상세
+
+### 인간 평가 설정
+
+여기서는 252개의 사용자 지향 지침에 대한 모델의 응답을 평가하기 위해 SS4.4에 설명된 인간 평가에 대한 더 자세한 정보를 제공한다. 충실하고 신뢰할 수 있는 평가를 보장하기 위해 이러한 지침(및 본 문서의)의 두 명의 저자에게 모델 예측을 판단하도록 요청했다. 이 두 평가자는 주석을 시작하기 전에 4단계 평가 시스템에 대한 표준을 조정한 다음 각각 모든 인스턴스를 독립적으로 평가했다. 명령어, 인스턴스 입력, 대상 출력(참조) 및 모델 응답이 제시되었다. 모델 응답은 모든 모델 정보가 익명화되어 랜덤 순서로 나열됩니다. 도 9는 주석 인터페이스의 스크린샷을 제공한다. 본 논문에서 보고된 성능은 평가자 중 한 명의 결과를 기반으로 하며 다른 평가자의 결과 추세는 동일하다.
+
+### 인간 평가 계약
+
+우리의 인간 평가가 얼마나 신뢰할 수 있는지 측정하기 위해 우리는 두 평가자 간의 내부 평가자 일치를 계산한다.
+
+우리는 먼저 코헨의 \(\kappa\)을 보고하며, 이는 일반적으로 _범주형_ 항목에 대한 평가자 간 일치도를 측정하는 데 사용된다. 이를 계산할 때, 우리는 4-수준 평가(A-D)를 범주형 변수로 취급하여 0.58의 \(\kappa\)로 이어지며, 이는 일반적인 관행에 따라 중간 정도의 일치이다. 13 또한 허용 가능한 응답((A 또는 B) 대)을 분류하는 데 대한 평가자의 일치도 계산한다. (C 또는 D)), 최종 \(\kappa\)가 0.75로 실질적인 일치를 나타낸다.
+
+각주 13: [https://en.wikipedia.org/wiki/Cohen%27s_kappa](https://en.wikipedia.org/wiki/Cohen%27s_kappa)
+
+또한 평점을 순서형 변수(A>B>C>D)로 처리하여 두 평가자의 평점 사이의 Spearman 상관계수 \(\rho\)를 계산한다. 최종 계수는 \(\rho=0.81\)로 높은 값을 나타냅니다.
+
+그림 9: 구글 시트를 사용하여 수행된 인간 평가이며, 다른 모델의 예측은 무작위 순서로 존재하고 모델 정보는 익명화된다. 전문가 평가자는 지시 및 입력을 읽고 대상을 참조한 다음 §4.4에 설명된 4개 수준에 해당하는 A/B/C/D에서 모델의 응답에 대한 등급을 선택해야 한다.
+
+두 평가자 간의 상관 관계.
+
+### 예제 예측 GPT3\({}_{\text{SELF-INST}}}\)
+
+우리는 표 9에서 사용자 지향 태스크, 즉 해당 GPT3\({}_{\text{SELF-INST}}}\)-생성된 응답 및 주석자 등급을 제시한다. 레벨 C로 평가된 응답에 대해서도 모델은 최종 출력이 부정확하더라도 태스크를 해결하는 광범위한 단계를 보여준다.
+
+[MISSING_PAGE_FAIL:21]
+
+생성된 명령어 데이터의 작업 및 인스턴스 예
+
+## 생성된 명령 데이터의 C 작업 및 인스턴스 예제 부록
+
+\begin{table}
+\begin{tabular}{l l l} \hline \hline
+**Instruction + Instance Input** & **Target Output** & **Validity** \\ \hline Instruction: Generate a random password & def generator4RandomPassword(): & Instruction: \(\checkmark\) \\ with at least 6 characters. & password += & Input: \(\checkmark\) \\  & while lem(password) + 6: & Output: \(\checkmark\) \\  & password += chr(random.randint(65, 90)) & return password \\ \hline Instruction: Write a paragraph describing & paragraph: To tie disdeclares, first you need to make a loop with one & Instruction: \(\checkmark\) \\ how to tie disbelacons for people who have & end of the lace. Then pass the other and through the loop and pull & Input: \(\checkmark\) \\ never tied their shouse before. explain & it tight. Next, you need to wrap the lace around the shose several & Output: \(\checkmark\) \\ each step briefly. & times. Finally, tuck in the loose end into the wrapped part of the & \\ \hline Instruction: Given a word, find out its & Length = 5, Number of vowels = 2 & Instruction: \(\checkmark\) \\ length and its number of vowels. & Input: \(\checkmark\) \\ Input: Word = “hello” & Output: \(\checkmark\) \\ \hline Instruction: Write a story with three & John vass sitting on the floor in front of his laptop when he heard a & Instruction: \(\checkmark\) \\ characters: a person, an animal and am & knock at the door. He opened it to find a dog standing there. The & Input: \(\checkmark\) \\ object. & dop walked into the room and jumped onto the couch next to John’s & Output: \(\checkmark\) \\ Input: Person: John, a programmer. & laptop. & Output: \(\checkmark\) \\ Animal: A dog. & Object: A laptop. & \\ \hline Instruction: Compose an email and send it & Hi [Friend], & Instruction: \(\checkmark\) \\ to your friend, asking for advice on what & I’m having a bit of trouble with my current job. I’ve been & Input: \(\checkmark\) \\ to do in this situation. & working on a project for the past few months, and the deadline & Output: \(\checkmark\) \\ Input: Situation: You are a programmer & is approaching. My manager has asked me to stay late every day this & \\ and you have been working on a project & week to finish it. I don’t think I can do that because I have other & \\ for the past few months. The deadline is & commitments. What should I do? & \\ approaching, but you haven’t finished yet. & Your manager has asked you to stay late & \\ Your manager has asked you to stay late & every day this week to finish it. & \\ \hline Instruction: What are some ways we can & & \\ make our school more eco-friendly? & - Use reusable water bottles instead of disposable plastic ones. & Instruction: \(\checkmark\) \\  & - Turn off lights when you leave a room. & Output: \(\checkmark\) \\  & - Recycle paper, cams and bottles. & \\  & - Plant trees to absorb carbon dioxide. & \\ \hline Instruction: I am looking for a new & You should look for a cheaper apartment. You can try to negotiate & Instruction: \(\checkmark\) \\ apartment, there are many options & with the landerd and offer him/her a lover price. If you are lucky, & Input: \(\checkmark\) \\ available but they are all quite expensive. & they will accept your offer. Otherwise, you can wait until there is & Output: \(\checkmark\) \\ i want to move as soon as possible. give & an apartment available at a more reasonable price. & \\ me advice on what to do. & & \\ \hline Instruction: Write a dialogue between & & \\ two people who have been friends for a & & \\  & - Love on, it’ll be fun’ We haven’t beon there together in ages. & \\  & - Love on, it’ll be fun’ We can’t beon there together in ages. & \\  & - Love on the other to do something that he & \\  & - Love on't want to do. & \\  & - Love on't want to do.
+
+[MISSING_PAGE_EMPTY:23]

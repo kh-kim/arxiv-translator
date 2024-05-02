@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" data-lt-installed="true"><head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+  <script>
+    const text = '' +
+      '# Self-Instruct: Aligning Language Models\n' +
+      '\n' +
+      'with Self-Generated Instructions\n' +
+      '\n' +
+      'Yizhong Wang\\({}^{\\spadesuit}\\) Yeganeh Kordi\\({}^{\\diamond}\\) Swaroop Mishra\\({}^{\\heartsuit}\\) Alisa Liu\\({}^{\\spadesuit}\\)\n' +
+      '\n' +
+      'Noah A. Smith\\({}^{\\spadesuit+}\\) Daniel Khashabi\\({}^{\\spadesuit}\\) Hannaneh Hajishirzi\\({}^{\\spadesuit+}\\)\n' +
+      '\n' +
+      '\\({}^{\\spadesuit}\\)University of Washington \\({}^{\\diamond}\\)Tehran Polytechnic \\({}^{\\heartsuit}\\)Arizona State University\n' +
+      '\n' +
+      '\\({}^{\\spadesuit}\\)Johns Hopkins University \\({}^{\\spadesuit}\\)Allen Institute for AI\n' +
+      '\n' +
+      'yizhongw@cs.washington.edu\n' +
+      '\n' +
+      '###### Abstract\n' +
+      '\n' +
+      'Large "instruction-tuned" language models (i.e., finetuned to respond to instructions) have demonstrated a remarkable ability to generalize zero-shot to new tasks. Nevertheless, they depend heavily on human-written instruction data that is often limited in quantity, diversity, and creativity, therefore hindering the generality of the tuned model. We introduce Self-Instruct, a framework for improving the instruction-following capabilities of pretrained language models by bootstrapping off their own generations. Our pipeline generates instructions, input, and output samples from a language model, then filters invalid or similar ones before using them to finetune the original model. Applying our method to the vanilla GPT3, we demonstrate a 33% absolute improvement over the original model on Super-NaturalInstructions, on par with the performance of InstructGPT\\({}_{001}\\),1 which was trained with private user data and human annotations. For further evaluation, we curate a set of expert-written instructions for novel tasks, and show through human evaluation that tuning GPT3 with Self-Instruct outperforms using existing public instruction datasets by a large margin, leaving only a 5% absolute gap behind InstructGPT\\({}_{001}\\). Self-Instruct provides an almost annotation-free method for aligning pretrained language models with instructions, and we release our large synthetic dataset to facilitate future studies on instruction tuning.2\n' +
+      '\n' +
+      'Footnote 1: Unless otherwise specified, our comparisons are with the text-davinci-001 engine. We focus on this engine since it is the closest to our experimental setup: supervised finetuning with human demonstrations. The newer engines are more powerful, though they use more data (e.g., code completion or latest user queries) or algorithms (e.g., PPO) that are difficult to compare with.\n' +
+      '\n' +
+      'Footnote 2: Code and data are available at [https://github.com/yizhongw/self-instruct](https://github.com/yizhongw/self-instruct)\n' +
+      '\n' +
+      '## 1 Introduction\n' +
+      '\n' +
+      'The recent NLP literature has witnessed a tremendous amount of activity in building models that can follow natural language instructions (Mishra et al., 2022; Wei et al., 2022; Sanh et al., 2022; Wang et al., 2022; Ouyang et al., 2022; Chung et al., 2022, i.a.). These developments are powered by two key components: large pretrained language models (LM) and human-written instruction data (e.g., PromptSource (Bach et al., 2022) and SuperNaturalInstructions (Wang et al., 2022, SuperNI for short)). However, collecting such instruction data is costly and often suffers limited diversity given that most human generations tend to be popular NLP tasks, falling short of covering a\n' +
+      '\n' +
+      'Figure 1: Selected tasks from the generated instruction data using vanilla GPT3. Some texts are reformatted for presentation. See Table 10 for more examples.\n' +
+      '\n' +
+      'true variety of tasks and different ways to describe them. Continuing to improve the quality and coverage of instruction-tuned models necessitates the development of alternative approaches for supervising the instruction tuning process.\n' +
+      '\n' +
+      'In this work, we introduce Self-Instruct, a semi-automated process for instruction-tuning a pretrained LM using instructional signals from the model itself. The overall process is an iterative bootstrapping algorithm (see Figure 2), which starts off with a limited (e.g., 175 in our study) seed set of manually-written tasks that are used to guide the overall generation. In the first phase, the model is prompted to generate instructions for new tasks. This step leverages the existing collection of instructions to create more broad-coverage instructions that define (often new) tasks. Given the newly-generated set of instructions, the framework also creates input-output instances for them, which can be later used for supervising the instruction tuning. Finally, various heuristics are used to automatically filter low-quality or repeated instructions, before adding the remaining valid tasks to the task pool. This process can be repeated for many iterations until reaching a large number of tasks.\n' +
+      '\n' +
+      'To evaluate Self-Instruct empirically, we run this framework on GPT3 (Brown et al., 2020), which is a vanilla LM (SS3). The iterative Self-Instruct process on this model leads to about 52k instructions, paired with about 82K instance inputs and target outputs. We observe that the resulting data provides a diverse range of creative tasks, as is demonstrated by examples in Figure 1. These generated tasks deviate from the distribution of typical NLP tasks, and also have fairly small overlap with the seed tasks (SS3.2). On this resulting data, we build GPT3SELF-INST by finetuning GPT3 (i.e., the same model used for generating the instruction data). We evaluate GPT3SELF-INST in comparison to various other models on both typical NLP tasks included in SuperNI (Wang et al., 2022), and a set of new instructions that are created for novel usage of instruction-following models (SS4). The results indicate that GPT3SELF-INST outperforms GPT3 (the original model) by a large margin (+33.1%) and nearly matches the performance of InstructGPT001. Moreover, our human evaluation on the newly-created instruction set shows that GPT3SELF-INST demonstrates a broad range of instruction following ability, outperforming models trained on other publicly available instruction datasets and leaving only a 5% gap behind InstructGPT001.\n' +
+      '\n' +
+      'In summary, our contributions are: (1) we introduce Self-Instruct, a method for inducing instruction following capabilities with minimal human-labeled data; (2) we demonstrate its effectiveness via extensive instruction-tuning experiments; and (3) we release a large synthetic dataset of 52K instructions and a set of manually-written novel tasks for building and evaluating future instruction-following models.\n' +
+      '\n' +
+      'Figure 2: A high-level overview of Self-Instruct. The process starts with a small seed set of tasks as the task pool. Random tasks are sampled from the task pool, and used to prompt an off-the-shelf LM to generate both new instructions and corresponding instances, followed by filtering low-quality or similar generations, and then added back to the initial repository of tasks. The resulting data can be used for the instruction tuning of the language model itself later to follow instructions better. Tasks shown in the figure are generated by GPT3.\n' +
+      '\n' +
+      'Method\n' +
+      '\n' +
+      'Annotating large-scale instruction data can be challenging for humans because it requires 1) creativity to come up with novel tasks and 2) expertise for writing the solutions to each task. Here, we detail our process for Self-Instruct, which refers to the pipeline of generating tasks with a _vanilla pretrained language model_ itself, filtering the generated data, and then conducting instruction tuning with this generated data in order to align the LM to follow instructions better. This pipeline is depicted in Figure 2.\n' +
+      '\n' +
+      '### Defining Instruction Data\n' +
+      '\n' +
+      'The instruction data we want to generate contains a set of instructions \\(\\{I_{t}\\}\\), each of which defines a task \\(t\\) in natural language. Task \\(t\\) has \\(n_{t}\\geq 1\\) input-output instances \\(\\{(X_{t,i},Y_{t,i})\\}_{i=1}^{n_{t}}\\). A model \\(M\\) is expected to produce the output, given the task instruction and the corresponding input: \\(M(I_{t},X_{t,i})=Y_{t,i}\\), for \\(i\\in\\{1,\\dots,n_{t}\\}\\). Note that the instruction and instance input does not have a strict boundary in many cases. For example, "write an essay about school safety" can be a valid instruction that we expect models to respond to directly, while it can also be formulated as "write an essay about the following topic" as the instruction, and "school safety" as an instance input. To encourage the diversity of the data format, we allow such instructions that do not require additional input (i.e., \\(X\\) is empty).\n' +
+      '\n' +
+      '### Automatic Instruction Data Generation\n' +
+      '\n' +
+      'Our pipeline for data generation consists of four steps: 1) generating task instructions, 2) determining if the instruction represents a classification task, 3) instance generation with either an input-first or output-first approach, and 4) filtering low-quality data.\n' +
+      '\n' +
+      'Instruction Generation.At the first step, Self-Instruct generates new instructions from a small set of seed human-written instructions in a bootstrapping fashion. We initiate the task pool with 175 tasks (1 instruction and 1 instance for each task).3 For every step, we sample 8 task instructions from this pool as in-context examples. Of the 8 instructions, 6 are from the human-written tasks, and 2 are from the model-generated tasks in previous steps to promote diversity. The prompting template is shown in Table 5.\n' +
+      '\n' +
+      'Footnote 3: These tasks were newly written by the authors and their labmates at UW, without reference to existing datasets or the test set used in this work. We provide more details about these tasks and analyze their similarity to the test tasks in Appendix SSA.1.\n' +
+      '\n' +
+      'Classification Task Identification.Because we need two different approaches for classification and non-classification tasks, we next identify whether the generated instruction represents a classification task or not.4 We prompt the LM in a few-shot way to determine this, using 12 classification instructions and 19 non-classification instructions from the seed tasks. The prompting template is shown in Table 6.\n' +
+      '\n' +
+      'Footnote 4: More concretely, we regard tasks that have a small limited output label space as classification tasks.\n' +
+      '\n' +
+      'Instance Generation.Given the instructions and their task type, we generate instances for each instruction independently. This is challenging because it requires the model to understand what the target task is, based on the instruction, figure out what additional input fields are needed and generate them, and finally complete the task by producing the output. We found that pretrained LMs can achieve this to a large extent when prompted with instruction-input-output in-context examples from other tasks. A natural way to do this is the **Input-first Approach**, where we can ask an LM to come up with the input fields first based on the instruction, and then produce the corresponding output. This generation order is similar to how models are used to respond to instruction and input, but here with in-context examples from other tasks. The prompting template is shown in Table 7.\n' +
+      '\n' +
+      'However, we found that this approach can generate inputs biased toward one label, especially for classification tasks (e.g., for grammar error detection, it usually generates grammatical input). Therefore, we additionally propose an **Output-first Approach** for classification tasks, where we first generate the possible class labels, and then condition the input generation on each class label. The prompting template is shown in Table 8.5 We apply the output-first approach to the classification tasks identified in the former step, and the input-first approach to the remaining non-classification tasks.\n' +
+      '\n' +
+      'Footnote 5: In this work, we use a fixed set of seed tasks for prompting the instance generation, and thus only generate a small number of instances per task in one round. Future work can use randomly sampled tasks to prompt the model to generate a larger number of instances in multiple rounds.\n' +
+      '\n' +
+      'Filtering and Postprocessing.To encourage diversity, a new instruction is added to the task pool only when its ROUGE-L similarity with any exist ing instruction is less than 0.7. We also exclude instructions that contain some specific keywords (e.g., image, picture, graph) that usually can not be processed by LMs. When generating new instances for each instruction, we filter out instances that are exactly the same or those with the same input but different outputs. Invalid generations are identified and filtered out based on heuristics (e.g., instruction is too long or too short, instance output is a repetition of the input).\n' +
+      '\n' +
+      '### Finetuning the LM to Follow Instructions\n' +
+      '\n' +
+      'After creating large-scale instruction data, we use it to finetune the original LM (i.e., Self-Instruct). To do this, we concatenate the instruction and instance input as a prompt and train the model to generate the instance output in a standard supervised way. To make the model robust to different formats, we use multiple templates to encode the instruction and instance input together. For example, the instruction can be prefixed with "Task:" or not, the input can be prefixed with "Input:" or not, "Output:" can be appended at the end of the prompt or not, and different numbers of break lines can be put in the middle, etc.\n' +
+      '\n' +
+      '## 3 Self-Instruct Data from GPT3\n' +
+      '\n' +
+      'In this section, we apply our method for inducing instruction data to GPT3 as a case study. We use the largest GPT3 LM ("davinci" engine) accessed through the OpenAI API.6 The parameters for making queries are described in Appendix A.2. Here we present an overview of the generated data.\n' +
+      '\n' +
+      'Footnote 6: [https://openai.com/api/](https://openai.com/api/)\n' +
+      '\n' +
+      '### Statistics\n' +
+      '\n' +
+      'Table 1 describes the basic statistics of the generated data. We generate a total of over 52K instructions and more than 82K instances corresponding to these instructions after filtering.\n' +
+      '\n' +
+      '### Diversity\n' +
+      '\n' +
+      'To study what types of instructions are generated and how diverse they are, we identify the verb-noun structure in the generated instructions. We use the Berkeley Neural Parser7Kitaev and Klein (2018); Kitaev et al. (2019) to parse the instructions and then extract the verb that is closest to the root as well as its first direct noun object. 26,559 out of the 52,445 instructions contain such structure; other instructions usually contain more complex clauses (e.g., "Classify whether this tweet contains political content or not.") or are framed as questions (e.g., "Which of these statements are true?"). We plot the top 20 most common root verbs and their top 4 direct noun objects in Figure 3, which account for 14% of the entire set. Overall, we see quite diverse intents and textual formats in these instructions.\n' +
+      '\n' +
+      'Footnote 7: [https://parser.kitaev.io/](https://parser.kitaev.io/)\n' +
+      '\n' +
+      'We further study how the generated instructions differ from the seed instructions used to prompt the generation. For each generated instruction, we compute its highest ROUGE-L overlap with the 175 seed instructions. We plot the distribution of these ROUGE-L scores in Figure 4. The results indicate a decent number of new instructions were generated, which do not have much overlap with the seeds. We also demonstrate diversity in the length of the instructions, instance inputs, and instance outputs in Figure 5.\n' +
+      '\n' +
+      '### Quality\n' +
+      '\n' +
+      'So far, we have shown the quantity and diversity of the generated data, but its quality remains uncertain. To investigate this, we randomly sample 200 instructions and randomly select 1 instance per instruction. We asked an expert annotator (author of this work) to label whether each instance is correct or not, in terms of the instruction, the instance input, and the instance output. Evaluation results in Table 2 show that most of the generated instructions are meaningful, while the generated instances may contain more noise (to a reasonable extent). However, we found that even though the generations may contain errors, most of them are still in the correct format or partially correct, which can provide useful guidance for training models to follow instructions. We listed a number of good examples and bad examples in Table 10 and 11, respectively.\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c} \\hline \\hline statistic & \\\\ \\hline \\# of instructions & 52,445 \\\\ - \\# of classification instructions & 11,584 \\\\ - \\# of non-classification instructions & 40,861 \\\\ \\# of instances & 82,439 \\\\ - \\# of instances with empty input & 35,878 \\\\ ave. instruction length (in words) & 15.9 \\\\ ave. non-empty input length (in words) & 12.7 \\\\ ave. output length (in words) & 18.9 \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 1: Statistics of the generated data by applying Self-Instruct to GPT3.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:5]\n' +
+      '\n' +
+      'their largest version with 11B parameters.\n' +
+      '\n' +
+      'Instruction-tuned GPT3 models.We evaluate InstructGPT (Ouyang et al., 2022), which is developed by OpenAI based on GPT3 to follow human instructions better and has been found by the community to have impressive zero-shot abilities. There are various generations of these models, where newer ones use more expansive data or algorithmic novelties.10 For our SuperNI experiments in SS4.3, we only compare with their text-davinci-001 engine, because their newer engines are trained with the latest user data and are likely to have already seen the SuperNI test set. For our human evaluation on newly written instructions, we include their 001, 002 and 003 engines for completeness.\n' +
+      '\n' +
+      'Footnote 10: See OpenAI’s documentation on their models.\n' +
+      '\n' +
+      'Additionally, to compare Self-Instruct training with other publicly available instruction tuning data, we further finetune GPT3 model with data from PromptSource and SuperNI, which are used to train the T0 and T_k_-Instruct models. We call them T0 training and SuperNI training for short, respectively. To save the training budget, we sampled 50K instances (but covering all their instructions) for each dataset, which has a comparable size to the instruction data we generated. Based on the findings from Wang et al. (2022) and our early experiments, reducing the number of instances per training task does not degrade the model\'s generalization performance to unseen tasks.\n' +
+      '\n' +
+      '### Experiment 1: Zero-Shot Generalization on SuperNI benchmark\n' +
+      '\n' +
+      'We first evaluate the models\' ability to follow instructions on typical NLP tasks in a zero-shot fashion. We use the evaluation set of SuperNI (Wang et al., 2022), which consists of 119 tasks with 100 instances in each task. In this work, we mainly focus on the zero-shot setup, i.e., the model is prompted with the definition of the tasks only, without in-context demonstration examples. For all our requests to the GPT3 variants, we use the deterministic generation mode (temperature as 0 and no nucleus sampling) without specific stop sequences.\n' +
+      '\n' +
+      'Results.We make the following observations from the results in Table 3. Self-Instruct boosts the instruction-following ability of GPT3 by a large margin. The vanilla GPT3 model basically cannot follow human instructions at all. Upon manual analysis, we find that it usually generates irrelevant and repetitive text, and does not know when to stop generation. Compared with other models that are not specifically trained for SuperNI, GPT3SEL-INST achieves better performance than T0 or the GPT3 finetuned on the T0 training set, which takes tremendous human labeling efforts. Notably, GPT3SEL-INST also nearly matches the performance of InstructGPT001, which is trained with private user data and human-annotated labels.\n' +
+      '\n' +
+      'Models trained on the SuperNI training set still achieve better performance on its evaluation set, which we attribute to the similar instruction style and formatting. However, we show that Self-Instruct still brings in additional gains when combined with the SuperNI training set, proving its value as complementary data.\n' +
+      '\n' +
+      '### Experiment 2: Generalization to User-oriented Instructions on Novel Tasks\n' +
+      '\n' +
+      'Despite the comprehensiveness of SuperNI in collecting existing NLP tasks, most of these NLP tasks were proposed for research purposes and skewed toward classification. To better access the practical value of instruction-following models, a subset of the authors curate a new set of instructions motivated by user-oriented applications. We first brainstorm various domains where large LMs may be useful (e.g., email writing, social media, productivity tools, entertainment, programming), then craft instructions related to each domain along with an input-output instance (again, input is optional). We aim to diversify the styles and formats of these tasks (e.g., instructions may be long or short; in\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l c c} \\hline \\hline\n' +
+      '**Model** & **\\# Params** & **ROUGE-L** \\\\ \\hline \\hline \\multicolumn{3}{l}{**Vanilla LMs**} \\\\ \\multicolumn{3}{l}{T-LM} & 11B & 25.7 \\\\ \\multicolumn{3}{l}{GPT3} & 175B & 6.8 \\\\ \\hline \\multirow{3}{*}{1} & **Instruction-tuned w/o SuperNI** & \\multirow{3}{*}{11B} & 33.1 \\\\  & \\multicolumn{3}{l}{GPT3 + T0 Training} & 175B & 37.9 \\\\ \\cline{1-1}  & \\multicolumn{3}{l}{GPT3\\({}_{\\text{SLP-INST}}\\) (Ours)} & 175B & 39.9 \\\\ \\cline{1-1}  & \\multicolumn{3}{l}{InstructGPT01} & 175B & **40.8** \\\\ \\hline \\multicolumn{3}{l}{**Instruction-tuned w/ SuperNI**} \\\\ \\multicolumn{3}{l}{T-Instruct} & 11B & 46.0 \\\\ \\multicolumn{3}{l}{GPT3 + SuperNI Training} & 175B & 49.5 \\\\ \\multicolumn{3}{l}{GPT3\\({}_{\\text{SLP-INST}}\\) + SuperNI Training (Ours)} & 175B & **51.6** \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 3: Evaluation results on _unseen_ tasks from SuperNI (§4.3). From the results, we see that 1 Self-Instruct can boost GPT3 performance by a large margin (+33.1%) and 2 nearly matches the performance of InstructGPT01. Additionally, 3put/output may take the form of bullet points, tables, codes, equations, etc.). In total, we create 252 instructions with 1 instance per instruction. We believe it can serve as a testbed for evaluating how instruction-based models handle diverse and unfamiliar instructions. Table 9 presents a small portion of them. The entire set is available in our GitHub repository. We analyze the overlap between this set set and the seed instructions in SSA.1.\n' +
+      '\n' +
+      'Human evaluation setup.Evaluating models\' performance on this evaluation set of diverse tasks is extremely challenging because different tasks require different expertise. Indeed, many of these tasks cannot be measured by automatic metrics or even be judged by normal crowdworkers (e.g., writing a program, or converting first-order logic into natural language). To get a more faithful evaluation, we asked the authors of the instructions to judge model predictions. Details on how we set up this human evaluation are described in Appendix B. The evaluators were asked to rate the output based on whether it accurately and effectively completes the task. We implemented a four-level rating system for categorizing the quality of the models\' outputs:\n' +
+      '\n' +
+      '* Rating-A: The response is valid and satisfying.\n' +
+      '* Rating-B: The response is acceptable but has minor errors or imperfections.\n' +
+      '* Rating-C: The response is relevant and responds to the instruction, but it has significant errors in the content. For example, GPT3 might generate a valid output first, but continue to generate other irrelevant things.\n' +
+      '* Rating-D: The response is irrelevant or completely invalid.\n' +
+      '\n' +
+      'Results.Figure 6 shows the performance of GPT3 model and its instruction-tuned counterparts on this newly written instruction set (w. inter-rater agreement \\(\\kappa=0.57\\) on the 4-class categorical scale, see Appendix B for details). As anticipated, the vanilla GPT3 LM is largely unable to respond to instructions, and all instruction-tuned models demonstrate comparatively higher performance. Nonetheless, GPT3SELF-INST (i.e., GPT3 model finetuned with Self-INstruct) outperforms those counterparts trained on T0 or SuperNI data by a large margin, demonstrating the value of the generated data despite the noise. Compared with InstructGPT001, GPT3SELF-INST is quite close in performance--if we count acceptable response with minor imperfections (Rating-B) as valid, GPT3SELF-INST is only 5% behind InstructGPT001. Lastly, our evaluation confirms the impressive instruction-following ability of InstructGPT002 and InstructGPT003. Although there are many factors behind this success, we conjecture that future work can largely benefit from improving the quality of our generated data by using human annotators or training a reward model to select better generations, similar to the algorithm used by Ouyang et al. (2022).\n' +
+      '\n' +
+      '### Effect of Data Size and Quality\n' +
+      '\n' +
+      'Data size.Self-Instruct provides a way to grow instruction data at a low cost with almost\n' +
+      '\n' +
+      'Figure 6: Performance of GPT3 model and its instruction-tuned variants, evaluated by human experts on our 252 user-oriented instructions (§4.4). Human evaluators are instructed to rate the models’ responses into four levels. The results indicate that GPT3SELF-INST outperforms all the other GPT3 variants trained on publicly available instruction datasets. Additionally, GPT3SELF-INST scores nearly as good as InstructGPT001 (cf. footnote 1).\n' +
+      '\n' +
+      'no human labeling; could more of this generated data lead to better instruction-following ability? We conduct an analysis of the size of generated data by subsampling different numbers of instructions from the generated dataset, finetuning GPT3 on the sampled subsets, and evaluating how the resulting models perform on the 252 user-oriented instruction set. We conduct the same human evaluation as in SS4.4. Figure 7 presents the performance of GPT3SELF-INST models finetuned with different sizes of generated data. Overall, we see consistent improvement as we grow the data size. However, this improvement almost plateaus after 16K. This is inline with the data scaling experiments in Wang et al. (2022, Fig. 5). Interestingly, when evaluating on SuperNI we found the model\'s performance gain plateaus earlier at around hundreds of instructions. This may be due to the fact that the new generated data is distinct from typical NLP tasks in SuperNI, indicating that future research may benefit from using a combination of different instruction data for better performance on various types of tasks.\n' +
+      '\n' +
+      'Data quality.Another direction to improve the model\'s performance is to take our generated data and get better supervision (with less noise). We explore this idea by using InstructGPT003 (the best available general-purpose model) to regenerate the output field of all our instances given the instruction and input. We then use this improved version of our data to finetune GPT3. This can be regarded as a distillation of InstructGPT003 with our data. As is shown in Figure 7, the resulting model outperforms the counterpart trained with the original data by 10%, which suggests big room for future work on using our generation pipeline to get initial data and then improving the data quality with human experts or distillation from better models.\n' +
+      '\n' +
+      '## 5 Related Work\n' +
+      '\n' +
+      'Instruction-following LMs.A series of works have found evidence that vanilla LMs can be effective at following general language instructions if tuned with annotated "instructional" data--datasets containing language instructional commands and their desired outcomes based on human annotation (Weller et al., 2020, Mishra et al., 2022, 2022, 2022, 2022, 2022, 2022, 2022). Additionally, they show a direct correlation between the size and diversity of the "instructional" data and the generalizability of resulting models to unseen tasks (Wang et al., 2022, 2022). However, since these developments largely focus on existing NLP tasks and depend on human-annotated instructions, this poses a bottleneck for progress toward more generalizable models (e.g., see Fig. 5a in Wang et al., 2022). Our work aims to move beyond classical NLP tasks and tackle the challenges of creating diverse instruction data by employing pretrained LMs. InstructGPT (Ouyang et al., 2022) shares a similar goal as ours in building more general-purpose LMs, and has demonstrated remarkable performance in following diverse user instructions. However, as a commercial system, their construction process still remains quite opaque. In particular, the role of _data_ has remained understudied due to limited transparency and the private user data they used in their study. Addressing such challenges necessitates the creation of a large-scale, public dataset covering a broad range of tasks.\n' +
+      '\n' +
+      'Language models for data generation and augmentation.A variety of works have proposed using LMs for data generation (Schick and Schutze, 2021, 2022, 2022, 2022) or augmentation (Feng et al., 2021, 2022, 2022). Our work differs from this line in that it is _not_ specific to a particular task (say, QA or NLI). In contrast, a distinct motivation for Self-Instruct is to bootstrap new task definitions that may not have been defined\n' +
+      '\n' +
+      'Figure 7: Human evaluation performance of GPT3SELF-INST models tuned with different sizes of instructions. \\(x\\)-axis is in log scale. The smallest size is 175, where only the seed tasks are used for instruction tuning. We also evaluate whether improving the data quality will further improve the performance by distilling the outputs from InstructGPT003. We see consistent improvement from using larger data with better quality.\n' +
+      '\n' +
+      'before by NLP practitioners (though potentially still important for real users). In parallel with our work, Honovich et al. (2022) also propose to generate large-scale instruction data (so-called Unnatural Instructions) with GPT3 models. The major differences are that 1) they use tasks in SuperNI Wang et al. (2022) as their seed tasks, resulting in a different distribution of generated tasks; 2) they employ InstructGPT\\({}_{002}\\) for generating the data, in which sense they are distilling knowledge from an already instruction-tuned model, while we solely rely on the vanilla LM; 3) the detailed generation pipeline and templates are different. Nevertheless, we believe that both efforts in expanding instruction data are complementary, and the community will benefit from these diverse datasets.\n' +
+      '\n' +
+      'Instruction generation.A series of recent works Zhou et al. (2022); Ye et al. (2022); Singh et al. (2022); Honovich et al. (2022) generate instructions of a task given a few examples. While Self-Instruct also involves instruction generation, a major difference in our case is it is task-agnostic; we generate new tasks (instructions along with instances) from scratch.\n' +
+      '\n' +
+      'Model self-training.A typical self-training framework He et al. (2019); Xie et al. (2020); Du et al. (2021); Amini et al. (2022); Huang et al. (2022) uses trained models to assign labels to unlabeled data and then leverages the newly labeled data to improve the model. In a similar line, Zhou et al. (2022) use multiple prompts to specify a single task and propose to regularize via prompt consistency, encouraging consistent predictions over the prompts. This allows either finetuning the model with extra unlabeled training data, or direct application at inference time. While Self-Instruct has similarities with the self-training literature, most self-training methods assume a specific _target task_ as well as _unlabeled examples_ under it; in contrast, Self-Instruct produces a variety of tasks from scratch.\n' +
+      '\n' +
+      'Knowledge distillation.Knowledge distillation Hinton et al. (2015); Sanh et al. (2019); West et al. (2021); Magister et al. (2022) often involves the transfer of knowledge from larger models to smaller ones. Self-Instruct can also be viewed as a form of "knowledge distillation", however, it differs from this line in the following ways: (1) the source and target of distillation are the same, i.e., a model\'s knowledge is distilled to itself; (2) the content of distillation is in the form of an instruction task (i.e., instructions that define a task, and a set of examples that instantiate it).\n' +
+      '\n' +
+      'Bootstrapping with limited resources.A series of recent works use language models to bootstrap some inferences using specialized methods. NPPPrompt Zhao et al. (2022) provides a method to generate predictions for semantic labels without any finetuning. It uses a model\'s own embeddings to automatically find words relevant to the label of the data sample and hence reduces the dependency on manual mapping from model prediction to label (verbalizers). STAR Zelikman et al. (2022) iteratively leverages a small number of rationale examples and a large dataset without rationales, to bootstrap a model\'s ability to perform reasoning. Self-Correction Welleck et al. (2023) decouples an imperfect base generator (model) from a separate corrector that learns to iteratively correct imperfect generations and demonstrates improvement over the base generator. Our work instead focuses on bootstrapping new tasks in the instruction paradigm.\n' +
+      '\n' +
+      'Multi-modal instruction-following.Instruction-following models have also been of interest in the multi-modal learning literature Fried et al. (2018); Shridhar et al. (2020); Min et al. (2022); Weir et al. (2022). Self-Instruct, as a general approach to expanding data, can potentially also be helpful in those settings, which we leave to future work.\n' +
+      '\n' +
+      '## 6 Conclusion\n' +
+      '\n' +
+      'We introduce Self-Instruct, a method to improve the instruction-following ability of LMs via their own generation of instruction data. On experimenting with vanilla GPT3, we automatically construct a large-scale dataset of 52K instructions for diverse tasks, and finetuning GPT3 on this data leads to a 33% absolute improvement on SuperNI over the original GPT3. Furthermore, we curate a set of expert-written instructions for novel tasks. Human evaluation on this set shows that tuning GPT3 with Self-Instruct outperforms using existing public instruction datasets by a large margin and performs closely to InstructGPT\\({}_{001}\\). We hope Self-Instruct can serve as the first step to align pretrained LMs to follow human instructions, and future work can build on top of this data to improve instruction-following models.\n' +
+      '\n' +
+      'Broader Impact\n' +
+      '\n' +
+      'Beyond the immediate focus of this paper, we believe that Self-Instruct may help bring more transparency to what happens "behind the scenes" of widely-used instruction-tuned models like InstructGPT or ChatGPT. Unfortunately, such industrial models remain behind API walls as their datasets are not released, and hence there is little understanding of their construction and why they demonstrate impressive capabilities. The burden now falls on academia to better understand the source of success in these models and strive for better--and more open--models. We believe our findings in this paper demonstrate the importance of diverse instruction data, and our large synthetic dataset can be the first step toward higher-quality data for building better instruction-following models. At this writing, the central idea of this paper has been adopted in several follow-up works for such endeavors (Taori et al., 2023; Xu et al., 2023; Sun et al., 2023, i.a.).\n' +
+      '\n' +
+      '## 8 Limitations\n' +
+      '\n' +
+      'Here, we discuss some limitations of this work to inspire future research in this direction.\n' +
+      '\n' +
+      'Tail phenomenaSelf-Instruct depends on LMs, and it will inherit all the limitations that carry over with LMs. As recent studies have shown (Razeghi et al., 2022; Kandpal et al., 2022), _tail phenomena_ pose a serious challenge to the success of LMs. In other words, LMs\' largest gains correspond to the frequent uses of languages (head of the language use distribution), and there might be minimal gains in the low-frequency contexts. Similarly, in the context of this work, it would not be surprising if the majority of the gains by Self-Instruct are skewed toward tasks or instructions that present more frequently in the pretraining corpus. As a consequence, the approach might show brittleness with respect to uncommon and creative instructions.\n' +
+      '\n' +
+      'Dependence on large modelsBecause of Self-Instruct\'s dependence on the inductive biases extracted from LMs, it might work best for larger models. If true, this may create barriers to access for those who may not have large computing resources. We hope future studies will carefully study the gains as a function of model size or various other parameters. It is worthwhile to note that instruction-tuning with human annotation also suffers from a similar limitation: gains of instruction-tuning are higher for larger models (Wei et al., 2022).\n' +
+      '\n' +
+      'Reinforcing LM biases.A point of concern for the authors is the unintended consequences of this iterative algorithm, such as the amplification of problematic social biases (stereotypes or slurs about gender, race, etc.). Relatedly, one observed challenge in this process is the algorithm\'s difficulty in producing balanced labels, which reflected models\' prior biases. We hope future work will lead to better understanding of the pros and cons of the approach.\n' +
+      '\n' +
+      '## Acknowledgements\n' +
+      '\n' +
+      'The authors would like to thank the anonymous reviewers for their constructive feedback. We especially thank Sewon Min, Eric Wallace, Ofir Press, and other members of UWNLP and AllenNLP for their encouraging feedback and intellectual support. This work was supported in part by DARPA MCS program through NIWC Pacific (N66001-19-2-4031), ONR N00014-18-1-2826, ONR MURI N00014-18-1-2670, and gifts from AI2 and an Allen Investigator award.\n' +
+      '\n' +
+      '## References\n' +
+      '\n' +
+      '* Amini et al. (2022) Massih-Reza Amini, Vasilii Feofanov, Loic Pauletto, Emilie Devijver, and Yury Maximov. 2022. Self-training: A survey. _arXiv preprint arXiv:2202.12040_.\n' +
+      '* _System Demonstrations_.\n' +
+      '* Brown et al. (2020) Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agarwal, and et al. 2020. Language models are few-shot learners. In _Advances in Neural Information Processing Systems_ (NeurIPS).\n' +
+      '* Chung et al. (2022) Hyung Won Chung, Le Hou, Shayne Longpre, Barret Zoph, Yi Tay, William Fedus, Eric Li, Xuezhi Wang, Mostafa Dehghani, Siddhartha Brahma, et al. 2022. Scaling instruction-finetuned language models. _arXiv preprint arXiv:2210.11416_.\n' +
+      '* Du et al. (2021) Jingfei Du, Edouard Grave, Beliz Gunel, Vishrav Chaudhary, Onur Celebi, Michael Auli, Veselin Stoyanov, and Alexis Conneau. 2021. Self-training improves pre-training for natural language understanding. InConference of the North American Chapter of the Association for Computational Linguistics_ (NAACL): Human Language Technologies, pages 5408-5418.\n' +
+      '* Findings_, pages 968-988.\n' +
+      '* Fried et al. (2018) Daniel Fried, Ronghang Hu, Volkan Cirik, Anna Rohrbach, Jacob Andreas, Louis-Philippe Morency, Taylor Berg-Kirkpatrick, Kate Saenko, Dan Klein, and Trevor Darrell. 2018. Speaker-follower models for vision-and-language navigation. In _Advances in Neural Information Processing Systems_ (NeurIPS).\n' +
+      '* He et al. (2019) Junxian He, Jiatao Gu, Jiajun Shen, and Marc\'Aurelio Ranzato. 2019. Revisiting self-training for neural sequence generation. In _International Conference on Learning Representations_ (ICLR).\n' +
+      '* Hinton et al. (2015) Geoffrey Hinton, Oriol Vinyals, Jeff Dean, et al. 2015. Distilling the knowledge in a neural network. In _Advances in Neural Information Processing Systems_ (NeurIPS) _Workshop on Deep Learning_.\n' +
+      '* Honovich et al. (2022a) Or Honovich, Thomas Scialom, Omer Levy, and Timo Schick. 2022a. Unnatural instructions: Tuning language models with (almost) no human labor. _arXiv preprint arXiv:2212.09689_.\n' +
+      '* Honovich et al. (2022b) Or Honovich, Uri Shaham, Samuel R Bowman, and Omer Levy. 2022b. Instruction induction: From few examples to natural language task descriptions. _arXiv preprint arXiv:2205.10782_.\n' +
+      '* Huang et al. (2022) Jiaxin Huang, Shixiang Shane Gu, Le Hou, Yuexin Wu, Xuezhi Wang, Hongkun Yu, and Jiawei Han. 2022. Large language models can self-improve. _arXiv preprint arXiv:2210.11610_.\n' +
+      '* Kandpal et al. (2022) Nikhil Kandpal, Haikang Deng, Adam Roberts, Eric Wallace, and Colin Raffel. 2022. Large language models struggle to learn long-tail knowledge. _arXiv preprint arXiv:2211.08411_.\n' +
+      '* Kitaev et al. (2019) Nikita Kitaev, Steven Cao, and Dan Klein. 2019. Multilingual constituency parsing with self-attention and pre-training. In _Annual Meeting of the Association for Computational Linguistics_ (ACL), pages 3499-3505.\n' +
+      '* Kitaev and Klein (2018) Nikita Kitaev and Dan Klein. 2018. Constituency parsing with a self-attentive encoder. In _Annual Meeting of the Association for Computational Linguistics_ (ACL), pages 2676-2686.\n' +
+      '* Lester et al. (2021) Brian Lester, Rami Al-Rfou, and Noah Constant. 2021. The power of scale for parameter-efficient prompt tuning. In _Conference on Empirical Methods in Natural Language Processing_ (EMNLP).\n' +
+      '* Liu et al. (2022) Alisa Liu, Swabha Swayamdipta, Noah A. Smith, and Yejin Choi. 2022. WANLI: Worker and ai collaboration for natural language inference dataset creation. In _Conference on Empirical Methods in Natural Language Processing_ (EMNLP) _- Findings_.\n' +
+      '* Magister et al. (2022) Lucie Charlotte Magister, Jonathan Mallinson, Jakub Adamek, Eric Malmi, and Aliaksei Severyn. 2022. Teaching small language models to reason. _arXiv preprint arXiv:2212.08410_.\n' +
+      '* Mekala et al. (2022) Dheeraj Mekala, Tu Vu, Timo Schick, and Jingbo Shang. 2022. Leveraging qa datasets to improve generative data augmentation. _arXiv preprint arXiv:2205.12604_.\n' +
+      '* Meng et al. (2023) Yu Meng, Martin Michalski, Jiaxin Huang, Yu Zhang, Tarek Abdelzaher, and Jiawei Han. 2023. Tuning language models as training data generators for augmentation-enhanced few-shot learning. In _International Conference on Machine Learning_ (ICML).\n' +
+      '* Min et al. (2022) So Yeon Min, Devendra Singh Chaplot, Pradeep Ravikumar, Yonatan Bisk, and Ruslan Salakhutdinov. 2022. FILM: Following Instructions in Language with Modular Methods. In _International Conference on Learning Representations_ (ICLR).\n' +
+      '* Mishra et al. (2022) Swaroop Mishra, Daniel Khashabi, Chitta Baral, and Hannaneh Hajishirzi. 2022. Cross-Task Generalization via Natural Language Crowdsourcing Instructions. In _Annual Meeting of the Association for Computational Linguistics_ (ACL).\n' +
+      '* Ouyang et al. (2022) Long Ouyang, Jeff Wu, Xu Jiang, Diogo Almeida, Carroll L Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al. 2022. Training Language Models to Follow Instructions with Human Feedback. In _Advances in Neural Information Processing Systems_ (NeurIPS).\n' +
+      '* Raffel et al. (2020) Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J Liu. 2020. Exploring the limits of transfer learning with a unified text-to-text transformer. _Journal of Machine Learning Research_ (JMLR).\n' +
+      '* Razeghi et al. (2022) Yasaman Razeghi, Robert L Logan IV, Matt Gardner, and Sameer Singh. 2022. Impact of pretraining term frequencies on few-shot reasoning. _arXiv preprint arXiv:2202.07206_.\n' +
+      '* Sanh et al. (2019) Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. 2019. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. In _Advances in Neural Information Processing Systems_ (NeurIPS) _Workshop on Energy Efficient Machine Learning and Cognitive Computing_.\n' +
+      '* Sanh et al. (2020) Victor Sanh, Albert Webson, Colin Raffel, Stephen Bach, Lintang Sutawika, Zaid Alyafeai, Antoine Chaffin, Arnaud Stiegler, Arun Raja, Manan Dey, M Saiful Bari, Canwen Xu, Urmish Thakker, Shanya Sharma Sharma, Eliza Szczechla, Taewoon Kim, Gunjan Chhabalni, Nihal Nayak, Debajyoti Datta, Jonathan Chang, Mike Tian-Jian Jiang, Han Wang, Matteo Manica, Sheng Shen, Zheng Xin Yong, Harshit Pandey, Rachel Bawden, Thomas Wang, TrishalaNeeraj, Jos Rozen, Abheesht Sharma, Andrea Santilli, Thibault Fevry, Jason Alan Fries, Ryan Teehan, Teven Le Scao, Stella Biderman, Leo Gao, Thomas Wolf, and Alexander M Rush. 2022. Multi-task Prompted Training Enables Zero-Shot Task Generalization. In _International Conference on Learning Representations_ (ICLR).\n' +
+      '* Schick and Schutze (2021) Timo Schick and Hinrich Schutze. 2021. Generating datasets with pretrained language models. In _Conference on Empirical Methods in Natural Language Processing_ (EMNLP).\n' +
+      '* Shridhar et al. (2020) Mohit Shridhar, Jesse Thomason, Daniel Gordon, Yonatan Bisk, Winson Han, Roozbeh Mottaghi, Luke Zettlemoyer, and Dieter Fox. 2020. ALFRED: A Benchmark for Interpreting Grounded Instructions for Everyday Tasks. In _IEEE Conference on Computer Vision and Pattern Recognition_ (CVPR).\n' +
+      '* Singh et al. (2022) Chandan Singh, John X Morris, Jyoti Aneja, Alexander M Rush, and Jianfeng Gao. 2022. Explaining patterns in data with language models via interpretable autoprompting. _arXiv preprint arXiv:2210.01848_.\n' +
+      '* Sun et al. (2023) Zhiqing Sun, Yikang Shen, Qinhong Zhou, Hongxin Zhang, Zhenfang Chen, David Cox, Yiming Yang, and Chuang Gan. 2023. Principle-driven self-alignment of language models from scratch with minimal human supervision. _arXiv preprint arXiv:2305.03047_.\n' +
+      '* Taori et al. (2023) Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B. Hashimoto. 2023. Stanford apca: An instruction-following llama model. [https://github.com/tatsu-lab/stanford_alpaca](https://github.com/tatsu-lab/stanford_alpaca).\n' +
+      '* Wang et al. (2020) Yizhong Wang, Swaroop Mishra, Pegah Alipoormolabashi, Yeganeh Kordi, Amirreza Mirzaei, Anjana Arunkumar, Arjun Ashok, Arut Selvan Dhanasekaran, Atharva Naik, David Stap, Eshaan Pathak, Giannis Karamanolakis, Haizhi Gary Lai, Ishan Purohit, Ishani Mondal, Jacob Anderson, Kirby Kuznia, Krima Doshi, Maitreya Patel, Kuntal Kumar Pal, Mehrad Moradshahi, Mihir Parmar, Mirali Purohit, Neeraj Varshney, Phani Rohitha Kaza, Pulkit Verma, Ravsehaj Singh Puri, Rushang Karia, Shailaja Keyur Sampat, Savan Doshi, Siddhartha Mishra, Sujan Reddy, Sumanta Patro, Tanay Dixit, Xudong Shen, Chitta Baral, Yejin Choi, Noah A. Smith, Hannaneh Hajishirzi, and Daniel Khashabi. 2022. Super-naturalinstructions: Generalization via declarative instructions on 1600+ tasks. In _Conference on Empirical Methods in Natural Language Processing_ (EMNLP).\n' +
+      '* Wang et al. (2021) Zirui Wang, Adams Wei Yu, Orhan Firat, and Yuan Cao. 2021. Towards zero-label language learning. _arXiv preprint arXiv:2109.09193_.\n' +
+      '* Wei et al. (2022) Jason Wei, Maarten Bosma, Vincent Zhao, Kelvin Guu, Adams Wei Yu, Brian Lester, Nan Du, Andrew M. Dai, and Quoc V Le. 2022. Finetuned Language Models are Zero-Shot Learners. In _International Conference on Learning Representations_ (ICLR).\n' +
+      '* Weir et al. (2022) Nathaniel Weir, Xingdi Yuan, Marc-Alexandre Cote, Matthew Hausknecht, Romain Laroche, Ida Momennejad, Harm Van Seijen, and Benjamin Van Durme. 2022. One-Shot Learning from a Demonstration with Hierarchical Latent Language. _arXiv preprint arXiv:2203.04806_.\n' +
+      '* Welleck et al. (2023) Sean Welleck, Ximing Lu, Peter West, Faeze Brahman, Tianxiao Shen, Daniel Khashabi, and Yejin Choi. 2023. Generating sequences by learning to self-correct. In _International Conference on Learning Representations_ (ICLR).\n' +
+      '* Weller et al. (2020) Orion Weller, Nicholas Lourie, Matt Gardner, and Matthew Peters. 2020. Learning from Task Descriptions. In _Conference on Empirical Methods in Natural Language Processing_ (EMNLP).\n' +
+      '* West et al. (2021) Peter West, Chandra Bhagavatula, Jack Hessel, Jena D Hwang, Liwei Jiang, Ronan Le Bras, Ximing Lu, Sean Welleck, and Yejin Choi. 2021. Symbolic knowledge distillation: from general language models to commonsense models. In _Conference of the North American Chapter of the Association for Computational Linguistics_ (NAACL).\n' +
+      '* Xie et al. (2020) Qizhe Xie, Minh-Thang Luong, Eduard Hovy, and Quoc V Le. 2020. Self-training with noisy student improves imagenet classification. In _IEEE Conference on Computer Vision and Pattern Recognition_ (CVPR), pages 10687-10698.\n' +
+      '* Xu et al. (2023) Canwen Xu, Daya Guo, Nan Duan, and Julian McAuley. 2023. Baize: An open-source chat model with parameter-efficient tuning on self-chat data. _arXiv preprint arXiv:2304.01196_.\n' +
+      '\n' +
+      '* Ye et al. (2022) Seonghyeon Ye, Doyoung Kim, Joel Jang, Joongbo Shin, and Minjoon Seo. 2022. Guess the instruction! making language models stronger zero-shot learners. _arXiv preprint arXiv:2210.02969_.\n' +
+      '* Zelikman et al. (2022) Eric Zelikman, Jesse Mu, Noah D Goodman, and Yuhuai Tony Wu. 2022. STar: Self-taught reasoner bootstrapping reasoning with reasoning. In _Advances in Neural Information Processing Systems_ (NeurIPS).\n' +
+      '* Zhao et al. (2022) Xuandong Zhao, Siqi Ouyang, Zhiguo Yu, Ming Wu, and Lei Li. 2022. Pre-trained language models can be fully zero-shot learners. _arXiv preprint arXiv:2212.06950_.\n' +
+      '\n' +
+      'Yongchao Zhou, Andrei Ioan Muresanu, Ziwen Han, Keiran Paster, Silviu Pitis, Harris Chan, and Jimmy Ba. 2022b. Large language models are human-level prompt engineers. _arXiv preprint arXiv:2211.01910_.\n' +
+      '\n' +
+      '**Supplemental Material**\n' +
+      '\n' +
+      '## Appendix A Implementation Details\n' +
+      '\n' +
+      '### Writing the Seed Tasks\n' +
+      '\n' +
+      'Our method relies on a set of seed tasks to bootstrap the generation. The seed tasks are important for both encouraging the task diversity and demonstrating correct ways for solving the diverse tasks. For example, with coding tasks to prompt the model, it has a larger chance to generate coding-related tasks; it\'s also better to have coding output to guide the model in writing code for new tasks. So, the more diverse the seed tasks are, the more diverse and better quality the generated tasks will be.\n' +
+      '\n' +
+      'Our seed tasks were written when we initiated this project, and targeted for the diverse and interesting usages of LLMs. The tasks were written by the authors and our labmates at UWNLP, without explicit reference to existing datasets or specific testing tasks. We further categorized the tasks into classification and non-classification tasks, based on whether the task has a limited output label space. In total, there are 25 classification tasks and 150 non-classification tasks. We release this data in our GitHub repository.11\n' +
+      '\n' +
+      'Footnote 11: [https://github.com/yizhongw/self-instruct/blob/main/human_eval/user_oriented_instructions.jsonl](https://github.com/yizhongw/self-instruct/blob/main/human_eval/user_oriented_instructions.jsonl)\n' +
+      '\n' +
+      'To provide a sense of how much the model is generalizing beyond these seed tasks, we further quantify the overlap between the instructions of these seed tasks and the instructions of our test sets, including both SuperNI task instructions (SS4.3) and the user-oriented instructions in our human evaluation(SS4.4). We compute ROUGE-L similarities between each seed instruction and its most similar instruction in the test set. The distribution of the ROUGE-L scores are plotted in Figure 8, with the average ROUGE-L similarity between the seed instructions and SuperNI as 0.21, and the average ROUGE-L similarity between the seed instructions and user-oriented instructions as 0.34. We see a decent difference between the seed tasks and both test sets. There is exactly one identical seed instruction occurring in the user-oriented instruction test set, which is "answer the following question" and the following questions are actually very different.\n' +
+      '\n' +
+      '### Querying the GPT3 API\n' +
+      '\n' +
+      'We use different sets of hyperparameters when querying GPT3 API for different purposes. These hyperparameters are found to work well with the GPT3 model ("davinci" engine) and the other instruction-tuned GPT3 variants. We listed them in Table 4. OpenAI charges $0.02 per 1000 tokens for making completion request to the "davinci" engine as of December, 2022. The generation of our entire dataset cost around $600.\n' +
+      '\n' +
+      '### Finetuning GPT3\n' +
+      '\n' +
+      'GPT3\\({}_{\\text{SELF-INST}}\\) and some of our baselines are finetuned from GPT3 model ("davinci" engine with 175B parameters). We conduct this finetuning via OpenAI\'s finetuning API.12 While the details of how the model is finetuned with this API are not currently available (e.g., which parameters are updated, or what\n' +
+      '\n' +
+      'Figure 8: Distribution of the ROUGE-L scores between seed instructions and their most similar instructions in SuperNI (left) and the 252 user-oriented instructions (right).\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:15]\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:16]\n' +
+      '\n' +
+      'Come up with examples for the following tasks. Try to generate multiple examples when possible. If the task doesn\'t require additional input, you can generate the output directly.\n' +
+      '\n' +
+      'Task: Which exercises are best for reducing belly fat at home? Output: - Lying Leg Raises - Leg In And Out - Plank - Side Plank - Sit-ups\n' +
+      '\n' +
+      'Task: Extract all the country names in the paragraph, list them separated by commas. Example 1 Paragraph: Dr. No is the sixth novel by the English author Ian Fleming to feature his British Secret Service agent James Bond. Written at Fleming\'s Goldeneye estate in Jamaica, it was first published in the United Kingdom by Jonathan Cape in 1958. In the novel Bond looks into the disappearance in Jamaica of two fellow MI6 operatives who had been investigating Doctor No. Bond travels to No\'s Caribbean island and meets Honeychile Rider, who is there to collect shells. They are captured and taken to a luxurious facility carved into a mountain. The character of Doctor No, the son of a German missionary and a Chinese woman, was influenced by Sax Rohner\'s Fu Manchu stories. Dr. No was the first of Fleming\'s novels to face widespread negative reviews in Britain, but it was received more favourably in the United States. Output: English, British, Jamaica, the United Kingdom, German, Chinese, Britain, the United States.\n' +
+      '\n' +
+      'Task: Converting 85 F to Celsius. Output: 85*F = 29.44*C\n' +
+      '\n' +
+      'Task: Sort the given list ascendingly. Example 1 List: [10, 92, 2, 5, -4, 92, 5, 101] Output: [-4, 2, 5, 5, 10, 92, 92, 101] Example 2 Input 2 - List: [9.99, 10, -5, -1000, 5e6, 999] Output: [-1000, -5, 9.99, 10, 999, 5e6]\n' +
+      '\n' +
+      'Task: Suggest a better and more professional rephrasing of the following sentence. Example 1 Sentence: This house is surprisingly not constructed very well, and you probably need more money to fix it after you buy it. If you ask me, I would suggest you to consider other candidates. Output: This house does not seem to be constructed well, so you may need to spend more money to fix it after you purchase it. I would suggest that you look at other properties. Example 2 Sentence: Just so you know, we did an experiment last week and found really surprising results - language model can improve itself! Output: Our experiments last week demonstrated surprising results, proving that the language model can improve itself.\n' +
+      '\n' +
+      '...\n' +
+      '\n' +
+      'Task: Turn down a job offer by sending an email to a recruiter explaining the reason. Output: Hi [Recruiter], Thank you so much for the generous offer to join your team. As we discussed, I\'ve admired the company for a number of years, and am a proud endorser of its products. However, after further consideration of where I currently am in my career, I\'ve decided to accept an offer at another company. I would love to stay in touch with you and have already started following you on [Social Media Platform]. Again, thank you so much for your time and consideration. Thanks again, [Your Name]\n' +
+      '\n' +
+      'Task: [Instruction for the target task]\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l} \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 7: Prompt used for the input-first approach of instance generation. The model is prompted to generate the instance first, and then generate the corresponding output. For instructions that don’t require additional input, the output is allowed to be generated directly.\n' +
+      '\n' +
+      'Given the classification task definition and the class labels, generate an input that corresponds to each of the class labels. If the task doesn\'t require input, just generate the correct class label.\n' +
+      '\n' +
+      'Task: Classify the sentiment of the sentence into positive, negative, or mixed. Class label: mixed Sentence: I enjoy the flavor of the restaurant but their service is too slow. Class label: Positive Sentence: I had a great day today. The weather was beautiful and I spent time with friends. Class label: Negative Sentence: I was really disappointed by the latest superhero movie. I would not recommend it.\n' +
+      '\n' +
+      'Task: Given a dialogue, classify whether the user is satisfied with the service. You should respond with "Satisfied" or "Unsatisfied". Class label: Satisfied Dialogue: - Agent: Thank you for your feedback. We will work to improve our service in the future. - Customer: I am happy with the service you provided. Thank you for your help. Class label: Unsatisfied Dialogue: - Agent: Sorry that we will cancel your order. You will get a refund within 7 business days. - Customer: oh that takes too long. I want you to take quicker action on this.\n' +
+      '\n' +
+      'Task: Given a political opinion, classify whether the speaker is a Democrat or Republican. Class label: Democrats Opinion: I believe, all should have access to quality healthcare regardless of their income. Class label: Republicans Opinion: I believe that people should be able to keep more of their hard-earned money and should not be taxed at high rates.\n' +
+      '\n' +
+      'Task: Tell me if the following email is a promotion email or not. Class label: Promotion Email: Check out our amazing new sale! We\'ve got discounts on all of your favorite products. Class label: Not Promotion Email: We hope you are doing well. Let us know if you need any help.\n' +
+      '\n' +
+      'Task: Detect if the Reddit thread contains hate speech. Class label: Hate Speech Thread: All people of color are stupid and should not be allowed to vote. Class label: Not Hate Speech Thread: The best way to cook a steak on the grill.\n' +
+      '\n' +
+      'Task: Does the document supports the claim? Answer with "Support" or "Unsupport". Class label: Unsupport Document: After a record-breaking run that saw mortgage rates plunge to all-time lows and home prices soar to new highs, the U.S. housing market finally is slowing. While demand and price gains are cooling, any correction is likely to be a modest one, housing economists and analysts say. No one expects price drops on the scale of the declines experienced during the Great Recession. Claim: The US housing market is going to crash soon. Class label: Support Document: The U.S. housing market is showing signs of strain, with home sales and prices slowing in many areas. Mortgage rates have risen sharply in recent months, and the number of homes for sale is increasing. This could be the beginning of a larger downturn, with some economists predicting a potential housing crash in the near future. Claim: The US housing market is going to crash soon.... Task: Which of the following is not an input type? (a) number (b) date (c) phone number (d) email address (e) all of these are valid inputs. Class label: (e) Task: {instruction for the target task} ```\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l} \\hline \\hline Given the classification task definition and the class labels, generate an input that corresponds to each of the class labels. If the task doesn’t require input, just generate the correct class label. \\\\ \\hline Task: Classify the sentiment of the sentence into positive, negative, or mixed. Class label: mixed Sentence: I enjoy the flavor of the restaurant but their service is too slow. Class label: Positive Sentence: I had a great day today. The weather was beautiful and I spent time with friends. Class label: Negative Sentence: I was really disappointed by the latest superhero movie. I would not recommend it. \\\\ \\hline Task: Given a dialogue, classify whether the user is satisfied with the service. You should respond with “Satisfied” or “Unsatisfied”. Class label: Satisfied Dialogue: - Agent: Thank you for your feedback. We will work to improve our service in the future. - Customer: I am happy with the service you provided. Thank you for your help. Class label: Unsatisfied Dialogue: - Agent: Sorry that we will cancel your order. You will get a refund within 7 business days. - Customer: oh that takes too long. I want you to take quicker action on this. \\\\ \\hline Task: Given a political opinion, classify whether the speaker is a Democrat or Republican. Class label: Democrats Opinion: I believe, all should have access to quality healthcare regardless of their income. - Classic label: Republicans Opinion: I believe that people should be able to keep more of their hard-earned money and should not be taxed at high rates. \\\\ \\hline Task: Tell me if the following email is a promotion email or not. Class label: Promotion Email: Check out our amazing new sale! We’ve got discounts on all of your favorite products. Class label: Not Promotion Email: We hope you are doing well. Let us know if you need any help. \\\\ \\hline Task: Detect if the Reddit thread contains hate speech. Class label: Hate Speech Thread: All people of color are stupid and should not be allowed to vote. Class label: Not Hate Speech Thread: The best way to cook a steak on the grill. \\\\ \\hline Task: Does the document supports the claim? Answer with “Support” or “Unsupport”. Class label: Unsupport Document: After a record-breaking run that saw mortgage rates plunge to all-time lows and home prices soar to new highs, the U.S. housing market finally is slowing. While demand and price gains are cooling, any correction is likely to be a modest one, housing economists and analysts say. No one expects price drops on the scale of the declines experienced during the Great Recession. \\\\ \\hline Claim: The US housing market is going to crash soon. Class label: Support Document: The U.S. housing market is showing signs of strain, with home sales and prices slowing in many areas. Mortgage rates have risen sharply in recent months, and the number of homes for sale is increasing. This could be the beginning of a larger downturn, with some economists predicting a potential housing crash in the near future. \\\\ \\hline Claim: The US housing market is going to crash soon. \\\\ \\hline Task: Which of the following is not an input type? (a) number (b) date (c) phone number (d) email address (e) all of these are valid inputs. \\\\ \\hline Class label: (e) Task: {instruction for the target task} \\\\ \\hline \\hline \\end{tabular}\n' +
+      '\\end{table}\n' +
+      'Table 8: Prompt used for the output-first approach of instance generation. The model is prompted to generate the class label first, and then generate the corresponding input. This prompt is used for generating the instances for classification tasks.\n' +
+      '\n' +
+      'Human Evaluation Details for Following the User-oriented Instructions\n' +
+      '\n' +
+      '### Human Evaluation Setup\n' +
+      '\n' +
+      'Here we provide more details for the human evaluation described in SS4.4 for rating the models\' responses to the 252 user-oriented instructions. To ensure faithful and reliable evaluation, we asked two authors of these instructions (and of this paper) to judge model predictions. These two evaluators coordinated the standards for the 4-level rating system before starting annotation and then each of them rated all the instances independently. They were presented with the instruction, instance input, target output (as a reference), and model responses. Model responses are listed in random order, with all the model information anonymized. Figure 9 provides a screenshot of the annotation interface. The reported performance in this paper is based on the results from one of the evaluators, and the trends from the other evaluator\'s results are the same.\n' +
+      '\n' +
+      '### Human Evaluation Agreement\n' +
+      '\n' +
+      'To measure how reliable our human evaluation is, we calculate the inner-rater agreement between our two evaluators.\n' +
+      '\n' +
+      'We first report Cohen\'s \\(\\kappa\\), which is commonly used to measure inter-rater agreement for _categorical_ items. When calculating this, we treat the 4-level rating (A-D) as a categorical variable, leading to a \\(\\kappa\\) of 0.58, which is a moderate agreement according to common practice.13 Furthermore, we also calculate the agreement of our evaluators on classifying acceptable responses ((A or B) vs. (C or D)), with a final \\(\\kappa\\) of 0.75, indicating substantial agreement.\n' +
+      '\n' +
+      'Footnote 13: [https://en.wikipedia.org/wiki/Cohen%27s_kappa](https://en.wikipedia.org/wiki/Cohen%27s_kappa)\n' +
+      '\n' +
+      'We also compute the Spearman correlation coefficient \\(\\rho\\) between the ratings of our two evaluators by treating the rating as an ordinal variable (A>B>C>D). The final coefficient is \\(\\rho=0.81\\), indicating a high\n' +
+      '\n' +
+      'Figure 9: Human evaluation in done using a Google sheet, with predictions from different models present in random order and the model information being anonymized. Our expert evaluators are required to read the instruction and input, refer to the target, and then select the rating for the model’s response from A/B/C/D, corresponding to the 4 levels described in §4.4.\n' +
+      '\n' +
+      'correlation between the two evaluators.\n' +
+      '\n' +
+      '### Example Predictions from GPT3\\({}_{\\text{SELF-INST}}\\)\n' +
+      '\n' +
+      'We present a selection of user-oriented tasks, the corresponding GPT3\\({}_{\\text{SELF-INST}}\\)-produced responses and annotator ratings in Table 9. We see that even for responses rated as level C, the model demonstrates extensive steps in solving the task, even though its final output is incorrect.\n' +
+      '\n' +
+      '[MISSING_PAGE_FAIL:21]\n' +
+      '\n' +
+      'Task and Instance Examples from the Generated Instruction Data\n' +
+      '\n' +
+      '## Appendix C Task and Instance Examples from the Generated Instruction Data\n' +
+      '\n' +
+      '\\begin{table}\n' +
+      '\\begin{tabular}{l l l} \\hline \\hline\n' +
+      '**Instruction + Instance Input** & **Target Output** & **Validity** \\\\ \\hline Instruction: Generate a random password & def generator4RandomPassword(): & Instruction: \\(\\checkmark\\) \\\\ with at least 6 characters. & password += & Input: \\(\\checkmark\\) \\\\  & while lem(password) + 6: & Output: \\(\\checkmark\\) \\\\  & password += chr(random.randint(65, 90)) & return password \\\\ \\hline Instruction: Write a paragraph describing & paragraph: To tie disdeclares, first you need to make a loop with one & Instruction: \\(\\checkmark\\) \\\\ how to tie disbelacons for people who have & end of the lace. Then pass the other and through the loop and pull & Input: \\(\\checkmark\\) \\\\ never tied their shouse before. explain & it tight. Next, you need to wrap the lace around the shose several & Output: \\(\\checkmark\\) \\\\ each step briefly. & times. Finally, tuck in the loose end into the wrapped part of the & \\\\ \\hline Instruction: Given a word, find out its & Length = 5, Number of vowels = 2 & Instruction: \\(\\checkmark\\) \\\\ length and its number of vowels. & Input: \\(\\checkmark\\) \\\\ Input: Word = “hello” & Output: \\(\\checkmark\\) \\\\ \\hline Instruction: Write a story with three & John vass sitting on the floor in front of his laptop when he heard a & Instruction: \\(\\checkmark\\) \\\\ characters: a person, an animal and am & knock at the door. He opened it to find a dog standing there. The & Input: \\(\\checkmark\\) \\\\ object. & dop walked into the room and jumped onto the couch next to John’s & Output: \\(\\checkmark\\) \\\\ Input: Person: John, a programmer. & laptop. & Output: \\(\\checkmark\\) \\\\ Animal: A dog. & Object: A laptop. & \\\\ \\hline Instruction: Compose an email and send it & Hi [Friend], & Instruction: \\(\\checkmark\\) \\\\ to your friend, asking for advice on what & I’m having a bit of trouble with my current job. I’ve been & Input: \\(\\checkmark\\) \\\\ to do in this situation. & working on a project for the past few months, and the deadline & Output: \\(\\checkmark\\) \\\\ Input: Situation: You are a programmer & is approaching. My manager has asked me to stay late every day this & \\\\ and you have been working on a project & week to finish it. I don’t think I can do that because I have other & \\\\ for the past few months. The deadline is & commitments. What should I do? & \\\\ approaching, but you haven’t finished yet. & Your manager has asked you to stay late & \\\\ Your manager has asked you to stay late & every day this week to finish it. & \\\\ \\hline Instruction: What are some ways we can & & \\\\ make our school more eco-friendly? & - Use reusable water bottles instead of disposable plastic ones. & Instruction: \\(\\checkmark\\) \\\\  & - Turn off lights when you leave a room. & Output: \\(\\checkmark\\) \\\\  & - Recycle paper, cams and bottles. & \\\\  & - Plant trees to absorb carbon dioxide. & \\\\ \\hline Instruction: I am looking for a new & You should look for a cheaper apartment. You can try to negotiate & Instruction: \\(\\checkmark\\) \\\\ apartment, there are many options & with the landerd and offer him/her a lover price. If you are lucky, & Input: \\(\\checkmark\\) \\\\ available but they are all quite expensive. & they will accept your offer. Otherwise, you can wait until there is & Output: \\(\\checkmark\\) \\\\ i want to move as soon as possible. give & an apartment available at a more reasonable price. & \\\\ me advice on what to do. & & \\\\ \\hline Instruction: Write a dialogue between & & \\\\ two people who have been friends for a & & \\\\  & - Love on, it’ll be fun’ We haven’t beon there together in ages. & \\\\  & - Love on, it’ll be fun’ We can’t beon there together in ages. & \\\\  & - Love on the other to do something that he & \\\\  & - Love on\'t want to do. & \\\\  & - Love on\'t want to do.\n' +
+      '\n' +
+      '[MISSING_PAGE_EMPTY:23]\n' +
+      '\n';
+  </script>
+  <style>
+    #content {
+      max-width: 800px;
+      margin: auto;
+    }
+  </style>
+  <script>
+    let script = document.createElement('script');
+    script.src = "https://cdn.jsdelivr.net/npm/mathpix-markdown-it@1.0.40/es5/bundle.js";
+    document.head.append(script);
+
+    script.onload = function() {
+      const isLoaded = window.loadMathJax();
+      if (isLoaded) {
+        console.log('Styles loaded!')
+      }
+
+      const el = window.document.getElementById('content-text');
+      if (el) {
+        const options = {
+          htmlTags: true
+        };
+        const html = window.render(text, options);
+        el.outerHTML = html;
+      }
+    };
+  </script>
+</head>
+<body>
+  <div id="content"><div id="content-text"></div></div>
+</body>
+</html>

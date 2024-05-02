@@ -81,6 +81,7 @@
 | 2304.12244 | WizardLM Empowering Large Language Models to Follow Complex Instructions | [arXiv](https://arxiv.org/abs/2304.12244) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2304.12244) |
 | 2304.08177v3 | Efficient and Effective Text Encoding for Chinese LLaMA and Alpaca | [arXiv](https://arxiv.org/abs/2304.08177v3) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2304.08177v3) |
 | 2303.18223 | A Survey of Large Language Models | [arXiv](https://arxiv.org/abs/2303.18223) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2303.18223) |
+| 2212.10560 | Self-Instruct Aligning Language Models with Self-Generated Instructions | [arXiv](https://arxiv.org/abs/2212.10560) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2212.10560) |
 | 2110.03215 | Towards Continual Knowledge Learning of Language Models | [arXiv](https://arxiv.org/abs/2110.03215) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2110.03215) |
 | 2107.06499 | Deduplicating Training Data Makes Language Models Better | [arXiv](https://arxiv.org/abs/2107.06499) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2107.06499) |
 
