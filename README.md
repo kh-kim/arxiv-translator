@@ -13,6 +13,7 @@
 | ArXiv ID | Title | ArXiv | Go to |
 |:---:|:---|:---:|:---:|
 | 2404.19705v2 | When to Retrieve Teaching LLMs to Utilize Information Retrieval Effectively | [arXiv](https://arxiv.org/abs/2404.19705v2) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.19705v2) |
+| 2404.19543 | RAG and RAU A Survey on Retrieval-Augmented Language Model in Natural Language Processing | [arXiv](https://arxiv.org/abs/2404.19543) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.19543) |
 | 2404.14219v1 | Phi-3 Technical Report A Highly Capable Language Model Locally on Your Phone | [arXiv](https://arxiv.org/abs/2404.14219v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.14219v1) |
 | 2404.12241v1 | Introducing v05 of the AI Safety Benchmark from MLCommons | [arXiv](https://arxiv.org/abs/2404.12241v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.12241v1) |
 | 2404.11584v1 | The Landscape of Emerging AI Agent Architectures for Reasoning Planning and Tool Calling A Survey | [arXiv](https://arxiv.org/abs/2404.11584v1) | [page](https://github.com/kh-kim/arxiv-translator/tree/main/papers/2404.11584v1) |
