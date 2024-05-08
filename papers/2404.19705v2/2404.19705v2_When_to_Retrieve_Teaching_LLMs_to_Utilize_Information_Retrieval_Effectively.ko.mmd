@@ -1,0 +1,297 @@
+# 검색 시기: 정보 검색을 효과적으로 활용하기 위한 LLMs 지도
+
+Tiziano Labruna
+
+교신 작성자 Email: tlabruna@fbk.euUniversity of Bozen-Bolzano
+
+폰다지온 브루노 케슬러
+
+Cobere
+
+바스크대학교 하이츠센터
+
+ORCID (Tiziano Labruna): [https://orcid.org/0000-0001-7713-7679](https://orcid.org/0000-0001-7713-7679), ORCID (Jon Ander Campos): [https://orcid.org/0000-0002-1447-5870](https://orcid.org/0000-0002-1447-5870), ORCID (Gorka Zakune): [https://orcid.org/0000-0002-2506-7426](https://orcid.org/0000-0002-2506-7426)
+
+존 앤더 캄포스
+
+바스크대학교 하이츠센터
+
+ORCID (Tiziano Labruna): [https://orcid.org/0000-0001-7713-7679](https://orcid.org/0000-0001-7713-7679), ORCID (Jon Ander Campos): [https://orcid.org/0000-0002-1447-5870](https://orcid.org/0000-0002-1447-5870), ORCID (Gorka Zakune): [https://orcid.org/0000-0002-2506-7426](https://orcid.org/0000-0002-2506-7426)
+
+Gorka Zakune
+
+바스크대학교 하이츠센터
+
+ORCID (Tiziano Labruna): [https://orcid.org/0000-0001-7713-7679](https://orcid.org/0000-0001-7713-7679), ORCID (Jon Ander Campos): [https://orcid.org/0000-0002-1447-5870](https://orcid.org/0000-0002-1447-5870), ORCID (Gorka Zakune): [https://orcid.org/0000-0002-2506-7426](https://orcid.org/0000-0002-2506-7426)
+
+###### Abstract
+
+본 논문에서는 LLM(Large Language Models)이 주어진 질문에 답하기 위해 추가적인 컨텍스트가 필요할 때 특히 기성 정보 검색(Off-the-Shelf Information Retrieval, IR) 시스템을 사용하는 방법을 효과적으로 학습할 수 있음을 보인다. IR 시스템의 성능을 고려할 때, 질문 응답을 위한 최적 전략은 항상 외부 정보 검색을 수반하는 것은 아니며, 오히려 LLM 자체의 매개변수 메모리를 활용하는 것을 종종 수반한다. 이전 연구에서는 PopQA 데이터 세트에서 이러한 현상을 확인했으며, 가장 인기 있는 질문은 LLM의 매개변수 메모리를 사용하여 효과적으로 해결되는 반면 덜 인기 있는 질문은 IR 시스템 사용을 필요로 한다. 다음으로, 우리는 기존의 오픈 도메인 질의 응답 데이터 세트를 활용하여 LLMs에 대한 맞춤형 훈련 접근법을 제안한다. 여기서, LLM들은 질문에 대한 답을 알지 못할 때 특별한 토큰인 \(\langle\text{RET}\rangle\)를 생성하도록 훈련된다. PopQA 데이터 세트에 대한 적응형 검색 LLM(Adapt-LLM)의 평가는 (i) 모든 질문에 대한 정보를 검색하는 것, (ii) 항상 LLM의 파라메트릭 메모리를 사용하는 것, (iii) 검색기를 사용할 시기를 결정하기 위해 인기 임계값을 사용하는 것의 세 가지 구성 하에서 동일한 LLM에 대한 개선을 보여준다. 분석 결과, Adapt-LLM은 질의에 대한 답을 모르는 경우, IR의 필요성을 나타내는 \(\langle\text{RET}\rangle\) 토큰을 생성할 수 있는 반면, 파라메트릭 메모리에만 의존할 경우 높은 정확도 수준을 달성함을 보였다.
+
+## 1 Introduction
+
+질의응답(QA)의 과제는 자연어 이해 연구의 초점으로 남아 있다. 몇 가지만 언급하자면 NQ[18], SQuAD[25] 또는 QuAC[7]과 같은 QA 모델을 평가하기 위한 벤치마크 역할을 하는 많은 다른 데이터 세트가 있다. 오늘날, 대형 언어 모델(LLM)은 이러한 벤치마크에서 전통적인 방법을 일관되게 능가하여 놀라운 성능을 보여준다.
+
+전형적으로, 질의 응답을 위해 LLMs를 활용하는 두 가지 주요 접근법이 있다:
+
+(i) **닫힌 책 질문 응답**: 이 접근법에는 성능 향상을 위해 명령 튜닝 [32] 또는 몇 번의 샷 프롬프트 [6]과 같은 전략이 포함됩니다. 여기서 LLM은 질문에 답하기 위해 매개변수 기억에만 의존한다. 그러나 이러한 모수적 기억은 훈련 코퍼스에 전적으로 기반을 두고 있기 때문에 내재적 한계를 가지고 있으며, 이는 예를 들어 훈련 과정 후에 발생하는 사건에 대해 구식일 수 있다는 것을 의미한다.
+
+(ii) **Open Book Question Answering**: 이 접근법에서 LLM은 IR(Information Retriever) 시스템과 결합됩니다[13, 36]. IR 시스템을 활용함으로써 LLM은 관련 컨텍스트를 검색하여 이해도를 보완하고 보다 정확한 답변을 제공할 수 있다.
+
+그러나 Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh[22]가 수행한 연구는 최적 접근법이 항상 IR 시스템의 활용을 포함한다는 개념에 도전하면서 질문 응답 전략의 복잡성을 조명합니다. 인기 점수로 주석이 달린 14,000개의 질문으로 구성된 PopQA 데이터 세트의 도입을 통해 그들은 매개변수 기억에만 의존하는 LLM이 인기 높은 질문을 다루는 데 탁월하지만 IR을 사용하는 것이 중요해지는 인기 낮은 질문에 대한 효능은 감소한다는 것을 보여주었다.
+
+그들의 연구 결과는 LLM이 인기 높은 질문에 모수 메모리를 활용하지만 인기 낮은 질문에 답하기 위해 관련 컨텍스트를 검색하기 위해 기성 IR 시스템을 사용하는 하이브리드 접근법의 중요성을 강조한다. 그들의 방법론의 핵심은 IR 시스템을 사용해야 하는지 여부를 결정하는 데 사용되는 고정된 인기 점수 임계값을 설정하는 것이다.
+
+그러나 많은 경우에, 질의 응답 데이터 세트는 인기 점수를 포함하지 않으므로, 그러한 점수에 의존하는 것은 일반화할 수 있는 접근법이 아니다. 이러한 제한으로 인해, 본 연구는 LLMs가 개선된 질문 답변을 위해 IR 시스템을 사용할 시기를 자율적으로 결정할 수 있는지 여부를 다루는 것을 목표로 한다. 이를 조사하기 위해 개방형 질문 응답 데이터 세트를 사용하여 LLM에 대한 평가를 수행하여 LLM이 정확한 응답을 제공하는 질문과 응답이 잘못된 질문을 식별한다.
+
+특히 LLM 응답이 잘못 된 질문에 대해 추가 컨텍스트의 필요성을 나타내는 특수 토큰 \(\langle\text{RET}\rangle\)으로 주석을 달습니다. 그 후, 우리는 이러한 주석을 사용하여 훈련 목적에 맞게 조정된 새로운 데이터 세트를 구성하며, 여기서 LLM이 답변에 대해 확신하거나 질문에 답하는 데 유용하다고 믿는 컨텍스트가 필요한 경우 직접 답변하도록 가르친다(그림 1 참조). 우리의 가설은 이러한 훈련 과정을 통해 LLM이 질문에 답하기 위해 추가 컨텍스트가 필요할 때 IR 시스템을 사용하도록 학습하여 Adapt-LLM이라고 명명한다는 것이다.
+
+가설을 검증하기 위해 하이브리드 검색 전략을 벤치마킹하는 데 적합한 플랫폼을 제공하기 때문에 PopQA 데이터 세트 [22]에 대해 여러 실험을 수행했다. 이러한 실험들의 결과로서 우리는 다음과 같은 것을 발견한다:
+
+* Adapt-LLM은 (i) 모든 질문에 대해 IR 시스템을 사용하고 (ii) LLM의 매개변수 메모리에만 의존하는 것과 같은 질문 답변에 대한 일반적인 고정 전략을 일관되게 능가합니다.
+* Adapt-LLM은 인기 점수 또는 유사한 메트릭을 사용하지 않더라도 IR 시스템을 사용할 시기를 결정하기 위해 인기 점수에 의존하는 전략과 유사한 성능을 보여줍니다. 인기 점수는 PopQA 데이터 세트의 고유한 특징으로 다른 오픈 도메인 질문 응답 데이터 세트에 적용할 수 없게 만든다는 점에 주목할 필요가 있다.
+* Adapt-LLM이 추가 정보를 검색하기로 결정하면 컨텍스트와 함께 얻은 결과가 그렇지 않은 결과보다 훨씬 좋습니다. 유사하게, Adapt-LLM은 그것의 파라메트릭 메모리에 의존하여 질문들에 직접 답할 때, 높은 정확도를 달성한다. 이러한 관찰은 모델이 정보를 검색할 때와 더 이상의 컨텍스트 없이 질문에 답할 수 있는 때를 효과적으로 식별한다는 것을 나타낸다.
+* Adapt-LLM의 성능에 대 한 기본 병목 현상은 IR 시스템에 있습니다. Adapt-LLM은 IR 시스템에 의해 검색된 패시지에 비해 골드 패시지를 사용하여 훨씬 더 높은 성능을 달성한다.
+
+본 연구의 결과는 질의응답을 위한 LLM의 성능을 향상시키기 위한 적응적 검색 전략의 중요성을 강조한다. Adapt-LLM을 학습하여 추가 컨텍스트를 검색할 시기를 동적으로 결정함으로써 필요한 경우에만 외부 정보 소스를 효과적으로 활용하는 방법을 LLM에 가르치는 것의 타당성을 입증한다.
+
+## 2 관련 작업
+
+검색-증강 세대(RAG) [19]는 질문 응답[17, 13, 31, 23], 진실성[14, 21] 및 언어 모델링[12, 5, 26]과 같은 매우 다양한 NLP 영역에서 개선을 보여주었다. 검색된 텍스트 청크에서 모델 생성을 접지하는 기능은 또한 더 작은 모델이 더 큰 모델의 성능과 일치하도록 가능하게 했다[2]. 더욱이, LLM들을 트레이닝하는 매우 높은 비용 때문에, RAG는 새로운 사실들을 통합하기 위해 모델들을 주기적으로 재트레이닝할 필요가 없이, 새로운 정보로 업데이트들을 유지하는 표준 방법이 되었다[10].
+
+검색과 함께 LLMs를 증가시키는 것이 LLMs의 현재 세대에 필수적인 단계일지라도 [15, 27] 그것은 또한 비용을 수반한다. TF-IDF 또는 BM-25[29]와 같은 전통적인 검색 방법은 키워드가 겹치는 문서만 검색할 수 있고 어휘 격차[4]를 겪는다. 이러한 문제를 해결하기 위해, 많은 사전 훈련된 트랜스포머 인코더 기반 밀집 모델들이 제안되었다[9, 28, 17, 11]. 학습된 신경망 모델은 다양한 검색 벤치마크에 대해 좋은 성능을 보여주었지만, 여전히 새로운 도메인에 대한 제로 샷 설정에서 어려움을 겪고 있다[33]. 검색 엔진의 품질은 검색 강화 모델에 필수적인데, 이는 모델 성능의 상한을 설정할 것이기 때문이다. 더욱이, 특히 타겟 문서 인덱스가 거대할 때, 검색 엔진의 사용은 모델의 대기 시간을 상당히 증가시키고 실시간 애플리케이션 사용자 경험을 해칠 수 있다[3].
+
+다른 한편으로, 모델들이 스케일링을 계속함에 따라, 그들의 파라미터들에 인코딩된 세계 지식은 너무도 그러하다[16]. 이전의 많은 노력들은 언어 모델들이 단지 그들의 모수적 지식을 과제 해결에 사용할 때, 오픈 도메인 질의 응답과 같은 과제들에 대해 상당한 양의 세계 지식을 암기할 수 있고 경쟁 성능을 달성할 수 있다는 것을 보여주었다[20, 1, 34, 35].
+
+이 모든 것에 동기부여된, 적응적 접근법이 새로운 해결책으로서 제안되었다[30, 22]. 이 접근법에서, 태스크에 대한 솔루션이 모델의 파라미터들에서 인코딩되면, 모델은 솔루션을 생성하기 위해 직접 사용될 것이다. 반대로 모델의 지식에 답안이 인코딩되어 있지 않다면, 답안 생성은 외부 지식으로 증강될 것이다.
+
+최근에 Schick et al. [30]은 계산기, 검색 엔진, 캘린더 등을 포함하는 간단한 API 호출을 통해 외부 도구를 사용하는 방법과 시기를 스스로 가르칠 수 있는 모델인 Toolformer를 제안했다. 자기 학습 과정은 LLM을 프롬프트하여 풍부한 합성 텍스트 전용 말뭉치를 기반으로 한다. LLM은 먼저 감독되지 않은 코퍼스 위에 인라인 API 호출을 추가합니다. 이러한 API 호출은
+
+그림 1: Adapt-LLM의 추론 과정 단계: 질문이 주어진 경우(단계 1), LLM은 (단계 2) 질문에 직접 답할지(단계 3) 또는 추가 상황 정보를 요청할지를 결정하고, 특수 \(\langle\)RET\(\rangle\) 토큰을 생성하며, 나중에, OFF-the-shelf IR 시스템을 사용하여 관련 컨텍스트를 검색하고(단계 4), 이 컨텍스트를 질문과 함께 사용하여 최종 답변에 대해 LLM을 다시 프롬프트한다(단계 5).
+
+그런 다음 API 호출의 실행이 향후 토큰을 예측하는 데 도움이 되는지 여부를 평가하여 유효성을 검사합니다. 이 비감독 방법은 비증강 LLM과 비교할 때 다양한 작업에서 모델 성능을 크게 향상시키지만 모델을 도구보다 더 많이 사용하게 만든다. 예로서, QA 태스크에 대해 모델은 사례들의 99.3%의 검색 엔진을 사용한다. 본 연구에서는 LLMs에 대한 파라메트릭 지식을 활용하여 필요할 때 검색을 수행하고자 한다. Adapt-LLM은 IR의 사용량을 83.99%로 감소시키면서 바닐라 검색보다 성능을 향상시킨다.
+
+우리의 작업과 더 유사하게, Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh[22]는 비모수 정보가 검색될 필요가 있을 때 측정하기 위한 데이터세트 및 방법을 제안한다. 그들은 다양한 인기를 가진 엔터티 세트에 대한 14K 질문을 포함하는 PopQA 데이터 세트를 제시한다. 개체 인기는 위키피디아 페이지의 페이지 뷰에 의해 측정되며, 이러한 QA 태스크를 해결하기 위해 PopQA 데이터 세트에서 계산된 인기도 점수 임계값을 사용한다. 개별 개체의 인기 점수가 임계값 미만이면 검색 단계를 수행합니다. 반대로 점수가 임계값보다 크면 직접 질문에 답한다. 이 방법은 바닐라 검색보다 더 나은 결과를 얻지만 현실적인 QA 시나리오에서는 사용할 수 없는 인기 점수를 계산해야 한다.
+
+우리 연구와 동시에 이 분야의 또 다른 관련 기여는 Erbacher 등의 작업이다. [8]에서 그들은 외부 지식을 활용할 시기를 결정하기 위해 LLM을 훈련했다. 그들은 특히 IR과 관련된 잠재적으로 높은 비용을 감안할 때 환각의 위험과 정보 검색 비용 사이의 최적의 트레이드오프를 찾는 데 중점을 두었다. 우리의 Adapt-LLM 방법은 유사한 접근법을 채택하여 정보를 검색할 때 LLM을 학습시킨다. 그러나, 본 논문에서 제안한 방법의 성능을 일부 기준선과 비교하여 확장하고, 절대 검색하지 않거나 항상 검색하지 않는 전략에 대해 적응적인 방식으로 정보 검색의 효율성을 평가한다.
+
+각주 1: 모든 리소스는 [https://github.com/tLabruna/Adapt-LLM](https://github.com/tLabruna/Adapt-LLM)에서 공개적으로 사용할 수 있습니다.
+
+## 3 Adaptive Retrieval LLM (Adapt-LLM)
+
+적응적 검색은 질의 응답 태스크에서 답변을 생성하기 위한 추가적인 컨텍스트 정보를 검색할지 여부를 동적으로 결정하는 모델의 능력을 지칭한다. 적응적 검색은 항상 컨텍스트를 통합하거나 고려하지 않는 기존 모델과 달리 모델이 각 질문의 특정 요구 사항에 따라 컨텍스트를 선택적으로 검색할 수 있도록 한다. 이 적응형 접근법은 필요한 경우에만 컨텍스트를 활용하여 성능을 최적화하여 모델의 정확한 답변 생성 능력을 향상시키는 것을 목표로 한다.
+
+도 1에 도시된 바와 같이, Adapt-LLM의 프로세스는 다음의 시퀀스로 전개된다:
+
+1. 질문을 포함하는 첫 번째 프롬프트가 모델로 전송된다(도 1의 단계 1).
+2. Adapt-LLM은 질문에 효과적으로 답하기 위해 추가적인 컨텍스트가 필요한지 여부를 결정하기 위해 프롬프트를 평가한다(단계 2).
+3. 모델이 컨텍스트가 필요하지 않다고 결정하면, 그것은 자신의 파라메트릭 메모리를 활용하여 질문에 대한 응답을 직접 생성한다(단계 3).
+4. 컨텍스트가 필요하다고 간주되면, Adapt-LLM 모델은 \(\langle\text{RET}\rangle\)로 표현되는 특수 토큰을 반환하고, 오프-더-쉘프 IR 시스템은 질문에 기초하여 관련 컨텍스트를 검색하기 위해 사용된다(단계 4); 이어서 컨텍스트는 답변 생성을 위한 포괄적인 표현을 형성하기 위해 원래의 질문 프롬프트와 결합된다(단계 5).
+
+Adapt-LLM의 의사결정 과정은 각 프롬프트의 동적 평가를 통해 모델이 질문에 답하기 위한 컨텍스트의 필요성을 결정할 수 있도록 한다. 이 유연한 동작을 통해 모델은 향상된 이해를 위해 컨텍스트를 활용하는 것과 충분한 경우 직접적인 답변을 전달하는 것 사이의 균형을 맞출 수 있다.
+
+### Training Adapt-LLM
+
+여기서는 Adapt-LLM 모델을 훈련하기 위해 사용된 방법론을 설명한다. 학습 데이터를 만드는 과정( \(DS_{Adapt}\)은 알고리즘 1에 제시되어 있다.
+
+```
+Input: Q: questions, A: answer, P: passages, LLM Output:\(DS_{Adapt}\): Adaptive Retrieval을 위한 training dataset
+1\(DS_{Adapt}\) = init_empty() forq, gold_ans, pass in (Q, A, P)do
+2 as = LLM(q) ifans = gold_ans then
+3ist = build_instance('parametric_prompt', q, gold_ans) \(DS_{Adapt}\).add(inst)
+4 끝
+5else
+6inst1 = build_instance('parametric_prompt', q, "<RET>") \(DS_{Adapt}\).add(inst1)
+7ist2 = build_instance('context_prompt', q, gold_ans, pass) \(DS_{Adapt}\).add(inst2)
+8
+9
+10단부
+11
+12 end for return \(DS_{Adapt}\)
+```
+
+**알고리즘 1**훈련 데이터 만들기
+
+질문 \(Q\), 관련 컨텍스트 통로 \(P\) 및 해당 답변 \(A\)을 포함하는 개방형 질문 응답 데이터 세트를 선택하는 것으로 시작한다. 우리는 \(DS_{Adapt}\)를 빈 집합(알고리즘의 1행)으로 초기화한다. 우리는 \(Q\)의 각 질문에 대해 제로샷 추론(line 3)을 수행하기 위해 검색 메커니즘 없이 기본 LLM을 활용한다. 이 단계를 통해 모델이 정답을 생성하는 질문과 응답이 부정확한 질문을 구별할 수 있습니다. 이 과정은 기본 LLM이 파라메트릭 메모리로 인해 _알고 있는_ 것을 발견하는 방법으로 이해될 수 있다. 모델의 응답이 정확한 질문(4행)의 경우 다음 프롬프트를 포함하는 훈련 세트 인스턴스를 빌드하고 이를 _모수_prompt_라고 합니다.
+
+```
+Input: Q: questions, A: answer, P: passages, LLM Output:\(DS_{Adapt}\): Adaptive Retrieval을 위한 training dataset
+1\(DS_{Adapt}\) = init_empty() forq, gold_ans, pass in (Q, A, P)do
+2 as = LLM(q) ifans = gold_ans then
+3ist = build_instance('parametric_prompt', q, gold_ans) \(DS_{Adapt}\).add(inst)
+4 끝
+5else
+6inst1 = build_instance('parametric_prompt', q, "<RET>") \(DS_{Adapt}\).add(inst1)
+7ist2 = build_instance('context_prompt', q, gold_ans, pass) \(DS_{Adapt}\).add(inst2)
+8
+9
+10 end for return \(DS_{Adapt}\)
+```
+
+**알고리즘 2**훈련 데이터 만들기
+
+이 프롬프트와 함께 \(Q\)의 해당 질문과 \(A\)의 황금 답변을 포함하여 인스턴스(5행)를 집합적으로 구성하며, 이후 \(DS_{Adapt}\) 데이터 세트(6행)에 추가됩니다.
+
+대조적으로, LLM이 질문에 대한 올바른 응답을 생성하지 못하면(라인 8), 우리는 두 개의 다른 인스턴스를 구축한다. 첫 번째는 \(\langle\)RET\(\rangle\)가 답(9행)으로 지정되어 추가 컨텍스트의 필요성을 나타내는 앞에서 설명한 것과 동일한 _모수_prompt_를 사용합니다. 두 번째 프롬프트인 _context_prompt_는 질문과 함께 컨텍스트 정보를 포함합니다.
+
+Prompt: 문맥 C가 주어진 질문 Q에 대답한다. Q: {...}, C: {...}
+
+이 경우 프롬프트, \(Q\)의 질문, \(A\)의 황금 답변 및 \(P\)의 해당 컨텍스트 통로(행 11)가 포함됩니다.
+
+LLM이 정확하게 응답할 수 없는 질문에 대한 두 가지 유형의 프롬프트로 데이터 세트를 채우고 다른 모든 질문에 대한 황금 답변으로 _모수_prompt_ 만을 채운 후 후속 미세 조정 단계를 위해 훈련 세트 \(D_{Adapt}\)를 준비한다. 미세 조정 프로세스는 데이터 세트에서 기본 LLM을 훈련하여 Adapt-LLM 모델을 생성하는 것을 수반한다.
+
+이 접근법은 모델이 질문에 답하기 위해 컨텍스트가 필요할 때 식별하거나, 컨텍스트가 제공될 때 직접 답변뿐만 아니라 충분할 때 직접 답변을 제공하도록 효과적으로 학습하도록 보장한다.
+
+### Inference
+
+추론 단계에서는 미세 조정된 모델을 사용하여 보이지 않는 질문에 대한 응답을 생성한다. 섹션 3.1에 설명된 대로 교육 단계에서 사용된 것과 동일한 프롬프트를 사용한다.
+
+초기에는 모델이 직접 응답을 제공하거나 대답이 확실하지 않은 경우 반환 \(\langle\)RET\(\rangle\)로 메시지가 표시됩니다. 모델이 \(\langle\)RET\(\rangle\)를 반환하는 경우, 우리는 선반외 IR 시스템을 사용하여 관련 컨텍스트를 획득하기 위해 정보 검색을 진행한다. 그 후, 검색된 컨텍스트로 질문을 증강하고 훈련 단계에서 도입된 두 번째 유형의 프롬프트를 사용하여 모델을 다시 프롬프트한다.
+
+## 4 실험 및 결과
+
+본 절에서는 제안된 적응형 검색 기법인 Adapt-LLM의 성능을 평가하기 위한 실험 프레임워크를 설명한다. 활용된 데이터 세트(섹션 4.1)를 설명한 다음 기본 모델의 개요(섹션 4.2), 기본 모델의 다양한 구성(섹션 4.3) 및 훈련 세부 정보(섹션 4.4)를 설명하는 것으로 시작한다. 이어서, 우리는 세 가지 주요 실험을 소개한다:
+
+1. 다음 기준 모델과 비교하여 Adapt-LLM 성능의 평가: (i) 모든 질문에 대한 컨텍스트 정보를 검색하는 LLM, 및 (ii) 임의의 질문에 대해 IR 시스템을 사용하지 않고 자신의 파라메트릭 메모리에 독점적으로 의존하는 LLM(섹션 4.5).
+2. 질문에 답하기 위해 여분의 컨텍스트가 필요할 때를 결정하는 Adapt-LLM의 능력의 분석(섹션 4.6).
+3. PopQA에 대한 최첨단 접근법과의 비교(섹션 4.7).
+
+### Datasets
+
+모델의 포괄적인 훈련과 평가를 보장하기 위해 세 가지 다양한 질문 응답 데이터 세트를 구체적으로 선택했다. 교육을 위해 NQ[18]와 SQuAD[25]를 선택했는데, 이는 사실적 지식을 평가하고 위키피디아를 기반으로 하는 널리 알려져 있는 데이터 세트이기 때문이다. 평가를 위해, 우리는 PopQA[22]를 선택했다. 다음은 각 데이터 세트에 대한 간략한 설명입니다.
+
+NqThe Natural Questions 데이터셋 [18]은 구글 검색 질의에서 파생된 실제 질문의 집합으로, 위키피디아 기사에서 얻은 긴 형식의 텍스트 지문과 함께 다양한 범위의 주제 및 자연어 변형을 제공한다. 이 데이터 세트를 사용하여 실험에서 모델을 **훈련** 합니다.
+
+SQuAD The Stanford Question Answering Dataset SQuAD [25]는 자연어 처리 분야에서 널리 사용되는 데이터 세트이며 컨텍스트 역할을 하는 관련 단락 구절과 함께 다양한 범위의 위키피디아 기사에 크라우드 워커가 제기하는 질문으로 구성된다. 이 데이터 세트를 사용하여 실험에서 모델을 **훈련** 합니다.
+
+PopQA The Popular Questions and Answers 데이터셋 [22]는 다양한 온라인 플랫폼에서 제공되는 선별된 질문으로 구성되며, 광범위한 도메인과 스타일을 포괄한다. 이 데이터 세트에서 관찰된 컨텍스트 검색 전략의 효과성의 가변성을 감안할 때, 정확한 답변 제공을 위해 컨텍스트가 필요한 시기를 결정하는 언어 모델의 성능을 **평가**하기 위해 PopQA를 테스트 세트로 선택합니다.
+
+### Base Model
+
+우리의 실험에서 우리는 기본 LLM으로 라마-2[34]를 사용한다. Lama-2는 7B, 13B 및 70B 매개변수의 버전으로 제공되는 오픈 소스 명령어 기반 LLM이다. 이 모델은 공개적으로 사용 가능한 온라인 데이터 소스에서 제공되는 확장된 코퍼스에서 사전 훈련된다. 이 코퍼스는 이전 코퍼스에 비해 크기가 40% 증가하여 모델의 향상된 성능과 기능에 기여합니다.
+
+또한, Llama-2는 확장된 컨텍스트 길이를 특징으로 하여 더 긴 텍스트 시퀀스를 처리하고 이해하는 능력을 효과적으로 배가한다. 이러한 향상은 다양한 자연어 이해 과제에 걸쳐 모델의 효과를 크게 향상시킨다. 구체적으로, 실험을 위해 Llama-2 모델을 활용한다.
+
+\begin{table}
+\begin{tabular}{c l l} \hline \hline \multirow{2}{*}{**Training Set**} & **Model configuration** & **Accuracy** \\ \hline \multirow{3}{*}{NQ} & Never Retrieve & 21.43\% \\  & Always Retrieve & 35.86\% \\  & Adapt-LLM (ours) & **36.77\%** \\ \hline \multirow{3}{*}{SQuAD} & Never Retrieve & 21.22\% \\  & Always Retrieve & 36.59\% \\ \cline{1-1}  & Adapt-LLM (ours) & **38.15\%** \\ \hline \hline \end{tabular}
+\end{table}
+표 1: PopQA 테스트 세트에 대해 평가된 상이한 검색 구성(NR-LLM, AR-LLM 및 Adapt-LLM)을 사용하여 NQ 및 SQuAD 데이터 세트에 대해 트레이닝된 Llama-2 모델의 성능 비교. 모든 모델에 대해 정확한 일치 정확도가 보고됩니다.
+
+\begin{table}
+\begin{tabular}{c c c c} \hline \hline  & **NQ** & **SQuAD** & **PopQA** \\ \hline Questions & 58,880 & 87,599 & 14,282 \\ Words/question & 9.20 & 10.06 & 6.62 \\ Words/answer & 2.26 & 3.16 & 2.04 \\ \hline \hline \end{tabular}
+\end{table}
+표 2: 실험에 사용하는 세 가지 데이터 세트, 즉 SQuAD, NQ 및 PopQA의 비교. 각각에 대해 질문 수와 질문 및 답변당 평균 단어 수를 제공합니다.
+
+7B 매개 변수를 사용하여 특정 연구 목표에 강력한 기능을 활용합니다.
+
+### Model Configurations
+
+LLM과 IR 시스템을 결합할 수 있는 세 가지 다른 방식에 해당하는 세 가지 다른 모델 구성을 사용하여 실험을 수행한다.
+
+* **Adaptive Retrieval (Adapt-LLM)**. Adapt-LLM 모델은 섹션 3.1에서 설명한 대로 컨텍스트 정보에 대한 질문과 인식된 필요성에 따라 컨텍스트 검색 여부를 동적으로 결정한다. IR 시스템으로 대규모 코퍼스에서 사전 학습된 비지도 모델인 Contriever [11]을 사용하고 MS MARCO [24]에서 미세 조정한다. 우리는 최종 답변을 위해 기본 LLM을 프롬프트하기 위해 IR 시스템에 따라 가장 관련성이 높은 통로만 검색한다.
+* **NR-LLM(Never-Retrieve)**. 이 모델 구성은 컨텍스트 정보를 고려하지 않고 질문 텍스트만을 기반으로 질문에 답하도록 훈련된다. 문맥이 없는 상황에서 질의 응답 모델의 성능을 평가하는 기준선 역할을 한다.
+* **AR-LLM(Always-Retrieve)**. NR-LLM 모델과 대조적으로, 이 구성은 항상 질문에 답하는 것을 돕기 위해 컨텍스트 구절을 검색한다. 이는 답변을 생성하기 위해 컨텍스트를 일관되게 활용하도록 훈련된다. Adapt-LLM과 공정한 비교를 보장하기 위해 Contriever [11]을 IR 시스템으로 사용하고 컨텍스트로 가장 관련성이 높은 통로만 검색한다.
+
+### Training Details
+
+3가지 모델 구성(Adapt-LLM, AR-LLM 및 NR-LLM)과 훈련 세트(SQuAD 및 NQ) 모두에 대해 배치 크기 128, 3개의 에폭, 고정 학습 속도 3e-4를 포함하는 Alpaca-Lora [32]에 설정된 매개변수 구성을 준수한다. r=8, 알파=16, 드롭아웃 속도 0.05로 구성된 매개변수와 LoRA(Low-Rank Adaptation) 정규화를 통합했다. 훈련은 NVIDIA A40 GPU에서 약 8시간의 평균 훈련 시간 동안 수행되었다. 우리는 어떤 모델 선택도 수행하지 않고 3번의 훈련 후 마지막 체크포인트를 사용한다.
+
+### 적응형 검색 방법 유효성 검사
+
+NR-LLM 및 AR-LLM 구성과 비교하여 적응 접근법(Adapt-LLM)의 효율성을 평가하기 위해 세 가지 구성 모두에 걸쳐 NQ 및 SQuAD 데이터 세트 모두에서 Llama-2 모델의 미세 조정을 수행했다. NR-LLM 및 AR-LLM 구성의 경우 데이터 세트에서 질문-응답 쌍을 추출하고 해당 명령 프롬프트를 통합하여 훈련 샘플을 구성했다.
+
+구체적으로, NR-LLM 구성에 대한 프롬프트는 추가 컨텍스트 없이 모델에 질문에 답하도록 지시한 반면, AR-LLM 구성에 대한 프롬프트는 질문 및 컨텍스트 정보를 모두 포함했다. 대조적으로, Adapt-LLM 훈련 세트는 2단계 프로세스를 사용하여 섹션 3.1에 설명된 접근법에 따라 구성되었다. 이 과정의 결과로 NQ의 74.72%는 (RET) 토큰으로 표시된 반면, SQuAD의 경우 87.49%의 질문이 표시된다.
+
+그런 다음 훈련된 모델을 PopQA 데이터 세트에서 테스트하여 실제 질문 응답 시나리오에서 성능을 평가했다. 추론하는 동안 NR-LLM 및 AR-LLM 모델이 그대로 활용되었으며 해당 지시 프롬프트가 제공되었으며 출력은 질문에 대한 답변으로 예상된다. 반대로 Adapt-LLM 모델의 경우 섹션 3.2에서 설명한 것과 동일한 신속한 절차를 따랐다.
+
+그런 다음 생성된 답변은 PopQA 테스트 세트에서 이미 주석이 달린 각 질문에 대한 가능한 답변 세트와 비교된다. 사용된 평가 메트릭은 **정확한 일치 정확도** 로 해당 질문에 대한 가능한 답변 중 하나와 정확히 일치하는 생성된 출력의 백분율을 측정합니다.
+
+표 1은 다른 구성과 데이터 세트에 걸친 라마-2 모델의 성능을 설명하는 이 실험의 결과를 보여준다. NQ 및 SQuAD 훈련 데이터 세트 모두에서 Adapt-LLM 구성은 PopQA 테스트 세트에서 네버 검색(NR-LLM) 및 항상 검색(AR-LLM) 구성보다 일관되게 우수합니다. 관찰할 수 있는 바와 같이 NR-LLM은 다른 구성에 비해 약 14개의 절대점의 정확도 차이로 모델 중 가장 낮은 성능을 나타낸다. 이러한 차이는 라마-2의 매개변수 기억만으로는 PopQA 질문에 효과적으로 답하기 충분하지 않음을 시사한다.
+
+AR-LLM과 Adapt-LLM의 차이는 더 좁다. 특히, Adapt-LLM 구성은 AR-LLM 구성의 35.86% 및 36.59%에 비해 NQ 및 SQuAD 데이터 세트에 대해 훈련되었을 때 PopQA 테스트 세트에 대해 각각 36.77% 및 38.15%의 정확도를 달성했다. 두 훈련 데이터 세트 모두에서 Adapt-LLM은 AR-LLM보다 우수하며 SQuAD에서 훈련할 때 가장 큰 차이가 관찰된다.
+
+이러한 결과는 정확한 질의응답을 위해 컨텍스트의 필요성을 동적으로 결정하는 적응적 검색 방법의 효율성을 강조하며, 이는 항상 또는 결코 컨텍스트를 검색하지 않는 고정된 전략에 비해 향상된 성능을 가져온다.
+
+NQ 또는 SQuAD에서 훈련 Adapt-LLM 간의 차이는 상대적으로 작지만 주어진 평가 세트에 대한 훈련 세트의 적합성을 결정하려고 한다. 훈련 세트(NQ 및 SQuAD) 및 평가 세트(PopQA)가 모두 위키피디아를 기반으로 하는 반면, 미묘한 차이가 존재할 수 있다.
+
+표 2는 총 질문 수와 질문당 평균 단어 수를 포함하여 실험 절차에 관련된 세 데이터 세트의 특성에 대한 통찰력을 제공한다.
+
+\begin{table}
+\begin{tabular}{c c c c c c} \hline \hline
+**Training** & \(\langle\)**RET**\(\rangle\)** & \(\langle\)**RET**\(\rangle\)** & \multicolumn{2}{c}{**No \(\langle\)RET**\(\rangle\)**} \\  & & **Acc. w/ context** & **Acc. w/o context** & **Acc. w/ context** & **Acc. w/o context** \\ \hline NQ & 82.26\% & 33.04\% & 14.65\% & 55.72\% & 62.36\% \\ SQuAD & 83.93\% & 33.40\% & 9.94\% & 57.73\% & 62.92\% \\ \hline \hline \end{tabular}
+\end{table}
+표 3: Adapt-LLM 모델에서 \(\langle\)RET\(\rangle\) 토큰 사용 결과. 첫 번째 열에는 모델이 추가 컨텍스트를 요청하는 PopQA 질문의 백분율이 표시됩니다. 두 번째 열은 Adapt-LLM이 컨텍스트를 묻는 질문(\(\langle\)RET\(\rangle\))에 초점을 맞추고, 컨텍스트가 있는 질문과 없는 질문의 성능을 비교한다. 마지막 열(No \(\langle\)RET\(\rangle\))은 Adapt-LLM이 직접 답하기로 결정한 질문에 대한 것이다. 또한, IR 시스템에 의해 검색된 컨텍스트의 유무에 따른 성능을 비교한다.
+
+선택 및 답변. 질문과 답변 길이 측면에서 NQ가 PopQA에 더 가까운 것으로 보이지만, SQuAD에서 Adapt-LLM을 훈련하는 데 영향을 미치는 핵심 요소는 훈련 데이터 세트의 질문 수(SQuAD의 \(\sim\)87K 및 NQ의 \(\sim\)58K)일 수 있다. 훈련 데이터 세트를 주어진 대상 데이터 세트에 더 적합하게 만드는 요인(우리 연구의 범위를 벗어남)을 설명하기 위해서는 추가 분석이 필요하지만 이러한 결과는 규모가 다시 한 번 중요한 역할을 할 수 있음을 시사한다.
+
+### 상황 검색 결정 분석
+
+이 실험에서 우리의 목표는 Adapt-LLM 모델의 효과를 다시 한 번 평가하는 것이며, 이번에는 추가 컨텍스트가 필요한 시기를 정확하게 결정하는 능력에 초점을 맞춘다. 이를 위해 다음 단계를 준수합니다.
+
+1. PopQA 테스트 세트를 사용하여 Adapt-LLM 모델에 대한 추론을 수행하여 답변을 직접 반환하거나 \(\langle\)RET\(\rangle\)를 반환하여 추가 컨텍스트의 필요성을 나타낸다.
+2. Adapt-LLM 모델로부터 \(\langle\)RET\(\rangle\) 응답을 수신하는 경우, 다음과 같은 단계를 진행한다. 1. Adapt-LLM 모델에서 추론을 수행하여 IR 시스템에서 얻은 컨텍스트가 주어진 답변을 반환하도록 유도한다. 2. 추가 컨텍스트 없이 직접 답변을 제공하라는 명령을 사용하여 NR-LLM 모델에서 추론을 수행한다.
+3. Adapt-LLM 모델이 자신의 파라메트릭 메모리에만 의존하여 질문에 직접 답하기로 결정하는 경우: 1. Adapt-LLM 모델에 대한 추론을 수행하여 컨텍스트를 제공하지 않고 답변을 반환하도록 프롬프트한다. 2. IR 시스템에 의해 검색된 컨텍스트를 사용하여 답변을 제공하도록 명령과 함께 AR-LLM 모델에 대한 추론을 수행한다.
+
+표 3은 본 실험의 결과를 제시한다. 첫 번째로 주목할 점은 Adapt-LLM 모델이 PopQA 데이터 세트의 질문의 약 82-83%에 대해 \(\langle\)RET\(\rangle\) 토큰을 생성하며 두 훈련 데이터 세트 모두에서 유사한 비율이 관찰된다는 것이다. 이 관찰은 표 1에서 입증된 NR-LLM 구성의 낮은 성능과 일치한다.
+
+그러나 Adapt-LLM은 질문에 정확하게 답하기 위해 추가 컨텍스트가 필요할 때를 일관되게 결정한다. NQ 및 SQuAD 트레이닝 데이터 세트 모두에 걸쳐, Adapt-LLM은 컨텍스트가 없는(표 3의 \(\langle\)RET\(\rangle\) 열에 표시된 바와 같이) NR-LLM 모델의 정확도에 비해 컨텍스트를 검색할 때 훨씬 더 높은 정확도를 나타낸다. 구체적으로, NQ 데이터 세트의 경우, 컨텍스트 요청 시 Adapt-LLM 모델의 정확도는 33.04%인 반면, 컨텍스트 검색이 없는 NR-LLM 모델의 정확도는 14.65%로 현저하게 낮다. 유사하게, SQuAD 데이터 세트의 경우, Adapt-LLM은 컨텍스트 검색에서 33.40%의 정확도를 달성하는 반면, 컨텍스트가 없는 NR-LLM 모델의 정확도는 9.94%로 실질적으로 더 낮다.
+
+마지막으로 표 3의 마지막 열(No \(\langle\)RET\(\rangle\))은 파라메트릭 메모리만을 기반으로 질문에 답할 때 Adapt-LLM의 성능을 보여준다. 알 수 있듯이 컨텍스트를 활용하지 않을 때 62% 이상의 정확도가 얻어져 Adapt-LLM이 컨텍스트 검색과 질문에 대한 직접적인 답변 제공 사이를 효과적으로 식별한다는 추가 증거를 제공한다. 또한 문맥이 입력에 추가될 때 이러한 질문의 성능을 평가하여 최대 7개의 절대점의 정확도가 크게 감소함을 보여준다.
+
+이러한 연구 결과는 정확한 응답 생성을 위한 추가 컨텍스트의 필요성을 결정하는 데 Adapt-LLM 모델이 사용하는 의사 결정 프로세스의 효과에 대한 통찰력을 제공하고 퀘스의 정확도를 향상시키는 데 동적 컨텍스트 검색 수행의 필요성에 대한 경험적 증거를 제시한다.
+
+\begin{table}
+\begin{tabular}{c c c} \hline \hline \multirow{2}{*}{**Passages**} & **SQuAD Dev** & **NQ Dev** \\  & **Acc.** & **Acc.** \\ \hline Gold & **89.42\%** & **69.76\%** \\ Contirever & 22.49 & 27.04\% \\ \hline \hline \end{tabular}
+\end{table}
+표 4: SQuAD 및 NQ dev 세트에 대한 Adapt-LLM의 성능 비교, 데이터 세트에 의해 제공된 골드 통로를 사용할 때와 Contriever에 의해 검색된 최상의 통로를 사용할 때.
+
+그림 2: NQ(왼쪽)에서 훈련된 Adapt-LLM과 SQuAD(오른쪽)에서 훈련된 Adapt-LLM이 다른 인기 점수 간격에 대해 추가 컨텍스트를 요청하는 질문의 비율을 나타내는 히스토그램.
+
+자동 응답 모델입니다.
+
+그러나 표 3(약 33%)에서 관찰된 바와 같이 검색된 컨텍스트로 질문에 응답할 때 모델의 전체 성능이 상대적으로 낮다는 것이 눈에 띈다. 이 관찰을 더 탐구하기 위해, 우리는 추가 실험을 수행한다: NQ 및 SQuAD 개발 분할에서 Adapt-LLM(NQ 및 SQuAD에 대해 트레이닝된 버전 둘 다)을 평가하고, 데이터세트의 골드 패시지와 IR 시스템인 Contriever[11]에 의해 검색된 컨텍스트를 사용할 때의 성능을 비교한다. 불행히도 PopQA는 금 구절을 제공하지 않기 때문에 직접적인 평가는 불가능했다.
+
+표 4는 본 실험의 결과를 제시한다. 두 데이터 세트(SQuAD의 경우 약 67개의 절대점 및 NQ의 경우 42개)에 대해 Contriever에서 검색한 골드 통로와 상단 통로를 사용하는 것 사이에 상당한 성능 차이가 관찰된다. 이것은 Contriever 및 현재 IR 시스템이 일반적으로 주어진 질문에 답하기 위해 가장 적절한 구절을 일관되게 검색하지 않는다는 것을 나타낸다. 이 관찰은 가장 성공적인 오픈 도메인 QA 시스템에서 볼 수 있듯이 컨텍스트로 여러 문서를 검색하는 것의 중요성을 강조하고 PopQA에서 Adapt-LLM의 전체 성능에 미치는 영향을 강조한다.
+
+추가 컨텍스트를 요청할 때 Adapt-LLM의 동작을 추가로 검증하기 위해 그림 2는 우리 모델이 인기 점수 간격(NQ에서 훈련된 Adapt-LLM의 왼쪽 이미지 및 SQuAD의 오른쪽 이미지)으로 집계된 \(\langle\text{RET}\rangle\) 토큰을 생성하는 질문의 비율을 보여준다. Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh [22]는 높은 인기 질문은 LLM의 매개변수 기억을 사용하여 적절하게 대답할 수 있는 반면 낮은 인기 점수는 추가적인 맥락을 필요로 한다고 제안한다. 그림 2에서 우리는 Adapt-LLM의 두 버전 모두에 대해 이 패턴을 관찰하며, 이는 훈련 또는 추론 중 인기 점수에 대한 액세스가 부족함에도 불구하고 우리 모델이 추가 컨텍스트를 요청하기 위한 효과적인 기준을 학습했음을 나타낸다.
+
+### 최신 방법과의 비교
+
+우리는 Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh [22]가 제안한 PopQA에 대한 Adapt-LLM 모델과 현재 최신 접근법과의 비교 분석을 수행했다. 그들의 방법론은 질문이 추가 컨텍스트를 필요로 하는지 여부를 결정하기 위해 PopQA 데이터 세트에 주석이 달린 인기 점수에 의존한다. 문제 인기도를 결정하는 최적의 임계값을 설정하기 위해 Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh[22]는 PopQA 데이터 세트를 임계값 결정을 위한 개발 세트로 75%, 테스트 세트로 25%로 분할했다. 원본 논문에서, 그들은 이 방법론을 그 순간에 이용 가능한 다양한 LLM에 적용한다(Llama-2는 아직 출시되지 않았다).
+
+Adapt-LLM과 인기 기반 방법 간의 공정한 비교를 보장하기 위해 동일한 PopQA 개발 세트를 사용하여 최고의 인기 점수 임계값(707,000으로 발견됨)을 결정하기 위해 Llama-2 TB 모델을 사용하여 접근법을 복제했다. 이를 통해 기본 LLM을 활용하면서 그들의 방법론과 일치하는 결과를 얻을 수 있었다. 더 작은 모델들을 사용할 때, Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh[22]에서의 원래의 결과들과 유사하게, 인기 스코어 임계치는 항상 Llama-2 7B에 대한 컨텍스트 정보를 검색하는 것과 거의 동등하다. 표 5에 제시된 IR 사용량은 99.86%이다. 이것은 인기 점수 방법이 Contriever와 함께 적응 검색을 사용할 때 원래 논문에서 IR 사용량을 80% 미만으로 얻은 유일한 모델인 GPT-3 다빈치-003으로 더 작은 크기의 모델과 어떻게 어려움을 겪고 있는지 명확하게 보여준다. 그 후, 동일한 25% 테스트 세트 분할에서 Adapt-LLM 구성을 평가하고 Llama-2 LLM을 기본 모델로 하여 Mallen, Alex Troy 및 Asai, Akari 및 Zhong, Victor 및 Das, Rajarshi 및 Khashabi, Daniel 및 Hajishirzi, Hannaneh [22]가 설명한 방법을 사용하여 얻은 결과와 결과를 비교했다.
+
+이 실험의 결과는 표 5에 제시되어 있다. 우리는 NQ 및 SQuAD 데이터 세트에 대해 훈련되었을 때 Mallen, Alex Troy 및 Asai, Akari 및 Zhong, Victor 및 Das, Rajarshi 및 Khashabi, Daniel 및 Hajishirzi, Hannaneh [22] 및 Adapt-LLM의 복제된 접근법과 PopQA의 25% 하위 집합에 대해 테스트할 때 유사한 성능을 관찰한다. Adapt-LLM은 인기 점수를 직접 사용하는 Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh [22]와 달리 PopQA의 어떤 정보도 활용하지 않는다는 점을 언급할 가치가 있다. 이 방법론은 인기 점수가 PopQA의 고유한 기능이기 때문에 다른 개방형 질문 응답 작업에 일반화할 수 없다. 그러나 Adapt-LLM은 임의의 유사한 데이터 세트에 적용될 수 있다. 이러한 특성을 감안할 때 Adapt-LLM에서 얻은 결과가 훨씬 더 중요하여 데이터 세트별 정보를 활용하는 접근법과 유사한 성능을 제공한다고 믿는다. 이러한 발견은 테스트에 사용된 데이터 세트와 다른 데이터 세트로 훈련된 경우에도 우리의 접근법의 유효성을 입증한다.
+
+## 5 Conclusions
+
+본 논문에서는 파라메트릭 메모리에만 의존하지 않고, 질문에 응답하기 위해 추가적인 컨텍스트가 필요할 때 식별하는 것을 학습하는 LLM인 Adapt-LLM을 소개한다. Adapt-LLM은 LLM의 매개변수 메모리만으로 대답할 수 있는 질문과 보충 컨텍스트가 필요한 질문을 구별하기 위해 수정된 개방형 도메인 질문 응답 데이터 세트에서 기본 LLM을 미세 조정한 결과이다. 이러한 학습 데이터 세트를 구성하기 위해 먼저 기본 LLM을 제로 샷 평가에 적용하여 질문에 대한 응답 정확도를 결정한다. 모델의 응답이 잘못된 질문의 경우 추가 컨텍스트의 필요성을 나타내는 특수 토큰 \(\langle\text{RET}\rangle\)을 생성하도록 LLM을 훈련한다.
+
+PopQA 데이터세트에 대한 광범위한 실험을 통해 Adapt-LLM이 두 가지 고정된 대안, 즉 절대 관련 컨텍스트 정보를 검색하지 않고 항상 검색하는 것보다 더 나은 성능을 보인다는 것을 보여준다. 또한, 우리의 연구 결과는 이 작업의 주요 목표인 추가 컨텍스트의 필요성을 효과적으로 식별하는 Adapt-LLM의 능력을 강조한다.
+
+\begin{table}
+\begin{tabular}{c c c} \hline
+**Model Configuration** & **IR usage** & **Accuracy** \\ \hline Popularity Score & 99.86\% & 36.81\% \\ Adapt-LLM (NQ) & 87.22\% & 35.30\% \\ Adapt-LLM (SQuAD) & 83.99\% & **37.29\%** \\ \hline \end{tabular}
+\end{table}
+표 5: Adapt-LLM 및 인기 점수 구성에 대한 SQuAD 및 NQ 데이터 세트에 대해 트레이닝된 Llama-2 기본 모델의 성능 비교. 이후에는 라마-2 LLM을 기본 모델로 하여 Mallen, Alex Troy and Asai, Akari and Zhong, Victor and Das, Rajarshi and Khashabi, Daniel and Hajishirzi, Hannaneh [22]가 제안한 방법론을 모방한다.
+
+추후 조사를 위해 학습 가능한 순차 검색 기술을 통합하는 것과 같은 IR 시스템을 사용할 때 성능을 향상시키기 위한 탐색 방법을 제안한다. 또한, Adapt-LLM 시스템 개발에서 훈련과 테스트 데이터 세트 간의 상호 작용에 대한 보다 심층적인 분석을 수행하는 것이 유용할 것이라고 생각한다.
+
+## 6 Acknowledgments
+
+이 작업은 연구 그룹 자금 IT1805-22와 ICL4LANG 프로젝트(그랜트 번호 KK-2023/00094)를 통해 바스크 정부로부터 부분적인 지원을 받았다. 또한 여러 MCIN/AEI/10.13039/501100011033 프로젝트의 지원을 인정한다: (i) DeepKnowledge (PID2021-127777/DB-C21) 및 FEDER, (ii) AWARE (TED2021-131617B-I00) 및 유럽 연합 NextGenerationEU/PRTR의 지원을 인정한다. 실험 환경에 대한 카를로스 도밍게스의 도움과 에네코 아기레의 귀중한 피드백과 지도에 감사를 표합니다
+
+## References
+
+*[1]J. 아치암 애들러 아가르왈 Ahmad, I. Akkaya, F. L. Aleman, D. Almeida, J. Altenschmidt, S. 알트만 Anadkat, et al. (2023) Gpt-4 technical report. arXiv preprint arXiv:2303.08774. 인용: SS1.
+*[2]A. Catav와 R. 마이아라와 나 길로와 나 Cordeiro와 A. Ingber (2024) RAG는 LLMs를 더 좋고 동등하게 만든다. 외부 링크: 연결된 링크: SS1입니다.
+*[3]S. 바넷 구림완 두두무 Brannelly, M. Abdel-razek (2024) 검색 증강 생성 시스템을 엔지니어링할 때 7개의 고장 지점. arXiv preprint arXiv:2401.05856. 인용: SS1.
+*[4]A. 버거 Caruana, D. Cohn, D. Freitag, and V. Mittal (2000) Bridging the lexical chasm: statistical approaches to answer-finding. In Proceedings of the 23rd annual international ACM SIGIR conference on Research and development in information retrieval, pp. 192-199. 인용: SS1.
+*[5]B. 보가우 Mensch, A. Hoffmann, J. Con, C. K. M. S.
+
+the Association for Computational Linguistics, ACL 2022_, pages 1487-1492. Association for Computational Linguistics, 2022.
+* [32] Taori, Rohan and Gulrajani, Ishaan and Zhang, Tianyi and Dubois, Yann and Li, Xuechen and Guestrin, Carlos and Liang, Percy and Hashimoto, Tatsunori B. Stanford alpaca: an instruction-following llama model (2023). _URL https://github. com/tatsu-lab/stanford_alpaca_, 2023.
+* [33] N. Thakur, N. Reimers, A. Ruckle, A. Srivastava, and I. Gurevych. Beir: A heterogeneous benchmark for zero-shot evaluation of information retrieval models. In _Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2)_, 2021.
+* [34] H. Touvron, T. Lavril, G. Izacard, X. Martinet, M.-A. Lachaux, T. Lacroix, B. Roziere, N. Goyal, E. Hambro, F. Azhar, et al. Llama: Open and efficient foundation language models. _arXiv preprint arXiv:2302.13971_, 2023.
+* [35] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale, et al. Llama 2: Open foundation and fine-tuned chat models. _arXiv preprint arXiv:2307.09288_, 2023.
+* [36] F. Zhu, W. Lei, C. Wang, J. Zheng, S. Poria, and T.-S. Chua. Retrieving and reading: A comprehensive survey on open-domain question answering. _arXiv preprint arXiv:2101.00774_, 2021.
